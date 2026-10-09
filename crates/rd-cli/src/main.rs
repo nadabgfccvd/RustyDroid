@@ -1,16 +1,17 @@
-//! `rd` — CLI do RustyDroid (M0).
+//! `rd` — CLI do RustyDroid (M0/M1).
 //!
 //! Subcomandos:
 //! - `rd inspect <apk>`      — componentes/permissões/features/assinatura (DoD do M0)
 //! - `rd perm list|info|audit` — motor de permissões consultável via CLI
 //! - `rd device list|show`   — perfis de device (piso: moto-e5)
 //! - `rd behavior`           — comutadores por targetSdk 26→36
-//! - `rd dex <apk>`          — demonstra o contrato NOT_IMPLEMENTED (Lei 1)
+//! - `rd dex summary|disasm` — parser DEX 100% + disassembler smali (DoD do M1)
 //!
 //! Códigos de saída: 0 ok · 1 erro estruturado · 2 NOT_IMPLEMENTED.
 
 use clap::{Parser, Subcommand};
 use rd_apk::{Apk, RdError};
+use rd_dex::{disasm, Dex};
 use rd_framework::fd_behavior::SwitchTable;
 use rd_framework::fd_devices::DeviceTable;
 use rd_framework::fd_permissions::{GrantState, PermissionEngine, PermissionTable};
@@ -67,9 +68,33 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Parser de DEX (milestone M1) — demonstra o contrato NOT_IMPLEMENTED
+    /// Parser DEX 100% + disassembler smali (M1) — validado vs baksmali 2.5.2
     Dex {
+        #[command(subcommand)]
+        sub: DexSub,
+    },
+}
+
+#[derive(Subcommand)]
+enum DexSub {
+    /// Resumo de cada dex do APK/arquivo: header, mapa e contagens
+    Summary {
         path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Desmonta em formato smali (fidelidade baksmali 2.5.2)
+    Disasm {
+        path: PathBuf,
+        /// Descritor da classe (ex.: Lcom/x/Y;). Sem isso: lista classes.
+        #[arg(long)]
+        class: Option<String>,
+        /// Filtra um método pelo nome (requer --class)
+        #[arg(long)]
+        method: Option<String>,
+        /// Escreve os .smali nesse diretório em vez de imprimir
+        #[arg(long)]
+        out: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -138,15 +163,22 @@ fn run(cli: Cli) -> i32 {
             impact,
             json,
         } => cmd_behavior(*target, impact.as_deref(), *json, data),
-        Cmd::Dex { json, .. } => {
-            let e = RdError::not_implemented("rd-dex", "M1");
-            if *json {
-                println!("{}", to_json(&e));
-            } else {
-                eprintln!("rd: {e}");
-            }
-            return 2;
-        }
+        Cmd::Dex { sub } => match sub {
+            DexSub::Summary { path, json } => cmd_dex_summary(path, *json),
+            DexSub::Disasm {
+                path,
+                class,
+                method,
+                out,
+                json,
+            } => cmd_dex_disasm(
+                path,
+                class.as_deref(),
+                method.as_deref(),
+                out.as_deref(),
+                *json,
+            ),
+        },
     };
     match result {
         Ok(()) => 0,
@@ -192,6 +224,55 @@ fn load_permissions(data: Option<&Path>) -> Result<PermissionTable, RdError> {
 
 fn open_apk(path: &Path) -> Result<Apk, RdError> {
     Apk::open(path)
+}
+
+// ─── dex (M1) ───────────────────────────────────────────────────────────────
+
+/// Converte o RdError do rd-dex para o contrato do binário (mesma forma).
+fn dex_err(e: rd_dex::RdError) -> RdError {
+    let mut r = RdError::new(&e.code, &e.cause, &e.module_id);
+    if let Some(s) = e.suggestion {
+        r = r.with_suggestion(s);
+    }
+    r
+}
+
+/// Carrega todos os dex de um APK (classes*.dex) ou de um arquivo .dex solto.
+fn load_dex_files(path: &Path) -> Result<Vec<(String, Dex)>, RdError> {
+    let raw =
+        std::fs::read(path).map_err(|e| RdError::io(&e, format!("lendo {}", path.display())))?;
+    if Dex::looks_like_dex(&raw) {
+        let d = Dex::parse(raw).map_err(dex_err)?;
+        return Ok(vec![("classes.dex".into(), d)]);
+    }
+    let apk = open_apk(path)?;
+    let mut out = Vec::new();
+    for name in &apk.dex_files {
+        let entry = apk
+            .zip
+            .find(name)
+            .ok_or_else(|| RdError::missing_entry(format!("entrada zip {name:?}")))?;
+        let bytes = apk
+            .zip
+            .read_entry(entry)
+            .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
+        let d = Dex::parse(bytes).map_err(dex_err)?;
+        out.push((name.clone(), d));
+    }
+    if out.is_empty() {
+        return Err(RdError::missing_entry("classes*.dex no APK")
+            .with_suggestion("confirme com `rd inspect` — o campo content lista os dex"));
+    }
+    Ok(out)
+}
+
+/// Contagem de um tipo de mapa (0 se ausente).
+fn map_size(dex: &Dex, want: rd_dex::MapType) -> u32 {
+    dex.map_list
+        .iter()
+        .find(|m| m.map_type == want)
+        .map(|m| m.size)
+        .unwrap_or(0)
 }
 
 // ─── inspect ────────────────────────────────────────────────────────────────
@@ -652,6 +733,193 @@ fn cmd_behavior(
             s.api, s.title, s.impact, s.default_state, s.id
         );
         println!("       {}", s.summary);
+    }
+    Ok(())
+}
+
+fn cmd_dex_summary(path: &Path, json: bool) -> Result<(), RdError> {
+    let files = load_dex_files(path)?;
+    if json {
+        let items: Vec<serde_json::Value> = files
+            .iter()
+            .map(|(name, d)| {
+                serde_json::json!({
+                    "entry": name,
+                    "size_bytes": d.data.len(),
+                    "version": format!("{:?}", d.header.version),
+                    "checksum_ok": d.header.checksum_ok,
+                    "strings": d.header.string_ids_size,
+                    "types": d.header.type_ids_size,
+                    "protos": d.header.proto_ids_size,
+                    "fields": d.header.field_ids_size,
+                    "methods": d.header.method_ids_size,
+                    "classes": d.header.class_defs_size,
+                    "code_items": map_size(d, rd_dex::MapType::Code),
+                    "debug_info_items": map_size(d, rd_dex::MapType::DebugInfo),
+                    "annotation_items": map_size(d, rd_dex::MapType::Annotation),
+                    "map_types": d.map_list.len(),
+                    "call_sites": d.call_site_offsets.len(),
+                    "method_handles": d.method_handles.len(),
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "source": path.display().to_string(),
+                "dex_files": items,
+            }))
+            .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?
+        );
+        return Ok(());
+    }
+    println!("RustyDroid dex summary — {}", path.display());
+    for (name, d) in &files {
+        let mb = d.data.len() as f64 / (1024.0 * 1024.0);
+        println!(
+            "  {:<14} {:>8.2} MB · DEX {} · checksum {}",
+            name,
+            mb,
+            d.header.version.as_str(),
+            if d.header.checksum_ok {
+                "ok"
+            } else {
+                "INVÁLIDO"
+            }
+        );
+        println!(
+            "    strings {:>6} · types {:>6} · protos {:>6} · fields {:>6} · methods {:>6} · classes {:>6}",
+            d.header.string_ids_size,
+            d.header.type_ids_size,
+            d.header.proto_ids_size,
+            d.header.field_ids_size,
+            d.header.method_ids_size,
+            d.header.class_defs_size
+        );
+        println!(
+            "    código {:>6} code items · {:>6} debug · {:>6} annotations · map {}/18 tipos",
+            map_size(d, rd_dex::MapType::Code),
+            map_size(d, rd_dex::MapType::DebugInfo),
+            map_size(d, rd_dex::MapType::Annotation),
+            d.map_list.len()
+        );
+    }
+    Ok(())
+}
+
+fn cmd_dex_disasm(
+    path: &Path,
+    class: Option<&str>,
+    method: Option<&str>,
+    out: Option<&Path>,
+    json: bool,
+) -> Result<(), RdError> {
+    let files = load_dex_files(path)?;
+    if let Some(desc) = class {
+        // disassembly de UMA classe (primeiro dex que a contém)
+        for (name, d) in &files {
+            let Some(def) = d.find_class(desc) else {
+                continue;
+            };
+            let text = if let Some(m) = method {
+                disasm::render_method(d, def.index, m).map_err(dex_err)?
+            } else {
+                disasm::render_class(d, def.index).map_err(dex_err)?
+            };
+            if let Some(dir) = out {
+                let file = dir.join(disasm::smali_file_name(desc));
+                std::fs::create_dir_all(dir).map_err(|e| RdError::io(&e, "criando --out"))?;
+                std::fs::write(&file, &text).map_err(|e| RdError::io(&e, "escrevendo smali"))?;
+                println!("{} -> {} ({} bytes)", desc, file.display(), text.len());
+            } else if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "entry": name,
+                        "class": desc,
+                        "method": method,
+                        "smali": text,
+                    })
+                );
+            } else {
+                print!("{text}");
+            }
+            return Ok(());
+        }
+        return Err(RdError::missing_entry(format!("classe {desc:?}"))
+            .with_suggestion("liste as classes com `rd dex disasm <apk>` (sem --class)"));
+    }
+
+    // sem --class: lista classes (ou despeja tudo com --out)
+    if let Some(dir) = out {
+        let mut written = 0usize;
+        let mut skipped = 0usize;
+        for (_, d) in &files {
+            for def in &d.class_defs {
+                let desc = d.type_str(def.class_idx);
+                // resiliente: classe com constructo problemático é pulada com
+                // contagem — o despejo continua (mesma política do baksmali).
+                let Ok(text) = disasm::render_class(d, def.index) else {
+                    skipped += 1;
+                    continue;
+                };
+                let file = dir.join(disasm::smali_file_name(desc));
+                if let Some(parent) = file.parent() {
+                    if std::fs::create_dir_all(parent).is_err() {
+                        skipped += 1;
+                        continue;
+                    }
+                }
+                if std::fs::write(&file, &text).is_err() {
+                    skipped += 1;
+                    continue;
+                }
+                written += 1;
+            }
+        }
+        println!(
+            "{written} arquivos .smali em {} (pulos: {skipped})",
+            dir.display()
+        );
+        return Ok(());
+    }
+    let total: usize = files.iter().map(|(_, d)| d.class_defs.len()).sum();
+    if json {
+        let items: Vec<serde_json::Value> = files
+            .iter()
+            .map(|(name, d)| {
+                serde_json::json!({
+                    "entry": name,
+                    "classes": d.class_defs.iter().map(|c| d.type_str(c.class_idx)).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "source": path.display().to_string(),
+                "total": total,
+                "dex_files": items,
+            }))
+            .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?
+        );
+        return Ok(());
+    }
+    println!(
+        "classes em {} — {total} no total (use --class <L...;> para desmontar)\n",
+        path.display()
+    );
+    for (name, d) in &files {
+        println!("  {name} ({} classes):", d.class_defs.len());
+        for def in d.class_defs.iter().take(20) {
+            let desc = d.type_str(def.class_idx);
+            let flags =
+                rd_dex::fields::format_flags(def.access_flags, rd_dex::fields::CLASS_FLAG_ORDER);
+            println!("    {:<64} {}", desc, flags);
+        }
+        if d.class_defs.len() > 20 {
+            println!("    … +{} classes", d.class_defs.len() - 20);
+        }
     }
     Ok(())
 }

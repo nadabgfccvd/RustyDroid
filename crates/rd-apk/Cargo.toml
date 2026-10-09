@@ -14,5 +14,4 @@ serde.workspace = true
 serde_json.workspace = true
 flate2.workspace = true
 
-[dev-dependencies]
 # (integração com fixture real é opcional e guiada por env RD_TEST_APK)

@@ -1,0 +1,42 @@
+[package]
+name = "rd-apk-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rd-apk]
+path = ".."
+
+[[bin]]
+name = "zip"
+path = "fuzz_targets/zip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "axml"
+path = "fuzz_targets/axml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "arsc"
+path = "fuzz_targets/arsc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "apk_full"
+path = "fuzz_targets/apk_full.rs"
+test = false
+doc = false
+bench = false

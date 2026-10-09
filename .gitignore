@@ -31,3 +31,10 @@ Cargo.lock.bak
 .DS_Store
 Thumbs.db
 __pycache__/
+
+# cargo-fuzz artifacts
+crates/*/fuzz/target
+crates/*/fuzz/Cargo.lock
+crates/*/fuzz/artifacts
+crates/*/fuzz/coverage
+crates/*/fuzz/corpus

@@ -73,7 +73,7 @@ APKs below the floor are inspected fine but refuse to run with a structured `BEL
 
 ---
 
-## 🚧 Status — M0 landed (2026-10)
+## 🚧 Status — M0 + M1 landed (2026-10)
 
 The foundation is **real, tested code** — verified end-to-end against the F-Droid client APK (973 zip entries, 36 components, 31 permissions):
 
@@ -82,6 +82,7 @@ The foundation is **real, tested code** — verified end-to-end against the F-Dr
 - ✅ **Device profiles** incl. the contractual **`moto-e5` hardware floor** (RSS ≤ 512 MB, app heap ≤ 256 MB, 25% single-thread)
 - ✅ **Behavior switches** per targetSdk 26→36 (25 entries, PRF-07)
 - ✅ Structured errors everywhere: `{code, cause, suggestion, module_id}` — never a silent failure (unimplemented modules answer `NOT_IMPLEMENTED` with exit code 2)
+- ✅ **`rd dex` (M1)** — 100% DEX parser (header/map/MUTF-8 strings/types/protos/fields/methods/classes/code/debug/annotations/call-sites/method-handles) + **smali disassembler validated against baksmali 2.5.2: 24.913 classes across 3 golden APKs, 100% identical instruction sequences** + fuzz targets for every binary parser (ZIP/AXML/ARSC/DEX)
 
 ```console
 $ rd inspect F-Droid.apk

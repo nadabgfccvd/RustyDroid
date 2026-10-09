@@ -1,58 +1,34 @@
-//! rd-dex — DEX parser + disassembler + fuzz targets.
+//! rd-dex — parser DEX 100% + disassembler smali fiel (M1).
 //!
-//! M0: stub estruturado. Lei 1 (sem falha silenciosa): toda tentativa de uso
-//! responde `NOT_IMPLEMENTED` com o contrato {code, cause, suggestion, module_id}.
+//! Parsing total do formato DEX (header, map list, strings MUTF-8, types,
+//! protos, fields, methods, classes, code items, debug info, annotations,
+//! call sites, method handles, hiddenapi tolerado) + disassembler textual
+//! no formato smali (alvo de fidelidade: baksmali 2.5.2).
+//!
+//! Lei 1: falha sempre tipada via `RdError {code, cause, suggestion, module_id}`
+//! — nunca pânico; todo read é bounds-checked (estilo fuzz-hardened do rd-apk).
+//! Lei 2: nada se perde — os bytes brutos ficam preservados em `Dex::data` e os
+//! offsets de cada seção ficam expostos junto do modelo tipado.
 
-use serde::{Deserialize, Serialize};
+pub mod annotations;
+pub mod classes;
+pub mod code;
+pub mod debug;
+pub mod dex;
+pub mod disasm;
+pub mod error;
+pub mod fields;
+pub mod methods;
+pub mod mutf8;
+pub mod opcode;
+pub mod protos;
+pub mod read;
+pub mod strings;
+pub mod types;
+
+pub use dex::{Dex, Header, MapItem, MapType};
+pub use error::{RdError, RdResult};
 
 pub const MODULE_ID: &str = "rd-dex";
-/// Milestone do roadmap em que este módulo entra de verdade.
+/// Milestone em que este módulo entrou de verdade (spec PARTE 4).
 pub const MILESTONE: &str = "M1";
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RdError {
-    pub code: String,
-    pub cause: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suggestion: Option<String>,
-    pub module_id: String,
-}
-
-impl RdError {
-    pub fn not_implemented() -> Self {
-        RdError {
-            code: "NOT_IMPLEMENTED".into(),
-            cause: format!("{MODULE_ID} lands in milestone {MILESTONE}"),
-            suggestion: Some("track docs/ROADMAP.md and the compat-matrix".into()),
-            module_id: MODULE_ID.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for RdError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [{}]: {}", self.code, self.module_id, self.cause)
-    }
-}
-
-impl std::error::Error for RdError {}
-
-pub fn not_implemented<T>() -> Result<T, RdError> {
-    Err(RdError::not_implemented())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stub_contract_is_stable() {
-        let e = RdError::not_implemented();
-        assert_eq!(e.code, "NOT_IMPLEMENTED");
-        assert_eq!(e.module_id, MODULE_ID);
-        assert_eq!(e.module_id, "rd-dex");
-        let json = serde_json::to_value(&e).unwrap();
-        assert_eq!(json["code"], "NOT_IMPLEMENTED");
-        assert_eq!(json["module_id"], "rd-dex");
-    }
-}

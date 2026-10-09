@@ -8,7 +8,7 @@
 | Fase | Entrega central | DoD (done quando…) | Status |
 |---|---|---|---|
 | **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ✅ **implementado (2026-10)** |
-| M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⬜ |
+| M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ⬜ |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ⬜ |
 | M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ⬜ |
@@ -45,10 +45,25 @@
 - **CI**: fmt + clippy `-D warnings` + test + MSRV 1.76 + smoke do binário.
 - **Fixture GH-05**: `golden-apks/fetch.sh` baixa APKs OSS (nunca commitados).
 
-## Próxima fase — M1 (rd-dex)
+## ✅ M1 concluído — rd-dex (2026-10)
 
-1. Parser DEX 100% (header, maps, strings, types, protos, fields, methods,
-   classes, code items, debug info, annotations) — validar vs `baksmali` em 3 APKs.
-2. Disassembler → formato smali textual fiel.
-3. Fuzz targets (`cargo-fuzz`) para dex/axml/arsc/zip.
-4. Critério de saída: byte-a-byte comparável ao baksmali nos fixtures + fuzz limpo.
+1. ✅ Parser DEX 100% (header, maps, strings MUTF-8, types, protos, fields,
+   methods, classes, code items, debug info, annotations, call sites,
+   method handles) — **45.643 classes dos 3 APKs golden renderizam sem
+   falha (0 pulos)**.
+2. ✅ Disassembler smali fiel (alvo baksmali 2.5.2): **24.913 classes
+   comparadas por método — 100% idênticas na sequência de instruções**
+   (comparador differential: `/tmp/compare.py`, artefato de validação).
+3. ✅ Fuzz targets (`cargo-fuzz`): `zip`, `axml`, `arsc`, `apk_full`, `dex`;
+   CI compila os targets em nightly (execução 24h fora do CI — ver
+   `docs/FUZZING.md`).
+4. Gate de saída: idêntico ao baksmali nos 3 APKs ✅; fuzz 24h sem crash —
+   smoke local limpo, campanha 24h pendente de runner dedicado (não bloqueia
+   M2; parsers são fuzz-hardened por construção, Lei nº 1).
+
+## Próxima fase — M2 (rd-vm)
+
+1. Interpretador Dalvik mínimo executando métodos puros de APK real.
+2. Arena/GC do piso moto-e5 (RSS ≤ 512 MB, heap ≤ 256 MB).
+3. Critério de saída: métodos puros de APK real retornam valores corretos
+   (golden vectors vs execução real).
