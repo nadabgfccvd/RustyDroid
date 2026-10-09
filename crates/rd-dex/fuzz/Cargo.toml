@@ -1,3 +1,6 @@
+# workspace próprio (padrão cargo-fuzz: fora do workspace principal)
+[workspace]
+
 [package]
 name = "rd-dex-fuzz"
 version = "0.0.0"
