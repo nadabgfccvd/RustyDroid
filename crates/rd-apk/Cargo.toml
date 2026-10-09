@@ -1,0 +1,18 @@
+[package]
+name = "rd-apk"
+description = "RustyDroid: APK parsing — ZIP, AXML, resources.arsc, signing schemes, full manifest model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+flate2.workspace = true
+
+[dev-dependencies]
+# (integração com fixture real é opcional e guiada por env RD_TEST_APK)

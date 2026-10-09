@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rd-apk",
+    "crates/rd-dex",
+    "crates/rd-vm",
+    "crates/rd-jni",
+    "crates/rd-ndk",
+    "crates/rd-framework",
+    "crates/rd-render",
+    "crates/rd-agent",
+    "crates/rd-cli",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.76"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nadabgfccvd/RustyDroid"
+homepage = "https://github.com/nadabgfccvd/RustyDroid"
+authors = ["RustyDroid contributors"]
+
+[workspace.dependencies]
+# error handling — thiserror nas libs, anyhow no binário (decisão da spec)
+thiserror = "1.0"
+anyhow = "1.0"
+
+# serialização / dados versionados
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# compressão ZIP (APK) — backend puro Rust (miniz_oxide), sem toolchain C
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# crates internas (dependências só apontam para baixo)
+rd-apk = { path = "crates/rd-apk", version = "0.1.0" }
+rd-framework = { path = "crates/rd-framework", version = "0.1.0" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.release.package."*"]
+opt-level = 3

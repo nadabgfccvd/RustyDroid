@@ -1,0 +1,456 @@
+//! Leitor ZIP especializado em APK — sem alocação desnecessária, ZIP64, CRC-32.
+//!
+//! Escopo deliberado (M0): leitura apenas (APKs são lidos, nunca reescritos aqui).
+//! STORED + DEFLATE; os tamanhos do *central directory* são autoritativos
+//! (apps malformados mentem no local header — o CD é o registro de verdade).
+
+use crate::error::{RdError, RdResult};
+use flate2::read::DeflateDecoder;
+use std::io::Read;
+
+pub const EOCD_SIG: u32 = 0x0605_4b50;
+pub const ZIP64_EOCD_LOCATOR_SIG: u32 = 0x0706_4b50;
+pub const ZIP64_EOCD_SIG: u32 = 0x0606_4b50;
+pub const CD_ENTRY_SIG: u32 = 0x0201_4b50;
+pub const LOCAL_HEADER_SIG: u32 = 0x0403_4b50;
+
+const METHOD_STORED: u16 = 0;
+const METHOD_DEFLATE: u16 = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZipEntry {
+    pub name: String,
+    pub method: u16,
+    pub crc32: u32,
+    pub compressed_size: u64,
+    pub uncompressed_size: u64,
+    pub local_header_offset: u64,
+    pub flags: u16,
+}
+
+impl ZipEntry {
+    pub fn is_dir(&self) -> bool {
+        self.name.ends_with('/')
+    }
+    pub fn is_stored(&self) -> bool {
+        self.method == METHOD_STORED
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Zip {
+    data: Vec<u8>,
+    entries: Vec<ZipEntry>,
+}
+
+// ─── leitores little-endian com bounds-check ────────────────────────────────
+
+#[inline]
+fn u16_at(d: &[u8], off: usize) -> RdResult<u16> {
+    d.get(off..off + 2)
+        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .ok_or_else(|| RdError::parse(format!("zip: truncated u16 @ {off}")))
+}
+
+#[inline]
+fn u32_at(d: &[u8], off: usize) -> RdResult<u32> {
+    d.get(off..off + 4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .ok_or_else(|| RdError::parse(format!("zip: truncated u32 @ {off}")))
+}
+
+#[inline]
+fn u64_at(d: &[u8], off: usize) -> RdResult<u64> {
+    d.get(off..off + 8)
+        .map(|b| {
+            let mut a = [0u8; 8];
+            a.copy_from_slice(b);
+            u64::from_le_bytes(a)
+        })
+        .ok_or_else(|| RdError::parse(format!("zip: truncated u64 @ {off}")))
+}
+
+// ─── CRC-32 (IEEE 802.3, tabela em const fn — zero custo em runtime) ───────
+
+const fn make_crc_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut c = i as u32;
+        let mut k = 0;
+        while k < 8 {
+            c = if c & 1 != 0 {
+                0xEDB8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
+            k += 1;
+        }
+        table[i] = c;
+        i += 1;
+    }
+    table
+}
+
+static CRC_TABLE: [u32; 256] = make_crc_table();
+
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut c: u32 = 0xFFFF_FFFF;
+    for &b in data {
+        c = CRC_TABLE[((c ^ b as u32) & 0xFF) as usize] ^ (c >> 8);
+    }
+    c ^ 0xFFFF_FFFF
+}
+
+// ─── ZIP ────────────────────────────────────────────────────────────────────
+
+impl Zip {
+    /// Parse de um APK/ZIP já carregado em memória.
+    pub fn parse(data: Vec<u8>) -> RdResult<Zip> {
+        let (eocd_off, entry_count, cd_size, cd_offset) = Self::find_eocd(&data)?;
+        let _ = eocd_off; // (usado apenas pela busca; ZIP64 já resolvido abaixo)
+
+        // Bounds do central directory
+        let cd_start = cd_offset as usize;
+        let cd_end = cd_start
+            .checked_add(cd_size as usize)
+            .ok_or_else(|| RdError::parse("zip: CD size overflow"))?;
+        if cd_end > data.len() {
+            return Err(RdError::parse(format!(
+                "zip: central directory [{cd_start}..{cd_end}) exceeds file (len {})",
+                data.len()
+            )));
+        }
+
+        let mut entries = Vec::with_capacity(entry_count.min(100_000));
+        let mut p = cd_start;
+        for i in 0..entry_count {
+            // strides lidos ANTES do parse (nome é bytes crus — lossy muda o len)
+            let name_len = u16_at(&data, p + 28)? as usize;
+            let extra_len = extra_len_of(&data, p + 30)?;
+            let comment_len = comment_len_of(&data, p + 32)?;
+            let entry = Self::parse_cd_entry(&data, p)
+                .map_err(|e| e.with_suggestion(format!("parsing central-directory entry #{i}")))?;
+            entries.push(entry);
+            p += 46 + name_len + extra_len + comment_len;
+        }
+
+        Ok(Zip { data, entries })
+    }
+
+    /// Lê arquivo do disco e faz parse.
+    pub fn open(path: &std::path::Path) -> RdResult<Zip> {
+        let data = std::fs::read(path)
+            .map_err(|e| RdError::io(&e, format!("reading {}", path.display())))?;
+        Self::parse(data)
+    }
+
+    /// Varre o fim do arquivo por EOCD; resolve ZIP64 quando presente.
+    fn find_eocd(data: &[u8]) -> RdResult<(usize, usize, u64, u64)> {
+        if data.len() < 22 {
+            return Err(RdError::parse("zip: file shorter than EOCD (22 bytes)"));
+        }
+        let max_back = 22 + 65_536; // EOCD + comentário máximo
+        let start = data.len().saturating_sub(max_back);
+        let mut eocd_pos = None;
+        let mut i = data.len() - 22;
+        loop {
+            if u32_at(data, i)? == EOCD_SIG {
+                eocd_pos = Some(i);
+                break;
+            }
+            if i == start {
+                break;
+            }
+            i -= 1;
+        }
+        let eocd = eocd_pos.ok_or_else(|| RdError::parse("zip: EOCD signature not found"))?;
+
+        let mut entry_count = u16_at(data, eocd + 10)? as usize;
+        let mut cd_size = u32_at(data, eocd + 12)? as u64;
+        let mut cd_offset = u32_at(data, eocd + 16)? as u64;
+
+        // ZIP64: campos sentinel 0xFFFF/0xFFFFFFFF
+        if entry_count == 0xFFFF || cd_size == 0xFFFF_FFFF || cd_offset == 0xFFFF_FFFF {
+            // locator fica imediatamente antes do EOCD (20 bytes)
+            let loc = eocd.checked_sub(20).ok_or_else(|| {
+                RdError::parse("zip: ZIP64 sentinel present but locator cannot fit")
+            })?;
+            if u32_at(data, loc)? != ZIP64_EOCD_LOCATOR_SIG {
+                return Err(RdError::parse(
+                    "zip: ZIP64 sentinel without locator — corrupt container",
+                ));
+            }
+            let z64_off = u64_at(data, loc + 8)? as usize;
+            if u32_at(data, z64_off)? != ZIP64_EOCD_SIG {
+                return Err(RdError::parse("zip: ZIP64 EOCD signature mismatch"));
+            }
+            entry_count = u64_at(data, z64_off + 32)? as usize;
+            cd_size = u64_at(data, z64_off + 40)?;
+            cd_offset = u64_at(data, z64_off + 48)?;
+        }
+        Ok((eocd, entry_count, cd_size, cd_offset))
+    }
+
+    fn parse_cd_entry(data: &[u8], off: usize) -> RdResult<ZipEntry> {
+        if u32_at(data, off)? != CD_ENTRY_SIG {
+            return Err(RdError::parse(format!(
+                "zip: bad CD entry signature at {off}"
+            )));
+        }
+        let flags = u16_at(data, off + 8)?;
+        let method = u16_at(data, off + 10)?;
+        let crc = u32_at(data, off + 16)?;
+        let mut csize = u32_at(data, off + 20)? as u64;
+        let mut usize_ = u32_at(data, off + 24)? as u64;
+        let name_len = u16_at(data, off + 28)? as usize;
+        let extra_len = u16_at(data, off + 30)? as usize;
+        let _comment_len = u16_at(data, off + 32)? as usize;
+        let mut lho = u32_at(data, off + 42)? as u64;
+
+        let name_bytes = data
+            .get(off + 46..off + 46 + name_len)
+            .ok_or_else(|| RdError::parse("zip: CD entry name out of bounds"))?;
+        let name = String::from_utf8_lossy(name_bytes).into_owned();
+
+        // ZIP64 extra field (0x0001) — campos na ordem: usize, csize, lho
+        if csize == 0xFFFF_FFFF || usize_ == 0xFFFF_FFFF || lho == 0xFFFF_FFFF {
+            let extra = data
+                .get(off + 46 + name_len..off + 46 + name_len + extra_len)
+                .ok_or_else(|| RdError::parse("zip: CD extra out of bounds"))?;
+            let mut q = 0usize;
+            while q + 4 <= extra.len() {
+                let id = u16_at(extra, q)?;
+                let sz = u16_at(extra, q + 2)? as usize;
+                if id == 0x0001 {
+                    let mut f = q + 4;
+                    if usize_ == 0xFFFF_FFFF && f + 8 <= q + 4 + sz {
+                        usize_ = u64_at(extra, f)?;
+                        f += 8;
+                    }
+                    if csize == 0xFFFF_FFFF && f + 8 <= q + 4 + sz {
+                        csize = u64_at(extra, f)?;
+                        f += 8;
+                    }
+                    if lho == 0xFFFF_FFFF && f + 8 <= q + 4 + sz {
+                        lho = u64_at(extra, f)?;
+                    }
+                    break;
+                }
+                q += 4 + sz;
+            }
+        }
+
+        Ok(ZipEntry {
+            name,
+            method,
+            crc32: crc,
+            compressed_size: csize,
+            uncompressed_size: usize_,
+            local_header_offset: lho,
+            flags,
+        })
+    }
+
+    /// Descomprime e verifica CRC da entrada. Retornando `Ok`, os bytes são íntegros.
+    pub fn read(&self, name: &str) -> RdResult<Vec<u8>> {
+        let entry = self
+            .find(name)
+            .ok_or_else(|| RdError::missing_entry(name))?;
+        self.read_entry(entry)
+    }
+
+    pub fn read_entry(&self, entry: &ZipEntry) -> RdResult<Vec<u8>> {
+        let off = entry.local_header_offset as usize;
+        if u32_at(&self.data, off)? != LOCAL_HEADER_SIG {
+            return Err(RdError::parse(format!(
+                "zip: bad local header for {:?}",
+                entry.name
+            )));
+        }
+        // usar extra_len do LOCAL header (pode diferir do CD!)
+        let name_len = u16_at(&self.data, off + 26)? as usize;
+        let extra_len = u16_at(&self.data, off + 28)? as usize;
+        let data_start = off + 30 + name_len + extra_len;
+        let data_end = data_start
+            .checked_add(entry.compressed_size as usize)
+            .ok_or_else(|| RdError::parse("zip: compressed size overflow"))?;
+        let compressed = self.data.get(data_start..data_end).ok_or_else(|| {
+            RdError::parse(format!("zip: payload of {:?} out of bounds", entry.name))
+        })?;
+
+        let out: Vec<u8> = match entry.method {
+            METHOD_STORED => compressed.to_vec(),
+            METHOD_DEFLATE => {
+                let mut decoder = DeflateDecoder::new(compressed);
+                let mut buf =
+                    Vec::with_capacity(entry.uncompressed_size.min(64 * 1024 * 1024) as usize);
+                decoder
+                    .read_to_end(&mut buf)
+                    .map_err(|e| RdError::parse(format!("zip: inflate {:?}: {e}", entry.name)))?;
+                buf
+            }
+            m => {
+                return Err(RdError::parse(format!(
+                    "zip: unsupported method {m} for {:?}",
+                    entry.name
+                ))
+                .with_suggestion("only STORED (0) and DEFLATE (8) are valid in APKs"));
+            }
+        };
+
+        if out.len() as u64 != entry.uncompressed_size {
+            return Err(RdError::invalid_format(format!(
+                "zip: {:?} inflated to {} bytes, CD says {}",
+                entry.name,
+                out.len(),
+                entry.uncompressed_size
+            )));
+        }
+        let actual = crc32(&out);
+        if actual != entry.crc32 {
+            return Err(RdError::invalid_format(format!(
+                "zip: CRC mismatch for {:?} (stored 0x{:08x}, computed 0x{:08x})",
+                entry.name, entry.crc32, actual
+            )));
+        }
+        Ok(out)
+    }
+
+    pub fn entries(&self) -> &[ZipEntry] {
+        &self.entries
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|e| e.name.as_str())
+    }
+
+    pub fn find(&self, name: &str) -> Option<&ZipEntry> {
+        self.entries.iter().find(|e| e.name == name)
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.find(name).is_some()
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Bytes brutos do container (uso interno: detecção do bloco de assinatura).
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Nomes que casam com um prefixo (ex.: "assets/", "lib/arm64-v8a/").
+    pub fn names_with_prefix<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = &'a str> {
+        self.entries
+            .iter()
+            .map(|e| e.name.as_str())
+            .filter(move |n| n.starts_with(prefix))
+    }
+}
+
+#[inline]
+fn extra_len_of(data: &[u8], off: usize) -> RdResult<usize> {
+    Ok(u16_at(data, off)? as usize)
+}
+
+#[inline]
+fn comment_len_of(data: &[u8], off: usize) -> RdResult<usize> {
+    Ok(u16_at(data, off)? as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Monta um ZIP mínimo com 1 entrada STORED — estrutura real, byte a byte.
+    fn handcrafted_zip(content: &[u8], name: &str) -> Vec<u8> {
+        let mut v = Vec::new();
+        let crc = crc32(content);
+        // local header
+        v.extend(LOCAL_HEADER_SIG.to_le_bytes());
+        v.extend(20u16.to_le_bytes()); // version
+        v.extend(0u16.to_le_bytes()); // flags
+        v.extend(METHOD_STORED.to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // time
+        v.extend(0u16.to_le_bytes()); // date
+        v.extend(crc.to_le_bytes());
+        v.extend((content.len() as u32).to_le_bytes()); // csize
+        v.extend((content.len() as u32).to_le_bytes()); // usize
+        v.extend((name.len() as u16).to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // extra
+        v.extend_from_slice(name.as_bytes());
+        v.extend_from_slice(content);
+        let local_offset = 0u32;
+        // central directory
+        let cd_start = v.len() as u32;
+        v.extend(CD_ENTRY_SIG.to_le_bytes());
+        v.extend(20u16.to_le_bytes()); // version made by
+        v.extend(20u16.to_le_bytes()); // version needed
+        v.extend(0u16.to_le_bytes()); // flags
+        v.extend(METHOD_STORED.to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // time/date
+        v.extend(0u16.to_le_bytes());
+        v.extend(crc.to_le_bytes());
+        v.extend((content.len() as u32).to_le_bytes());
+        v.extend((content.len() as u32).to_le_bytes());
+        v.extend((name.len() as u16).to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // extra
+        v.extend(0u16.to_le_bytes()); // comment
+        v.extend(0u16.to_le_bytes()); // disk
+        v.extend(0u16.to_le_bytes()); // internal attrs
+        v.extend(0u32.to_le_bytes()); // external attrs
+        v.extend(local_offset.to_le_bytes());
+        v.extend_from_slice(name.as_bytes());
+        let cd_size = v.len() as u32 - cd_start;
+        // EOCD
+        v.extend(EOCD_SIG.to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // disk
+        v.extend(0u16.to_le_bytes()); // cd disk
+        v.extend(1u16.to_le_bytes()); // entries this disk
+        v.extend(1u16.to_le_bytes()); // total
+        v.extend(cd_size.to_le_bytes());
+        v.extend(cd_start.to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // comment len
+        v
+    }
+
+    #[test]
+    fn crc32_known_vector() {
+        // "123456789" → 0xCBF43926 (IEEE 802.3)
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32(b""), 0);
+    }
+
+    #[test]
+    fn parses_handcrafted_stored_zip_and_verifies_crc() {
+        let content = b"AndroidManifest.xml-contents-123";
+        let bytes = handcrafted_zip(content, "AndroidManifest.xml");
+        let zip = Zip::parse(bytes).unwrap();
+        assert_eq!(zip.entry_count(), 1);
+        assert!(zip.contains("AndroidManifest.xml"));
+        let out = zip.read("AndroidManifest.xml").unwrap();
+        assert_eq!(out, content);
+        assert!(zip.read("missing").is_err());
+    }
+
+    #[test]
+    fn crc_corruption_is_detected() {
+        let mut bytes = handcrafted_zip(b"payload", "f.txt");
+        // corrompe um byte do payload (offset 30 + 5 do nome "f.txt")
+        let payload_off = 30 + 5;
+        bytes[payload_off] ^= 0xFF;
+        let zip = Zip::parse(bytes).unwrap();
+        let err = zip.read("f.txt").unwrap_err();
+        assert_eq!(err.code, "INVALID_FORMAT");
+        assert!(err.cause.contains("CRC"));
+    }
+
+    #[test]
+    fn rejects_non_zip() {
+        assert!(Zip::parse(b"definitely not a zip file at all".repeat(4)).is_err());
+        assert!(Zip::parse(Vec::new()).is_err());
+    }
+}

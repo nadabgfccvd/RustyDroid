@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "preset": "TESTE-DEV",
+  "note": "M0 foundation build: only core + M0-scoped modules are implemented; all others are structured NOT_IMPLEMENTED stubs (Lei 1).",
+  "selected": [
+    "CORE-01",
+    "CORE-02",
+    "CORE-03",
+    "CORE-04",
+    "CORE-05",
+    "CORE-06",
+    "CORE-07",
+    "CORE-08",
+    "CORE-09",
+    "CORE-10",
+    "CORE-11",
+    "CORE-12",
+    "GH-01",
+    "SYS-01",
+    "PRF-06",
+    "PRF-07",
+    "AG-11",
+    "AG-13",
+    "TST-03"
+  ],
+  "unselected_policy": "NOT_IMPLEMENTED(module_id)"
+}

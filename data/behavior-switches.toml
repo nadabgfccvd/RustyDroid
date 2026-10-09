@@ -1,0 +1,218 @@
+# RustyDroid — data/behavior-switches.toml
+# Matriz de comutadores de comportamento por targetSdk (Apêndice A / PRF-07 da spec v2.1).
+# Fonte: developer.android.com/about/versions/.../behavior-changes — só itens com nível de API certo.
+# Schema: [[switch]] com id/api/title/impact/default_state/summary.
+# impact: storage | network | notifications | alarms | foreground-service | ui | media | security | lifecycle
+# default_state: enforced | opt-in | opt-out | info
+schema_version = 1
+
+# ==================== Android 8.0 / API 26 (T1) ====================
+[[switch]]
+id = "background-execution-limits"
+api = 26
+title = "Background execution limits"
+impact = "lifecycle"
+default_state = "enforced"
+summary = "Serviços em background são parados minutos após o app sair da tela; jobs e broadcasts recebem restrições (inclui Doze)."
+
+[[switch]]
+id = "notification-channels"
+api = 26
+title = "Notification channels"
+impact = "notifications"
+default_state = "enforced"
+summary = "Todo NotificationChannel precisa existir antes de postar; sem canal, a notificação é descartada silenciosamente."
+
+[[switch]]
+id = "adaptive-icons"
+api = 26
+title = "Adaptive icons"
+impact = "ui"
+default_state = "info"
+summary = "Ícones adaptativos (camadas foreground/background) viram o padrão; ícones legados são mascarados pelo launcher."
+
+[[switch]]
+id = "autofill-framework"
+api = 26
+title = "Autofill framework"
+impact = "security"
+default_state = "info"
+summary = "Autofill passa a ser recurso de plataforma (AutofillService); apps devem usar autofill hints em vez de heurísticas de accessibility."
+
+[[switch]]
+id = "invokedynamic-support"
+api = 26
+title = "invokedynamic (invoke-custom) na VM"
+impact = "lifecycle"
+default_state = "info"
+summary = "ART suporta invokedynamic/invoke-custom desde a API 26; desugaring de lambdas passa a ser opcional no build."
+
+# ==================== Android 8.1 / API 27 ====================
+[[switch]]
+id = "cached-apps-limits"
+api = 27
+title = "Cached apps limits"
+impact = "lifecycle"
+default_state = "enforced"
+summary = "Apps em cache ficam parados/congelados e são mortos mais agressivamente, com limites de memória por app em cache."
+
+# ==================== Android 9 / API 28 ====================
+[[switch]]
+id = "cleartext-traffic-blocked"
+api = 28
+title = "Cleartext traffic blocked by default"
+impact = "network"
+default_state = "enforced"
+summary = "HTTP em texto puro é bloqueado por padrão; habilitar por domínio via networkSecurityConfig (cleartextTrafficPermitted)."
+
+# ==================== Android 10 / API 29 ====================
+[[switch]]
+id = "scoped-storage"
+api = 29
+title = "Scoped storage"
+impact = "storage"
+default_state = "enforced"
+summary = "External storage vira espaço com escopo por app; acesso amplo exige MANAGE_EXTERNAL_STORAGE (special) ou SAF. Opt-out: requestLegacyExternalStorage."
+
+[[switch]]
+id = "roles"
+api = 29
+title = "Roles (RoleManager)"
+impact = "security"
+default_state = "opt-in"
+summary = "RoleManager introduz papéis (DIALER, SMS, HOME, BROWSER…); apps solicitam virar default via Intent de role em vez de hack de Settings."
+
+# ==================== Android 11 / API 30 ====================
+[[switch]]
+id = "scoped-storage-full-enforcement"
+api = 30
+title = "Scoped storage full enforcement"
+impact = "storage"
+default_state = "enforced"
+summary = "TargetSdk 30+: requestLegacyExternalStorage é ignorado e o acesso por raw path ao shared storage fica desabilitado (MediaStore/SAF obrigatórios)."
+
+[[switch]]
+id = "package-visibility"
+api = 30
+title = "Package visibility (queries)"
+impact = "security"
+default_state = "enforced"
+summary = "getInstalledPackages/resolveActivity só enxergam apps declarados em <queries>; QUERY_ALL_PACKAGES (special) remove o filtro."
+
+# ==================== Android 12 / API 31 ====================
+[[switch]]
+id = "exact-alarm-permission"
+api = 31
+title = "Exact alarm permission"
+impact = "alarms"
+default_state = "enforced"
+summary = "setExact*/setAlarmClock exigem SCHEDULE_EXACT_ALARM (special); sem a permissão, o alarme é convertido para inexato."
+
+[[switch]]
+id = "splash-screen-applied"
+api = 31
+title = "Splash screen applied"
+impact = "ui"
+default_state = "enforced"
+summary = "O sistema aplica splash screen automática (ícone do launcher) em cold/warm starts para apps com targetSdk 31+."
+
+[[switch]]
+id = "bluetooth-runtime-permissions"
+api = 31
+title = "Bluetooth runtime permissions"
+impact = "security"
+default_state = "enforced"
+summary = "BLUETOOTH/BLUETOOTH_ADMIN legados deixam de valer; scan/connect/advertise exigem BLUETOOTH_SCAN/CONNECT/ADVERTISE (grupo NEARBY_DEVICES)."
+
+# ==================== Android 12L / API 32 ====================
+[[switch]]
+id = "splash-screen-branding"
+api = 32
+title = "Splash screen branding"
+impact = "ui"
+default_state = "info"
+summary = "Splash screen suporta ícone animado e branding personalizado (windowSplashScreenBrandingImage) além do ícone padrão."
+
+# ==================== Android 13 / API 33 ====================
+[[switch]]
+id = "post-notifications-runtime"
+api = 33
+title = "POST_NOTIFICATIONS runtime"
+impact = "notifications"
+default_state = "enforced"
+summary = "POST_NOTIFICATIONS vira permissão runtime (dangerous, grupo NOTIFICATIONS); notificações só aparecem após concessão."
+
+[[switch]]
+id = "granular-media-permissions"
+api = 33
+title = "Granular media permissions"
+impact = "media"
+default_state = "enforced"
+summary = "READ/WRITE_EXTERNAL_STORAGE deixam de dar acesso a mídia; apps migram para READ_MEDIA_IMAGES/VIDEO/AUDIO."
+
+# ==================== Android 14 / API 34 ====================
+[[switch]]
+id = "fgs-types-required"
+api = 34
+title = "Foreground service types required"
+impact = "foreground-service"
+default_state = "enforced"
+summary = "Todo foreground service declara foregroundServiceType + permissão FOREGROUND_SERVICE_* correspondente; iniciar sem tipo válido gera MissingForegroundServiceTypeException."
+
+[[switch]]
+id = "implicit-and-pending-intent-restrictions"
+api = 34
+title = "Implicit/pending intent restrictions"
+impact = "security"
+default_state = "enforced"
+summary = "Intents implícitos só alcançam componentes exportados; PendingIntents precisam declarar FLAG_IMMUTABLE ou FLAG_MUTABLE."
+
+[[switch]]
+id = "photo-picker-default"
+api = 34
+title = "Photo picker"
+impact = "media"
+default_state = "info"
+summary = "Photo picker integrado (PickVisualMedia) permite seleção de mídia sem nenhuma permissão de storage."
+
+[[switch]]
+id = "exact-alarm-deny-by-default"
+api = 34
+title = "SCHEDULE_EXACT_ALARM not pre-granted"
+impact = "alarms"
+default_state = "enforced"
+summary = "Para target 34+, SCHEDULE_EXACT_ALARM não é mais pré-concedida; o usuário precisa habilitar em Settings (USE_EXACT_ALARM segue auto-concedida para apps de alarme/calendário)."
+
+# ==================== Android 15 / API 35 ====================
+[[switch]]
+id = "edge-to-edge"
+api = 35
+title = "Edge-to-edge enforced"
+impact = "ui"
+default_state = "enforced"
+summary = "Apps com target 35+ desenham edge-to-edge; barras de sistema transparentes e tratamento de insets obrigatório (content-margin/view-finder APIs)."
+
+# ==================== Android 16 / API 36 ====================
+[[switch]]
+id = "health-connect-platform"
+api = 36
+title = "Health Connect in platform"
+impact = "security"
+default_state = "info"
+summary = "Health Connect passa a fazer parte da plataforma; permissões READ/WRITE_HEALTH_DATA via runtime e dados acessados pelo provider do sistema."
+
+[[switch]]
+id = "photo-picker-partial-access"
+api = 36
+title = "Photo picker partial access"
+impact = "media"
+default_state = "opt-in"
+summary = "Partial access refinado: apps podem adotar READ_MEDIA_VISUAL_USER_SELECTED e o fluxo de seleção própria do photo picker."
+
+[[switch]]
+id = "sixteen-kb-pages"
+api = 36
+title = "16 KB page sizes"
+impact = "lifecycle"
+default_state = "enforced"
+summary = "NDK exige bibliotecas nativas alinhadas a páginas de 16 KB; .so legados (4 KB) não carregam — afeta libs nativas do APK."

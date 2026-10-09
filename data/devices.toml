@@ -1,0 +1,164 @@
+# RustyDroid — data/devices.toml
+# Perfis de device (Apêndice A/A2 da spec RustyDroid.md v2.1 — dados versionados).
+# Schema: flat keys dentro de [[device]] — id/label/class/dimensões/densidade/CPU/GPU/RAM/storage/I/O/APIs/flags/notes.
+# Classes: phone | tablet | foldable | tv | wear
+# flag "hardware-floor" = perfil de validação de release (PRF-06); presente APENAS no moto-e5.
+schema_version = 1
+
+# ---- Piso de hardware canônico (contrato da spec, Apêndice A2) ----
+[[device]]
+id = "moto-e5"
+label = "Motorola Moto E5"
+class = "phone"
+width_px = 720
+height_px = 1440
+density_dpi = 280
+diagonal_in = 5.7
+aspect_ratio = "18:9"
+refresh_hz = 60
+cpu_cores = 4
+cpu_single_thread_factor = 0.25
+cpu_quota_cores = 1.0
+gpu = "Adreno 308"
+fill_rate_budget = "adreno308-equivalent"
+ram_device_mb = 2048
+ram_process_cap_mb = 512
+ram_app_heap_mb = 256
+storage_quota_gb = 8
+io_profile = "slow-emmc"
+factory_api = 26
+min_api = 26
+max_api = 36
+flags = ["hardware-floor"]
+notes = "Piso de hardware canônico (Apêndice A2). Snapdragon 425 4×A53 @1.4 GHz; SO de fábrica Android 8.0 (API 26); comportamentos de sistema fixados no nível 26 exceto o que o targetSdk do APK comutar (PRF-07)."
+
+# ---- Perfis sintéticos (não correspondem a devices reais; servem de faixa de referência) ----
+[[device]]
+id = "phone-generic"
+label = "Generic Phone (synthetic)"
+class = "phone"
+width_px = 1080
+height_px = 2400
+density_dpi = 440
+diagonal_in = 6.5
+aspect_ratio = "20:9"
+refresh_hz = 90
+cpu_cores = 8
+cpu_single_thread_factor = 0.5
+cpu_quota_cores = 4.0
+gpu = "Adreno 650 (sintético)"
+fill_rate_budget = "software-unbounded"
+ram_device_mb = 8192
+ram_process_cap_mb = 4096
+ram_app_heap_mb = 512
+storage_quota_gb = 128
+io_profile = "unbounded"
+factory_api = 34
+min_api = 26
+max_api = 36
+flags = []
+notes = "Perfil sintético de classe média-alta (90 Hz, high refresh); não é um device real — apenas faixa de referência para budgets."
+
+[[device]]
+id = "tablet-10"
+label = "Generic 10-inch Tablet (synthetic)"
+class = "tablet"
+width_px = 1600
+height_px = 2560
+density_dpi = 320
+diagonal_in = 10.1
+aspect_ratio = "16:10"
+refresh_hz = 60
+cpu_cores = 8
+cpu_single_thread_factor = 0.5
+cpu_quota_cores = 4.0
+gpu = "Mali-G78 (sintético)"
+fill_rate_budget = "software-unbounded"
+ram_device_mb = 8192
+ram_process_cap_mb = 2048
+ram_app_heap_mb = 512
+storage_quota_gb = 32
+io_profile = "unbounded"
+factory_api = 33
+min_api = 26
+max_api = 36
+flags = []
+notes = "Perfil sintético de tablet (landscape nativo, large screens / two-pane); não é um device real."
+
+[[device]]
+id = "foldable-generic"
+label = "Generic Foldable (synthetic)"
+class = "foldable"
+width_px = 1836
+height_px = 2208
+density_dpi = 400
+diagonal_in = 7.6
+aspect_ratio = "6:5"
+refresh_hz = 120
+cpu_cores = 8
+cpu_single_thread_factor = 0.5
+cpu_quota_cores = 4.0
+gpu = "Adreno 730 (sintético)"
+fill_rate_budget = "software-unbounded"
+ram_device_mb = 12288
+ram_process_cap_mb = 4096
+ram_app_heap_mb = 512
+storage_quota_gb = 128
+io_profile = "unbounded"
+factory_api = 35
+min_api = 26
+max_api = 36
+flags = []
+notes = "Perfil sintético. width/height = estado unfolded; estado folded: 1080×2340 (19.5:9), 6.2 polegadas. Não é um device real."
+
+[[device]]
+id = "tv-generic"
+label = "Generic TV (synthetic)"
+class = "tv"
+width_px = 1920
+height_px = 1080
+density_dpi = 160
+diagonal_in = 55.0
+aspect_ratio = "16:9"
+refresh_hz = 60
+cpu_cores = 4
+cpu_single_thread_factor = 0.5
+cpu_quota_cores = 2.0
+gpu = "Mali-G52 (sintético)"
+fill_rate_budget = "software-unbounded"
+ram_device_mb = 4096
+ram_process_cap_mb = 2048
+ram_app_heap_mb = 512
+storage_quota_gb = 32
+io_profile = "unbounded"
+factory_api = 34
+min_api = 26
+max_api = 36
+flags = []
+notes = "Perfil sintético de Android TV. TV opera em mdpi/tvdpi (~160 dpi) com overscan e leanback UI; sem touch. Não é um device real."
+
+[[device]]
+id = "wear-generic"
+label = "Generic Wear (synthetic)"
+class = "wear"
+width_px = 450
+height_px = 450
+density_dpi = 320
+diagonal_in = 1.4
+aspect_ratio = "1:1"
+refresh_hz = 60
+cpu_cores = 4
+cpu_single_thread_factor = 0.25
+cpu_quota_cores = 1.0
+gpu = "Adreno A-series (sintético)"
+fill_rate_budget = "software-unbounded"
+ram_device_mb = 1024
+ram_process_cap_mb = 256
+ram_app_heap_mb = 128
+storage_quota_gb = 8
+io_profile = "unbounded"
+factory_api = 33
+min_api = 26
+max_api = 36
+flags = []
+notes = "Perfil sintético de Wear OS (display round 450×450, low-RAM com heap 128 MB). Não é um device real."

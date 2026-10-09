@@ -1,0 +1,21 @@
+[package]
+name = "rd-cli"
+description = "RustyDroid CLI — inspeção de APK, motor de permissões, perfis de device e behavior switches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rd"
+path = "src/main.rs"
+
+[dependencies]
+rd-apk = { workspace = true }
+rd-framework = { workspace = true }
+clap.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
