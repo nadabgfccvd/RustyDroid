@@ -1,0 +1,32 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Build artifacts
+/dist/
+/bins/
+
+# Golden APK test artifacts (binaries are never committed — see golden-apks/)
+/golden-apks/*.apk
+/golden-apks/*.apkm
+/golden-apks/*.xapk
+/golden-apks/cache/
+
+# Runtime state
+*.log
+*.snapshot
+/state/
+
+# Environment & secrets (NEVER commit tokens)
+.env
+.env.*
+*.pem
+*.key
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
