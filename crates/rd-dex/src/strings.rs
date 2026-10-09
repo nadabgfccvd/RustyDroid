@@ -76,7 +76,10 @@ impl Strings {
 /// Lê um string_data_item: `uleb128 utf16_len` + bytes MUTF-8 + terminador 0x00.
 fn read_string_data(data: &[u8], off: usize) -> RdResult<String> {
     let mut r = Reader::at(data, off)?;
-    let utf16_len = r.uleb128()? as usize;
+    // utf16_len é lido só para avançar o cursor (uleb128 bounds-checked); o
+    // valor declarado NÃO é confiável em arquivos corrompidos — ver política
+    // no comentário abaixo (issue #12)
+    let _utf16_len = r.uleb128()? as usize;
     // procura terminador 0x00 com bound — nunca sai da janela
     let start = r.pos;
     let mut end = start;
@@ -90,15 +93,14 @@ fn read_string_data(data: &[u8], off: usize) -> RdResult<String> {
         return Err(RdError::parse("string: terminador NUL ausente"));
     }
     let s = mutf8::decode(&data[start..end]);
-    // spec: utf16_len é o comprimento em unidades de código UTF-16 — um
-    // desacerto indica corrupção (o decode lossy de MUTF-8 nunca erra dados
-    // válidos)
-    let units = s.encode_utf16().count();
-    if units != utf16_len {
-        return Err(RdError::invalid_format(format!(
-            "string: utf16_len {utf16_len} ≠ {units} unidades decodificadas @ 0x{off:x}"
-        )));
-    }
+    // spec: utf16_len é o comprimento em unidades de código UTF-16. Um
+    // desacerto indica corrupção — mas o decode é LOSSY POR DESIGN (mutf8.rs:
+    // "strings malformadas não podem derrubar o parser", Lei 1) e TODA
+    // corrupção que aciona o U+FFFD também muda a contagem, então rejeitar o
+    // mismatch anularia o decode lossy e derrubaria o DEX inteiro por causa de
+    // uma única string (issue #12). Política alinhada com baksmali/dexlib2:
+    // a string decodificada vence; o valor declarado é tratado como metadado
+    // não-confiável e ignorado.
     Ok(s)
 }
 
@@ -129,11 +131,22 @@ mod tests {
     }
 
     #[test]
-    fn utf16_len_mismatch_is_typed_error() {
-        // promete utf16_len=3 mas "ab" tem 2
+    fn utf16_len_mismatch_is_tolerated_lossy() {
+        // issue #12: promete utf16_len=3 mas "ab" tem 2 — corrupção não pode
+        // derrubar o parse de um DEX inteiro (decode lossy por design, Lei 1;
+        // paridade com baksmali/dexlib2)
         let d = [0x03u8, b'a', b'b', 0x00];
-        let e = read_string_data(&d, 0).unwrap_err();
-        assert_eq!(e.code, "INVALID_FORMAT");
+        let s = read_string_data(&d, 0).expect("mismatch não pode rejeitar");
+        assert_eq!(s, "ab");
+    }
+
+    #[test]
+    fn malformed_mutf8_bytes_decode_lossy_without_rejecting() {
+        // 0xFF é MUTF-8 inválido → U+FFFD (1 unidade) com utf16_len declarado 2;
+        // antes isso rejeitava o DEX INTEIRO — agora decodifica lossy
+        let d = [0x02u8, 0xFF, 0x00];
+        let s = read_string_data(&d, 0).expect("bytes inválidos não podem rejeitar");
+        assert_eq!(s, "\u{FFFD}");
     }
 
     #[test]

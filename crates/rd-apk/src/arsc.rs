@@ -123,6 +123,14 @@ impl Arsc {
             let ctype = u16_at(data, p)?;
             let cheader = u16_at(data, p + 2)? as usize;
             let csize = u32_at(data, p + 4)? as usize;
+            // progresso garantido: chunk mínimo = 8 bytes (mesmo guard dos
+            // irmãos em axml.rs e no loop interno de parse_package — sem ele,
+            // csize=0 com packageCount≥1 gira eternamente; issue #9)
+            if csize < 8 {
+                return Err(RdError::parse(format!(
+                    "arsc: chunk at {p} declares size {csize} < 8 (no progress possible)"
+                )));
+            }
             if csize < cheader || p + csize > data.len() {
                 return Err(RdError::parse(format!(
                     "arsc: package chunk at {p} declares {csize} beyond bounds"
@@ -324,6 +332,23 @@ fn parse_package(
 }
 
 /// ResTable_config — extrai locale/densidade/api sem reclamar de variações de tamanho.
+///
+/// Layout do `ResTable_config` (frameworks/base/libs/androidfw/include/androidfw/
+/// ResourceTypes.h) — offsets conferidos campo a campo:
+///
+/// ```text
+/// size:u32@0 | mcc:u16@4 mnc:u16@6 | language[2]@8 country[2]@10
+/// orientation:u8@12 touchscreen:u8@13 density:u16@14
+/// keyboard:u8@16 navigation:u8@17 inputFlags:u8@18 pad0:u8@19
+/// screenWidth:u16@20 screenHeight:u16@22
+/// sdkVersion:u16@24 minorVersion:u16@26
+/// screenLayout:u8@28 uiMode:u8@29 smallestScreenWidthDp:u16@30 (se size ≥ 32)
+/// ```
+///
+/// `api_level` é o `sdkVersion` (u16 @24 — o mesmo campo que dá nome às configs
+/// "v26" do aapt2). NÃO é `screenHeight` (u16 @22); o bloco [20..24) é o par
+/// screenWidth/screenHeight de 2+2 bytes, não dois u32 (verificado empiricamente
+/// contra resources.arsc reais — configs "vNN" decodificam com o valor da API).
 fn parse_config(data: &[u8], cfg_base: usize, cfg_max: usize) -> RdResult<ResConfigInfo> {
     let mut cfg = ResConfigInfo::default();
     if cfg_max < 4 || cfg_base + 4 > data.len() {
@@ -361,8 +386,77 @@ fn parse_config(data: &[u8], cfg_base: usize, cfg_max: usize) -> RdResult<ResCon
         let d = u16_at(data, cfg_base + 14)?;
         cfg.density = Some(d);
     }
-    if readable >= 28 {
+    if readable >= 26 {
+        // sdkVersion:u16 @24 (minorVersion:u16 @26 — não lido)
         cfg.api_level = Some(u16_at(data, cfg_base + 24)?);
     }
     Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_global_pool() -> Vec<u8> {
+        // ResStringPool vazio válido: 28 bytes de header, 0 strings
+        let mut p = Vec::new();
+        p.extend_from_slice(&0x0001u16.to_le_bytes()); // type
+        p.extend_from_slice(&28u16.to_le_bytes()); // headerSize
+        p.extend_from_slice(&28u32.to_le_bytes()); // size
+        p.extend_from_slice(&0u32.to_le_bytes()); // stringCount
+        p.extend_from_slice(&0u32.to_le_bytes()); // styleCount
+        p.extend_from_slice(&0u32.to_le_bytes()); // flags (UTF-16)
+        p.extend_from_slice(&28u32.to_le_bytes()); // stringsStart
+        p.extend_from_slice(&0u32.to_le_bytes()); // stylesStart
+        p
+    }
+
+    /// PoC da issue #9: 48 bytes = header ResTable (packageCount=1) + pool
+    /// global vazia + chunk {type=0x0202, headerSize=0, size=0}. Sem o guard
+    /// `csize < 8` o loop externo não progride (`p += 0`) e trava para sempre
+    /// (hang, não crash). Deve retornar erro tipado em tempo finito.
+    #[test]
+    fn zero_size_chunk_is_typed_error_not_hang() {
+        let mut d = Vec::new();
+        d.extend_from_slice(&0x0002u16.to_le_bytes()); // RES_TABLE_TYPE
+        d.extend_from_slice(&12u16.to_le_bytes()); // headerSize
+        d.extend_from_slice(&48u32.to_le_bytes()); // file size
+        d.extend_from_slice(&1u32.to_le_bytes()); // packageCount = 1
+        assert_eq!(d.len(), 12);
+        d.extend(empty_global_pool());
+        assert_eq!(d.len(), 40);
+        d.extend_from_slice(&0x0202u16.to_le_bytes()); // tipo ≠ package
+        d.extend_from_slice(&0u16.to_le_bytes()); // headerSize = 0
+        d.extend_from_slice(&0u32.to_le_bytes()); // size = 0 → sem progresso
+        assert_eq!(d.len(), 48);
+
+        let e = Arsc::parse(&d).expect_err("csize=0 deve ser rejeitado");
+        assert_eq!(e.code, "PARSE_ERROR");
+        assert!(e.cause.contains("< 8"), "mensagem: {}", e.cause);
+    }
+
+    /// Issue #16: `api_level` é o `sdkVersion` u16 @24 do ResTable_config —
+    /// NÃO é screenHeight (@22). screenHeight=1440 (0x5A0) NÃO pode vazar
+    /// para api_level; sdkVersion=26 deve decodificar como 26 (config "v26").
+    #[test]
+    fn config_api_level_is_sdk_version_u16_at_offset_24() {
+        let mut cfg = vec![0u8; 28];
+        cfg[0..4].copy_from_slice(&28u32.to_le_bytes()); // size
+        cfg[8..10].copy_from_slice(b"en"); // language
+        cfg[10..12].copy_from_slice(b"US"); // country
+        cfg[14..16].copy_from_slice(&256u16.to_le_bytes()); // density
+        cfg[20..22].copy_from_slice(&720u16.to_le_bytes()); // screenWidth
+        cfg[22..24].copy_from_slice(&1440u16.to_le_bytes()); // screenHeight
+        cfg[24..26].copy_from_slice(&26u16.to_le_bytes()); // sdkVersion
+
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(
+            info.api_level,
+            Some(26),
+            "sdkVersion@24, não screenHeight@22"
+        );
+        assert_eq!(info.density, Some(256));
+        assert_eq!(info.language.as_deref(), Some("en"));
+        assert_eq!(info.country.as_deref(), Some("US"));
+    }
 }

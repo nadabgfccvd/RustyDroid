@@ -34,13 +34,33 @@ fetch() {
     local min_bytes="$3"
 
     echo "==> ${url}"
-    curl -L --fail --silent --show-error \
+    # set -e fica suspenso dentro de funções chamadas em contexto `||`, então
+    # a falha do curl precisa ser capturada EXPLICITAMENTE — sem isso, um
+    # download que falha antes de criar o arquivo seguia direto para o
+    # `wc -c` (arquivo inexistente → size vazio → teste quebrado → "saved
+    # ( bytes)" mentiroso com return 0; issue #15)
+    if ! curl -L --fail --silent --show-error \
         --user-agent "${USER_AGENT}" \
         -o "${out}" \
-        "${url}"
+        "${url}"; then
+        echo "warning: download failed: ${url}; removing partial output" >&2
+        rm -f "${out}"
+        return 1
+    fi
+    if [ ! -f "${out}" ]; then
+        echo "warning: curl reported success but ${out} does not exist" >&2
+        return 1
+    fi
 
     local size
     size="$(wc -c < "${out}")"
+    case "${size}" in
+        ''|*[!0-9]*)
+            echo "warning: could not determine size of ${out} (got '${size}'); removing" >&2
+            rm -f "${out}"
+            return 1
+            ;;
+    esac
     if [ "${size}" -le "${min_bytes}" ]; then
         echo "warning: ${out} is only ${size} bytes (expected > ${min_bytes}); removing" >&2
         rm -f "${out}"

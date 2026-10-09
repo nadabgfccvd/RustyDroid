@@ -126,6 +126,11 @@ impl MapType {
             0x2004 => MapType::Annotation,
             0x2005 => MapType::EncodedArray,
             0x2006 => MapType::AnnotationsDirectory,
+            // DEX 038+: invokedynamic / method handles (lambdas desugar,
+            // string concat, records) — sem estes braços o loop de população
+            // nunca preenche call_site_offsets/method_handles (issue #10)
+            0x7000 => MapType::CallSiteId,
+            0x7001 => MapType::MethodHandle,
             0xF000 => MapType::HiddenapiClassData,
             _ => MapType::Unknown(code),
         }
@@ -582,6 +587,14 @@ mod tests {
             assert_eq!(t.code(), code, "roundtrip de 0x{code:04x}");
             assert!(!t.name().is_empty());
         }
+        // o roundtrip sozinho passa vazio para Unknown (Unknown(c).code() == c);
+        // from_code precisa reconhecer os códigos de verdade (issue #10)
+        assert!(matches!(MapType::from_code(0x7000), MapType::CallSiteId));
+        assert!(matches!(MapType::from_code(0x7001), MapType::MethodHandle));
+        assert!(matches!(
+            MapType::from_code(0xF000),
+            MapType::HiddenapiClassData
+        ));
         assert!(matches!(
             MapType::from_code(0x9999),
             MapType::Unknown(0x9999)

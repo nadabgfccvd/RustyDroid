@@ -2,8 +2,10 @@
 //!
 //! Formatos (nomenclatura oficial do dex-format): 10x 12x 11n 11x 10t 20t 22x
 //! 21t 21s 21h 21c 23x 22b 22t 22s 22c 30t 31i 31t 31c 32x 35c 3rc 45cc 4rcc 51l.
-//! Opcodes "unused" (0x3e–43, 0x73, 0x79–7a, 0xe0–f9) ficam na tabela como 10x —
-//! o disassembler os renderiza como `nop // unused 0xXX`.
+//! Opcodes "unused" (0x3e–43, 0x73, 0x79–7a, 0xe3–f9) ficam na tabela como 10x —
+//! o disassembler os renderiza como `nop // unused 0xXX`. Atenção: 0xd8–0xe2 são
+//! os 11 `*int/lit8` VÁLIDOS (add…ushr); o intervalo vazio real é 0xe3–0xf9
+//! (0xfa–0xff são invoke-polymorphic/custom e const-method-*).
 //!
 //! Pseudoinstruções (payloads) usam o slot do opcode 0x00 com identificador na
 //! palavra alta: 0x0100 packed-switch-payload, 0x0200 sparse-switch-payload,

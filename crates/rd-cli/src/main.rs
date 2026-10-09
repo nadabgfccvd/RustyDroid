@@ -828,7 +828,12 @@ fn cmd_dex_disasm(
             };
             if let Some(dir) = out {
                 let file = dir.join(disasm::smali_file_name(desc));
-                std::fs::create_dir_all(dir).map_err(|e| RdError::io(&e, "criando --out"))?;
+                // o path mapping cria subdiretórios (ex.: org/fdroid/fdroid/…)
+                // — criar o pai do arquivo, não só a raiz de --out
+                if let Some(parent) = file.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| RdError::io(&e, "criando diretórios de --out"))?;
+                }
                 std::fs::write(&file, &text).map_err(|e| RdError::io(&e, "escrevendo smali"))?;
                 println!("{} -> {} ({} bytes)", desc, file.display(), text.len());
             } else if json {

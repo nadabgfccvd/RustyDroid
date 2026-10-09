@@ -282,12 +282,26 @@ impl Zip {
         let out: Vec<u8> = match entry.method {
             METHOD_STORED => compressed.to_vec(),
             METHOD_DEFLATE => {
-                let mut decoder = DeflateDecoder::new(compressed);
+                // Bomba de descompressão (issue #14): o teto declarado no CD
+                // tem que valer DURANTE o inflate, não só depois — um stream
+                // minúsculo que expande para GiB não pode crescer o buffer sem
+                // limite (budget do projeto: processo ≤ 512 MB no piso E5).
+                // `take(declared + 1)` corta a saída no limite; 1 byte extra
+                // permite distinguir "exatamente o declarado" (ok) de "passou
+                // do declarado" (bomba → erro tipado, não OOM kill).
+                let declared = entry.uncompressed_size;
+                let mut decoder = DeflateDecoder::new(compressed).take(declared.saturating_add(1));
                 let mut buf =
                     Vec::with_capacity(entry.uncompressed_size.min(64 * 1024 * 1024) as usize);
                 decoder
                     .read_to_end(&mut buf)
                     .map_err(|e| RdError::parse(format!("zip: inflate {:?}: {e}", entry.name)))?;
+                if buf.len() as u64 > declared {
+                    return Err(RdError::invalid_format(format!(
+                        "zip: {:?} expandiu além do declarado no CD (> {} bytes): descompressão limitada (suspeita de bomba)",
+                        entry.name, declared
+                    )));
+                }
                 buf
             }
             m => {
@@ -452,5 +466,101 @@ mod tests {
     fn rejects_non_zip() {
         assert!(Zip::parse(b"definitely not a zip file at all".repeat(4)).is_err());
         assert!(Zip::parse(Vec::new()).is_err());
+    }
+
+    /// Variante DEFLATE do handcrafted_zip: payload comprimido + campos do CD
+    /// controlados pelo teste (para simular CD mentiroso — bomba de compressão).
+    fn handcrafted_zip_deflate(
+        compressed: &[u8],
+        declared_uncompressed: u32,
+        crc: u32,
+        name: &str,
+    ) -> Vec<u8> {
+        let mut v = Vec::new();
+        // local header
+        v.extend(LOCAL_HEADER_SIG.to_le_bytes());
+        v.extend(20u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // flags
+        v.extend(METHOD_DEFLATE.to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // time
+        v.extend(0u16.to_le_bytes()); // date
+        v.extend(crc.to_le_bytes());
+        v.extend((compressed.len() as u32).to_le_bytes()); // csize
+        v.extend(declared_uncompressed.to_le_bytes()); // usize (declarado)
+        v.extend((name.len() as u16).to_le_bytes());
+        v.extend(0u16.to_le_bytes()); // extra
+        v.extend_from_slice(name.as_bytes());
+        v.extend_from_slice(compressed);
+        let local_offset = 0u32;
+        // central directory
+        let cd_start = v.len() as u32;
+        v.extend(CD_ENTRY_SIG.to_le_bytes());
+        v.extend(20u16.to_le_bytes());
+        v.extend(20u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(METHOD_DEFLATE.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(crc.to_le_bytes());
+        v.extend((compressed.len() as u32).to_le_bytes());
+        v.extend(declared_uncompressed.to_le_bytes());
+        v.extend((name.len() as u16).to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(0u32.to_le_bytes());
+        v.extend(local_offset.to_le_bytes());
+        v.extend_from_slice(name.as_bytes());
+        let cd_size = v.len() as u32 - cd_start;
+        // EOCD
+        v.extend(EOCD_SIG.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v.extend(1u16.to_le_bytes());
+        v.extend(1u16.to_le_bytes());
+        v.extend(cd_size.to_le_bytes());
+        v.extend(cd_start.to_le_bytes());
+        v.extend(0u16.to_le_bytes());
+        v
+    }
+
+    fn deflate_bytes(content: &[u8]) -> Vec<u8> {
+        use std::io::Write as _;
+        let mut enc =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(content).unwrap();
+        enc.finish().unwrap()
+    }
+
+    /// Issue #14: stream deflate minúsculo (5 MB de zeros → ~5 KB comprimidos)
+    /// com CD declarando só 1000 bytes descomprimidos. Sem o `take()`, o
+    /// `read_to_end` cresceria o buffer sem teto ANTES da checagem do CD
+    /// (OOM kill em craft maior); agora corta no limite → erro tipado.
+    #[test]
+    fn decompression_bomb_is_typed_error_not_oom() {
+        let content = vec![0u8; 5 * 1024 * 1024];
+        let compressed = deflate_bytes(&content);
+        assert!(compressed.len() < 64 * 1024, "stream deve ser minúsculo");
+        let bytes = handcrafted_zip_deflate(&compressed, 1000, 0, "bomb.bin");
+        let zip = Zip::parse(bytes).unwrap();
+        let err = zip.read("bomb.bin").unwrap_err();
+        assert_eq!(err.code, "INVALID_FORMAT");
+        assert!(
+            err.cause.contains("descompressão limitada"),
+            "mensagem: {}",
+            err.cause
+        );
+    }
+
+    /// Entrada DEFLATE legítima (declaração honesta) continua inflando igual.
+    #[test]
+    fn legit_deflate_entry_still_inflates() {
+        let content = b"legit deflate payload ".repeat(100);
+        let compressed = deflate_bytes(&content);
+        let bytes =
+            handcrafted_zip_deflate(&compressed, content.len() as u32, crc32(&content), "a.bin");
+        let zip = Zip::parse(bytes).unwrap();
+        assert_eq!(zip.read("a.bin").unwrap(), content);
     }
 }

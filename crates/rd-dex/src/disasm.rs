@@ -19,8 +19,9 @@
 //! entrada usam a notação `pK` quando `reg >= registers_size - ins_size`
 //! (`p0` = `this` em métodos não-estáticos), `vK` caso contrário.
 //!
-//! Opcodes "unused" (0x3e–0x43, 0x73, 0x79–0x7a, 0xe0–0xf9) são renderizados
-//! como `nop // unused 0xXX`; `nop` real (0x00) vira `nop` puro.
+//! Opcodes "unused" (0x3e–0x43, 0x73, 0x79–0x7a, 0xe3–0xf9) são renderizados
+//! como `nop // unused 0xXX`; `nop` real (0x00) vira `nop` puro. 0xd8–0xe2 são
+//! os `*int/lit8` válidos — NÃO fazem parte do intervalo unused (issue #13).
 
 use std::collections::BTreeMap;
 

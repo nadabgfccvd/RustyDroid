@@ -625,9 +625,13 @@ fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Compo
         .map(|(i, f)| build_intent_filter(f, i))
         .collect();
     let is_launcher = filters.iter().any(IntentFilter::is_launcher);
-    // exported: declaração explícita vence; sem declaração e com filtro → true (regra da plataforma)
+    // exported: declaração explícita vence; sem declaração, a regra da
+    // plataforma (comportamento legado, preservado em apps targetSdk < 31) é
+    // true se o componente tem QUALQUER <intent-filter> — não só MAIN/LAUNCHER
+    // (receiver BOOT_COMPLETED, activity deep-link VIEW e service com filtro
+    // custom são exported por default; issue #11)
     let exported_declared = attr_bool(el, "exported");
-    let exported_effective = exported_declared.unwrap_or(is_launcher);
+    let exported_effective = exported_declared.unwrap_or(!filters.is_empty());
 
     Component {
         kind,
@@ -708,4 +712,153 @@ fn build_intent_filter(f: &XmlElement, order: usize) -> IntentFilter {
         }
     }
     filter
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::axml::{AttrValue, NS_ANDROID};
+
+    fn android_attr(name: &str, value: AttrValue) -> XmlAttribute {
+        XmlAttribute {
+            ns: Some(NS_ANDROID.to_string()),
+            name: name.to_string(),
+            raw: None,
+            value,
+            res_id: None,
+        }
+    }
+
+    fn plain_attr(name: &str, value: &str) -> XmlAttribute {
+        XmlAttribute {
+            ns: None,
+            name: name.to_string(),
+            raw: None,
+            value: AttrValue::String(value.to_string()),
+            res_id: None,
+        }
+    }
+
+    /// manifest mínimo com um componente arbitrário dentro de <application>.
+    fn doc_with_component(
+        kind: &str,
+        attrs: Vec<XmlAttribute>,
+        filters: Vec<Vec<&str>>,
+    ) -> AxmlDocument {
+        let mut comp = XmlElement {
+            name: kind.to_string(),
+            attrs,
+            children: Vec::new(),
+            text: None,
+        };
+        for actions in filters {
+            let filter = XmlElement {
+                name: "intent-filter".to_string(),
+                attrs: Vec::new(),
+                children: actions
+                    .into_iter()
+                    .map(|a| XmlElement {
+                        name: "action".to_string(),
+                        attrs: vec![android_attr("name", AttrValue::String(a.to_string()))],
+                        children: Vec::new(),
+                        text: None,
+                    })
+                    .collect(),
+                text: None,
+            };
+            comp.children.push(filter);
+        }
+        AxmlDocument {
+            root: XmlElement {
+                name: "manifest".to_string(),
+                attrs: vec![
+                    plain_attr("package", "com.t.app"),
+                    android_attr("targetSdkVersion", AttrValue::Int(30)),
+                ],
+                children: vec![XmlElement {
+                    name: "application".to_string(),
+                    attrs: Vec::new(),
+                    children: vec![comp],
+                    text: None,
+                }],
+                text: None,
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Issue #11: receiver com filtro BOOT_COMPLETED (sem android:exported) é
+    /// exported por default na plataforma — não apenas componentes LAUNCHER.
+    #[test]
+    fn exported_default_is_any_intent_filter_not_only_launcher() {
+        let doc = doc_with_component(
+            "receiver",
+            vec![android_attr(
+                "name",
+                AttrValue::String("com.t.app.BootRc".into()),
+            )],
+            vec![vec!["android.intent.action.BOOT_COMPLETED"]],
+        );
+        let m = build(&doc, None).expect("manifest");
+        let c = &m.application.components[0];
+        assert!(c.exported.is_none());
+        assert!(
+            c.exported_effective,
+            "receiver com BOOT_COMPLETED deve ser exported efetivo"
+        );
+
+        // activity com deep-link VIEW (não launcher) → mesmo default
+        let doc = doc_with_component(
+            "activity",
+            vec![android_attr(
+                "name",
+                AttrValue::String("com.t.app.Deep".into()),
+            )],
+            vec![vec!["android.intent.action.VIEW"]],
+        );
+        let m = build(&doc, None).expect("manifest");
+        assert!(m.application.components[0].exported_effective);
+
+        // sem filtro nenhum → default false
+        let doc = doc_with_component(
+            "activity",
+            vec![android_attr(
+                "name",
+                AttrValue::String("com.t.app.Plain".into()),
+            )],
+            vec![],
+        );
+        let m = build(&doc, None).expect("manifest");
+        assert!(!m.application.components[0].exported_effective);
+    }
+
+    /// Declaração explícita vence o default (qualquer que seja o valor).
+    #[test]
+    fn explicit_exported_declaration_wins() {
+        let doc = doc_with_component(
+            "receiver",
+            vec![
+                android_attr("name", AttrValue::String("com.t.app.Rc".into())),
+                android_attr("exported", AttrValue::Bool(false)),
+            ],
+            vec![vec!["android.intent.action.BOOT_COMPLETED"]],
+        );
+        let m = build(&doc, None).expect("manifest");
+        let c = &m.application.components[0];
+        assert_eq!(c.exported, Some(false));
+        assert!(!c.exported_effective, "declaração explícita false vence");
+
+        let doc = doc_with_component(
+            "activity",
+            vec![
+                android_attr("name", AttrValue::String("com.t.app.A".into())),
+                android_attr("exported", AttrValue::Bool(true)),
+            ],
+            vec![],
+        );
+        let m = build(&doc, None).expect("manifest");
+        let c = &m.application.components[0];
+        assert_eq!(c.exported, Some(true));
+        assert!(c.exported_effective, "declaração explícita true vence");
+    }
 }

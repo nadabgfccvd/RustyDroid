@@ -222,8 +222,27 @@ fn var_index(r: &mut Reader, value_arg: u8) -> RdResult<u32> {
     Ok(var_int(r, value_arg, false)? as u32)
 }
 
+/// Teto de aninhamento de `encoded_value` (array/annotation aninhados).
+///
+/// A spec não limita formalmente, mas DEX reais ficam abaixo de poucas dezenas
+/// de níveis; 64 é generoso. Sem esse teto, cada nível de aninhamento custa
+/// apenas 2 bytes de input (`0x1C 0x01`) e a recursão estoura a stack em
+/// ~50 mil níveis (~100 KB de input) — abort do processo inteiro, sem chance
+/// de unwinding (Lei 1: parser não pode morrer em input hostil).
+const MAX_ENCODED_VALUE_DEPTH: usize = 64;
+
 /// Lê um `encoded_value` completo (recursivo p/ array/annotation).
 pub fn read_encoded_value(r: &mut Reader) -> RdResult<EncodedValue> {
+    read_encoded_value_depth(r, 0)
+}
+
+/// Implementação recursiva com orçamento de profundidade.
+fn read_encoded_value_depth(r: &mut Reader, depth: usize) -> RdResult<EncodedValue> {
+    if depth > MAX_ENCODED_VALUE_DEPTH {
+        return Err(RdError::invalid_format(format!(
+            "encoded_value: aninhamento além de {MAX_ENCODED_VALUE_DEPTH} níveis (recursão limitada contra stack overflow)"
+        )));
+    }
     let header = r.u8()?;
     let vt = header & 0x1F;
     let arg = (header >> 5) & 0x07;
@@ -298,7 +317,7 @@ pub fn read_encoded_value(r: &mut Reader) -> RdResult<EncodedValue> {
             }
             let mut elements = Vec::with_capacity(count);
             for _ in 0..count {
-                elements.push(read_encoded_value(r)?);
+                elements.push(read_encoded_value_depth(r, depth + 1)?);
             }
             Ok(EncodedValue::Array(elements))
         }
@@ -321,7 +340,7 @@ pub fn read_encoded_value(r: &mut Reader) -> RdResult<EncodedValue> {
             let mut elements = Vec::with_capacity(count);
             for _ in 0..count {
                 let name_idx = r.uleb128()?;
-                let value = read_encoded_value(r)?;
+                let value = read_encoded_value_depth(r, depth + 1)?;
                 elements.push(AnnotationElement { name_idx, value });
             }
             Ok(EncodedValue::Annotation(EncodedAnnotation {
@@ -654,6 +673,31 @@ mod tests {
     fn one_err(bytes: &[u8]) -> crate::error::RdError {
         let mut r = Reader::new(bytes);
         read_encoded_value(&mut r).unwrap_err()
+    }
+
+    #[test]
+    fn deep_nesting_is_typed_error_not_stack_overflow() {
+        // PoC da issue #8: N níveis de EncodedValue::Array aninhados — cada
+        // nível custa 2 bytes (0x1C array + 0x01 count-uleb), NULL no fundo.
+        // 10_000 níveis (~20 KB) antes abortavam o processo com stack overflow
+        // (não-catchable); agora deve retornar erro TIPADO em tempo finito.
+        let mut bytes = Vec::new();
+        for _ in 0..10_000 {
+            bytes.push(0x1C); // ARRAY
+            bytes.push(0x01); // count = 1
+        }
+        bytes.push(0x1E); // NULL no fundo
+        let e = one_err(&bytes);
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("64 níveis"), "mensagem: {}", e.cause);
+        // profundidade dentro do teto continua funcionando (10 níveis ok)
+        let mut ok = Vec::new();
+        for _ in 0..10 {
+            ok.push(0x1C);
+            ok.push(0x01);
+        }
+        ok.push(0x1E);
+        assert!(matches!(one(&ok), EncodedValue::Array(_)));
     }
 
     #[test]
