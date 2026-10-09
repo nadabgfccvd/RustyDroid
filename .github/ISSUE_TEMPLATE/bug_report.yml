@@ -1,0 +1,36 @@
+name: 🐛 Bug report
+description: Something crashes, hangs or returns wrong results / Algo quebra, trava ou retorna resultado errado
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened? / O que aconteceu?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / Passos para reproduzir
+      placeholder: |
+        1. rustydroid …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: RustyDroid version / commit
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / structured error JSON
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues / Procurei em issues existentes
+          required: true

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docs-integrity:
+    name: Docs integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Spec exists and carries the expected contracts
+        run: |
+          test -f RustyDroid.md || { echo "::error::RustyDroid.md missing"; exit 1; }
+          grep -q "Especificação Mestra v2.1" RustyDroid.md || { echo "::error::spec version mismatch"; exit 1; }
+          grep -q "minSdkVersion 26" RustyDroid.md || { echo "::error::API floor 26 contract missing"; exit 1; }
+          grep -q "moto-e5" RustyDroid.md || { echo "::error::Moto E5 floor contract missing"; exit 1; }
+          echo "✅ Spec contracts OK"
+
+      - name: Internal markdown links resolve
+        run: |
+          broken=0
+          for f in README.md CONTRIBUTING.md SECURITY.md RustyDroid.md; do
+            for link in $(grep -oE '\]\(\.?/[^)#]+\.md\)' "$f" 2>/dev/null | sed -E 's/]\(\.?\//\//; s/\)$//' | sort -u); do
+              [ -f "${link#/}" ] || { echo "::error::$f: broken link -> $link"; broken=1; }
+            done
+          done
+          exit $broken
+
+      - name: No token-like secrets committed
+        run: |
+          if grep -rInE '(github_pat_|ghp_|gho_)[A-Za-z0-9_]{20,}' \
+             --exclude-dir=.git --exclude-dir=node_modules . ; then
+            echo "::error::token-like string found in repo"; exit 1
+          fi
+          echo "✅ No secrets detected"
+
+  markdown-lint:
+    name: Markdown lint (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint markdown files
+        run: |
+          npx --yes markdownlint-cli2 "**/*.md" "#node_modules" \
+            || echo "::warning::markdownlint found issues (advisory only)"
