@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
-  - name: 💬 Discussions
-    url: https://github.com/nadabgfccvd/RustyDroid/discussions
-    about: Questions, ideas and general discussion / Perguntas, ideias e discussões gerais
   - name: 📄 Full specification
     url: https://github.com/nadabgfccvd/RustyDroid/blob/main/RustyDroid.md
     about: Read the master spec (modules, permissions matrix, roadmap) before opening issues
+  - name: 🧭 Roadmap & status
+    url: https://github.com/nadabgfccvd/RustyDroid/blob/main/docs/ROADMAP.md
+    about: Check which milestone (M0–M12) covers your topic before opening an issue

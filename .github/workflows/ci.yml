@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege (issue #6): GITHUB_TOKEN is read-only for every job.
+permissions:
+  contents: read
+
 jobs:
   docs-integrity:
     name: Docs integrity
@@ -20,15 +24,8 @@ jobs:
           grep -q "moto-e5" RustyDroid.md || { echo "::error::Moto E5 floor contract missing"; exit 1; }
           echo "✅ Spec contracts OK"
 
-      - name: Internal markdown links resolve
-        run: |
-          broken=0
-          for f in README.md CONTRIBUTING.md SECURITY.md RustyDroid.md; do
-            for link in $(grep -oE '\]\(\.?/[^)#]+\.md\)' "$f" 2>/dev/null | sed -E 's/]\(\.?\//\//; s/\)$//' | sort -u); do
-              [ -f "${link#/}" ] || { echo "::error::$f: broken link -> $link"; broken=1; }
-            done
-          done
-          exit $broken
+      - name: Internal markdown links resolve (incl. anchors)
+        run: python3 scripts/check_md_links.py
 
       - name: No token-like secrets committed
         run: |
@@ -46,7 +43,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Lint markdown files
         run: |
-          npx --yes markdownlint-cli2 "**/*.md" "#node_modules" \
+          # Version pinned (issue #6) for deterministic runs; config in
+          # .markdownlint-cli2.jsonc keeps the job advisory but quiet.
+          npx --yes markdownlint-cli2@0.23.3 "**/*.md" "#node_modules" \
             || echo "::warning::markdownlint found issues (advisory only)"
 
   rust:

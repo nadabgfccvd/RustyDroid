@@ -9,7 +9,7 @@
 > **Piso de hardware:** Motorola Moto E5 (Snapdragon 425, Adreno 308, 2 GB RAM) — **todos os budgets de performance são calibrados nele, não em emuladores modernos.**
 
 **Versão do documento:** 2.1 (piso API 26 + piso hardware Moto E5) · **Data:** 2026-10 · **Licença alvo:** MIT OR Apache-2.0
-**Repositório alvo:** `github.com/<org>/rustydroid` (workspace Cargo monorepo)
+**Repositório alvo:** `github.com/nadabgfccvd/RustyDroid` (workspace Cargo monorepo)
 
 ---
 
@@ -368,7 +368,7 @@ Pergunte SOMENTE se um bloqueio físico impedir o progresso.
 | GPU | Adreno 308 (GLES 3.1) | renderer software com **budget de fill-rate ≈ Adreno 308** validado por overdraw sintético (sem GPU real no pipeline) |
 | RAM | 2 GB (SO consome ~1 GB) | processo RustyDroid ≤ **512 MB** no modo piso; heap do app ≤ **256 MB** (equiv. `dalvik.vm.heapgrowthlimit` de um device de 2 GB) |
 | Storage | 16–32 GB | VFS com quota configurável (8/16 GB) e taxas de I/O simuladas (eMMC lento) |
-| Tela | 5,7" 1440×720, 18:9, ~295 ppi | device profile 720×1440, density `280dpi`/tvdpi-ish, sem cutout, sem notch |
+| Tela | 5,7" 1440×720, 18:9, ~282 ppi | device profile 720×1440, density `280dpi`/tvdpi-ish, sem cutout, sem notch |
 | SO de fábrica | Android 8.0 (API 26) | comportamentos de sistema do profile fixados no nível 26, exceto o que o targetSdk do APK comutar (PRF-07) |
 
 > **Gate de release (PRF-06):** toda release roda a suíte golden no profile `moto-e5`.
@@ -391,12 +391,12 @@ Pergunte SOMENTE se um bloqueio físico impedir o progresso.
 | CAMERA | CAMERA |
 | MICROPHONE | RECORD_AUDIO |
 | CONTACTS | READ_CONTACTS, WRITE_CONTACTS, GET_ACCOUNTS |
-| PHONE | READ_PHONE_STATE, READ_PHONE_NUMBERS, CALL_PHONE, ANSWER_PHONE_CALLS, READ_CALL_LOG, WRITE_CALL_LOG, ADD_VOICEMAIL, USE_SIP, UWB_RANGING |
+| PHONE | READ_PHONE_STATE, READ_PHONE_NUMBERS, CALL_PHONE, ANSWER_PHONE_CALLS, READ_CALL_LOG, WRITE_CALL_LOG, ADD_VOICEMAIL, USE_SIP |
 | SMS | SEND_SMS, RECEIVE_SMS, READ_SMS, RECEIVE_WAP_PUSH, RECEIVE_MMS |
 | STORAGE/MEDIA | READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, READ_MEDIA_IMAGES, READ_MEDIA_VIDEO, READ_MEDIA_AUDIO, READ_MEDIA_VISUAL_USER_SELECTED, ACCESS_MEDIA_LOCATION |
 | SENSORS/BODY | BODY_SENSORS, BODY_SENSORS_BACKGROUND, ACTIVITY_RECOGNITION, HIGH_SAMPLING_RATE_SENSORS |
 | CALENDAR | READ_CALENDAR, WRITE_CALENDAR |
-| NEARBY_DEVICES | BLUETOOTH_SCAN, BLUETOOTH_CONNECT, BLUETOOTH_ADVERTISE, NEARBY_WIFI_DEVICES |
+| NEARBY_DEVICES | BLUETOOTH_SCAN, BLUETOOTH_CONNECT, BLUETOOTH_ADVERTISE, NEARBY_WIFI_DEVICES, UWB_RANGING |
 | NOTIFICATIONS | POST_NOTIFICATIONS |
 | HEALTH | READ_HEALTH_DATA, READ_HEALTH_DATA_IN_BACKGROUND, WRITE_HEALTH_DATA (Health Connect, API 36) |
 
@@ -409,21 +409,22 @@ IGNORE_BATTERY_OPTIMIZATIONS · QUERY_ALL_PACKAGES
 
 ### B4. NORMAL (seleção — ~90 no total; tabela completa em permissions.toml)
 INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CHANGE_WIFI_MULTICAST_STATE, BLUETOOTH(legado),
-BLUETOOTH_ADMIN(legado), VIBRATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE(+11 tipos:
+BLUETOOTH_ADMIN(legado), VIBRATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE(+14 tipos:
 camera, microphone, location, mediaPlayback, mediaProjection, dataSync, phoneCall,
-remoteMessaging, health, specialUse…), NFC, TRANSMIT_IR, USE_BIOMETRIC/USE_FINGERPRINT,
+remoteMessaging, health, specialUse, connectedDevice, shortService, systemExempted (API 34) e
+mediaProcessing (API 35)), NFC, TRANSMIT_IR, USE_BIOMETRIC/USE_FINGERPRINT,
 SET_ALARM, SET_WALLPAPER(+HINTS), EXPAND_STATUS_BAR, GET_PACKAGE_SIZE, KILL_BACKGROUND_PROCESSES,
 MODIFY_AUDIO_SETTINGS, READ_SYNC_SETTINGS/STATS, WRITE_SYNC_SETTINGS, REORDER_TASKS,
 INSTALL_SHORTCUT/UNINSTALL_SHORTCUT, BROADCAST_STICKY, NFC_TRANSACTION_EVENT,
 REQUEST_COMPANION_RUN_IN_BACKGROUND/START_FOREGROUND/CREATE_USER_SESSION/COMPANION_APPROVE_WIFI_CONNECTIONS,
 MANAGE_OWN_CALLS, ACCEPT_HANDOVER, WRITE_VOICEMAIL, BROADCAST_SMS/WAP_PUSH, USE_SIP(alt),
 DISABLE_KEYGUARD, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, UPDATE_PACKAGES_WITHOUT_USER_ACTION,
-DELIVER_COMPANION_MESSAGES, PROVIDE_OWN_ROLE?…
+DELIVER_COMPANION_MESSAGES…
 
 ### B5. SIGNATURE / system (implementadas como "concedidas" para o app em análise)
 BIND_* (ACCESSIBILITY, DEVICE_ADMIN, INPUT_METHOD, NOTIFICATION_LISTENER, TELECOM_CONNECTION,
 VOICE_INTERACTION, VPN, WALLPAPER, DREAM, APPWIDGET, PRINT, MIDI, HOST_APDU, AUTOFILL,
-CALL_REDIRECTION, SCREENING, QUICK_ACCESS_WALLET, REMOTE_ACCOUNT…) · WRITE_SECURE_SETTINGS ·
+CALL_REDIRECTION, SCREENING, QUICK_ACCESS_WALLET…) · WRITE_SECURE_SETTINGS ·
 READ_LOGS · DUMP · SET_DEBUG_APP · ACCESS_MOCK_LOCATION(dev) · READ_FRAME_BUFFER ·
 CLEAR_APP_CACHE · MANAGE_DOCUMENTS · GLOBAL_SEARCH · INSTALL_LOCATION_PROVIDER ·
 LOCATION_HARDWARE · CONTROL_LOCATION_UPDATES · DEVICE_POWER · REBOOT · FACTORY_TEST
@@ -562,14 +563,14 @@ para economizar round-trips de LLM.
 ```
 rustydroid/                    # monorepo Cargo (workspace)
 ├── crates/…                   # ver arquitetura na PARTE 1
-├── data/                      # permissions.toml, api-coverage.toml, devices.toml
+├── data/                      # permissions.toml, api-coverage.toml, devices.toml, behavior-switches.toml
 ├── golden-apks/  (script apenas — bins nunca commitados; GH-05)
 ├── docs/  (mdBook: guide + ADRs + ROADMAP + compat-matrix gerada)
 ├── xtask/                     # compat-report, mcp-doc-gen, golden-run, bench
 ├── .github/
 │   ├── workflows/ (ci.yml, fuzz.yml, nightly-compat.yml, release.yml, docs.yml)
-│   ├── ISSUE_TEMPLATE/ (bug.yml, feature.yml, compat-gap.yml, perf-regression.yml)
-│   └── PULL_REQUEST_TEMPLATE.md, FUNDING.yml, labels.json
+│   ├── ISSUE_TEMPLATE/ (bug_report.yml, feature_request.yml, compat_gap.yml — perf-regression.yml planejado)
+│   └── PULL_REQUEST_TEMPLATE.md, FUNDING.yml, labels.json (labels em uso: triage, compat-gap, perf-regression)
 ├── CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md  SUPPORT.md  GOVERNANCE.md
 ├── README.md (PT)  README.en.md  LICENSE-MIT  LICENSE-APACHE
 └── CHANGELOG.md (Keep a Changelog)

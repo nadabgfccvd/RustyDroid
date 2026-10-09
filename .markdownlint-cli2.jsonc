@@ -1,0 +1,24 @@
+{
+  // markdownlint-cli2 config — CI hardening (issue #6).
+  // Policy: keep the structural/meaningful rules ON, silence the stylistic
+  // noise that flooded the advisory job (~366 errors). Rules disabled below
+  // are deliberate for the CURRENT content — do not rewrite the markdown to
+  // satisfy lint; tune this config instead so future regressions stand out.
+  "config": {
+    // Disabled outright per issue #6 (documented noise):
+    "MD013": false, // line-length (236 errors; prose lines are long by design)
+    "MD060": false, // table-column-style (72 errors)
+    "MD033": false, // no-inline-html (22 errors; README/SECURITY use HTML on purpose)
+    "MD022": false, // blanks-around-headings (12 errors)
+    "MD025": false, // single-title (7 errors; bilingual docs repeat H1 sections)
+
+    // Disabled after local iteration on v0.23.3 (remaining errors on current
+    // content; all stylistic spacing/first-line/anchor-slug quirks):
+    "MD031": false, // blanks-around-fences (RustyDroid.md spec blocks)
+    "MD032": false, // blanks-around-lists (dense bilingual lists)
+    "MD040": false, // fenced-code-language (plain ``` blocks in spec/README)
+    "MD041": false, // first-line-heading (README/PR template start with HTML)
+    "MD051": false, // link-fragments (unicode/emoji PT-BR anchors — GH slug quirk)
+    "MD058": false  // blanks-around-tables
+  }
+}

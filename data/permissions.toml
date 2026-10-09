@@ -140,14 +140,6 @@ since_api = 9
 flags = ["runtime"]
 description = "Place and receive SIP (VoIP) calls over the network."
 
-[[permission]]
-name = "UWB_RANGING"
-level = "dangerous"
-group = "PHONE"
-since_api = 31
-flags = ["runtime"]
-description = "Perform ultra-wideband ranging measurements with nearby devices."
-
 # --- grupo SMS ---
 [[permission]]
 name = "SEND_SMS"
@@ -297,6 +289,14 @@ flags = ["runtime"]
 description = "Create and modify calendar events in the calendar provider."
 
 # --- grupo NEARBY_DEVICES ---
+[[permission]]
+name = "UWB_RANGING"
+level = "dangerous"
+group = "NEARBY_DEVICES"
+since_api = 31
+flags = ["runtime"]
+description = "Perform ultra-wideband ranging measurements with nearby devices."
+
 [[permission]]
 name = "BLUETOOTH_SCAN"
 level = "dangerous"
