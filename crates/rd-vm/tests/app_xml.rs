@@ -561,3 +561,97 @@ fn hostile_deep_axml_is_typed_error_not_abort() {
         other => panic!("esperava VmExit::Error (INFLATE), veio {other:?}"),
     }
 }
+
+// ── issue #45: caps de layout hostil (contagem de views + dimensão)
+
+/// Layout com 10.100 views → INFLATE tipado (cap de contagem) — nunca hang
+/// nem abort; o layout pós-inflação é O(N) único.
+#[test]
+fn hostile_wide_layout_is_typed_error() {
+    let mut kids = Vec::new();
+    for _ in 0..10_100 {
+        kids.push(AxNode::new("Button", vec![], vec![]));
+    }
+    let wide = AxNode::new(
+        "LinearLayout",
+        vec![a(true, "orientation", AxVal::Int(1))],
+        kids,
+    );
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout()), ("wide", wide)]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LWide;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_BAD);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    let err = e
+        .launch_app("LWide;", "com.test.wide", Vec::new())
+        .expect_err("10.100 views deve falhar tipada (cap de contagem)");
+    match err {
+        VmExit::Error(rde) => {
+            assert_eq!(rde.code, "INFLATE", "{rde}");
+            assert!(rde.cause.contains("views"), "{rde}");
+        }
+        other => panic!("esperava VmExit::Error (INFLATE), veio {other:?}"),
+    }
+}
+
+/// layout_height = 0x7FFFFFFF (i32::MAX) → INFLATE tipado — antes: saturava
+/// para i32::MAX e o layout/hit-test estouravam (panic debug, wrap release).
+#[test]
+fn layout_dimension_overflow_is_typed_error() {
+    let bad = AxNode::new(
+        "LinearLayout",
+        vec![a(true, "orientation", AxVal::Int(1))],
+        vec![AxNode::new(
+            "Button",
+            vec![a(true, "layout_height", AxVal::Int(0x7FFF_FFFF))],
+            vec![],
+        )],
+    );
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout()), ("dim", bad)]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LDim;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_BAD);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    let err = e
+        .launch_app("LDim;", "com.test.dim", Vec::new())
+        .expect_err("dimensão 0x7FFFFFFF deve falhar tipada");
+    match err {
+        VmExit::Error(rde) => {
+            assert_eq!(rde.code, "INFLATE", "{rde}");
+            assert!(rde.cause.contains("viewport"), "{rde}");
+        }
+        other => panic!("esperava VmExit::Error (INFLATE), veio {other:?}"),
+    }
+}

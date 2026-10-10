@@ -624,8 +624,10 @@ impl Engine {
             self.layout_depth(*c, cx, cy, child_w, depth + 1);
             let ch = self.h_of(*c);
             match orientation {
-                1 => acc_y += ch,
-                _ => acc_x += child_w.max(0),
+                // issue #45: saturating — dimensões hostis não podem wrapar
+                // para coordenadas negativas (dump/hit-test corruptos)
+                1 => acc_y = acc_y.saturating_add(ch),
+                _ => acc_x = acc_x.saturating_add(child_w.max(0)),
             }
             max_h = max_h.max(ch);
         }
@@ -645,7 +647,7 @@ impl Engine {
             *fh = if children.is_empty() {
                 own_h
             } else if orientation == 1 {
-                acc_y - y
+                acc_y.saturating_sub(y)
             } else {
                 max_h
             };
@@ -1289,8 +1291,10 @@ pub(crate) fn set_content_view(
 }
 
 /// M3.2 (pub(crate)): também usado pelo LayoutInflater ao montar a árvore.
-pub(crate) fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
-    // parent do child aponta para o container
+/// anexa child ao parent SEM re-layout — usado pela INFLAÇÃO (issue #45: o
+/// setContentView leita a raiz UMA vez no fim; re-layout por filho era
+/// O(N²) — Σ layout(prefixo) ≈ N²/2 walks no setContentView de app grande).
+pub(crate) fn attach_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
     if let Some(HostObj::View { parent: p, .. }) = vm.fw.objects.get_mut(&child) {
         *p = Some(parent);
     }
@@ -1298,8 +1302,13 @@ pub(crate) fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Resul
         Some(HostObj::View { children, .. }) => children.push(child),
         _ => return Err(crate::err::vm_error("INVALID_FORMAT", "addView em não-ViewGroup").into()),
     }
-    // re-layout do container na sua posição corrente (o root re-layout no
-    // setContentView; filhos herdam a largura)
+    Ok(())
+}
+
+pub(crate) fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
+    attach_child(vm, parent, child)?;
+    // re-layout do container na sua posição corrente — addView PROGRAMÁTICO
+    // (pós-setContentView): O(N) por chamada, não cumulativo (issue #45)
     let (px, py, pw) = match vm.fw.get(parent) {
         Some(HostObj::View { x, y, w, .. }) => (*x, *y, if *w == 0 { WINDOW_W } else { *w }),
         _ => (0, 0, WINDOW_W),

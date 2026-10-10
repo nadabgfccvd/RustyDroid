@@ -98,19 +98,31 @@ fn layout_entry(apk: &rd_apk::Apk, key: &str) -> Result<String, VmExit> {
 /// (StackOverflowError do LayoutInflater); frame Rust ~400 B → ~200 KB de stack.
 const MAX_INFLATE_DEPTH: usize = 512;
 
+/// issue #45: cap de CONTAGEM de views — proteção de CPU/memória adicional
+/// (layout O(N) pós-inflação; 10k views ≈ apps reais; acima disso é hostil).
+const MAX_INFLATE_VIEWS: usize = 10_000;
+
 /// Infla um elemento (e descendentes) em view host.
 fn inflate_element(vm: &mut Engine, el: &XmlElement) -> Result<ObjRef, VmExit> {
-    inflate_element_depth(vm, el, 0)
+    let mut count = 0usize;
+    inflate_element_depth(vm, el, 0, &mut count)
 }
 
 fn inflate_element_depth(
     vm: &mut Engine,
     el: &XmlElement,
     depth: usize,
+    count: &mut usize,
 ) -> Result<ObjRef, VmExit> {
     if depth > MAX_INFLATE_DEPTH {
         return Err(inflate_error(format!(
             "AXML aninhado além de {MAX_INFLATE_DEPTH} níveis — estrutura hostil (cap do LayoutInflater)"
+        )));
+    }
+    *count += 1;
+    if *count > MAX_INFLATE_VIEWS {
+        return Err(inflate_error(format!(
+            "árvore de views excede {MAX_INFLATE_VIEWS} views — estrutura hostil (cap do LayoutInflater)"
         )));
     }
     let desc = view_desc_of(&el.name)?;
@@ -135,8 +147,10 @@ fn inflate_element_depth(
     vm.attach_host_state(&desc, r)?;
     apply_attrs(vm, r, el)?;
     for child in &el.children {
-        let c = inflate_element_depth(vm, child, depth + 1)?;
-        framework::add_child(vm, r, c)?;
+        // issue #45: attach SEM re-layout — o setContentView leita a raiz
+        // UMA vez (O(N)); re-layout por filho era O(N²)
+        let c = inflate_element_depth(vm, child, depth + 1, count)?;
+        framework::attach_child(vm, r, c)?;
     }
     Ok(r)
 }
@@ -258,7 +272,7 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement) -> Result<(), VmExit
                 if let AttrValue::Reference(_) = &a.value {
                     debug_ref_unresolved("layout_height", &a.value);
                 }
-                if let Some(px) = dimension_px(a) {
+                if let Some(px) = dimension_px(a)? {
                     if let Some(framework::HostObj::View { h, .. }) = vm.fw.objects.get_mut(&r) {
                         *h = px;
                     }
@@ -296,17 +310,28 @@ fn attr_text(vm: &mut Engine, a: &XmlAttribute) -> Result<String, VmExit> {
 
 /// `layout_height` com dimensão → px do modelo headless (DENSITY 2.0).
 /// `None` = match_parent/wrap_content/int negativo (usa default do modelo).
-fn dimension_px(a: &XmlAttribute) -> Option<i32> {
-    match &a.value {
+/// issue #45: dimensão que excede o viewport é ERRO TIPADO (antes: i32::MAX
+/// cru passava e os consumidores estouravam — panic em debug, wrap silencioso
+/// em release → coordenadas negativas → dump/hit-test corruptos).
+fn dimension_px(a: &XmlAttribute) -> Result<Option<i32>, VmExit> {
+    let px = match &a.value {
         AttrValue::Dimension(v, u) => {
             let scale = match u {
                 ComplexUnit::Px => 1.0,
                 _ => framework::DENSITY, // dip/sp/pt/in/mm → escala do viewport
             };
-            Some((*v * scale).round() as i32)
+            Some((*v * scale).round())
         }
-        AttrValue::Int(i) if *i >= 0 => Some(*i), // px puro
+        AttrValue::Int(i) if *i >= 0 => Some(*i as f32), // px puro
         _ => None,
+    };
+    match px {
+        None => Ok(None),
+        Some(f) if f >= 0.0 && f <= framework::WINDOW_W as f32 => Ok(Some(f as i32)),
+        Some(f) => Err(inflate_error(format!(
+            "dimensão de layout {f}px excede o viewport de {}px (layout_width/height hostil ou bug do app)",
+            framework::WINDOW_W
+        ))),
     }
 }
 
