@@ -58,7 +58,7 @@ RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android O
 | **M1** | ✅ **DONE** — DEX parser 100% + disassembler (validated against baksmali 2.5.2, fuzzed) |
 | **M2** | ✅ **DONE** — minimal Dalvik interpreter: **150/150 golden vectors PASS vs real JVM execution** + real APK pure methods verified |
 | **M3** | ✅ **DONE** — Essential framework: Activity lifecycle, Handler/Looper, LayoutInflater, Resources |
-| **M4** | Software rendering + UI dump (uiautomator-compatible) |
+| **M4** | ✅ **DONE** — software rendering determinístico + UI dump uiautomator-compatible |
 | **M5** | **AI-agent mode v1**: MCP server with ~20 tools |
 | **M6** | Test executor: scenario DSL, JUnit XML, automated compat matrix |
 | **M7** | Performance + **Moto E5 floor gate** (release blocked if budgets blown) |

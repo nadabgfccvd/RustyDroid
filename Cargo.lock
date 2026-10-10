@@ -298,6 +298,7 @@ version = "0.1.0"
 dependencies = [
  "rd-apk",
  "rd-dex",
+ "rd-render",
  "serde",
  "serde_json",
 ]

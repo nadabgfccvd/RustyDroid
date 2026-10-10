@@ -15,3 +15,6 @@ rd-dex = { workspace = true }
 # M3.2: LayoutInflater consome AXML/ARSC do APK aberto — rd-apk é a BASE do
 # workspace (nível 0), logo rd-vm → rd-apk segue apontando para baixo (sem ciclo).
 rd-apk = { workspace = true }
+
+[dev-dependencies]
+rd-render = { path = "../rd-render" }

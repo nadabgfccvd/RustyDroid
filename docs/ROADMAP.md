@@ -11,7 +11,7 @@
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ⬜ |
+| M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ✅ |
 | M5 | Agente MCP v1 (~20 tools) | LLM instala, navega e assera estado só com as tools | ⬜ |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ⬜ |
 | M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | ⬜ |
@@ -131,3 +131,22 @@
 
 Na sequência do M3 (M4): render + UI dump rico (`get_ui_tree` com ids
 certos); configs específicas (land/locale/density) selecionáveis.
+
+## ✅ M4 concluído (2026-10) — rd-render real
+
+1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
+   (class/resource-id `package:id/nome`/text/bounds/visibility/enabled/
+   clickable/children) + `rd-render::uiautomator_xml` no formato do
+   `uiautomator dump` real (GONE excluído, INVISIBLE com bounds — issue #46).
+2. ✅ **Screenshot correto**: software renderer determinístico (framebuffer
+   RGB 720×1440) + painter por classe/estado (contêiner/texto/botão/borda de
+   clickable; INVISIBLE não pinta a subárvore) + encoder PNG sem
+   dependências (zlib STORED + crc32/adler32 próprios). Texto com glifos de
+   bloco 3×7 (fonte tipográfica real: M8/M9 — o Android real usa skia).
+3. ✅ **CLI**: `rd app dump <apk>` (uiautomator XML | `--text` | `--json`) e
+   `rd app shot <apk> --out FILE.png`; ações de script `xml` e `shot FILE`.
+4. ✅ Testes e2e contra fixture real: ids/bounds/clickable/text na árvore;
+   pixels do PNG (TextView branco / Button cinza / borda / fundo); PNG
+   determinístico (mesmo input → mesmos bytes); dump escape XML.
+   Round 2 do M4: seleção de configs por device-config (land/locale) no
+   resolve (o parse das 2 configs já chega no modelo — issue #47).

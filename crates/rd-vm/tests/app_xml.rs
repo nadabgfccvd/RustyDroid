@@ -821,3 +821,57 @@ fn m4_view_tree_has_ids_and_bounds() {
     assert!(btn.clickable, "onClick no XML → clickable=true");
     assert_eq!(btn.text, "Clique aqui");
 }
+
+/// DoD M4 "screenshot correto": o renderer pinta a árvore REAL da activity —
+/// TextView branco no bloco superior, Button cinza com borda de clickable no
+/// bloco seguinte, fundo fora da raiz; e o XML uiautomator carrega os ids.
+/// rd-render aqui via dev-dependency (ciclo dev-dependency é permitido).
+#[test]
+fn m4_screenshot_renders_real_tree() {
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout())]);
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    e.launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect("launch");
+
+    let tree = e.view_tree().expect("árvore");
+    let xml = rd_render::uiautomator_xml(&tree, "com.test.xml");
+    assert!(xml.contains("resource-id=\"com.test.xml:id/tv\""), "{xml}");
+    assert!(xml.contains("resource-id=\"com.test.xml:id/btn\""), "{xml}");
+
+    let fb = rd_render::render_snapshot(&tree);
+    let px = |x: i32, y: i32| {
+        let i = ((y as usize) * fb.w + x as usize) * 3;
+        (fb.px[i], fb.px[i + 1], fb.px[i + 2])
+    };
+    let png = fb.to_png();
+    assert_eq!(
+        &png[..8],
+        &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        "PNG válido"
+    );
+    // TextView (0..720 × 0..160): branco no centro (texto fica à esquerda)
+    assert_eq!(px(600, 80), (255, 255, 255), "TextView branco");
+    // Button (0..720 × 160..208): cinza de botão + borda de clickable
+    assert_eq!(px(600, 180), (0xD6, 0xD7, 0xD8), "Button cinza");
+    assert_eq!(px(360, 160), (0x60, 0x60, 0x60), "borda clickable");
+    // fora da raiz (208px): fundo da window
+    assert_eq!(px(360, 700), (0xF6, 0xF6, 0xF6), "fundo fora da raiz");
+}
