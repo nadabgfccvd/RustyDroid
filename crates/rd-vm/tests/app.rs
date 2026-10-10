@@ -395,3 +395,190 @@ fn app_start_activity_navigates() {
     assert_eq!(started, Some(Value::Int(1)), "LSecond.onCreate deve rodar");
     assert!(!e.activity_is_finished());
 }
+
+/// issue #50: drain executa o menor deadline primeiro (não ordem de post) —
+/// postDelayed(A, 1000) seguido de postDelayed(B, 500) → B roda primeiro.
+#[test]
+fn looper_drains_earliest_deadline_first() {
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = platform_method_refs(&mut b);
+
+    // LOrd; — contadores: ord (sequência global), aAt/bAt (ordem de cada run)
+    let ord_cls = b.class("LOrd;", "Ljava/lang/Object;");
+    b.static_field(ord_cls, "ord", "I", SVal::Int(0));
+    b.static_field(ord_cls, "aAt", "I", SVal::Int(-1));
+    b.static_field(ord_cls, "bAt", "I", SVal::Int(-1));
+    let _fo = b.field_idx("LOrd;", "I", "ord");
+    let _fa = b.field_idx("LOrd;", "I", "aAt");
+    let _fb = b.field_idx("LOrd;", "I", "bAt");
+    let f_ord = b.find_field("LOrd;", "I", "ord") as u16;
+    let f_aat = b.find_field("LOrd;", "I", "aAt") as u16;
+    let f_bat = b.find_field("LOrd;", "I", "bAt") as u16;
+
+    let p_void = b.proto_idx("V", vec![]);
+    // run() genérico: sget ord → sput <slot> → ord++ → sput ord
+    let run_body = |slot: u16| {
+        let mut u = op21c(0x60, 0, f_ord); // sget v0, ord
+        u.extend(op21c(0x67, 0, slot)); // sput v0, <slot>
+        u.extend(op22b(0xD8, 0, 0, 1)); // v0 += 1
+        u.extend(op21c(0x67, 0, f_ord)); // sput v0, ord
+        u.extend(op10x(0x0E));
+        u
+    };
+
+    let ra = b.class("LRA;", "Ljava/lang/Object;");
+    b.direct(
+        ra,
+        "<init>",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_CONSTRUCTOR,
+        Some(b.code(1, 1, 1, {
+            let mut u = op35c(0x70, 1, refs.obj_init, [0, 0, 0, 0, 0]);
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    b.direct(ra, "run", "V", vec![], ACC_PUBLIC, Some(b.code(1, 1, 0, run_body(f_aat))));
+    let rb = b.class("LRB;", "Ljava/lang/Object;");
+    b.direct(
+        rb,
+        "<init>",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_CONSTRUCTOR,
+        Some(b.code(1, 1, 1, {
+            let mut u = op35c(0x70, 1, refs.obj_init, [0, 0, 0, 0, 0]);
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    b.direct(rb, "run", "V", vec![], ACC_PUBLIC, Some(b.code(1, 1, 0, run_body(f_bat))));
+
+    b.type_idx("LRA;");
+    b.type_idx("LRB;");
+    let t_ra = b.type_idx_cached("LRA;");
+    let t_rb = b.type_idx_cached("LRB;");
+    let m_ra_init = b.method_idx("LRA;", p_void, "<init>");
+    let m_rb_init = b.method_idx("LRB;", p_void, "<init>");
+
+    let main_cls = b.class("LMainOrd;", "Landroid/app/Activity;");
+    b.direct(
+        main_cls,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(6, 2, 2, {
+            let mut u = op21c(0x22, 0, b.type_idx_cached("Landroid/os/Handler;"));
+            u.extend(op35c(0x70, 1, refs.handler_init, [0, 0, 0, 0, 0]));
+            // postDelayed(RA, 1000) — postado PRIMEIRO, vence DEPOIS
+            u.extend(op21c(0x22, 1, t_ra));
+            u.extend(op35c(0x70, 1, m_ra_init, [1, 0, 0, 0, 0]));
+            u.extend(op21s(0x16, 2, 1000)); // const-wide/16 v2, 1000L
+            u.extend(op35c(0x6E, 4, refs.post_delayed, [0, 1, 2, 3, 0]));
+            // postDelayed(RB, 500) — postado DEPOIS, vence ANTES
+            u.extend(op21c(0x22, 1, t_rb));
+            u.extend(op35c(0x70, 1, m_rb_init, [1, 0, 0, 0, 0]));
+            u.extend(op21s(0x16, 2, 500)); // const-wide/16 v2, 500L
+            u.extend(op35c(0x6E, 4, refs.post_delayed, [0, 1, 2, 3, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let mut e = engine_of(&b);
+    e.launch_app("LMainOrd;", "com.exemplo.ord", Vec::new())
+        .expect("launch");
+    let ran = e.advance_clock(1000).expect("clock");
+    assert_eq!(ran, 2, "ambos vencidos em t=1000");
+    let get = |n: &str| {
+        e.statics
+            .get(&("LOrd;".to_string(), n.to_string()))
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(get("bAt"), Value::Int(0), "B (500ms) deve rodar PRIMEIRO");
+    assert_eq!(get("aAt"), Value::Int(1), "A (1000ms) deve rodar em seguida");
+    assert_eq!(get("ord"), Value::Int(2));
+}
+
+/// issue #50: postDelayed(r, Long.MAX_VALUE) não estoura o clock — a mensagem
+/// nunca vence (clamp) em vez de panic (debug) ou vencer imediatamente (wrap).
+#[test]
+fn post_delayed_i64_max_does_not_wrap() {
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = platform_method_refs(&mut b);
+
+    let tick_cls = b.class("LTMax;", "Ljava/lang/Object;");
+    b.static_field(tick_cls, "t", "I", SVal::Int(0));
+    let _ft = b.field_idx("LTMax;", "I", "t");
+    let f_t = b.find_field("LTMax;", "I", "t") as u16;
+    let p_void = b.proto_idx("V", vec![]);
+    b.direct(
+        tick_cls,
+        "<init>",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_CONSTRUCTOR,
+        Some(b.code(1, 1, 1, {
+            let mut u = op35c(0x70, 1, refs.obj_init, [0, 0, 0, 0, 0]);
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    b.direct(
+        tick_cls,
+        "run",
+        "V",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, {
+            let mut u = op21c(0x60, 0, f_t);
+            u.extend(op22b(0xD8, 0, 0, 1));
+            u.extend(op21c(0x67, 0, f_t));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let main_cls = b.class("LMainTMax;", "Landroid/app/Activity;");
+    b.type_idx("LTMax;");
+    let t_tick = b.type_idx_cached("LTMax;");
+    let m_tick_init = b.method_idx("LTMax;", p_void, "<init>");
+    b.direct(
+        main_cls,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(6, 2, 2, {
+            let mut u = op21c(0x22, 0, b.type_idx_cached("Landroid/os/Handler;"));
+            u.extend(op35c(0x70, 1, refs.handler_init, [0, 0, 0, 0, 0]));
+            u.extend(op21c(0x22, 1, t_tick));
+            u.extend(op35c(0x70, 1, m_tick_init, [1, 0, 0, 0, 0]));
+            u.extend(op51l(0x18, 2, i64::MAX)); // const-wide v2, Long.MAX_VALUE
+            u.extend(op35c(0x6E, 4, refs.post_delayed, [0, 1, 2, 3, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let mut e = engine_of(&b);
+    e.launch_app("LMainTMax;", "com.exemplo.tmax", Vec::new())
+        .expect("launch");
+    let t0 = e
+        .statics
+        .get(&("LTMax;".to_string(), "t".to_string()))
+        .cloned();
+    assert_eq!(t0, Some(Value::Int(0)));
+    let ran = e.advance_clock(10_000).expect("clock não pode panicar");
+    assert_eq!(ran, 0, "delay=i64::MAX nunca vence (clamp)");
+    let t1 = e
+        .statics
+        .get(&("LTMax;".to_string(), "t".to_string()))
+        .cloned();
+    assert_eq!(t1, Some(Value::Int(0)), "run não pode ter disparado");
+}

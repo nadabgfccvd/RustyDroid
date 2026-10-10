@@ -417,28 +417,28 @@ impl Engine {
         self.drain_looper()
     }
 
-    /// Executa todas as mensagens com `when_ms <= clock` (ordem de post).
+    /// Executa mensagens com `when_ms <= clock` — SEMPRE a de deadline mais
+    /// cedo primeiro (issue #50; tie-break estável: empate → inserção mais
+    /// antiga). Antes: primeira vencida por inserção — postDelayed(A,1000)
+    /// antes de postDelayed(B,500) rodava A primeiro, divergindo do Android.
     pub fn drain_looper(&mut self) -> Result<usize, VmExit> {
         let looper = self.main_looper_obj()?;
         let now = self.fw.clock_ms;
         let mut ran = 0usize;
         loop {
-            // pop da primeira mensagem vencida (fila ordenada por inserção)
+            // menor deadline entre os vencidos; idx empata estável
             let due = self.fw.objects.get(&looper).and_then(|h| match h {
                 HostObj::Looper { queue } => queue
                     .iter()
-                    .position(|m| m.when_ms <= now)
-                    .map(|i| queue[i].clone()),
+                    .enumerate()
+                    .filter(|(_, m)| m.when_ms <= now)
+                    .min_by_key(|(i, m)| (m.when_ms, *i))
+                    .map(|(i, m)| (i, m.clone())),
                 _ => None,
             });
-            let Some(msg) = due else { break };
+            let Some((idx, msg)) = due else { break };
             if let Some(HostObj::Looper { queue }) = self.fw.objects.get_mut(&looper) {
-                if let Some(i) = queue
-                    .iter()
-                    .position(|m| m.when_ms == msg.when_ms && m.runnable == msg.runnable)
-                {
-                    queue.remove(i);
-                }
+                queue.remove(idx);
             }
             if std::env::var("RD_FW_DEBUG").is_ok() {
                 eprintln!(
@@ -1037,7 +1037,14 @@ pub fn call_host_instance(
                 );
             };
             let delay = args.get(1).map(|v| v.as_long()).transpose()?.unwrap_or(0);
-            let when = vm.fw.clock_ms + delay.max(0) as u64;
+            // issue #50: clock + i64::MAX estoura u64 (panic em debug; em
+            // release envolve → mensagem "vencia" imediatamente). Clamp em
+            // u64::MAX/2: nunca vence dentro de qualquer horizonte do runtime.
+            let when = vm
+                .fw
+                .clock_ms
+                .checked_add(delay.max(0) as u64)
+                .unwrap_or(u64::MAX / 2);
             enqueue(vm, recv, *r, when)?;
             Ok(Some(Value::Int(1)))
         }
