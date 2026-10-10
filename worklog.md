@@ -142,3 +142,29 @@ Stage Summary:
 - scripts/fuzz-campaign.sh v2: preflight completo (ASan kernel + RAM + guardas), veredito honesto (exit 0 só com 5/5 targets e zero crash-*), --seeds-only para smoke de dados em 2 min.
 - Recomendação WSL2 para o usuário: .wslconfig com memory=12GB + swap=16GB; fluxo --seeds-only → 600s → 86400s dentro do tmux.
 - Pendências de M1 continuam: campanha 24h real no notebook do usuário; comparador baksmali repetível ainda a commitar (fora do escopo desta task).
+
+---
+Task ID: 7
+Agent: Z.ai Code (sessão issues→M4)
+Task: Resolver TODOS os 14 issues abertos (#39–#52) antes de começar M4; CI verde; issues fechadas
+
+Work Log:
+- Retomada de sessão anterior: commit local 6907c81 (fix #39 #43 #48) + diff não-commitado (fix #41/#49) — validado, corrigido (3 bugs nos testes novos: tipos não registrados no TryBlob, opcode 0x33 vs 0x32, const/4 fora do range, layout de try sem op35c=3 units) e commitado (820452b).
+- Move-exception: materialização do próprio OOME num heap esgotado não substitui mais a exceção original (move Null e o catch executa) — bug de design achado pelo teste novo do #49.
+- Issues corrigidos um a um (commit por issue):
+  #44 rd-dex fill-array-data padded em u64 (wrap u32 → payload inconsistente);
+  #52 docs/dados (health-connect 36→34, photo-picker 34→33, README 175/M3/exit codes, RustyDroid.md §3.1);
+  #51 RD_DATA_DIR como explícito, granted_by+Internal, inspect --json com granted_by, target_sdk() morto removido, IO_ERROR module rd-cli;
+  #50 Looper drena menor deadline (min-scan estável) + postDelayed clamp u64;
+  #46 Vis 3 estados (GONE sai do layout, hit-test rejeita invisible/gone, dump anota) + @dimen/@bool com log + layoutfoo;
+  #42 is_subtype arrays covariantes (JLS 4.10.2/3) + aput store check correto + resolve_method fase classes→interfaces (JVMS 5.4.5);
+  #40 cap 512 no inflate + drops iterativos (XmlElement/AxNode) + caps em hit_test/layout/dump;
+  #45 attach_child (inflação O(N), re-layout só no setContentView) + dimension_px tipada (viewport 720px) + cap 10k views + saturating;
+  #47 fixture fiel ao aapt: namespaces, resource map 0x0180, typeSpec 0x0202, 2 configs por res_id (entry index por NAME único — bug achado e corrigido), DOS time, arsc pad4.
+- CI: 2 falhas pós-push (fmt --check; clippy --all-targets doc_lazy_continuation) — corrigidas (ca549a8, 0e83921).
+- Issues que o GitHub não fechou por subject com múltiplos #N (#43 #48 #49) fechadas via API com comentário de evidência.
+- Estado final: CI VERDE (0e83921), 0 issues abertas, suíte local ~200 testes 0 falhas, clippy --all-targets limpo.
+
+Stage Summary:
+- Todos os 14 issues (#39–#52) RESOLVIDOS e FECHADOS; commits 6907c81→0e83921 pushados; CI verde.
+- Próximo: M4 (software rendering + UI dump uiautomator-compatible) — a começar.
