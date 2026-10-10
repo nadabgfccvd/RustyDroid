@@ -234,12 +234,17 @@ fn emit_node(node: &AxNode, strs: &[String], out: &mut Vec<u8>) {
     out.extend(&end);
 }
 
-/// Monta um documento AXML binário completo (doc header + pool + elementos).
-/// Sem resource map (attrs casam por NOME no inflater/parser — o mapa é
-/// opcional no formato e no consumidor).
+/// Monta um documento AXML binário completo (doc header + pool + chunks de
+/// namespace + resource map + elementos) — issue #47: antes sem START/END
+/// namespace e sem resource map (0x0180), o attr.res_id era sempre None e
+/// caminhos indexados por res_id ficavam sem teste.
 pub fn build_axml(root: &AxNode) -> Vec<u8> {
     let mut strs: Vec<String> = vec![NS_ANDROID.to_string(), "android".to_string()];
     collect_strings(root, &mut strs);
+
+    // nomes de attrs android (recebem id no resource map — determinístico)
+    let mut android_attr_names: Vec<String> = Vec::new();
+    collect_android_attr_names(root, &mut android_attr_names);
 
     let mut out = Vec::new();
     out.extend(0x0003u16.to_le_bytes()); // RES_XML_TYPE
@@ -248,13 +253,61 @@ pub fn build_axml(root: &AxNode) -> Vec<u8> {
     out.extend(string_pool_utf16(
         &strs.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
+
+    // START_NAMESPACE — o aapt abre antes do root (uri slot 0, prefix slot 1)
+    out.extend(0x0100u16.to_le_bytes()); // RES_XML_START_NAMESPACE_TYPE
+    out.extend(16u16.to_le_bytes()); // headerSize
+    out.extend(24u32.to_le_bytes()); // size
+    out.extend(1u32.to_le_bytes()); // line
+    out.extend(NO_INDEX.to_le_bytes()); // comment
+    out.extend(1u32.to_le_bytes()); // prefix idx ("android")
+    out.extend(0u32.to_le_bytes()); // uri idx (NS_ANDROID)
+
+    // resource map (0x0180) — um u32 por string do pool; id plausível
+    // (0x0101_0000+n) para nomes de attrs android, 0 para os demais
+    out.extend(0x0180u16.to_le_bytes()); // RES_XML_RESOURCE_MAP_TYPE
+    out.extend(8u16.to_le_bytes()); // headerSize
+    out.extend((8 + strs.len() as u32 * 4).to_le_bytes()); // size
+    let mut attr_n = 0u32;
+    for s in &strs {
+        if android_attr_names.contains(s) {
+            attr_n += 1;
+            out.extend((0x0101_0000u32 | attr_n).to_le_bytes());
+        } else {
+            out.extend(0u32.to_le_bytes());
+        }
+    }
+
     emit_node(root, &strs, &mut out);
+
+    // END_NAMESPACE — o aapt fecha depois do root
+    out.extend(0x0101u16.to_le_bytes()); // RES_XML_END_NAMESPACE_TYPE
+    out.extend(16u16.to_le_bytes());
+    out.extend(24u32.to_le_bytes());
+    out.extend(1u32.to_le_bytes());
+    out.extend(NO_INDEX.to_le_bytes());
+    out.extend(1u32.to_le_bytes()); // prefix
+    out.extend(0u32.to_le_bytes()); // uri
+
     let total = out.len() as u32;
     out[4..8].copy_from_slice(&total.to_le_bytes());
     out
 }
 
-/// Manifest mínimo válido (root <manifest package=…> + application/activity).
+fn collect_android_attr_names(node: &AxNode, out: &mut Vec<String>) {
+    for at in &node.attrs {
+        if at.android && !out.contains(&at.name.to_string()) {
+            out.push(at.name.to_string());
+        }
+    }
+    for c in &node.children {
+        collect_android_attr_names(c, out);
+    }
+}
+
+/// Manifest mínimo válido (root <manifest package=…> + application/activity
+/// + uses-sdk + intent-filter MAIN/LAUNCHER — issue #47: fidelidade ao aapt;
+/// min/target=1 preserva o comportamento dos testes que assumem o default).
 pub fn build_manifest_axml(package: &str, activity_desc: &str) -> Vec<u8> {
     let root = AxNode::new(
         "manifest",
@@ -262,15 +315,48 @@ pub fn build_manifest_axml(package: &str, activity_desc: &str) -> Vec<u8> {
             a(false, "package", AxVal::Str(package.to_string())),
             a(true, "versionCode", AxVal::Int(1)),
         ],
-        vec![AxNode::new(
-            "application",
-            vec![],
-            vec![AxNode::new(
-                "activity",
-                vec![a(true, "name", AxVal::Str(activity_desc.to_string()))],
+        vec![
+            AxNode::new(
+                "uses-sdk",
+                vec![
+                    a(true, "minSdkVersion", AxVal::Int(1)),
+                    a(true, "targetSdkVersion", AxVal::Int(1)),
+                ],
                 vec![],
-            )],
-        )],
+            ),
+            AxNode::new(
+                "application",
+                vec![],
+                vec![AxNode::new(
+                    "activity",
+                    vec![a(true, "name", AxVal::Str(activity_desc.to_string()))],
+                    vec![AxNode::new(
+                        "intent-filter",
+                        vec![],
+                        vec![
+                            AxNode::new(
+                                "action",
+                                vec![a(
+                                    true,
+                                    "name",
+                                    AxVal::Str("android.intent.action.MAIN".to_string()),
+                                )],
+                                vec![],
+                            ),
+                            AxNode::new(
+                                "category",
+                                vec![a(
+                                    true,
+                                    "name",
+                                    AxVal::Str("android.intent.category.LAUNCHER".to_string()),
+                                )],
+                                vec![],
+                            ),
+                        ],
+                    )],
+                )],
+            ),
+        ],
     );
     build_axml(&root)
 }
@@ -303,8 +389,8 @@ impl ZipFix {
             out.extend(20u16.to_le_bytes()); // version needed
             out.extend(0u16.to_le_bytes()); // flags
             out.extend(0u16.to_le_bytes()); // method = STORED
-            out.extend(0u16.to_le_bytes()); // mod time
-            out.extend(0u16.to_le_bytes()); // mod date
+            out.extend(0x9F00u16.to_le_bytes()); // mod time (12:30 — issue #47)
+            out.extend(0x5D41u16.to_le_bytes()); // mod date (2026-10-01)
             out.extend(crc.to_le_bytes());
             out.extend((data.len() as u32).to_le_bytes()); // compressed
             out.extend((data.len() as u32).to_le_bytes()); // uncompressed
@@ -318,8 +404,8 @@ impl ZipFix {
             central.extend(20u16.to_le_bytes()); // version needed
             central.extend(0u16.to_le_bytes()); // flags
             central.extend(0u16.to_le_bytes()); // method
-            central.extend(0u16.to_le_bytes()); // time
-            central.extend(0u16.to_le_bytes()); // date
+            central.extend(0x9F00u16.to_le_bytes()); // time
+            central.extend(0x5D41u16.to_le_bytes()); // date
             central.extend(crc.to_le_bytes());
             central.extend((data.len() as u32).to_le_bytes());
             central.extend((data.len() as u32).to_le_bytes());
@@ -360,6 +446,8 @@ pub enum ArscVal {
 pub struct ArscEntry {
     pub name: String,
     pub val: ArscVal,
+    /// issue #47: config da entrada — None = default; Some("pt") = locale.
+    pub lang: Option<String>,
 }
 
 #[derive(Default)]
@@ -395,6 +483,7 @@ impl ArscFix {
         self.slot("layout").push(ArscEntry {
             name: name.to_string(),
             val: ArscVal::Int(0),
+            lang: None,
         });
         self.resid_of("layout", name)
     }
@@ -406,6 +495,21 @@ impl ArscFix {
         self.slot("string").push(ArscEntry {
             name: name.to_string(),
             val: ArscVal::Str(value.to_string()),
+            lang: None,
+        });
+        self.resid_of("string", name)
+    }
+
+    /// issue #47: string com config de locale — o mesmo res_id ganha 2
+    /// valores (default + específica) em chunks ResTable_type distintos.
+    pub fn add_string_lang(&mut self, name: &str, value: &str, lang: &str) -> u32 {
+        if !self.values.iter().any(|v| v == value) {
+            self.values.push(value.to_string());
+        }
+        self.slot("string").push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Str(value.to_string()),
+            lang: Some(lang.to_string()),
         });
         self.resid_of("string", name)
     }
@@ -414,6 +518,7 @@ impl ArscFix {
         self.slot("id").push(ArscEntry {
             name: name.to_string(),
             val: ArscVal::Int(0),
+            lang: None,
         });
         self.resid_of("id", name)
     }
@@ -434,52 +539,96 @@ impl ArscFix {
         let global_pool =
             string_pool_utf16(&self.values.iter().map(String::as_str).collect::<Vec<_>>());
 
-        // chunks de tipo (um por type)
+        // chunks de tipo (um por type): typeSpec + variantes de config
         let mut type_chunks = Vec::new();
         for (i, (_, entries)) in self.types.iter().enumerate() {
             let type_id = (i + 1) as u8;
-            let mut config = vec![0u8; 28];
-            config[0..4].copy_from_slice(&28u32.to_le_bytes()); // size (default config)
-            let cheader: u16 = 20 + 28; // header + config default (28 bytes)
-
-            let mut offsets = Vec::new();
-            let mut body = Vec::new();
+            // issue #47: entry index é por NAME ÚNICO — o mesmo name em 2
+            // configs = o MESMO res_id com valores por config (como o aapt
+            // emite); antes cada add_* criava index novo e a config pt virava
+            // resid DIFERENTE em vez de segunda config do mesmo id
+            let mut names: Vec<&str> = Vec::new();
             for e in entries {
-                offsets.push(body.len() as u32);
-                let key_idx = keys.iter().position(|k| *k == e.name).unwrap() as u32;
-                body.extend(8u16.to_le_bytes()); // ResTable_entry.size
-                body.extend(0u16.to_le_bytes()); // flags (simples)
-                body.extend(key_idx.to_le_bytes());
-                let (dtype, data) = match &e.val {
-                    ArscVal::Str(s) => (
-                        TYPE_STRING,
-                        self.values.iter().position(|v| v == s).unwrap() as u32,
-                    ),
-                    ArscVal::Int(i) => (TYPE_FIRST_INT, *i as u32),
-                    ArscVal::Ref(r) => (TYPE_REFERENCE, *r),
-                };
-                body.extend(8u16.to_le_bytes()); // Res_value.size
-                body.push(0u8); // res0
-                body.push(dtype);
-                body.extend(data.to_le_bytes());
+                if !names.contains(&e.name.as_str()) {
+                    names.push(&e.name);
+                }
             }
-            pad4(&mut body);
-            let mut c = Vec::new();
-            c.extend(0x0201u16.to_le_bytes()); // RES_TABLE_TYPE_CHUNK
-            c.extend(cheader.to_le_bytes()); // headerSize
-            c.extend(0u32.to_le_bytes()); // size (patched)
-            c.push(type_id);
-            c.push(0u8); // flags (não-sparse)
-            c.extend(0u16.to_le_bytes()); // reserved
-            c.extend((entries.len() as u32).to_le_bytes()); // entryCount
-            let entries_start = cheader as u32 + (offsets.len() as u32) * 4;
-            c.extend(entries_start.to_le_bytes());
-            c.extend(&config);
-            c.extend(offsets.iter().flat_map(|o| o.to_le_bytes()));
-            c.extend(&body);
-            let csz = c.len() as u32;
-            c[4..8].copy_from_slice(&csz.to_le_bytes());
-            type_chunks.push(c);
+            let mut config_default = vec![0u8; 28];
+            config_default[0..4].copy_from_slice(&28u32.to_le_bytes()); // size
+            let mut config_lang = vec![0u8; 28];
+            config_lang[0..4].copy_from_slice(&28u32.to_le_bytes());
+            config_lang[8..10].copy_from_slice(b"pt"); // language (ResTable_config@8)
+            let cheader: u16 = 20 + 28; // header + config (28 bytes)
+            let has_lang = entries.iter().any(|e| e.lang.is_some());
+
+            // issue #47: typeSpec (0x0202) antes do type — o aapt real emite um
+            // por type id (flags de entrada); o parser pula, mas o fixture
+            // agora é fiel ao binário real
+            let mut spec = Vec::new();
+            spec.extend(0x0202u16.to_le_bytes()); // RES_TABLE_TYPE_SPEC
+            spec.extend(16u16.to_le_bytes()); // headerSize
+            spec.extend((16 + names.len() as u32 * 4).to_le_bytes()); // size
+            spec.push(type_id);
+            spec.push(0u8); // res0
+            spec.extend(0u16.to_le_bytes()); // reserved
+            spec.extend((names.len() as u32).to_le_bytes()); // entryCount
+            for _ in &names {
+                spec.extend(0u32.to_le_bytes()); // flags (simples)
+            }
+            type_chunks.push(spec);
+
+            // variantes de config: default + locale (NO_ENTRY onde ausente)
+            let mut variants: Vec<(&[u8], bool)> = vec![(&config_default, false)];
+            if has_lang {
+                variants.push((&config_lang, true));
+            }
+            for (config, want_lang) in variants {
+                let mut offsets = Vec::new();
+                let mut body = Vec::new();
+                for n in &names {
+                    let Some(e) = entries
+                        .iter()
+                        .find(|e| e.name == *n && e.lang.is_some() == want_lang)
+                    else {
+                        offsets.push(0xFFFF_FFFFu32); // NO_ENTRY
+                        continue;
+                    };
+                    offsets.push(body.len() as u32);
+                    let key_idx = keys.iter().position(|k| *k == e.name).unwrap() as u32;
+                    body.extend(8u16.to_le_bytes()); // ResTable_entry.size
+                    body.extend(0u16.to_le_bytes()); // flags (simples)
+                    body.extend(key_idx.to_le_bytes());
+                    let (dtype, data) = match &e.val {
+                        ArscVal::Str(s) => (
+                            TYPE_STRING,
+                            self.values.iter().position(|v| v == s).unwrap() as u32,
+                        ),
+                        ArscVal::Int(i) => (TYPE_FIRST_INT, *i as u32),
+                        ArscVal::Ref(r) => (TYPE_REFERENCE, *r),
+                    };
+                    body.extend(8u16.to_le_bytes()); // Res_value.size
+                    body.push(0u8); // res0
+                    body.push(dtype);
+                    body.extend(data.to_le_bytes());
+                }
+                pad4(&mut body);
+                let mut c = Vec::new();
+                c.extend(0x0201u16.to_le_bytes()); // RES_TABLE_TYPE_CHUNK
+                c.extend(cheader.to_le_bytes()); // headerSize
+                c.extend(0u32.to_le_bytes()); // size (patched)
+                c.push(type_id);
+                c.push(0u8); // flags (não-sparse)
+                c.extend(0u16.to_le_bytes()); // reserved
+                c.extend((names.len() as u32).to_le_bytes()); // entryCount
+                let entries_start = cheader as u32 + (offsets.len() as u32) * 4;
+                c.extend(entries_start.to_le_bytes());
+                c.extend_from_slice(config);
+                c.extend(offsets.iter().flat_map(|o| o.to_le_bytes()));
+                c.extend(&body);
+                let csz = c.len() as u32;
+                c[4..8].copy_from_slice(&csz.to_le_bytes());
+                type_chunks.push(c);
+            }
         }
 
         // pacote (header de 288 bytes + pools + tipos)
@@ -517,6 +666,9 @@ impl ArscFix {
         out.extend(&pkg);
         let total = out.len() as u32;
         out[4..8].copy_from_slice(&total.to_le_bytes());
+        // issue #47: alinhamento de 4 bytes do resources.arsc no ZIP (requisito
+        // de APK real Android 11+) — o size do chunk NÃO inclui o padding
+        pad4(&mut out);
         out
     }
 }

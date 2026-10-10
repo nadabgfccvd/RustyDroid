@@ -655,3 +655,106 @@ fn layout_dimension_overflow_is_typed_error() {
         other => panic!("esperava VmExit::Error (INFLATE), veio {other:?}"),
     }
 }
+
+// ── issue #47: fixture fiel ao aapt (typeSpec, 2 configs, layout-land)
+
+/// resources.arsc com 2 configs (default + locale "pt") e typeSpec: o parser
+/// entrega as DUAS variantes no modelo e o resolve sem config-alvo escolhe a
+/// default (menos específica — comportamento documentado; a escolha por
+/// device-config é M4).
+#[test]
+fn arsc_two_configs_parse_and_resolve() {
+    let mut arsc = common::apkfix::ArscFix::new();
+    let _layout = arsc.add_layout("activity_main");
+    let greet = arsc.add_string("greet", "Ola default");
+    arsc.add_string_lang("greet", "Ola pt", "pt");
+    let tv = arsc.add_id("tv");
+    let node = AxNode::new(
+        "LinearLayout",
+        vec![],
+        vec![AxNode::new(
+            "TextView",
+            vec![
+                a(true, "id", AxVal::Ref(tv)),
+                a(true, "text", AxVal::Ref(greet)),
+            ],
+            vec![],
+        )],
+    );
+    let extras = vec![(
+        "res/layout/activity_main.xml",
+        common::apkfix::build_axml(&node),
+    )];
+    let apk_bytes = build_apk("com.test.cfg", "LMain;", arsc.build(), extras);
+
+    // parse direto do arsc: o res_id de "greet" tem 2 entradas por config
+    let apk = rd_apk::Apk::from_bytes(apk_bytes).expect("apk parseia (typeSpec não quebra)");
+    let a = apk.arsc.as_ref().expect("arsc presente");
+    let pkg = a.packages.first().expect("package");
+    let entries = pkg.entries.get(&greet).expect("entry greet");
+    assert_eq!(entries.len(), 2, "2 configs para o mesmo res_id: {entries:?}");
+    let default = entries.iter().find(|e| e.config.is_default()).expect("default");
+    let specific = entries.iter().find(|e| !e.config.is_default()).expect("pt");
+    assert_eq!(default.string.as_deref(), Some("Ola default"));
+    assert_eq!(specific.string.as_deref(), Some("Ola pt"));
+    assert_eq!(specific.config.language.as_deref(), Some("pt"));
+    // resolve sem config-alvo → default (menos específica)
+    assert_eq!(a.resolve_string(greet).as_deref(), Some("Ola default"));
+}
+
+/// Fallback de config: SEM res/layout/activity_main.xml, COM
+/// res/layout-land/activity_main.xml — o layout_entry varre res/layout-<config>/
+/// (e NÃO casa res/layoutfoo/ — issue #46). O layout da land infla e o dump
+/// mostra o texto do TextView (prova que a ENTRADA certa foi inflada).
+#[test]
+fn layout_land_fallback_resolves() {
+    let mut arsc = common::apkfix::ArscFix::new();
+    let _layout = arsc.add_layout("activity_main");
+    let tv = arsc.add_id("tv_land");
+    let s_land = arsc.add_string("land_txt", "texto da land");
+    let node = AxNode::new(
+        "LinearLayout",
+        vec![],
+        vec![AxNode::new(
+            "TextView",
+            vec![
+                a(true, "id", AxVal::Ref(tv)),
+                a(true, "text", AxVal::Ref(s_land)),
+            ],
+            vec![],
+        )],
+    );
+    // só a variante land existe (canonical res/layout/ AUSENTE)
+    let extras = vec![(
+        "res/layout-land/activity_main.xml",
+        common::apkfix::build_axml(&node),
+    )];
+    let apk_bytes = build_apk("com.test.land", "LLand;", arsc.build(), extras);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LLand;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    e.launch_app("LLand;", "com.test.land", Vec::new())
+        .expect("launch via fallback land");
+    let dump = e.dump_ui();
+    assert!(
+        dump.contains("texto da land"),
+        "fallback res/layout-land/ deve resolver: {dump}"
+    );
+}
