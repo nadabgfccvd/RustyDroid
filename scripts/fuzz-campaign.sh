@@ -7,52 +7,137 @@
 # -ignore_crashes=1 — o fuzzer CONTINUA após crash/oom/timeout e arquiva cada
 # achado em crates/*/fuzz/artifacts/.
 #
-#   DoD atingido  = ao final, NENHUM arquivo `crash-*` nos artifacts.
+#   DoD atingido  = ao final, NENHUM arquivo `crash-*` nos artifacts E os 5
+#                   targets rodaram os SECS íntegros (veredito honesto: um
+#                   target que morreu no build NÃO conta como "sem crash").
 #   DoD violado   = qualquer `crash-*` é bug P0 (Lei nº 1) → minimizar + issue.
 #                   (oom-*/timeout-* são AVISOS — investigar depois; não violam
 #                    o DoD escrito, que é "sem crash".)
 #
 # Uso:
-#   ./scripts/fuzz-campaign.sh             # 24 h (86400 s), seeds automáticos
-#   ./scripts/fuzz-campaign.sh 600         # smoke de 10 min
-#   ./scripts/fuzz-campaign.sh 28800 4     # 8 h, 4 workers por target
+#   ./scripts/fuzz-campaign.sh                  # 24 h (86400 s), tudo automático
+#   ./scripts/fuzz-campaign.sh --seeds-only     # só popula os corpus (2 min, sem Rust)
+#   ./scripts/fuzz-campaign.sh 600              # smoke de 10 min (FAÇA ANTES DAS 24h)
+#   ./scripts/fuzz-campaign.sh 28800 4          # 8 h, 4 workers por target
+#   ./scripts/fuzz-campaign.sh --help           # ajuda
+#
+# Memória (auto-calibrada): lê MemAvailable e escolhe workers × rss_limit para
+# NÃO estourar a RAM (notebook 16 GB/WSL 12 GB → tipicamente workers=1, rss
+# ~1,7 GB por processo). Sobrescreva com WORKERS (2º arg) e/ou RD_FUZZ_RSS=<MB>.
 #
 # Requisitos: rustup + toolchain nightly + cargo-fuzz@0.13.2 (versão do CI) +
 # unzip + curl (fetch do APK golden). Corpus persiste em crates/*/fuzz/corpus/
 # (gitignored) — rodar de novo CONTINUA a campanha a partir do corpus existente.
 #
+# WSL2/kernel 6.6+: se vm.mmap_rnd_bits > 28, o AddressSanitizer morre com
+# SEGV em segundos (a campanha viraria lixo). O script detecta e ABORTA antes
+# com o comando de correção. Escape: RD_FUZZ_SKIP_SYSCTL_CHECK=1
+#
 # DISCO: o corpus cresce bastante nas primeiras horas (unidades novas têm até
 # o tamanho de max_len). Cheque de vez em quando:
 #     du -sh crates/*/fuzz/corpus
-# Se apertar o disco, PARE, minimize e retome (o merge NÃO perde cobertura):
-#     cd crates/rd-apk && cargo fuzz merge corpus corpus.tmp && rm -rf corpus.tmp
-#     cd crates/rd-dex && cargo fuzz merge corpus corpus.tmp && rm -rf corpus.tmp
+# Se apertar o disco, PARE, minimize e retome (a cobertura NÃO se perde) —
+# dentro de crates/rd-apk (repita para zip/axml/arsc; análogo em rd-dex):
+#     cargo fuzz merge corpus.min corpus/apk_full -f apk_full
+#     rm -rf corpus/apk_full && mv corpus.min/apk_full corpus/apk_full
 
 set -euo pipefail
 
+usage() {
+    cat >&2 <<'EOF'
+RustyDroid — campanha de fuzz (DoD do M1, ver docs/FUZZING.md)
+
+Uso: ./scripts/fuzz-campaign.sh [--seeds-only] [SECS] [WORKERS]
+
+  SECS     segundos por target (padrão 86400 = 24 h; os 5 targets rodam em paralelo)
+  WORKERS  processos libFuzzer por target (padrão 0 = auto por CPU+RAM)
+  RD_FUZZ_RSS=<MB>  força o rss_limit por processo (padrão: auto)
+
+Passo a passo recomendado (WSL2):
+  ./scripts/fuzz-campaign.sh --seeds-only   # 2 min — valida seeds/corpus
+  ./scripts/fuzz-campaign.sh 600            # smoke 10 min — valida build/execução
+  ./scripts/fuzz-campaign.sh                # campanha 24 h (dentro do tmux!)
+
+Exit: 0 = ✅ sem crash (DoD ok) · 1 = ❌ crash achado (P0) · 2 = ❌ target não concluiu
+EOF
+}
+
+# ----------------------------------------------------------------- args ----
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then usage; exit 0; fi
+
+SEEDS_ONLY=0
+if [ "${1:-}" = "--seeds-only" ]; then
+    SEEDS_ONLY=1
+    shift
+fi
+
 SECS="${1:-86400}"                 # tempo total por target (s)
-WORKERS="${2:-0}"                  # 0 = auto: dividir os cores entre 5 targets
+WORKERS="${2:-0}"                  # 0 = auto: CPU/RAM decidem
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 APK="${REPO}/golden-apks/org.fdroid.fdroid.apk"
 LOGDIR="${REPO}/fuzz-logs/$(date +%Y%m%d-%H%M%S)"
 
-fail=0                             # targets que falharam (build/execução)
-
-if ! command -v cargo >/dev/null; then
-    echo "ERRO: cargo não está no PATH — rode: source \"\$HOME/.cargo/env\"" >&2; exit 1
+if [ "${SEEDS_ONLY}" -eq 0 ]; then
+    case "${SECS}" in ''|*[!0-9]*)
+        echo "ERRO: SECS deve ser um número inteiro de segundos (ex.: 600, 86400)" >&2; usage; exit 1;; esac
+    case "${WORKERS}" in ''|*[!0-9]*)
+        echo "ERRO: WORKERS deve ser um número inteiro (0 = auto)" >&2; usage; exit 1;; esac
 fi
+
+# --------------------------------------------------------------- guardas ---
+# O script PRECISA rodar de dentro do clone (usa caminhos de crates/ e do APK).
+for d in "${REPO}/crates/rd-apk/fuzz" "${REPO}/crates/rd-dex/fuzz" "${REPO}/golden-apks"; do
+    if [ ! -d "${d}" ]; then
+        echo "ERRO: diretório ausente: ${d}" >&2
+        echo "      Rode o script DE DENTRO do clone (não copie para fora):" >&2
+        echo "      cd RustyDroid && ./scripts/fuzz-campaign.sh" >&2
+        exit 1
+    fi
+done
 if ! command -v unzip >/dev/null; then
     echo "ERRO: instale unzip (sudo apt install unzip)" >&2; exit 1
 fi
-if ! rustup run nightly rustc --version >/dev/null 2>&1; then
-    echo "ERRO: toolchain nightly ausente — rode: rustup toolchain install nightly --profile minimal" >&2; exit 1
+
+# Check ASan × kernel (WSL2 recente / kernel ≥ 6.6 com mmap_rnd_bits=32 quebra
+# o AddressSanitizer: todos os targets morrem com SEGV em segundos e as 24 h
+# virariam lixo). Detecta ANTES de qualquer build.
+check_asan_kernel() {
+    if [ "${RD_FUZZ_SKIP_SYSCTL_CHECK:-0}" = "1" ]; then return 0; fi
+    local rnd
+    rnd="$(sysctl -n vm.mmap_rnd_bits 2>/dev/null || true)"
+    case "${rnd}" in ''|*[!0-9]*) return 0 ;; esac   # parâmetro inexistente: ok
+    if [ "${rnd}" -gt 28 ]; then
+        echo "ERRO PRÉ-VOO: vm.mmap_rnd_bits=${rnd} > 28 — o AddressSanitizer vai" >&2
+        echo "  morrer com SEGV em segundos (kernel ≥ 6.6 / WSL2 recente). Corrija ANTES:" >&2
+        echo "" >&2
+        echo "    sudo sysctl -w vm.mmap_rnd_bits=28" >&2
+        echo "" >&2
+        echo "  Para ficar permanente no WSL2, adicione ao /etc/wsl.conf e rode" >&2
+        echo "  'wsl --shutdown' no Windows (reabra o WSL depois):" >&2
+        echo "    [boot]" >&2
+        echo "    command = sysctl -w vm.mmap_rnd_bits=28" >&2
+        echo "" >&2
+        echo "  (Para ignorar este check: RD_FUZZ_SKIP_SYSCTL_CHECK=1 $0)" >&2
+        exit 1
+    fi
+}
+
+# ------------------------------------------------------------ requisitos ---
+if [ "${SEEDS_ONLY}" -eq 0 ]; then
+    if ! command -v cargo >/dev/null; then
+        echo "ERRO: cargo não está no PATH — rode: source \"\$HOME/.cargo/env\"" >&2; exit 1
+    fi
+    if ! rustup run nightly rustc --version >/dev/null 2>&1; then
+        echo "ERRO: toolchain nightly ausente — rode: rustup toolchain install nightly --profile minimal" >&2; exit 1
+    fi
+    if ! cargo fuzz --version >/dev/null 2>&1; then
+        echo "ERRO: cargo-fuzz ausente — rode: cargo install cargo-fuzz@0.13.2 --locked" >&2; exit 1
+    fi
+    # cargo-fuzz exige nightly; força em TODOS os cargos filhos, mesmo que o
+    # default do rustup seja stable (não depende de `rustup default nightly`).
+    export RUSTUP_TOOLCHAIN=nightly
+    check_asan_kernel
 fi
-if ! cargo fuzz --version >/dev/null 2>&1; then
-    echo "ERRO: cargo-fuzz ausente — rode: cargo install cargo-fuzz@0.13.2 --locked" >&2; exit 1
-fi
-# cargo-fuzz exige nightly; força em TODOS os cargos filhos, mesmo que o
-# default do rustup seja stable (não depende de `rustup default nightly`).
-export RUSTUP_TOOLCHAIN=nightly
 
 # ---------------------------------------------------------------- seeds ----
 # Corpus real > corpus vazio: o APK golden alimenta TODOS os targets.
@@ -64,7 +149,11 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 # -j = caminhos achatados; classes*.dex cobre classes.dex/classes2/3.dex
-unzip -o -j -q "${APK}" 'classes*.dex' 'resources.arsc' 'AndroidManifest.xml' -d "${TMP}"
+if ! unzip -o -j -q "${APK}" 'classes*.dex' 'resources.arsc' 'AndroidManifest.xml' -d "${TMP}"; then
+    echo "ERRO: falha ao extrair seeds de ${APK} — APK corrompido/incompleto?" >&2
+    echo "      Rode: rm -f '${APK}' && bash '${REPO}/golden-apks/fetch.sh'" >&2
+    exit 1
+fi
 # res/*.xml: o '*' do unzip cruza diretórios (pega res/layout/*.xml etc.)
 ( cd "${TMP}" && unzip -o -q "${APK}" 'res/*.xml' 2>/dev/null ) || true
 
@@ -93,23 +182,67 @@ fi
 
 echo "    seeds ok: apk_full=$(ls "${APK_CORPUS}/apk_full" | wc -l) zip=$(ls "${APK_CORPUS}/zip" | wc -l) axml=$(ls "${APK_CORPUS}/axml" | wc -l) arsc=$(ls "${APK_CORPUS}/arsc" | wc -l) dex=$(ls "${DEX_CORPUS}/dex" | wc -l)"
 
-# --------------------------------------------------------------- workers ---
-if [ "${WORKERS}" = "0" ]; then
+if [ "${SEEDS_ONLY}" -eq 1 ]; then
+    echo
+    echo "==> seeds-only: corpus pronto (nenhum fuzzer executado)"
+    du -sh "${APK_CORPUS}"/* "${DEX_CORPUS}"/* 2>/dev/null | sed 's/^/    /' || true
+    echo
+    echo "    Próximo passo — smoke de 10 min ANTES das 24 h:"
+    echo "      ./scripts/fuzz-campaign.sh 600"
+    exit 0
+fi
+
+# ---------------------------------------------------- plano de memória -----
+# 5 targets em paralelo, cada um com WORKERS filhos libFuzzer. Pior caso de
+# RSS ≈ (WORKERS × 5 × rss_limit) + SO. Calibrar pela RAM REAL disponível
+# evita o OOM-killer matar a campanha no meio (notebooks com 16 GB).
+AVAIL_MB="$(awk '/MemAvailable/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo 0)"
+AVAIL_MB=$(( ${AVAIL_MB:-0} / 1024 ))
+if [ "${AVAIL_MB}" -le 0 ]; then AVAIL_MB=8192; fi      # leitura falhou: presumir 8 GB
+
+if [ "${WORKERS}" -eq 0 ]; then
     CORES="$(nproc)"
     WORKERS=$(( CORES / 5 ))
     if [ "${WORKERS}" -lt 1 ]; then WORKERS=1; fi
 fi
+
+RSS="${RD_FUZZ_RSS:-0}"                                  # 0 = auto
+if [ "${RSS}" = "0" ]; then
+    BUDGET=$(( AVAIL_MB - 2500 ))                        # SO do WSL + 5 pais + margem
+    PER_PROC=$(( BUDGET / (WORKERS * 5) ))
+    # Pouco RSS por processo gera oom-* falso. Se ficou apertado, trocar
+    # throughput por estabilidade: 1 worker por target com RSS maior.
+    if [ "${PER_PROC}" -lt 1536 ] && [ "${WORKERS}" -gt 1 ] && [ "${BUDGET}" -ge 7680 ]; then
+        echo "    (auto) workers ${WORKERS} → 1 por target: prioriza RSS maior por processo"
+        WORKERS=1
+        PER_PROC=$(( BUDGET / 5 ))
+    fi
+    if [ "${PER_PROC}" -gt 2048 ]; then PER_PROC=2048; fi
+    if [ "${PER_PROC}" -lt 512 ]; then
+        echo "ERRO: RAM disponível (${AVAIL_MB} MB) insuficiente para 5 targets × ${WORKERS} workers." >&2
+        echo "      → feche aplicativos; ou aumente [wsl2] memory= no .wslconfig;" >&2
+        echo "      → ou rode com menos workers: ./scripts/fuzz-campaign.sh ${SECS} 1" >&2
+        exit 1
+    fi
+    RSS=$(( PER_PROC / 256 * 256 ))
+fi
+
+# -------------------------------------------------------------- setup ------
 mkdir -p "${LOGDIR}"
 # Proveniência da campanha (vai junto no relatório do DoD)
 {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
     echo "repo: ${REPO}"
-    echo "duracao_por_target_s: ${SECS}  workers_por_target: ${WORKERS}  cores: $(nproc)"
-    rustc --version
-    cargo fuzz --version
+    echo "duracao_por_target_s: ${SECS}  workers_por_target: ${WORKERS}  rss_mb: ${RSS}  cores: $(nproc)  ram_disponivel_mb: ${AVAIL_MB}"
+    rustc --version 2>/dev/null || true
+    cargo fuzz --version 2>/dev/null || true
+    uname -r
 } > "${LOGDIR}/env.txt" 2>/dev/null || true
+
 echo "==> campanha: 5 targets × ${SECS}s × ${WORKERS} workers/target — logs em ${LOGDIR}"
+echo "    plano de memória: rss/malloc ${RSS} MB por processo · RAM disponível ${AVAIL_MB} MB"
 echo "    (corpus cresce em crates/*/fuzz/corpus; artifacts em crates/*/fuzz/artifacts)"
+echo "    progresso em tempo real: tail -f ${LOGDIR}/done.txt"
 
 # Guarda de disco: campanha longa + corpus crescendo exige folga. Aviso (não
 # aborta) abaixo de 5 GB livres no filesystem do repo.
@@ -119,10 +252,24 @@ if [ "${FREE_KB}" -lt 5242880 ]; then
     echo "       Considere liberar espaço; resgate com 'cargo fuzz merge' (veja cabeçalho deste script)."
 fi
 
+# Arquivar artifacts de rodadas ANTERIORES: sem isso, um crash-*/oom-* antigo
+# (ex.: do smoke de 10 min) seria contado de novo e contaminaria o veredito.
+# Nada se perde: vai para <LOGDIR>/artifacts-anteriores/.
+for c in rd-apk rd-dex; do
+    A="${REPO}/crates/${c}/fuzz/artifacts"
+    if [ -d "${A}" ] && [ -n "$(ls -A "${A}" 2>/dev/null)" ]; then
+        DEST="${LOGDIR}/artifacts-anteriores/${c}"
+        mkdir -p "${DEST}"
+        mv "${A}"/* "${DEST}/" 2>/dev/null || true
+        echo "    artifacts de rodadas anteriores arquivados em ${DEST}"
+    fi
+done
+
 # ------------------------------------------------------------ execução ----
 # max_len ≥ maior seed (senão o libFuzzer TRUNCA a seed — mata o EOCD do ZIP):
 #   apk_full/zip: 16 MB · dex: 10 MB · arsc: 4 MB · axml: 2 MB
 pids=()
+names=()
 run_target() { # crate target max_len
     local crate="$1" target="$2" max_len="$3"
     mkdir -p "${REPO}/crates/${crate}/fuzz/artifacts"
@@ -131,7 +278,7 @@ run_target() { # crate target max_len
             -max_total_time="${SECS}" \
             -fork="${WORKERS}" \
             -ignore_crashes=1 -ignore_timeouts=1 -ignore_ooms=1 \
-            -rss_limit_mb=2048 -malloc_limit_mb=2048 \
+            -rss_limit_mb="${RSS}" -malloc_limit_mb="${RSS}" \
             -timeout=25 \
             -max_len="${max_len}" \
             -print_final_stats=1
@@ -144,16 +291,25 @@ for spec in "rd-apk apk_full 16777216" "rd-apk zip 16777216" "rd-apk axml 209715
     set -- ${spec}
     run_target "$1" "$2" "$3" &
     pids+=("$!")
+    names+=("${1}/${2}")
     sleep 2   # espaçar builds iniciais (o cargo serializa o lock, sem erro)
 done
-for p in "${pids[@]}"; do
-    wait "${p}" || fail=$(( fail + 1 ))
+FAILED=()
+for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then
+        FAILED+=("${names[$i]}")
+        echo "[$(date +%H:%M:%S)] FALHA: ${names[$i]} — ver ${LOGDIR}/${names[$i]//\//-}.log"
+    fi
 done
 
 # ------------------------------------------------------------- relatório ---
 echo; echo "================ RELATÓRIO DA CAMPANHA ================"
 echo "Logs:            ${LOGDIR}"
-echo "Duração/target:  ${SECS}s × ${WORKERS} workers"
+echo "Duração/target:  ${SECS}s × ${WORKERS} workers · rss ${RSS} MB"
+if [ -f "${LOGDIR}/done.txt" ]; then
+    echo "Conclusões em ordem real:"
+    sed 's/^/  /' "${LOGDIR}/done.txt"
+fi
 for f in "${LOGDIR}"/*.log; do
     [ -e "${f}" ] || continue
     # fork mode não imprime o bloco stat::; o total executado está no último
@@ -175,20 +331,24 @@ echo
 CRASH="$(find "${REPO}/crates" -type f -name 'crash-*' -path '*/fuzz/artifacts/*' 2>/dev/null | wc -l || true)"
 OOM="$(find   "${REPO}/crates" -type f -name 'oom-*'    -path '*/fuzz/artifacts/*' 2>/dev/null | wc -l || true)"
 TMO="$(find   "${REPO}/crates" -type f -name 'timeout-*' -path '*/fuzz/artifacts/*' 2>/dev/null | wc -l || true)"
-echo "crashes: ${CRASH} · oom: ${OOM} · timeouts: ${TMO} · targets com falha: ${fail}"
+echo "crashes: ${CRASH} · oom: ${OOM} · timeouts: ${TMO} · targets com falha: ${#FAILED[@]}"
 echo
 echo "Uso de disco do corpus (cresceu durante a campanha):"
 du -sh "${REPO}/crates/rd-apk/fuzz/corpus"/* "${REPO}/crates/rd-dex/fuzz/corpus"/* 2>/dev/null | sed 's/^/  /' || true
-if [ "${fail}" -gt 0 ]; then
-    echo; echo "Saída final de cada log com falha (build/erro):"
-    for f in "${LOGDIR}"/*.log; do
-        [ -e "${f}" ] || continue
-        echo "--- ${f} (últimas 5 linhas)"
-        tail -5 "${f}" || true
+
+if [ "${#FAILED[@]}" -gt 0 ]; then
+    echo; echo "RESULTADO: ❌ ${#FAILED[@]} target(s) NÃO concluíram (build/execução): ${FAILED[*]}"
+    echo "    SEM os 5 targets íntegros NÃO há como atestar 'fuzz 24h sem crash'."
+    for n in "${FAILED[@]}"; do
+        f="${LOGDIR}/${n//\//-}.log"
+        echo "--- ${f} (últimas 15 linhas)"
+        tail -15 "${f}" 2>/dev/null || true
     done
+    echo "    Corrija (veja o log) e rode de novo — o corpus acumulado é preservado."
+    exit 2
 fi
 if [ "${CRASH}" -eq 0 ]; then
-    echo "RESULTADO: ✅ SEM CRASH — DoD do M1 ('fuzz 24h sem crash') satisfeito"
+    echo "RESULTADO: ✅ SEM CRASH e 5/5 targets íntegros — DoD do M1 ('fuzz 24h sem crash') satisfeito"
     if [ "${OOM}" -gt 0 ] || [ "${TMO}" -gt 0 ]; then
         echo "           (⚠ ${OOM} oom + ${TMO} timeout arquivados — investigar depois; não são crash)"
     fi
