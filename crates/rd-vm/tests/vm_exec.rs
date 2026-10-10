@@ -1188,3 +1188,363 @@ fn clinit_failure_semantics_and_super_first() {
         other => panic!("2º acesso deveria ser Exception, got {other:?}"),
     }
 }
+
+/// issue #39 (regressão do fix #25): `<clinit>` de superclasse não pode rodar
+/// DUAS vezes quando a subclasse é inicializada — `initialize_class` precisa
+/// resolver o `<clinit>` APENAS na própria classe (o init da super já acontece
+/// via ensure_initialized(super)). JVM: `A.cnt == 1`; com a regressão, == 2.
+#[test]
+fn clinit_runs_once_per_class_in_hierarchy() {
+    let mut b = DexBuilder::new();
+    // LA; static int cnt; static { cnt++; }
+    let a = b.class("LA;", "Ljava/lang/Object;");
+    b.static_field(a, "cnt", "I", SVal::Int(0));
+    let f_cnt_a = b.field_idx("LA;", "I", "cnt");
+    b.direct(
+        a,
+        "<clinit>",
+        "V",
+        vec![],
+        ACC_STATIC | ACC_CONSTRUCTOR,
+        Some(b.code(2, 0, 0, {
+            let mut u = op21c(0x60, 0, f_cnt_a); // sget v0, LA->cnt
+            u.extend(op22b(0xD8, 0, 0, 1)); // add-int/lit8 v0, v0, 1
+            u.extend(op21c(0x67, 0, f_cnt_a)); // sput v0, LA->cnt
+            u.extend(op10x(0x0E)); // return-void
+            u
+        })),
+    );
+    // LB extends LA e LC extends LB — SEM <clinit> próprio (é o caminho da
+    // regressão: resolve_method(B,"<clinit>") subia até A e re-executava)
+    let _b_c = b.class("LB;", "LA;");
+    let _c_c = b.class("LC;", "LB;");
+    // LCaso.dispara()I: sget LC->cnt (field ref herdado) — dispara init de LC
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let f_cnt_lc = b.field_idx("LC;", "I", "cnt");
+    b.direct(
+        cls,
+        "dispara",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op21c(0x60, 0, f_cnt_lc); // sget v0, LC->cnt
+            u.extend(op11x(0x0F, 0)); // return v0
+            u
+        })),
+    );
+    // LCaso.ler_cnt()I: sget LA->cnt — lê o contador real do clinit de A
+    let f_cnt_la = b.field_idx("LA;", "I", "cnt");
+    b.direct(
+        cls,
+        "ler_cnt",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op21c(0x60, 0, f_cnt_la); // sget v0, LA->cnt
+            u.extend(op11x(0x0F, 0)); // return v0
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let _ = invoke(&mut e, "dispara", "()I", &[]).unwrap(); // dispara C→B→A
+    let v = invoke(&mut e, "ler_cnt", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 1, "<clinit> de LA executou {v}× (JLS 12.4.2: exatamente 1)");
+    // acessos seguintes: continua 1 (nenhum clinit re-executa)
+    let v2 = invoke(&mut e, "ler_cnt", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v2, 1);
+}
+
+// ── issues #43/#48: corretude de intrinsics ─────────────────────────────────
+
+/// issue #43: Integer/Long equals e hashCode POR VALOR (não identidade).
+/// Antes: Integer(1000).equals(Integer(1000)) → false (fallback de Object).
+#[test]
+fn boxed_equals_hashcode_by_value() {
+    let mut e = engine_of(&DexBuilder::new());
+    let vof = |e: &mut Engine, v| {
+        e.invoke_static(
+            "Ljava/lang/Integer;",
+            "valueOf",
+            "(I)Ljava/lang/Integer;",
+            &[Value::Int(v)],
+        )
+        .unwrap()
+    };
+    let lof = |e: &mut Engine, v| {
+        e.invoke_static(
+            "Ljava/lang/Long;",
+            "valueOf",
+            "(J)Ljava/lang/Long;",
+            &[Value::Long(v)],
+        )
+        .unwrap()
+    };
+    let i_eq = |e: &mut Engine, recv, arg| {
+        rd_vm::intrinsics::call_instance_intrinsic(
+            e,
+            "Ljava/lang/Integer;",
+            "equals",
+            "(Ljava/lang/Object;)Z",
+            recv,
+            &[arg],
+        )
+        .unwrap()
+    };
+    let i_hash = |e: &mut Engine, recv| {
+        rd_vm::intrinsics::call_instance_intrinsic(
+            e,
+            "Ljava/lang/Integer;",
+            "hashCode",
+            "()I",
+            recv,
+            &[],
+        )
+        .unwrap()
+    };
+    let b1 = vof(&mut e, 1000);
+    let b2 = vof(&mut e, 1000);
+    let b3 = vof(&mut e, 1001);
+    let Value::Obj(r1) = b1 else { panic!("box não é Obj") };
+    assert_eq!(i_eq(&mut e, r1, b2.clone()), Some(Value::Int(1)));
+    assert_eq!(i_eq(&mut e, r1, b3.clone()), Some(Value::Int(0)));
+    assert_eq!(i_hash(&mut e, r1), Some(Value::Int(1000)));
+    // cross-type: Integer(1).equals(Long(1)) = false (spec Integer.equals)
+    let ibox = vof(&mut e, 1);
+    let lbox = lof(&mut e, 1);
+    let Value::Obj(ri) = ibox else { panic!() };
+    assert_eq!(i_eq(&mut e, ri, lbox), Some(Value::Int(0)));
+    // Long.hashCode(1L << 40) = (int)(v ^ (v >>> 32)) = 0x100 = 256
+    let lb = lof(&mut e, 1 << 40);
+    let Value::Obj(rl) = lb else { panic!() };
+    let h = rd_vm::intrinsics::call_instance_intrinsic(
+        &mut e,
+        "Ljava/lang/Long;",
+        "hashCode",
+        "()I",
+        rl,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(h, Some(Value::Int(256)));
+    // equals de Long por valor
+    let la = lof(&mut e, 7);
+    let lb2 = lof(&mut e, 7);
+    let Value::Obj(rla) = la else { panic!() };
+    let v = rd_vm::intrinsics::call_instance_intrinsic(
+        &mut e,
+        "Ljava/lang/Long;",
+        "equals",
+        "(Ljava/lang/Object;)Z",
+        rla,
+        &[lb2],
+    )
+    .unwrap();
+    assert_eq!(v, Some(Value::Int(1)));
+}
+
+/// issue #48: Math.floorDiv/floorMod com semântica FLOOR do Java
+/// (div_euclid do Rust dava floorDiv(4,−3) = −1; Java = −2).
+#[test]
+fn floor_div_mod_java_semantics() {
+    let mut e = engine_of(&DexBuilder::new());
+    let fdi = |e: &mut Engine, a, b| {
+        e.invoke_static("Ljava/lang/Math;", "floorDiv", "(II)I", &[Value::Int(a), Value::Int(b)])
+            .unwrap()
+            .as_int()
+            .unwrap()
+    };
+    let fmi = |e: &mut Engine, a, b| {
+        e.invoke_static("Ljava/lang/Math;", "floorMod", "(II)I", &[Value::Int(a), Value::Int(b)])
+            .unwrap()
+            .as_int()
+            .unwrap()
+    };
+    assert_eq!(fdi(&mut e, 7, 2), 3);
+    assert_eq!(fmi(&mut e, 7, 2), 1);
+    assert_eq!(fdi(&mut e, 4, -3), -2, "floorDiv(4,-3): Java = -2 (euclid dava -1)");
+    assert_eq!(fmi(&mut e, 4, -3), -2, "floorMod(4,-3): Java = -2");
+    assert_eq!(fdi(&mut e, -4, 3), -2);
+    assert_eq!(fmi(&mut e, -4, 3), 2);
+    assert_eq!(fdi(&mut e, 4, 3), 1);
+    assert_eq!(fmi(&mut e, 4, 3), 1);
+    // canto MIN/-1: wrapping por contrato da JVM
+    assert_eq!(fdi(&mut e, i32::MIN, -1), i32::MIN);
+    assert_eq!(fmi(&mut e, i32::MIN, -1), 0);
+    // variante long
+    let v = e
+        .invoke_static("Ljava/lang/Math;", "floorDiv", "(JJ)J", &[Value::Long(4), Value::Long(-3)])
+        .unwrap()
+        .as_long()
+        .unwrap();
+    assert_eq!(v, -2);
+}
+
+/// issue #48: Long.parseLong(null) → NumberFormatException (não NPE),
+/// alinhado com parseInt.
+#[test]
+fn long_parse_null_is_nfe() {
+    let mut e = engine_of(&DexBuilder::new());
+    match e.invoke_static("Ljava/lang/Long;", "parseLong", "(Ljava/lang/String;)J", &[Value::Null]) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/NumberFormatException;")
+        }
+        other => panic!("esperava NFE, got {other:?}"),
+    }
+    let s42 = rd_vm::intrinsics::alloc_string(&mut e, "42".to_string()).unwrap();
+    let v = e
+        .invoke_static(
+            "Ljava/lang/Long;",
+            "parseLong",
+            "(Ljava/lang/String;)J",
+            &[Value::Obj(s42)],
+        )
+        .unwrap();
+    assert_eq!(v.as_long().unwrap(), 42);
+}
+
+/// issue #48: fill-array-data em char[] decodifica SEM sinal (u16):
+/// payload 0xFFFD é U+FFFD (65533), não −3.
+#[test]
+fn fill_array_data_char_unsigned() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let c_arr = b.type_idx("[C");
+    b.direct(
+        cls,
+        "carr",
+        "I",
+        vec!["I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(5, 1, 0, {
+            let mut u = op11n(0x12, 0, 2); // v0 = 2
+            u.extend(op22c(0x23, 0, 0, c_arr)); // new-array v0, v0, [C
+            u.extend(op31t(0x26, 0, 3)); // fill-array-data v0, +3
+            u.extend(array_payload(2, 2, &[0xFFFD, 0x0041])); // U+FFFD e 'A'
+            u.extend(op23x(0x44, 1, 0, 4)); // aget v1, v0, v4 (arg = índice)
+            u.extend(op11x(0x0F, 1)); // return v1
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    assert_eq!(
+        invoke(&mut e, "carr", "(I)I", &[Value::Int(0)]).unwrap().as_int().unwrap(),
+        0xFFFD,
+        "char[] decodifica sem sinal"
+    );
+    assert_eq!(
+        invoke(&mut e, "carr", "(I)I", &[Value::Int(1)]).unwrap().as_int().unwrap(),
+        0x41
+    );
+}
+
+/// issue #43: toString declarado pela classe do usuário EXECUTA em
+/// StringBuilder.append(Object) e String.valueOf(Object) — antes caía
+/// no `Classe@id` silenciosamente.
+#[test]
+fn user_tostring_used_by_append_object_and_value_of() {
+    let mut b = DexBuilder::new();
+    // LPonto com toString() → "PTO"
+    let ponto = b.class("LPonto;", "Ljava/lang/Object;");
+    let s_pto = b.intern("PTO") as u16;
+    b.r#virtual(
+        ponto,
+        "toString",
+        "Ljava/lang/String;",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, {
+            // ins=1: receiver `this` chega em v0 (const-string sobrescreve)
+            let mut u = op21c(0x1A, 0, s_pto); // const-string v0, "PTO"
+            u.extend(op11x(0x11, 0)); // return-object v0
+            u
+        })),
+    );
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let sb_tidx = b.type_idx("Ljava/lang/StringBuilder;");
+    let p_void = b.proto_idx("V", vec![]);
+    let sb_init = b.method_idx("Ljava/lang/StringBuilder;", p_void, "<init>");
+    let obj_init = b.method_idx("Ljava/lang/Object;", p_void, "<init>");
+    let p_obj_ret_sb = b.proto_idx("Ljava/lang/StringBuilder;", vec!["Ljava/lang/Object;".to_string()]);
+    let append = b.method_idx("Ljava/lang/StringBuilder;", p_obj_ret_sb, "append");
+    let p_ret_str = b.proto_idx("Ljava/lang/String;", vec![]);
+    let sb_to_string = b.method_idx("Ljava/lang/StringBuilder;", p_ret_str, "toString");
+    b.direct(
+        cls,
+        "junta",
+        "Ljava/lang/String;",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(3, 0, 1, {
+            let mut u = op21c(0x22, 0, sb_tidx); // new-instance v0, SB
+            u.extend(op35c(0x70, 1, sb_init, [0, 0, 0, 0, 0])); // SB.<init>()
+            u.extend(op21c(0x22, 1, ponto_tidx_of(&b))); // new-instance v1, Ponto
+            u.extend(op35c(0x70, 1, obj_init, [1, 0, 0, 0, 0])); // Object.<init>(v1)
+            u.extend(op35c(0x6E, 2, append, [0, 1, 0, 0, 0])); // append(v0, v1)
+            u.extend(op35c(0x6E, 1, sb_to_string, [0, 0, 0, 0, 0])); // toString
+            u.extend(op11x(0x0C, 2)); // move-result-object v2
+            u.extend(op11x(0x11, 2)); // return-object v2
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let v = invoke(&mut e, "junta", "()Ljava/lang/String;", &[]).unwrap();
+    match v {
+        Value::Obj(r) => assert_eq!(e.heap.as_str(r).unwrap(), "PTO"),
+        other => panic!("esperado Obj(String), got {other:?}"),
+    }
+}
+
+fn ponto_tidx_of(b: &DexBuilder) -> u16 {
+    b.types.iter().position(|t| t == "LPonto;").expect("LPonto; no builder") as u16
+}
+
+/// issues #43/#48: System.out.println executa (String e Object) — materializa
+/// PrintStream no sget e despacha para o stdout do host.
+#[test]
+fn system_out_println_executes() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let s_hi = b.intern("hi") as u16;
+    let p_int_ret_integer = b.proto_idx("Ljava/lang/Integer;", vec!["I".to_string()]);
+    let i_value_of = b.method_idx("Ljava/lang/Integer;", p_int_ret_integer, "valueOf");
+    let p_v_obj = b.proto_idx("V", vec!["Ljava/lang/Object;".to_string()]);
+    let ps_println_obj = b.method_idx("Ljava/io/PrintStream;", p_v_obj, "println");
+    let p_v_str = b.proto_idx("V", vec!["Ljava/lang/String;".to_string()]);
+    let ps_println_str = b.method_idx("Ljava/io/PrintStream;", p_v_str, "println");
+    let f_out = b.field_idx("Ljava/lang/System;", "Ljava/io/PrintStream;", "out");
+    b.direct(
+        cls,
+        "oi",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(3, 0, 0, {
+            let mut u = op21c(0x1A, 0, s_hi); // const-string v0, "hi"
+            u.extend(op21c(0x60, 1, f_out)); // sget v1, System.out
+            u.extend(op35c(0x6E, 2, ps_println_str, [1, 0, 0, 0, 0])); // v1.println(v0)
+            u.extend(op10x(0x0E)); // return-void
+            u
+        })),
+    );
+    b.direct(
+        cls,
+        "oi_num",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(3, 0, 0, {
+            let mut u = op11n(0x12, 0, 7); // const/4 v0, 7
+            u.extend(op35c(0x71, 1, i_value_of, [0, 0, 0, 0, 0])); // Integer.valueOf(v0)
+            u.extend(op11x(0x0C, 0)); // move-result-object v0 → Integer(7)
+            u.extend(op21c(0x60, 1, f_out)); // sget v1, System.out
+            u.extend(op35c(0x6E, 2, ps_println_obj, [1, 0, 0, 0, 0])); // v1.println(v0)
+            u.extend(op10x(0x0E)); // return-void
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    invoke(&mut e, "oi", "()V", &[]).expect("println(String) não pode falhar");
+    invoke(&mut e, "oi_num", "()V", &[]).expect("println(Object box) não pode falhar");
+}

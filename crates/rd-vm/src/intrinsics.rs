@@ -14,7 +14,100 @@ const OBJECT: &str = "Ljava/lang/Object;";
 const MATH: &str = "Ljava/lang/Math;";
 const INTEGER: &str = "Ljava/lang/Integer;";
 const LONG: &str = "Ljava/lang/Long;";
+const PRINTSTREAM: &str = "Ljava/io/PrintStream;";
+const NFE: &str = "Ljava/lang/NumberFormatException;";
 const ARITH: &str = "Ljava/lang/ArithmeticException;";
+
+/// Semântica FLOOR do Java (issue #48): `div_euclid`/`rem_euclid` do Rust são
+/// SEMÂNTICA EUCLIDIANA — `floorDiv(4,−3)` Java = −2, `div_euclid` dá −1.
+/// floorDiv = truncado com ajuste quando o resto é não-zero e tem sinal
+/// oposto ao divisor; floorMod = a − floorDiv·b (com wrapping nos cantos
+/// MIN/−1, que a JVM também sofre por contrato).
+fn java_floor_div_i32(a: i32, b: i32) -> i32 {
+    let q = a.wrapping_div(b);
+    let r = a.wrapping_rem(b);
+    if r != 0 && ((r < 0) != (b < 0)) {
+        q.wrapping_sub(1)
+    } else {
+        q
+    }
+}
+fn java_floor_mod_i32(a: i32, b: i32) -> i32 {
+    a.wrapping_sub(java_floor_div_i32(a, b).wrapping_mul(b))
+}
+fn java_floor_div_i64(a: i64, b: i64) -> i64 {
+    let q = a.wrapping_div(b);
+    let r = a.wrapping_rem(b);
+    if r != 0 && ((r < 0) != (b < 0)) {
+        q.wrapping_sub(1)
+    } else {
+        q
+    }
+}
+fn java_floor_mod_i64(a: i64, b: i64) -> i64 {
+    a.wrapping_sub(java_floor_div_i64(a, b).wrapping_mul(b))
+}
+
+/// toString de um objeto para print/println/append(Object)/String.valueOf
+/// (issues #43/#48): Str → conteúdo; boxes de plataforma → valor; classe de
+/// usuário que DECLARA toString → executa no DEX (pode lançar exceção Java);
+/// caso contrário → `Classe@id` (contrato Object).
+pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Result<String, VmExit> {
+    if let Ok(HeapObj::Str(s)) = vm.heap.get(r) {
+        return Ok(s.clone());
+    }
+    let cls = vm.heap.class_of(r)?.to_string();
+    match call_instance_intrinsic(
+        vm,
+        &cls,
+        "toString",
+        "()Ljava/lang/String;",
+        r,
+        &[],
+    )? {
+        Some(Value::Obj(sref)) => Ok(vm.heap.as_str(sref)?.to_string()),
+        Some(Value::Null) => Ok("null".to_string()),
+        Some(_) => Err(crate::err::vm_error(
+            "INVALID_FORMAT",
+            format!("{cls}->toString() retornou não-string"),
+        )
+        .into()),
+        None => {
+            // classe declara toString no DEX: executa de verdade
+            if let Some((dex_idx, def, m)) =
+                vm.cp.resolve_method(&cls, "toString", "()Ljava/lang/String;")
+            {
+                match vm.call(dex_idx, def, &m, vec![Value::Obj(r)])? {
+                    Value::Obj(sref) => Ok(vm.heap.as_str(sref)?.to_string()),
+                    Value::Null => Ok("null".to_string()),
+                    _ => Err(crate::err::vm_error(
+                        "INVALID_FORMAT",
+                        format!("{cls}->toString() retornou não-string"),
+                    )
+                    .into()),
+                }
+            } else {
+                Ok(default_to_string(&cls, r))
+            }
+        }
+    }
+}
+
+/// Escreve no stdout/stderr do host. PrintStream Java NUNCA lança IOException
+/// (spec de java.io.PrintStream) — engolir falha de E/S é a semântica correta.
+fn host_print(fd: i32, s: &str) {
+    use std::io::Write;
+    match fd {
+        2 => {
+            let _ = std::io::stderr().write_all(s.as_bytes());
+            let _ = std::io::stderr().flush();
+        }
+        _ => {
+            let _ = std::io::stdout().write_all(s.as_bytes());
+            let _ = std::io::stdout().flush();
+        }
+    }
+}
 
 /// Intrínseco STATIC: chamado de invoke-static (e do entrypoint público).
 /// `Ok(None)` = nenhum intrínseco casa → segue resolução normal no DEX.
@@ -76,7 +169,8 @@ pub fn call_static_intrinsic(
             if b == 0 {
                 return Err(VmExit::Exception(Throwable::new(ARITH, "divide by zero")));
             }
-            Ok(Some(Value::Int(a.div_euclid(b))))
+            // issue #48: floor real do Java (não euclidiano)
+            Ok(Some(Value::Int(java_floor_div_i32(a, b))))
         }
         (MATH, "floorMod", "(II)I") => {
             let a = args[0].as_int()?;
@@ -84,7 +178,23 @@ pub fn call_static_intrinsic(
             if b == 0 {
                 return Err(VmExit::Exception(Throwable::new(ARITH, "divide by zero")));
             }
-            Ok(Some(Value::Int(a.rem_euclid(b))))
+            Ok(Some(Value::Int(java_floor_mod_i32(a, b))))
+        }
+        (MATH, "floorDiv", "(JJ)J") => {
+            let a = args[0].as_long()?;
+            let b = args[1].as_long()?;
+            if b == 0 {
+                return Err(VmExit::Exception(Throwable::new(ARITH, "divide by zero")));
+            }
+            Ok(Some(Value::Long(java_floor_div_i64(a, b))))
+        }
+        (MATH, "floorMod", "(JJ)J") => {
+            let a = args[0].as_long()?;
+            let b = args[1].as_long()?;
+            if b == 0 {
+                return Err(VmExit::Exception(Throwable::new(ARITH, "divide by zero")));
+            }
+            Ok(Some(Value::Long(java_floor_mod_i64(a, b))))
         }
         (MATH, "signum", "(D)D") => {
             let v = args[0].as_double()?;
@@ -112,12 +222,15 @@ pub fn call_static_intrinsic(
                 })?
         }
         (LONG, "parseLong", "(Ljava/lang/String;)J") => {
-            let s = string_arg(vm, &args[0])?;
+            // issue #48: parseLong(null) → NumberFormatException("null") como
+            // parseInt (o javadoc de Long.parseLong especifica NFE, não NPE)
+            let s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(_) => string_arg(vm, &args[0])?,
+            };
             parse_long(&s)
                 .map(|v| Ok(Some(Value::Long(v))))
-                .map_err(|e| {
-                    VmExit::Exception(Throwable::new("Ljava/lang/NumberFormatException;", e))
-                })?
+                .map_err(|e| VmExit::Exception(Throwable::new(NFE, e)))?
         }
         (STRING, "valueOf", "(I)Ljava/lang/String;") => {
             let v = args[0].as_int()?;
@@ -175,15 +288,14 @@ pub fn call_static_intrinsic(
             Ok(Some(Value::Obj(alloc_string(vm, repr::java_double(v))?)))
         }
         (STRING, "valueOf", "(Ljava/lang/Object;)Ljava/lang/String;") => {
-            // null → "null"; objetos sem toString nativo → não suportado
+            // issues #43/#48: null → "null"; String → conteúdo; boxes → valor;
+            // classe de usuário com toString declarado → executa; resto → Cls@id
             match args[0].as_ref()? {
                 None => Ok(Some(Value::Obj(alloc_string(vm, "null".into())?))),
-                Some(r) => match vm.heap.get(r) {
-                    Ok(HeapObj::Str(s)) => Ok(Some(Value::Obj(alloc_string(vm, s.clone())?))),
-                    _ => Err(
-                        not_implemented("String.valueOf(Object) para objetos do usuário").into(),
-                    ),
-                },
+                Some(r) => {
+                    let s = object_to_string(vm, r)?;
+                    Ok(Some(Value::Obj(alloc_string(vm, s)?)))
+                }
             }
         }
         _ => {
@@ -255,14 +367,11 @@ pub fn call_instance_intrinsic(
             Ok(Some(Value::Obj(recv)))
         }
         (SB, "append", "(Ljava/lang/Object;)Ljava/lang/StringBuilder;") => {
-            // issue #27: append(Object) — null → "null"; String → conteúdo;
-            // outros objetos → toString default de Object
+            // issues #43/#48: append(Object) — null → "null"; String → conteúdo;
+            // boxes → valor; toString do usuário EXECUTA (antes caía no default)
             let s = match args[0].as_ref()? {
                 None => "null".to_string(),
-                Some(r) => match vm.heap.get(r) {
-                    Ok(HeapObj::Str(s)) => s.clone(),
-                    _ => default_to_string(vm.heap.class_of(r)?, r),
-                },
+                Some(r) => object_to_string(vm, r)?,
             };
             sb_append(vm, recv, &s)?;
             Ok(Some(Value::Obj(recv)))
@@ -396,6 +505,122 @@ pub fn call_instance_intrinsic(
             let v = vm.heap.get_field(recv, "value")?;
             Ok(Some(Value::Long(v.as_long()?)))
         }
+        // issue #43: equals/hashCode POR VALOR para as boxes — sem isto,
+        // Integer(1000).equals(Integer(1000)) caía no fallback de identidade
+        // de Object e dava false (List.contains/Map/Objects.equals errados).
+        // Cross-type: Integer(1).equals(Long(1)) = false (spec de Integer.equals).
+        (INTEGER, "equals", "(Ljava/lang/Object;)Z") => {
+            let mine = vm.heap.get_field(recv, "value")?.as_int()?;
+            let v = match args[0].as_ref()? {
+                Some(r) => {
+                    vm.heap.class_of(r)? == INTEGER
+                        && vm.heap.get_field(r, "value")?.as_int()? == mine
+                }
+                None => false,
+            };
+            Ok(Some(Value::Int(v as i32)))
+        }
+        (LONG, "equals", "(Ljava/lang/Object;)Z") => {
+            let mine = vm.heap.get_field(recv, "value")?.as_long()?;
+            let v = match args[0].as_ref()? {
+                Some(r) => {
+                    vm.heap.class_of(r)? == LONG
+                        && vm.heap.get_field(r, "value")?.as_long()? == mine
+                }
+                None => false,
+            };
+            Ok(Some(Value::Int(v as i32)))
+        }
+        (INTEGER, "hashCode", "()I") => {
+            Ok(Some(Value::Int(vm.heap.get_field(recv, "value")?.as_int()?)))
+        }
+        (LONG, "hashCode", "()I") => {
+            // spec Long.hashCode: (int)(value ^ (value >>> 32))
+            let v = vm.heap.get_field(recv, "value")?.as_long()? as u64;
+            Ok(Some(Value::Int((v ^ (v >> 32)) as i32)))
+        }
+        // issues #43/#48: System.out/.err — println/print sobre o PrintStream
+        // embutido (objeto alocado pelo sget de System.out; interp.rs). PrintStream
+        // nunca lança — falha de E/S é engolida (host_print).
+        (PRINTSTREAM, "println", "()V") => {
+            host_print(ps_fd(vm, recv)?, "\n");
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "println", "(I)V") => {
+            let s = format!("{}\n", args[0].as_int()?);
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "println", "(J)V") => {
+            let s = format!("{}\n", args[0].as_long()?);
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "println", "(Z)V") => {
+            let s = format!("{}\n", args[0].as_int()? != 0);
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "println", "(C)V") => {
+            let c = char::from_u32(args[0].as_int()? as u32).unwrap_or('\u{FFFD}');
+            let s = format!("{c}\n");
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "println", "(Ljava/lang/String;)V") => {
+            let mut s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(_) => string_arg(vm, &args[0])?,
+            };
+            s.push('\n');
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "println", "(Ljava/lang/Object;)V") => {
+            let mut s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(r) => object_to_string(vm, r)?,
+            };
+            s.push('\n');
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "print", "(Ljava/lang/String;)V") => {
+            let s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(_) => string_arg(vm, &args[0])?,
+            };
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "print", "(Ljava/lang/Object;)V") => {
+            let s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(r) => object_to_string(vm, r)?,
+            };
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "print", "(I)V") => {
+            let s = args[0].as_int()?.to_string();
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "print", "(J)V") => {
+            let s = args[0].as_long()?.to_string();
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "print", "(Z)V") => {
+            let s = (args[0].as_int()? != 0).to_string();
+            host_print(ps_fd(vm, recv)?, &s);
+            Ok(Some(Value::Null))
+        }
+        (PRINTSTREAM, "print", "(C)V") => {
+            let c = char::from_u32(args[0].as_int()? as u32).unwrap_or('\u{FFFD}');
+            host_print(ps_fd(vm, recv)?, &c.to_string());
+            Ok(Some(Value::Null))
+        }
         (INTEGER, "toString", "()Ljava/lang/String;") => {
             let v = vm.heap.get_field(recv, "value")?;
             Ok(Some(Value::Obj(alloc_string(vm, v.as_int()?.to_string())?)))
@@ -439,6 +664,11 @@ pub fn call_instance_intrinsic(
 
         _ => Ok(None),
     }
+}
+
+/// fd embutido no objeto PrintStream (1 = stdout, 2 = stderr).
+fn ps_fd(vm: &Engine, recv: crate::heap::ObjRef) -> Result<i32, VmExit> {
+    Ok(vm.heap.get_field(recv, "fd")?.as_int()?)
 }
 
 /// toString default da JVM: `Classe@hash` (hex da identidade).

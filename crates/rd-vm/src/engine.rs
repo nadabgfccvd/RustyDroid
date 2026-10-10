@@ -263,8 +263,10 @@ impl Engine {
                 self.statics.insert((class.to_string(), fname), v);
             }
         }
-        // <clinit> (se existir)
-        if let Some((dex_idx, def, m)) = self.cp.resolve_method(class, "<clinit>", "()V") {
+        // <clinit> (se existir) — issue #39: procurar APENAS na própria classe.
+        // resolve_method sobe a cadeia de supers e re-executaria o <clinit> do
+        // ancestral (que já rodou no ensure_initialized(super) acima).
+        if let Some((dex_idx, def, m)) = self.cp.find_own_method(class, "<clinit>", "()V") {
             self.call(dex_idx, def, &m, Vec::new())?;
         }
         Ok(())

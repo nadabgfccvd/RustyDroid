@@ -140,6 +140,31 @@ impl Classpath {
         }
     }
 
+    /// issue #39: resolve um método APENAS na própria classe (sem caminhar a
+    /// cadeia de superclasses, sem interfaces). Uso correto: `<clinit>`
+    /// (JLS 12.4.2 — o init da super já acontece via ensure_initialized(super);
+    /// usar resolve_method aqui fazia o `<clinit>` do ancestral rodar DUAS vezes).
+    pub fn find_own_method(
+        &mut self,
+        class_desc: &str,
+        name: &str,
+        proto: &str,
+    ) -> Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)> {
+        let (dex_idx, def) = self.find_class(class_desc)?;
+        let def = *def;
+        let data = self.class_data(dex_idx, &def).ok().flatten()?;
+        data.direct_methods
+            .iter()
+            .chain(&data.virtual_methods)
+            .find(|m| {
+                m.method_idx != rd_dex::strings::NO_INDEX
+                    && self.method_name(dex_idx, m.method_idx) == Some(name.to_string())
+                    && self.method_proto(dex_idx, m.method_idx).as_deref() == Some(proto)
+            })
+            .cloned()
+            .map(|m| (dex_idx, def, m))
+    }
+
     /// Resolve um método por (classe, nome, proto) caminhando a superclasse.
     /// issue #26: depois da cadeia de supers, procura na closure de interfaces
     /// (métodos default — Java 8+/Kotlin massivo); retorna

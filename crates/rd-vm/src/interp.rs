@@ -712,6 +712,20 @@ pub(crate) fn exec_frame(
                 };
                 let (class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
                 vm.ensure_initialized(&class)?;
+                // issues #43/#48: System.out/.err materializam um PrintStream
+                // embutido na primeira leitura (println/print são intrínsecos;
+                // saída vai para stdout/stderr do host, spec PrintStream: nunca lança)
+                if class == "Ljava/lang/System;" && (fname == "out" || fname == "err") {
+                    let key = (class.clone(), fname.clone());
+                    if !vm.statics.contains_key(&key) {
+                        let fd = if fname == "err" { 2 } else { 1 };
+                        let r = vm.heap.alloc_instance(
+                            "Ljava/io/PrintStream;".to_string(),
+                            vec![("fd".to_string(), Value::Int(fd))],
+                        )?;
+                        vm.statics.insert(key, Value::Obj(r));
+                    }
+                }
                 let v = vm
                     .statics
                     .get(&(class.clone(), fname))
@@ -1253,6 +1267,15 @@ fn fill_array(
                 ),
             )));
         }
+        // issue #48: [C é SEM sinal — decodificar u16. O desc real do array
+        // vem do elem_class guardado no HeapObj (class_of devolve "[I"
+        // genérico para todos os integrais primitivos)
+        let is_char_array = match vm.heap.get(arr)? {
+            crate::heap::HeapObj::Array { elem_class, .. } => {
+                elem_class == "C" || elem_class == "[C"
+            }
+            _ => false,
+        };
         let mut values = Vec::with_capacity(count as usize);
         for i in 0..count as usize {
             let off = i * width as usize;
@@ -1273,6 +1296,11 @@ fn fill_array(
                 ))),
                 _ => match width {
                     1 => Value::Int(slice[0] as i8 as i32),
+                    // issue #48: char[] decodifica SEM sinal (u16 — payload
+                    // 0xFFFD é U+FFFD/65533, não −3); short[] continua i16
+                    2 if is_char_array => {
+                        Value::Int(u16::from_le_bytes([slice[0], slice[1]]) as i32)
+                    }
                     2 => Value::Int(i16::from_le_bytes([slice[0], slice[1]]) as i32),
                     4 => Value::Int(i32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]])),
                     _ => {
