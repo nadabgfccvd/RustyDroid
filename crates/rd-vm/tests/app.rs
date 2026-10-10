@@ -440,7 +440,14 @@ fn looper_drains_earliest_deadline_first() {
             u
         })),
     );
-    b.direct(ra, "run", "V", vec![], ACC_PUBLIC, Some(b.code(1, 1, 0, run_body(f_aat))));
+    b.direct(
+        ra,
+        "run",
+        "V",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, run_body(f_aat))),
+    );
     let rb = b.class("LRB;", "Ljava/lang/Object;");
     b.direct(
         rb,
@@ -454,7 +461,14 @@ fn looper_drains_earliest_deadline_first() {
             u
         })),
     );
-    b.direct(rb, "run", "V", vec![], ACC_PUBLIC, Some(b.code(1, 1, 0, run_body(f_bat))));
+    b.direct(
+        rb,
+        "run",
+        "V",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, run_body(f_bat))),
+    );
 
     b.type_idx("LRA;");
     b.type_idx("LRB;");
@@ -500,7 +514,11 @@ fn looper_drains_earliest_deadline_first() {
             .unwrap()
     };
     assert_eq!(get("bAt"), Value::Int(0), "B (500ms) deve rodar PRIMEIRO");
-    assert_eq!(get("aAt"), Value::Int(1), "A (1000ms) deve rodar em seguida");
+    assert_eq!(
+        get("aAt"),
+        Value::Int(1),
+        "A (1000ms) deve rodar em seguida"
+    );
     assert_eq!(get("ord"), Value::Int(2));
 }
 

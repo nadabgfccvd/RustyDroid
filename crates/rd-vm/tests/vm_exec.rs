@@ -1249,10 +1249,19 @@ fn clinit_runs_once_per_class_in_hierarchy() {
     );
     let mut e = engine_of(&b);
     let _ = invoke(&mut e, "dispara", "()I", &[]).unwrap(); // dispara C→B→A
-    let v = invoke(&mut e, "ler_cnt", "()I", &[]).unwrap().as_int().unwrap();
-    assert_eq!(v, 1, "<clinit> de LA executou {v}× (JLS 12.4.2: exatamente 1)");
+    let v = invoke(&mut e, "ler_cnt", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
+    assert_eq!(
+        v, 1,
+        "<clinit> de LA executou {v}× (JLS 12.4.2: exatamente 1)"
+    );
     // acessos seguintes: continua 1 (nenhum clinit re-executa)
-    let v2 = invoke(&mut e, "ler_cnt", "()I", &[]).unwrap().as_int().unwrap();
+    let v2 = invoke(&mut e, "ler_cnt", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
     assert_eq!(v2, 1);
 }
 
@@ -1306,7 +1315,9 @@ fn boxed_equals_hashcode_by_value() {
     let b1 = vof(&mut e, 1000);
     let b2 = vof(&mut e, 1000);
     let b3 = vof(&mut e, 1001);
-    let Value::Obj(r1) = b1 else { panic!("box não é Obj") };
+    let Value::Obj(r1) = b1 else {
+        panic!("box não é Obj")
+    };
     assert_eq!(i_eq(&mut e, r1, b2.clone()), Some(Value::Int(1)));
     assert_eq!(i_eq(&mut e, r1, b3.clone()), Some(Value::Int(0)));
     assert_eq!(i_hash(&mut e, r1), Some(Value::Int(1000)));
@@ -1350,20 +1361,34 @@ fn boxed_equals_hashcode_by_value() {
 fn floor_div_mod_java_semantics() {
     let mut e = engine_of(&DexBuilder::new());
     let fdi = |e: &mut Engine, a, b| {
-        e.invoke_static("Ljava/lang/Math;", "floorDiv", "(II)I", &[Value::Int(a), Value::Int(b)])
-            .unwrap()
-            .as_int()
-            .unwrap()
+        e.invoke_static(
+            "Ljava/lang/Math;",
+            "floorDiv",
+            "(II)I",
+            &[Value::Int(a), Value::Int(b)],
+        )
+        .unwrap()
+        .as_int()
+        .unwrap()
     };
     let fmi = |e: &mut Engine, a, b| {
-        e.invoke_static("Ljava/lang/Math;", "floorMod", "(II)I", &[Value::Int(a), Value::Int(b)])
-            .unwrap()
-            .as_int()
-            .unwrap()
+        e.invoke_static(
+            "Ljava/lang/Math;",
+            "floorMod",
+            "(II)I",
+            &[Value::Int(a), Value::Int(b)],
+        )
+        .unwrap()
+        .as_int()
+        .unwrap()
     };
     assert_eq!(fdi(&mut e, 7, 2), 3);
     assert_eq!(fmi(&mut e, 7, 2), 1);
-    assert_eq!(fdi(&mut e, 4, -3), -2, "floorDiv(4,-3): Java = -2 (euclid dava -1)");
+    assert_eq!(
+        fdi(&mut e, 4, -3),
+        -2,
+        "floorDiv(4,-3): Java = -2 (euclid dava -1)"
+    );
     assert_eq!(fmi(&mut e, 4, -3), -2, "floorMod(4,-3): Java = -2");
     assert_eq!(fdi(&mut e, -4, 3), -2);
     assert_eq!(fmi(&mut e, -4, 3), 2);
@@ -1374,7 +1399,12 @@ fn floor_div_mod_java_semantics() {
     assert_eq!(fmi(&mut e, i32::MIN, -1), 0);
     // variante long
     let v = e
-        .invoke_static("Ljava/lang/Math;", "floorDiv", "(JJ)J", &[Value::Long(4), Value::Long(-3)])
+        .invoke_static(
+            "Ljava/lang/Math;",
+            "floorDiv",
+            "(JJ)J",
+            &[Value::Long(4), Value::Long(-3)],
+        )
         .unwrap()
         .as_long()
         .unwrap();
@@ -1386,7 +1416,12 @@ fn floor_div_mod_java_semantics() {
 #[test]
 fn long_parse_null_is_nfe() {
     let mut e = engine_of(&DexBuilder::new());
-    match e.invoke_static("Ljava/lang/Long;", "parseLong", "(Ljava/lang/String;)J", &[Value::Null]) {
+    match e.invoke_static(
+        "Ljava/lang/Long;",
+        "parseLong",
+        "(Ljava/lang/String;)J",
+        &[Value::Null],
+    ) {
         Err(VmExit::Exception(t)) => {
             assert_eq!(t.class, "Ljava/lang/NumberFormatException;")
         }
@@ -1429,12 +1464,18 @@ fn fill_array_data_char_unsigned() {
     );
     let mut e = engine_of(&b);
     assert_eq!(
-        invoke(&mut e, "carr", "(I)I", &[Value::Int(0)]).unwrap().as_int().unwrap(),
+        invoke(&mut e, "carr", "(I)I", &[Value::Int(0)])
+            .unwrap()
+            .as_int()
+            .unwrap(),
         0xFFFD,
         "char[] decodifica sem sinal"
     );
     assert_eq!(
-        invoke(&mut e, "carr", "(I)I", &[Value::Int(1)]).unwrap().as_int().unwrap(),
+        invoke(&mut e, "carr", "(I)I", &[Value::Int(1)])
+            .unwrap()
+            .as_int()
+            .unwrap(),
         0x41
     );
 }
@@ -1466,7 +1507,10 @@ fn user_tostring_used_by_append_object_and_value_of() {
     let p_void = b.proto_idx("V", vec![]);
     let sb_init = b.method_idx("Ljava/lang/StringBuilder;", p_void, "<init>");
     let obj_init = b.method_idx("Ljava/lang/Object;", p_void, "<init>");
-    let p_obj_ret_sb = b.proto_idx("Ljava/lang/StringBuilder;", vec!["Ljava/lang/Object;".to_string()]);
+    let p_obj_ret_sb = b.proto_idx(
+        "Ljava/lang/StringBuilder;",
+        vec!["Ljava/lang/Object;".to_string()],
+    );
     let append = b.method_idx("Ljava/lang/StringBuilder;", p_obj_ret_sb, "append");
     let p_ret_str = b.proto_idx("Ljava/lang/String;", vec![]);
     let sb_to_string = b.method_idx("Ljava/lang/StringBuilder;", p_ret_str, "toString");
@@ -1497,7 +1541,10 @@ fn user_tostring_used_by_append_object_and_value_of() {
 }
 
 fn ponto_tidx_of(b: &DexBuilder) -> u16 {
-    b.types.iter().position(|t| t == "LPonto;").expect("LPonto; no builder") as u16
+    b.types
+        .iter()
+        .position(|t| t == "LPonto;")
+        .expect("LPonto; no builder") as u16
 }
 
 /// issues #43/#48: System.out.println executa (String e Object) — materializa
@@ -1608,7 +1655,14 @@ fn eiie_is_catchable_and_second_access_is_ncdfe() {
         typed: vec![("Ljava/lang/Error;".to_string(), 5)],
         catch_all: None,
     });
-    b.direct(cls, "tenta", "I", vec![], ACC_PUBLIC | ACC_STATIC, Some(blob));
+    b.direct(
+        cls,
+        "tenta",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(blob),
+    );
     let mut e = engine_of(&b);
     // 1º acesso sem try: EIIE (não Arithmetic cru — ensure_initialized wrapa)
     match invoke(&mut e, "direto", "()I", &[]) {
@@ -1627,8 +1681,14 @@ fn eiie_is_catchable_and_second_access_is_ncdfe() {
     // COM try: catch (Error) captura o EIIE (hierarquia nova + step!)
     // (o 1º invoke de tenta re-abre? não — LFail já está clinit_failed →
     // NCDFE, que também é <: Error → captura igualmente válida)
-    let v = invoke(&mut e, "tenta", "()I", &[]).unwrap().as_int().unwrap();
-    assert_eq!(v, 1, "exceção de clinit deve ser capturável por catch (Error)");
+    let v = invoke(&mut e, "tenta", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
+    assert_eq!(
+        v, 1,
+        "exceção de clinit deve ser capturável por catch (Error)"
+    );
 }
 
 /// issue #41 (JLS 12.4.2): falha de <clinit> na SUPERCLASSE propaga o EIIE
@@ -1732,7 +1792,14 @@ fn iput_oom_is_catchable_oome() {
         typed: vec![("Ljava/lang/Throwable;".to_string(), 10)],
         catch_all: None,
     });
-    b.direct(cls, "escreve_cap", "I", vec![], ACC_PUBLIC | ACC_STATIC, Some(blob));
+    b.direct(
+        cls,
+        "escreve_cap",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(blob),
+    );
     // heap calibrado: new-instance (32 B) passa exato; o iput de campo novo
     // custa size_of::<Value>() + len("f") e ESTOURA → OOM tipado no iput
     let field_cost = std::mem::size_of::<rd_vm::Value>() + "f".len();
@@ -1754,7 +1821,10 @@ fn iput_oom_is_catchable_oome() {
         other => panic!("esperava OOME Throwable, got {other:?}"),
     }
     let mut e2 = mk(&b);
-    let v = invoke(&mut e2, "escreve_cap", "()I", &[]).unwrap().as_int().unwrap();
+    let v = invoke(&mut e2, "escreve_cap", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
     assert_eq!(v, 1, "OOME de iput deve ser capturável");
 }
 
@@ -1837,8 +1907,14 @@ fn if_eq_mixed_int_obj_is_false_not_killer() {
         })),
     );
     let mut e = engine_of(&b);
-    let v = invoke(&mut e, "mistura", "()I", &[]).unwrap().as_int().unwrap();
-    assert_eq!(v, 3, "if-eq (Int, Obj) dá false e segue; (Int0, Null) dá true");
+    let v = invoke(&mut e, "mistura", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
+    assert_eq!(
+        v, 3,
+        "if-eq (Int, Obj) dá false e segue; (Int0, Null) dá true"
+    );
 }
 
 // ── issue #42: covariância de arrays (aput-object + instanceof)
@@ -1908,9 +1984,15 @@ fn array_covariance_aput_and_instanceof() {
     let mut e = engine_of(&b);
     let v = invoke(&mut e, "cov", "()I", &[]).unwrap().as_int().unwrap();
     assert_eq!(v, 1, "String em Object[] é legal (covariância)");
-    let v = invoke(&mut e, "inst", "()I", &[]).unwrap().as_int().unwrap();
+    let v = invoke(&mut e, "inst", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
     assert_eq!(v, 0, "Object[] NÃO é CharSequence[] (recursão dá false)");
-    let v = invoke(&mut e, "cov2", "()I", &[]).unwrap().as_int().unwrap();
+    let v = invoke(&mut e, "cov2", "()I", &[])
+        .unwrap()
+        .as_int()
+        .unwrap();
     assert_eq!(v, 1, "String[] <: CharSequence[] (String <: CharSequence)");
 }
 
@@ -1949,7 +2031,10 @@ fn aput_object_unrelated_still_ase() {
     let mut e = engine_of(&b);
     match invoke(&mut e, "ase", "()I", &[]) {
         Err(VmExit::Exception(t)) => {
-            assert_eq!(t.class, "Ljava/lang/ArrayStoreException;", "ASE real: {t:?}")
+            assert_eq!(
+                t.class, "Ljava/lang/ArrayStoreException;",
+                "ASE real: {t:?}"
+            )
         }
         other => panic!("esperava ArrayStoreException, got {other:?}"),
     }

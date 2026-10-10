@@ -672,7 +672,9 @@ impl Engine {
     fn dump_view(&self, v: ObjRef, depth: usize, out: &mut String) {
         // issue #40: cap — dump de árvore hostil profunda não estoura stack
         if depth > MAX_VIEW_DEPTH {
-            out.push_str(&format!("  ...árvore além de {MAX_VIEW_DEPTH} níveis (cortado)\n"));
+            out.push_str(&format!(
+                "  ...árvore além de {MAX_VIEW_DEPTH} níveis (cortado)\n"
+            ));
             return;
         }
         let Some(HostObj::View {

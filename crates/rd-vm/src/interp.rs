@@ -719,10 +719,11 @@ pub(crate) fn exec_frame(
                 });
                 // issue #49: OOM de campo novo no iput é OutOfMemoryError
                 // CAPTURÁVEL (antes: VM_TYPE_ERROR mentiroso e run-killer)
-                step!(crate::err::put_field_result(
-                    vm.heap
-                        .put_field(r, &fname, regs[*a as usize].clone())
-                ));
+                step!(crate::err::put_field_result(vm.heap.put_field(
+                    r,
+                    &fname,
+                    regs[*a as usize].clone()
+                )));
             }
 
             // ── sget (60..66) / sput (67..6D) ───────────────────────────────

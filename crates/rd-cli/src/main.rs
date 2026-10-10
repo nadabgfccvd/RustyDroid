@@ -495,10 +495,7 @@ fn cmd_inspect(path: &Path, json: bool, device: Option<&str>, dd: &DataDir) -> R
                 }
                 perms.insert(name.clone(), serde_json::Value::Object(o));
             }
-            map.insert(
-                "permissions_state".into(),
-                serde_json::Value::Object(perms),
-            );
+            map.insert("permissions_state".into(), serde_json::Value::Object(perms));
             map.insert(
                 "floor_status".into(),
                 serde_json::to_value(apk.floor_status())

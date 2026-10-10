@@ -692,8 +692,15 @@ fn arsc_two_configs_parse_and_resolve() {
     let a = apk.arsc.as_ref().expect("arsc presente");
     let pkg = a.packages.first().expect("package");
     let entries = pkg.entries.get(&greet).expect("entry greet");
-    assert_eq!(entries.len(), 2, "2 configs para o mesmo res_id: {entries:?}");
-    let default = entries.iter().find(|e| e.config.is_default()).expect("default");
+    assert_eq!(
+        entries.len(),
+        2,
+        "2 configs para o mesmo res_id: {entries:?}"
+    );
+    let default = entries
+        .iter()
+        .find(|e| e.config.is_default())
+        .expect("default");
     let specific = entries.iter().find(|e| !e.config.is_default()).expect("pt");
     assert_eq!(default.string.as_deref(), Some("Ola default"));
     assert_eq!(specific.string.as_deref(), Some("Ola pt"));

@@ -350,10 +350,7 @@ impl Classpath {
             }
             if let Some(sup_elem) = sup.strip_prefix('[') {
                 if sup_elem == "Ljava/lang/Object;" {
-                    return !matches!(
-                        sub_elem,
-                        "B" | "C" | "D" | "F" | "I" | "J" | "S" | "Z"
-                    );
+                    return !matches!(sub_elem, "B" | "C" | "D" | "F" | "I" | "J" | "S" | "Z");
                 }
                 return self.is_subtype(sub_elem, sup_elem);
             }
@@ -481,22 +478,18 @@ fn builtin_hierarchy(class: &str) -> Option<Vec<&'static str>> {
         // issue #41: hierarquia de ERROS de link/init — sem elas, EIIE/NCDFE
         // não casam nem com catch (Throwable) (não são subtipo de Throwable)
         "Ljava/lang/LinkageError;" => Some(ERR.to_vec()),
-        "Ljava/lang/ExceptionInInitializerError;" => {
-            Some(vec![
-                "Ljava/lang/LinkageError;",
-                "Ljava/lang/Error;",
-                "Ljava/lang/Throwable;",
-                "Ljava/lang/Object;",
-            ])
-        }
-        "Ljava/lang/NoClassDefFoundError;" => {
-            Some(vec![
-                "Ljava/lang/LinkageError;",
-                "Ljava/lang/Error;",
-                "Ljava/lang/Throwable;",
-                "Ljava/lang/Object;",
-            ])
-        }
+        "Ljava/lang/ExceptionInInitializerError;" => Some(vec![
+            "Ljava/lang/LinkageError;",
+            "Ljava/lang/Error;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/lang/NoClassDefFoundError;" => Some(vec![
+            "Ljava/lang/LinkageError;",
+            "Ljava/lang/Error;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
         "Ljava/lang/Throwable;" => Some(vec!["Ljava/lang/Object;"]),
         "Ljava/lang/Exception;" => Some(EXC.to_vec()),
         "Ljava/lang/Error;" => Some(ERR.to_vec()),
@@ -569,9 +562,6 @@ mod tests {
         assert!(!cp.is_subtype("[I", "[Ljava/lang/Object;"));
         assert!(!cp.is_subtype("[I", "[J"));
         // não-relacionado: Integer[] não é CharSequence[]
-        assert!(!cp.is_subtype(
-            "[Ljava/lang/Integer;",
-            "[Ljava/lang/CharSequence;"
-        ));
+        assert!(!cp.is_subtype("[Ljava/lang/Integer;", "[Ljava/lang/CharSequence;"));
     }
 }

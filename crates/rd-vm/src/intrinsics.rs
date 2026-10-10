@@ -57,14 +57,7 @@ pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Resul
         return Ok(s.clone());
     }
     let cls = vm.heap.class_of(r)?.to_string();
-    match call_instance_intrinsic(
-        vm,
-        &cls,
-        "toString",
-        "()Ljava/lang/String;",
-        r,
-        &[],
-    )? {
+    match call_instance_intrinsic(vm, &cls, "toString", "()Ljava/lang/String;", r, &[])? {
         Some(Value::Obj(sref)) => Ok(vm.heap.as_str(sref)?.to_string()),
         Some(Value::Null) => Ok("null".to_string()),
         Some(_) => Err(crate::err::vm_error(
@@ -75,7 +68,8 @@ pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Resul
         None => {
             // classe declara toString no DEX: executa de verdade
             if let Some((dex_idx, def, m)) =
-                vm.cp.resolve_method(&cls, "toString", "()Ljava/lang/String;")
+                vm.cp
+                    .resolve_method(&cls, "toString", "()Ljava/lang/String;")
             {
                 match vm.call(dex_idx, def, &m, vec![Value::Obj(r)])? {
                     Value::Obj(sref) => Ok(vm.heap.as_str(sref)?.to_string()),
@@ -268,7 +262,10 @@ pub fn call_static_intrinsic(
             // issue #49: OOM → OutOfMemoryError capturável
             let r = vm
                 .heap
-                .alloc_instance(LONG.to_string(), vec![("value".to_string(), Value::Long(v))])
+                .alloc_instance(
+                    LONG.to_string(),
+                    vec![("value".to_string(), Value::Long(v))],
+                )
                 .map_err(crate::err::oom_throwable)?;
             Ok(Some(Value::Obj(r)))
         }
@@ -536,9 +533,9 @@ pub fn call_instance_intrinsic(
             };
             Ok(Some(Value::Int(v as i32)))
         }
-        (INTEGER, "hashCode", "()I") => {
-            Ok(Some(Value::Int(vm.heap.get_field(recv, "value")?.as_int()?)))
-        }
+        (INTEGER, "hashCode", "()I") => Ok(Some(Value::Int(
+            vm.heap.get_field(recv, "value")?.as_int()?,
+        ))),
         (LONG, "hashCode", "()I") => {
             // spec Long.hashCode: (int)(value ^ (value >>> 32))
             let v = vm.heap.get_field(recv, "value")?.as_long()? as u64;
