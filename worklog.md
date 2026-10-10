@@ -119,3 +119,26 @@ Stage Summary:
   24h do usuário (notebook Win 11 via WSL2). DoD = zero crash-* após 24h.
 - Bugs de falso-negativo no gate de crash eram o risco real de desperdiçar as
   24h — eliminados e provados por teste.
+
+---
+Task ID: 6
+Agent: Z.ai Code (sessão fuzz-campaign)
+Task: Verificação completa do scripts/fuzz-campaign.sh + calibração para notebook do usuário (i5-1334U, 16 GB RAM, WSL2) + commit/push
+
+Work Log:
+- Auditoria linha a linha do scripts/fuzz-campaign.sh: 3 bugs reais encontrados e corrigidos:
+  (1) veredito dava "✅ SEM CRASH — DoD satisfeito" mesmo se todos os 5 targets morressem no build (exit 0 falso) — agora exige 5/5 íntegros; falha de execução = exit 2 com o log;
+  (2) artifacts de rodadas anteriores (ex.: smoke de 10 min) eram contados de novo no veredito da campanha nova — agora são arquivados em fuzz-logs/<ts>/artifacts-anteriores/ antes da contagem;
+  (3) dica de merge no cabeçalho tinha a sintaxe invertida (saída/entrada do cargo fuzz merge).
+- Novos preflights anti-desperdício de 24h:
+  - check_asan_kernel: aborta se vm.mmap_rnd_bits > 28 (bug ASan/SEGV em kernels ≥ 6.6, incluindo WSL2 recente) com instruções de correção ([boot] command no /etc/wsl.conf); escape RD_FUZZ_SKIP_SYSCTL_CHECK=1;
+  - auto-calibração de memória: lê MemAvailable, escolhe workers × rss_limit (notebook 16 GB → workers=1, rss ~1,7-1,8 GB/processo; pior caso ~10,5 GB cabe em WSL com 12 GB); RD_FUZZ_RSS=<MB> sobrescreve;
+  - validação numérica de SECS/WORKERS; guard de "rodar de dentro do clone"; erro claro no unzip de APK corrompido; --help e --seeds-only.
+- Testes executados nesta máquina: bash -n OK; --help OK; --seeds-only real com APK golden (corpus: apk_full=24, zip=5, axml=245, arsc=15, dex=15 — ~244 MB); guard de argumento inválido exit 1; guard fora-do-clone exit 1. (Campanha em si não executável aqui: sem nightly/cargo-fuzz no host.)
+- Verificado via API (PAT do usuário, em memória): remote main = 9862711, sincronizado com local antes deste commit.
+- Commit c0e9932 + push para main; CI a acompanhar.
+
+Stage Summary:
+- scripts/fuzz-campaign.sh v2: preflight completo (ASan kernel + RAM + guardas), veredito honesto (exit 0 só com 5/5 targets e zero crash-*), --seeds-only para smoke de dados em 2 min.
+- Recomendação WSL2 para o usuário: .wslconfig com memory=12GB + swap=16GB; fluxo --seeds-only → 600s → 86400s dentro do tmux.
+- Pendências de M1 continuam: campanha 24h real no notebook do usuário; comparador baksmali repetível ainda a commitar (fora do escopo desta task).
