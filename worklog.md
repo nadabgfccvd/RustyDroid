@@ -168,3 +168,38 @@ Work Log:
 Stage Summary:
 - Todos os 14 issues (#39–#52) RESOLVIDOS e FECHADOS; commits 6907c81→0e83921 pushados; CI verde.
 - Próximo: M4 (software rendering + UI dump uiautomator-compatible) — a começar.
+
+---
+Task ID: 8
+Agent: Z.ai Code (sessão issues→M4)
+Task: Começar e fechar o M4 (screenshot correto; get_ui_tree com ids certos)
+
+Work Log:
+- rd-vm: Engine::view_tree() — árvore de UI estruturada (UiNode com class,
+  resource-id no formato package:id/nome resolvido do arsc, text, bounds,
+  visibility/enabled/clickable, children) com cap de profundidade (#40).
+- rd-render (de stub M0 a real): ui_dump.rs (XML uiautomator fiel: index/
+  text/resource-id/class/package/bounds [x1,y1][x2,y2]/clickable/enabled;
+  GONE excluído como no uiautomator real, INVISIBLE mantido) + shot.rs
+  (framebuffer RGB 720×1440 determinístico, painter por classe/estado,
+  glifos de bloco 3×7 com nota de que fonte real é M8/M9, encoder PNG sem
+  dependências: zlib STORED + crc32/adler32 próprios).
+- rd-cli: subcomandos rd app dump (uiautomator XML | --text | --json) e
+  rd app shot --out FILE.png; ações de script xml/shot no rd app run;
+  boot_app extraído (boot comum: APK 1×, launcher default, package do
+  manifest).
+- Testes: 8 unit (rd-render: dump/gone/invisible/escape/PNG
+  determinístico/pixels/zlib) + 2 e2e (view_tree com ids certos; screenshot
+  da árvore REAL com pixels por região) — rd-render como dev-dependency do
+  rd-vm (ciclo dev permitido).
+- MSRV: is_multiple_of (1.87) substituído por % (MSRV 1.76 é regra).
+- Docs: ROADMAP M4 ✅ (round 2: seleção de configs por device-config) +
+  README M4 DONE.
+- Suíte: 23 bins ok, 0 falhas; clippy --all-targets 0 warnings; fmt ok.
+
+Stage Summary:
+- M4 DoD ATINGIDO e commitado (0c3b29f, 936681f, 8d7bf14): get_ui_tree com
+  ids certos + screenshot determinístico, ponta a ponta com fixture real.
+- Pendências conhecidas (registradas, não bloqueiam): fonte tipográfica real
+  (M8/M9); seleção de configs por device-config no resolve (M4 round 2);
+  renderers winit/web (M11).
