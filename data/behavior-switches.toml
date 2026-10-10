@@ -169,7 +169,7 @@ summary = "Intents implícitos só alcançam componentes exportados; PendingInte
 
 [[switch]]
 id = "photo-picker-default"
-api = 34
+api = 33
 title = "Photo picker"
 impact = "media"
 default_state = "info"
@@ -192,10 +192,10 @@ impact = "ui"
 default_state = "enforced"
 summary = "Apps com target 35+ desenham edge-to-edge; barras de sistema transparentes e tratamento de insets obrigatório (content-margin/view-finder APIs)."
 
-# ==================== Android 16 / API 36 ====================
+# ==================== Android 14 / API 34 ====================
 [[switch]]
 id = "health-connect-platform"
-api = 36
+api = 34
 title = "Health Connect in platform"
 impact = "security"
 default_state = "info"
