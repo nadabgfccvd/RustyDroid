@@ -128,11 +128,33 @@ enum AppSub {
         /// Classe da activity (Lpkg/Cls; ou com.ex.Main). Default: LAUNCHER
         #[arg(long)]
         activity: Option<String>,
-        /// Ação por passo: "tap X,Y" | "wait MS" | "dump" (repetível)
+        /// Ação por passo: "tap X,Y" | "wait MS" | "dump" | "xml" | "shot FILE" (repetível)
         #[arg(long = "script")]
         scripts: Vec<String>,
         #[arg(long)]
         json: bool,
+    },
+    /// M4 DoD "get_ui_tree": dump UI — uiautomator XML (default) ou textual M3
+    Dump {
+        path: PathBuf,
+        /// Classe da activity. Default: LAUNCHER
+        #[arg(long)]
+        activity: Option<String>,
+        /// Dump textual M3 em vez do XML uiautomator
+        #[arg(long)]
+        text: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// M4 DoD "screenshot": PNG headless da tela corrente (720×1440)
+    Shot {
+        path: PathBuf,
+        /// Classe da activity. Default: LAUNCHER
+        #[arg(long)]
+        activity: Option<String>,
+        /// Arquivo PNG de saída
+        #[arg(long, value_name = "FILE")]
+        out: PathBuf,
     },
 }
 
@@ -299,6 +321,17 @@ fn run(cli: Cli) -> i32 {
                 scripts,
                 json,
             } => cmd_app_run(path, activity.as_deref(), scripts, *json),
+            AppSub::Dump {
+                path,
+                activity,
+                text,
+                json,
+            } => cmd_app_dump(path, activity.as_deref(), *text, *json),
+            AppSub::Shot {
+                path,
+                activity,
+                out,
+            } => cmd_app_shot(path, activity.as_deref(), out),
         },
         Cmd::Vm { sub } => match sub {
             VmSub::Exec {
@@ -1036,15 +1069,15 @@ fn vm_err_to_rd(e: rd_vm::VmExit) -> RdError {
 /// M3 (DoD): roda o app trivial headless — lifecycle + script do agente
 /// ("tap X,Y", "wait MS", "dump"). O dump textual é a observabilidade do
 /// agente até o UI dump rico do M4.
-fn cmd_app_run(
+/// Boot comum dos `rd app *` (M4): o APK é aberto UMA vez — o mesmo `Apk`
+/// fornece dex E Resources (layouts AXML + resources.arsc do LayoutInflater).
+/// .dex solto segue válido (sem Resources: setContentView(I) responde
+/// RESOURCES_MISSING). Com o APK aberto, o package é o do MANIFEST (fonte da
+/// verdade — getPackageName correto mesmo com --activity explícito).
+fn boot_app(
     path: &Path,
     activity: Option<&str>,
-    scripts: &[String],
-    json: bool,
-) -> Result<(), RdError> {
-    // M3.2: o APK é aberto UMA vez — o mesmo `Apk` fornece dex E Resources
-    // (layouts AXML + resources.arsc do LayoutInflater). .dex solto segue
-    // válido (sem Resources: setContentView(I) responde RESOURCES_MISSING).
+) -> Result<(rd_vm::Engine, String, String), RdError> {
     let apk = open_apk(path).ok();
     let files = match &apk {
         Some(a) => dexes_of_apk(a)?,
@@ -1054,8 +1087,6 @@ fn cmd_app_run(
     let (activity_desc, package) = match activity {
         Some(a) => {
             let desc = normalize_activity_desc(a);
-            // M3.2: com o APK aberto, o package é o do MANIFEST (fonte da
-            // verdade — getPackageName correto mesmo com --activity explícito)
             let pkg = match &apk {
                 Some(ap) => ap.manifest.package.clone(),
                 None => package_of_desc(&desc),
@@ -1073,8 +1104,20 @@ fn cmd_app_run(
     }
     eng.launch_app(&activity_desc, &package, Vec::new())
         .map_err(vm_err_to_rd)?;
+    Ok((eng, activity_desc, package))
+}
+
+fn cmd_app_run(
+    path: &Path,
+    activity: Option<&str>,
+    scripts: &[String],
+    json: bool,
+) -> Result<(), RdError> {
+    let (mut eng, activity_desc, package) = boot_app(path, activity)?;
 
     let mut dumps: Vec<String> = Vec::new();
+    let mut xmls: Vec<String> = Vec::new();
+    let mut shots: Vec<String> = Vec::new();
     for script in scripts {
         let parts: Vec<&str> = script.trim().splitn(2, ' ').collect();
         match (parts[0], parts.get(1)) {
@@ -1112,6 +1155,40 @@ fn cmd_app_run(
                     print!("{d}");
                 }
             }
+            ("xml", _) => {
+                // M4: dump uiautomator (get_ui_tree)
+                let tree = eng
+                    .view_tree()
+                    .ok_or_else(|| RdError::invalid_format("sem activity/window para dump"))?;
+                let xml = rd_render::uiautomator_xml(&tree, &package);
+                if !json {
+                    print!("{xml}");
+                } else {
+                    xmls.push(xml);
+                }
+            }
+            ("shot", rest) => {
+                // M4: screenshot PNG headless — "shot FILE.png"
+                let file = rest
+                    .map(|r| r.trim())
+                    .filter(|r| !r.is_empty())
+                    .ok_or_else(|| {
+                        RdError::invalid_format(format!("script shot inválido: {script:?}"))
+                            .with_suggestion("use --script \"shot tela.png\"")
+                    })?;
+                let file = file.strip_prefix("--out ").map(str::trim).unwrap_or(file);
+                let tree = eng.view_tree().ok_or_else(|| {
+                    RdError::invalid_format("sem activity/window para screenshot")
+                })?;
+                let png = rd_render::render_snapshot(&tree).to_png();
+                std::fs::write(file, &png).map_err(|e| {
+                    RdError::new("IO_ERROR", format!("escrevendo {file}: {e}"), "rd-cli")
+                })?;
+                if !json {
+                    println!("[shot {file}] {} bytes (720x1440)", png.len());
+                }
+                shots.push(file.to_string());
+            }
             (other, _) => {
                 return Err(RdError::invalid_format(format!(
                     "ação de script desconhecida: {other:?}"
@@ -1132,6 +1209,8 @@ fn cmd_app_run(
                 "finished": eng.activity_is_finished(),
                 "clock_ms": eng.fw.clock(),
                 "ui_tree": dumps.last().cloned().unwrap_or_default(),
+                "ui_tree_xml": xmls.last().cloned().unwrap_or_default(),
+                "shots": shots,
             }))
         );
     } else if let Some(d) = dumps.last() {
@@ -1163,6 +1242,73 @@ fn launcher_of_apk(path: &Path) -> Result<(String, String), RdError> {
 }
 
 /// M3.2: LAUNCHER a partir de um APK já aberto (mesma leitura única).
+/// M4 DoD "get_ui_tree com ids certos": dump UI da activity corrente —
+/// XML uiautomator (default) ou dump textual M3.
+fn cmd_app_dump(
+    path: &Path,
+    activity: Option<&str>,
+    text: bool,
+    json: bool,
+) -> Result<(), RdError> {
+    let (eng, activity_desc, package) = boot_app(path, activity)?;
+    if text {
+        let d = eng.dump_ui();
+        if json {
+            println!(
+                "{}",
+                to_json(&serde_json::json!({
+                    "activity": activity_desc,
+                    "package": package,
+                    "ui_tree": d,
+                }))
+            );
+        } else {
+            print!("{d}");
+        }
+        return Ok(());
+    }
+    let tree = eng
+        .view_tree()
+        .ok_or_else(|| RdError::invalid_format("sem activity/window para dump"))?;
+    let xml = rd_render::uiautomator_xml(&tree, &package);
+    if json {
+        println!(
+            "{}",
+            to_json(&serde_json::json!({
+                "activity": activity_desc,
+                "package": package,
+                "ui_tree_xml": xml,
+            }))
+        );
+    } else {
+        print!("{xml}");
+    }
+    Ok(())
+}
+
+/// M4 DoD "screenshot correto": PNG headless 720×1440 da tela corrente —
+/// software renderer determinístico do rd-render.
+fn cmd_app_shot(path: &Path, activity: Option<&str>, out: &Path) -> Result<(), RdError> {
+    let (eng, _activity, _package) = boot_app(path, activity)?;
+    let tree = eng
+        .view_tree()
+        .ok_or_else(|| RdError::invalid_format("sem activity/window para screenshot"))?;
+    let png = rd_render::render_snapshot(&tree).to_png();
+    std::fs::write(out, &png).map_err(|e| {
+        RdError::new(
+            "IO_ERROR",
+            format!("escrevendo {}: {e}", out.display()),
+            "rd-cli",
+        )
+    })?;
+    println!(
+        "screenshot: {} ({} bytes, 720x1440, determinístico)",
+        out.display(),
+        png.len()
+    );
+    Ok(())
+}
+
 fn launcher_of(apk: &Apk) -> Result<(String, String), RdError> {
     let pkg = apk.manifest.package.clone();
     let app = &apk.manifest.application;

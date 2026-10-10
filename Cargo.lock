@@ -242,6 +242,7 @@ dependencies = [
  "rd-apk",
  "rd-dex",
  "rd-framework",
+ "rd-render",
  "rd-vm",
  "serde",
  "serde_json",

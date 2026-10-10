@@ -765,3 +765,59 @@ fn layout_land_fallback_resolves() {
         "fallback res/layout-land/ deve resolver: {dump}"
     );
 }
+
+// ── M4: view_tree estruturada (fonte do uiautomator dump + screenshot)
+
+/// DoD M4 "get_ui_tree com ids certos": a árvore estruturada da activity tem
+/// resource-id no formato uiautomator (package:id/nome), bounds do layout
+/// (TextView 80dp → 160px no topo), text resolvido do arsc e classes certas.
+#[test]
+fn m4_view_tree_has_ids_and_bounds() {
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout())]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    e.launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect("launch");
+
+    let tree = e.view_tree().expect("árvore de UI da activity");
+    // raiz: LinearLayout full-window
+    assert_eq!(tree.class, "android.widget.LinearLayout");
+    assert_eq!(
+        tree.bounds,
+        (0, 0, 720, 208),
+        "raiz vertical: soma dos filhos (160+48)"
+    );
+    // filho 1: TextView com id resolvido + bounds do layout_height=80dp→160px
+    let tv = &tree.children[0];
+    assert_eq!(tv.class, "android.widget.TextView");
+    assert_eq!(
+        tv.resource_id.as_deref(),
+        Some("com.test.xml:id/tv"),
+        "ids certos (package do manifest)"
+    );
+    assert_eq!(tv.bounds, (0, 0, 720, 160), "80dp × DENSITY 2.0");
+    assert_eq!(tv.text, "Olá do XML", "text resolvido do arsc");
+    // filho 2: Button clickable (android:onClick)
+    let btn = &tree.children[1];
+    assert_eq!(btn.resource_id.as_deref(), Some("com.test.xml:id/btn"));
+    assert!(btn.clickable, "onClick no XML → clickable=true");
+    assert_eq!(btn.text, "Clique aqui");
+}
