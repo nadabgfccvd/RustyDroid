@@ -1840,3 +1840,117 @@ fn if_eq_mixed_int_obj_is_false_not_killer() {
     let v = invoke(&mut e, "mistura", "()I", &[]).unwrap().as_int().unwrap();
     assert_eq!(v, 3, "if-eq (Int, Obj) dá false e segue; (Int0, Null) dá true");
 }
+
+// ── issue #42: covariância de arrays (aput-object + instanceof)
+
+/// aput-object de SUBTIPO em array de supertipo é legal (Java covariante) —
+/// antes: ArrayStoreException espúria ([LSup; só casava textualmente).
+/// instanceof String[] <: CharSequence[] via covariância do elemento.
+#[test]
+fn array_covariance_aput_and_instanceof() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/String;");
+    b.type_idx("Ljava/lang/CharSequence;");
+    let t_objarr = b.type_idx("[Ljava/lang/Object;");
+    let t_charseq_arr = b.type_idx("[Ljava/lang/CharSequence;");
+    let s_x = b.intern("x") as u16;
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+
+    // cov()I: aput-object "x" em Object[] → ok (antes: ASE espúria)
+    b.direct(
+        cls,
+        "cov",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(4, 0, 0, {
+            let mut u = op11n(0x12, 0, 1); // const/4 v0, 1
+            u.extend(op22c(0x23, 1, 0, t_objarr)); // new-array v1, v0, [LObject;
+            u.extend(op21c(0x1A, 2, s_x)); // const-string v2, "x"
+            u.extend(op11n(0x12, 3, 0)); // const/4 v3, 0
+            u.extend(op23x(0x4D, 2, 1, 3)); // aput-object v2, v1, v3
+            u.extend(op11n(0x12, 0, 1)); // v0 = 1 (chegou aqui)
+            u.extend(op10x(0x0E)); // return v0
+            u
+        })),
+    );
+    // inst()I: instance-of String[] vs CharSequence[] → 1 (String <: CharSequence)
+    b.direct(
+        cls,
+        "inst",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(3, 0, 0, {
+            let mut u = op11n(0x12, 0, 1);
+            u.extend(op22c(0x23, 1, 0, t_objarr)); // new-array [LObject; (identidade)
+            u.extend(op22c(0x20, 0, 1, t_charseq_arr)); // instanceof v0, v1, [LCharSequence;
+            u.extend(op11x(0x0F, 0)); // return v0 (0: Object[] ∉ CharSequence[])
+            u
+        })),
+    );
+    // cov2()I: instanceof String[] vs CharSequence[] — covariância REAL
+    let t_strarr = b.type_idx("[Ljava/lang/String;");
+    b.direct(
+        cls,
+        "cov2",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(3, 0, 0, {
+            let mut u = op11n(0x12, 0, 1);
+            u.extend(op22c(0x23, 1, 0, t_strarr)); // new-array [LString;
+            u.extend(op22c(0x20, 0, 1, t_charseq_arr)); // instanceof v0, v1, [LCharSequence;
+            u.extend(op11x(0x0F, 0)); // return v0 (1: String[] <: CharSequence[])
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let v = invoke(&mut e, "cov", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 1, "String em Object[] é legal (covariância)");
+    let v = invoke(&mut e, "inst", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 0, "Object[] NÃO é CharSequence[] (recursão dá false)");
+    let v = invoke(&mut e, "cov2", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 1, "String[] <: CharSequence[] (String <: CharSequence)");
+}
+
+/// issue #42: valor NÃO-relacionado continua ASE real (covariância de escrita
+/// com store check preservado).
+#[test]
+fn aput_object_unrelated_still_ase() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/String;");
+    let t_strarr = b.type_idx("[Ljava/lang/String;");
+    let p_void = b.proto_idx("V", vec![]);
+    let p_i_obj = b.proto_idx("Ljava/lang/Integer;", vec!["I".to_string()]);
+    let m_valueof = b.method_idx("Ljava/lang/Integer;", p_i_obj, "valueOf");
+    let obj_init = b.method_idx("Ljava/lang/Object;", p_void, "<init>");
+    let _ = obj_init;
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    b.direct(
+        cls,
+        "ase",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(6, 0, 0, {
+            let mut u = op11n(0x12, 0, 1); // const/4 v0, 1
+            u.extend(op22c(0x23, 1, 0, t_strarr)); // new-array v1, [LString;
+            u.extend(op11n(0x12, 4, 5)); // const/4 v4, 5
+            u.extend(op35c(0x71, 1, m_valueof, [4, 0, 0, 0, 0])); // Integer.valueOf(5)
+            u.extend(op11x(0x0C, 5)); // move-result v5
+            u.extend(op11n(0x12, 3, 0)); // const/4 v3, 0
+            u.extend(op23x(0x4D, 5, 1, 3)); // aput-object v5, v1, v3 → ASE
+            u.extend(op11n(0x12, 0, 1));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    match invoke(&mut e, "ase", "()I", &[]) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/ArrayStoreException;", "ASE real: {t:?}")
+        }
+        other => panic!("esperava ArrayStoreException, got {other:?}"),
+    }
+}

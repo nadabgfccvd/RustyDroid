@@ -175,9 +175,16 @@ impl Classpath {
         name: &str,
         proto: &str,
     ) -> Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)> {
+        // issue #42 (JVMS 5.4.5): a cadeia de CLASSES vence sobre default
+        // methods de interface — subir a hierarquia inteira ANTES de olhar
+        // interfaces (antes: interfaces do nível atual sombreavam o método
+        // herdado da superclasse)
         let mut cur = class_desc.to_string();
+        let mut chain: Vec<String> = Vec::new();
         for _ in 0..16 {
-            let (dex_idx, def) = self.find_class(&cur)?;
+            let Some((dex_idx, def)) = self.find_class(&cur) else {
+                break; // fim da cadeia (ex.: Object é builtin, fora do DEX)
+            };
             let def = *def;
             if let Some(data) = self.class_data(dex_idx, &def).ok().flatten() {
                 let found = data
@@ -193,21 +200,24 @@ impl Classpath {
                 if let Some(m) = found {
                     return Some((dex_idx, def, m));
                 }
-                // issue #26: métodos default de interface — procura na closure
-                // de interfaces da classe corrente antes de subir
-                let ifaces = self.interfaces_of(&cur);
-                for iface in ifaces {
-                    if let Some(hit) = self.resolve_in_interface(&iface, name, proto, 0) {
-                        return Some(hit);
-                    }
-                }
             }
+            chain.push(cur.clone());
             // sobe para a superclasse (dentro do mesmo conjunto de dex)
             let super_desc = self.dexes[dex_idx].type_str(def.superclass_idx).to_string();
             if super_desc.is_empty() || super_desc == cur {
-                return None;
+                break;
             }
             cur = super_desc;
+        }
+        // fase 2: default methods de interface — da classe mais derivada
+        // para a raiz (mesma ordem de visita da fase 1; issue #26)
+        for c in &chain {
+            let ifaces = self.interfaces_of(c);
+            for iface in ifaces {
+                if let Some(hit) = self.resolve_in_interface(&iface, name, proto, 0) {
+                    return Some(hit);
+                }
+            }
         }
         None
     }
@@ -324,6 +334,31 @@ impl Classpath {
     pub fn is_subtype(&self, sub: &str, sup: &str) -> bool {
         if sub == sup {
             return true;
+        }
+        // issue #42: subtipagem de ARRAYS (JLS 4.10.2/4.10.3) — antes arrays
+        // só casavam textualmente (ArrayStoreException espúria em código
+        // covariante idiomático, check-cast/instanceof falhos):
+        //   · todo array <: Object, Cloneable, Serializable
+        //   · [LSub; <: [LSup; ⇔ Sub <: Sup (recursão no elemento)
+        //   · [X <: [LObject; ⇔ X é tipo de referência (primitivos invariantes)
+        if sub.starts_with('[') {
+            if matches!(
+                sup,
+                "Ljava/lang/Object;" | "Ljava/lang/Cloneable;" | "Ljava/io/Serializable;"
+            ) {
+                return true;
+            }
+            if let Some(sup_elem) = sup.strip_prefix('[') {
+                let sub_elem = &sub[1..];
+                if sup_elem == "Ljava/lang/Object;" {
+                    return !matches!(
+                        sub_elem,
+                        "B" | "C" | "D" | "F" | "I" | "J" | "S" | "Z"
+                    );
+                }
+                return self.is_subtype(sub_elem, sup_elem);
+            }
+            return false; // array vs classe não-array (além de Object/…)
         }
         // hierarquia mínima da plataforma conhecida pela VM (classes que não
         // estão no DEX mas fazem parte do contrato do interpretador M2)
@@ -510,4 +545,34 @@ pub fn unresolved_method(class: &str, name: &str, proto: &str) -> RdError {
         ),
         "a classe pode depender de plataforma fora do escopo M2",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// issue #42: covariância de arrays no is_subtype (JLS 4.10.2/4.10.3).
+    #[test]
+    fn array_subtyping_is_covariant_for_reference_elements() {
+        let cp = Classpath::new(Vec::new());
+        // identidade
+        assert!(cp.is_subtype("[Ljava/lang/String;", "[Ljava/lang/String;"));
+        // elemento via builtin: String <: CharSequence
+        assert!(cp.is_subtype("[Ljava/lang/String;", "[Ljava/lang/CharSequence;"));
+        // qualquer array de referência <: Object[]
+        assert!(cp.is_subtype("[Ljava/lang/String;", "[Ljava/lang/Object;"));
+        // array de arrays é referência → [[I <: [Object]
+        assert!(cp.is_subtype("[[I", "[Ljava/lang/Object;"));
+        // todo array <: Object/Cloneable/Serializable
+        assert!(cp.is_subtype("[I", "Ljava/lang/Object;"));
+        assert!(cp.is_subtype("[J", "Ljava/lang/Cloneable;"));
+        // primitivo invariante: int[] NÃO é Object[] nem long[]
+        assert!(!cp.is_subtype("[I", "[Ljava/lang/Object;"));
+        assert!(!cp.is_subtype("[I", "[J"));
+        // não-relacionado: Integer[] não é CharSequence[]
+        assert!(!cp.is_subtype(
+            "[Ljava/lang/Integer;",
+            "[Ljava/lang/CharSequence;"
+        ));
+    }
 }
