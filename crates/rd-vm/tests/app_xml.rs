@@ -1,0 +1,499 @@
+//! Testes de integração M3.2 — LayoutInflater de layout XML real (AXML via
+//! rd-apk + Resources/ARSC). APK sintético byte a byte (apkfix) + DEX
+//! sintético (DexBuilder) — mesma política dos demais testes.
+//!
+//! Pipeline exercido (ponta a ponta, pelo dispatch real da VM):
+//!   onCreate → Activity.setContentView(I) → resid → @layout/key (ARSC) →
+//!   res/layout/key.xml (ZIP) → axml::parse → árvore de views host →
+//!   findViewById/touch (android:onClick) → setText (String e resid).
+
+#[macro_use]
+mod common;
+
+use common::apkfix::{a, build_apk, AxNode, AxVal};
+use common::*;
+use rd_vm::err::VmExit;
+use rd_vm::framework::HostObj;
+use rd_vm::value::Value;
+
+pub const ACC_CONSTRUCTOR: u32 = 0x1_0000;
+
+// resids do fixture (pkg 0x7f; types na ordem de inserção do ArscFix:
+// 1=layout, 2=string, 3=id)
+const LAYOUT_MAIN: i32 = 0x7F01_0000;
+const LAYOUT_BAD: i32 = 0x7F01_0001;
+const S_HELLO: i32 = 0x7F02_0000;
+const S_CLICKED: i32 = 0x7F02_0001;
+const S_DIN: i32 = 0x7F02_0002;
+const ID_TV: i32 = 0x7F03_0000;
+const ID_BTN: i32 = 0x7F03_0001;
+
+/// const vAA, +BBBBBBBB (formato 31i) — resid é 32 bits.
+fn op31i(op: u8, reg: u8, lit: i32) -> Vec<u16> {
+    vec![
+        (op as u16) | ((reg as u16) << 8),
+        (lit & 0xFFFF) as u16,
+        ((lit >> 16) & 0xFFFF) as u16,
+    ]
+}
+
+fn register_platform_classes(b: &mut DexBuilder) {
+    b.class("Landroid/view/View;", "Ljava/lang/Object;");
+    b.class("Landroid/view/ViewGroup;", "Landroid/view/View;");
+    b.class("Landroid/widget/TextView;", "Landroid/view/View;");
+    b.class("Landroid/widget/Button;", "Landroid/widget/TextView;");
+    b.class("Landroid/widget/LinearLayout;", "Landroid/view/ViewGroup;");
+    b.class("Landroid/widget/FrameLayout;", "Landroid/view/ViewGroup;");
+    b.class("Landroid/os/Bundle;", "Ljava/lang/Object;");
+    b.class("Landroid/content/Intent;", "Ljava/lang/Object;");
+}
+
+struct XmlRefs {
+    activity_init: u16,
+    set_content_i: u16,
+    find_view: u16,
+    tv_set_text_cs: u16,
+    tv_set_text_i: u16,
+    get_string: u16,
+}
+
+fn xml_refs(b: &mut DexBuilder) -> XmlRefs {
+    let p_void = b.proto_idx("V", vec![]);
+    let p_iv = b.proto_idx("V", vec!["I".to_string()]);
+    let p_charseq = b.proto_idx("V", vec!["Ljava/lang/CharSequence;".to_string()]);
+    let p_ret_view = b.proto_idx("Landroid/view/View;", vec!["I".to_string()]);
+    let p_ret_str = b.proto_idx("Ljava/lang/String;", vec!["I".to_string()]);
+    XmlRefs {
+        activity_init: b.method_idx("Landroid/app/Activity;", p_void, "<init>"),
+        set_content_i: b.method_idx("Landroid/app/Activity;", p_iv, "setContentView"),
+        find_view: b.method_idx("Landroid/app/Activity;", p_ret_view, "findViewById"),
+        tv_set_text_cs: b.method_idx("Landroid/widget/TextView;", p_charseq, "setText"),
+        tv_set_text_i: b.method_idx("Landroid/widget/TextView;", p_iv, "setText"),
+        get_string: b.method_idx("Landroid/app/Activity;", p_ret_str, "getString"),
+    }
+}
+
+/// Layout canônico do fixture: LinearLayout(vertical) { TextView, Button }.
+/// TextView com 18sp (attr ignorado no modelo headless — não pode falhar) e
+/// 80dp de altura (→ 160px no viewport DENSITY 2.0).
+fn main_layout() -> AxNode {
+    AxNode::new(
+        "LinearLayout",
+        vec![
+            a(true, "orientation", AxVal::Int(1)),
+            a(true, "layout_width", AxVal::Int(-1)), // match_parent
+            a(true, "layout_height", AxVal::Int(-1)),
+        ],
+        vec![
+            AxNode::new(
+                "TextView",
+                vec![
+                    a(true, "id", AxVal::Ref(ID_TV as u32)),
+                    a(true, "text", AxVal::Ref(S_HELLO as u32)), // @string/hello
+                    a(true, "textSize", AxVal::Dim { raw: (18 << 8) | 2 }), // 18sp
+                    a(true, "layout_width", AxVal::Int(-1)),
+                    a(true, "layout_height", AxVal::Dim { raw: (80 << 8) | 1 }), // 80dp
+                ],
+                vec![],
+            ),
+            AxNode::new(
+                "Button",
+                vec![
+                    a(true, "id", AxVal::Ref(ID_BTN as u32)),
+                    a(true, "text", AxVal::Str("Clique aqui".into())),
+                    a(true, "onClick", AxVal::Str("onBtn".into())),
+                    a(true, "layout_width", AxVal::Int(-1)),
+                    a(true, "layout_height", AxVal::Int(-2)), // wrap_content → ROW_H
+                ],
+                vec![],
+            ),
+        ],
+    )
+}
+
+/// APK sintético com layout/arsc/manifest (package com.test.xml, Main).
+fn build_fixture(layouts: Vec<(&str, AxNode)>) -> Vec<u8> {
+    let mut arsc = common::apkfix::ArscFix::new();
+    for (name, _) in &layouts {
+        arsc.add_layout(name);
+    }
+    arsc.add_string("hello", "Olá do XML");
+    arsc.add_string("clicked", "clicado via XML");
+    arsc.add_string("din", "texto dinâmico");
+    arsc.add_id("tv");
+    arsc.add_id("btn");
+    let extras: Vec<(&str, Vec<u8>)> = layouts
+        .iter()
+        .map(|(name, node)| {
+            (
+                format!("res/layout/{name}.xml").leak() as &'static str,
+                common::apkfix::build_axml(node),
+            )
+        })
+        .collect();
+    build_apk("com.test.xml", "LMain;", arsc.build(), extras)
+}
+
+// ═════════════════ M3.2 DoD: XML infla e responde a toque ═════════════════
+
+/// App trivial com layout XML: infla via setContentView(R.layout.main),
+/// textos resolvem pelo arsc, ids viram @id/nome no dump e o botão com
+/// android:onClick dispara o método da activity no toque.
+#[test]
+fn layout_xml_inflates_and_touch_fires_onclick() {
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout())]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "<init>",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_CONSTRUCTOR,
+        Some(b.code(1, 1, 1, {
+            let mut u = op35c(0x70, 1, refs.activity_init, [0, 0, 0, 0, 0]);
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    // onCreate(Bundle): setContentView(R.layout.activity_main)
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            // regs=4, ins=2 → this=v2, bundle=v3
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    // onBtn(View): findViewById(R.id.tv).setText("clicado via XML")
+    let s_clicked = b.intern("clicado via XML") as u16;
+    b.direct(
+        main,
+        "onBtn",
+        "V",
+        vec!["Landroid/view/View;"],
+        ACC_PUBLIC,
+        Some(b.code(5, 2, 2, {
+            // this=v3, view=v4; locais v0..v2
+            let mut u = op31i(0x14, 1, ID_TV);
+            u.extend(op35c(0x6E, 2, refs.find_view, [3, 1, 0, 0, 0]));
+            u.extend(op11x(0x0C, 0)); // move-result-object v0
+            u.extend(op21c(0x1A, 1, s_clicked));
+            u.extend(op35c(0x6E, 2, refs.tv_set_text_cs, [0, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let mut e = engine_of(&b);
+    let apk = rd_apk::Apk::from_bytes(apk_bytes).expect("APK sintético parseia");
+    e.set_resources(apk);
+    e.launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect("launch");
+
+    // árvore inflada: LinearLayout vertical com os dois filhos, bounds do
+    // layout mínimo (TextView 160px de altura = 80dp × DENSITY 2.0; Button 48)
+    let dump = e.dump_ui();
+    assert!(
+        dump.contains("android/widget/LinearLayout @id/0 [0,0 720x208] vertical"),
+        "dump: {dump}"
+    );
+    assert!(
+        dump.contains("android/widget/TextView @id/tv [0,0 720x160] text=\"Olá do XML\""),
+        "dump: {dump}"
+    );
+    assert!(
+        dump.contains("android/widget/Button @id/btn [0,160 720x48] text=\"Clique aqui\""),
+        "dump: {dump}"
+    );
+
+    // toque no TextView (sem listener/onClick) → nada
+    let hit = e.touch_app(10, 10).expect("touch tv");
+    assert!(!hit, "TextView sem onClick não aciona nada");
+
+    // toque no botão ([0,160 720x48]) → android:onClick="onBtn" dispara
+    let hit = e.touch_app(10, 170).expect("touch btn");
+    assert!(hit, "botão deve acionar android:onClick");
+
+    let dump = e.dump_ui();
+    assert!(
+        dump.contains("text=\"clicado via XML\""),
+        "texto mudou: {dump}"
+    );
+}
+
+/// Sem Resources injetadas (Engine::new direto), setContentView(I) responde
+/// RESOURCES_MISSING tipado — nunca silencioso, nunca pânico.
+#[test]
+fn set_content_view_resid_without_resources_is_typed_error() {
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b); // SEM set_resources
+    let err = e
+        .launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect_err("deve falhar tipado");
+    match err {
+        VmExit::Error(rde) => assert_eq!(rde.code, "RESOURCES_MISSING", "{rde}"),
+        other => panic!("esperava VmExit::Error, veio {other:?}"),
+    }
+}
+
+/// findViewById + TextView.setText(I) (resid) + Activity.getString(I)
+/// resolvem pelo resources.arsc.
+#[test]
+fn find_by_id_set_text_resid_and_get_string() {
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout())]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+
+    let res_cls = b.class("LRes;", "Ljava/lang/Object;");
+    let _f = b.field_idx("LRes;", "Ljava/lang/String;", "s");
+    b.static_field(res_cls, "s", "Ljava/lang/String;", SVal::Int(0));
+    let f_s = b.find_field("LRes;", "Ljava/lang/String;", "s") as u16;
+
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(6, 2, 2, {
+            // this=v4, bundle=v5; locais v0..v3
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [4, 1, 0, 0, 0]));
+            // tv = findViewById(R.id.tv)
+            u.extend(op31i(0x14, 1, ID_TV));
+            u.extend(op35c(0x6E, 2, refs.find_view, [4, 1, 0, 0, 0]));
+            u.extend(op11x(0x0C, 0)); // v0 = tv
+                                      // tv.setText(R.string.clicked) — setText(int resId)
+            u.extend(op31i(0x14, 1, S_CLICKED));
+            u.extend(op35c(0x6E, 2, refs.tv_set_text_i, [0, 1, 0, 0, 0]));
+            // LRes.s = getString(R.string.din)
+            u.extend(op31i(0x14, 1, S_DIN));
+            u.extend(op35c(0x6E, 2, refs.get_string, [4, 1, 0, 0, 0]));
+            u.extend(op11x(0x0C, 2)); // v2 = string
+            u.extend(op21c(0x69, 2, f_s)); // sput-object v2, LRes->s
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    e.launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect("launch");
+
+    // setText(I) substituiu o texto do TextView (que era @string/hello)
+    let dump = e.dump_ui();
+    assert!(
+        dump.contains("android/widget/TextView @id/tv [0,0 720x160] text=\"clicado via XML\""),
+        "setText(resid) deve resolver no arsc: {dump}"
+    );
+    // getString(I) devolveu a string do arsc
+    let s = e
+        .statics
+        .get(&("LRes;".to_string(), "s".to_string()))
+        .cloned();
+    match s {
+        Some(Value::Obj(r)) => {
+            assert_eq!(e.heap.as_str(r).unwrap(), "texto dinâmico");
+        }
+        other => panic!("static s deveria ser string, veio {other:?}"),
+    }
+}
+
+/// Tag de view sem implementação host (ImageView) falha TIPADA (INFLATE) —
+/// nunca silenciosa (Lei 1).
+#[test]
+fn unsupported_view_class_is_typed_error() {
+    let bad = AxNode::new(
+        "LinearLayout",
+        vec![a(true, "orientation", AxVal::Int(1))],
+        vec![AxNode::new(
+            "ImageView",
+            vec![a(true, "layout_width", AxVal::Int(-1))],
+            vec![],
+        )],
+    );
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout()), ("bad", bad)]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_BAD);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    let err = e
+        .launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect_err("ImageView fora do escopo M3 deve falhar tipado");
+    match err {
+        VmExit::Error(rde) => {
+            assert_eq!(rde.code, "INFLATE", "{rde}");
+            assert!(rde.cause.contains("ImageView"), "{rde}");
+        }
+        other => panic!("esperava VmExit::Error, veio {other:?}"),
+    }
+}
+
+/// Visibilidade/enabled do XML chegam no estado host (hit-test respeita).
+#[test]
+fn xml_visibility_and_enabled_reach_host_state() {
+    // LinearLayout com TextView INVISIBLE e Button DISABLED
+    let layout = AxNode::new(
+        "LinearLayout",
+        vec![a(true, "orientation", AxVal::Int(1))],
+        vec![
+            AxNode::new(
+                "TextView",
+                vec![
+                    a(true, "id", AxVal::Ref(ID_TV as u32)),
+                    a(true, "text", AxVal::Ref(S_HELLO as u32)),
+                    a(true, "visibility", AxVal::Int(2)), // GONE
+                ],
+                vec![],
+            ),
+            AxNode::new(
+                "Button",
+                vec![
+                    a(true, "id", AxVal::Ref(ID_BTN as u32)),
+                    a(true, "onClick", AxVal::Str("onBtn".into())),
+                    a(true, "enabled", AxVal::Bool(false)),
+                ],
+                vec![],
+            ),
+        ],
+    );
+    let apk_bytes = build_fixture(vec![("activity_main", layout)]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    b.direct(
+        main,
+        "onBtn",
+        "V",
+        vec!["Landroid/view/View;"],
+        ACC_PUBLIC,
+        Some(b.code(2, 2, 0, op10x(0x0E))),
+    );
+
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    e.launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect("launch");
+
+    let dump = e.dump_ui();
+    assert!(dump.contains("INVISIBLE"), "GONE marca invisível: {dump}");
+    assert!(dump.contains("DISABLED"), "enabled=false marca: {dump}");
+
+    // toque no botão desabilitado: hit_test não devolve view disabled
+    let hit = e.touch_app(10, 60).expect("touch");
+    assert!(!hit, "botão disabled não deve acionar onClick");
+}
+
+/// Acessa o estado host direto (sanidade do fixture): a raiz é um
+/// LinearLayout com 2 filhos após a inflação (sem tocar no dispatch).
+#[test]
+fn inflate_builds_host_tree_shape() {
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout())]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LMain;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_MAIN);
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    let act = e
+        .launch_app("LMain;", "com.test.xml", Vec::new())
+        .expect("launch");
+
+    let Some(HostObj::Activity { window, .. }) = e.fw.get(act) else {
+        panic!("activity host");
+    };
+    let w = window.expect("window");
+    let Some(HostObj::Window { content }) = e.fw.get(w) else {
+        panic!("window host");
+    };
+    let root = content.expect("content");
+    let Some(HostObj::View {
+        children,
+        orientation,
+        id,
+        ..
+    }) = e.fw.get(root)
+    else {
+        panic!("raiz é view host");
+    };
+    assert_eq!(children.len(), 2, "LinearLayout com 2 filhos");
+    assert_eq!(*orientation, 1, "vertical do XML");
+    assert_eq!(*id, 0, "raiz sem id");
+    let _ = act;
+}

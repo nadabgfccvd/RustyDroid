@@ -12,6 +12,6 @@ authors.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rd-dex = { workspace = true }
-
-[dev-dependencies]
+# M3.2: LayoutInflater consome AXML/ARSC do APK aberto — rd-apk é a BASE do
+# workspace (nível 0), logo rd-vm → rd-apk segue apontando para baixo (sem ciclo).
 rd-apk = { workspace = true }

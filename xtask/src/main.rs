@@ -58,8 +58,8 @@ const CRATE_STATUS: &[(&str, &str, &str)] = &[
     ),
     (
         "rd-cli",
-        "M0–M2",
-        "inspect · perm · device · behavior · dex disasm · vm exec (contrato de erro JSON)",
+        "M0–M3",
+        "inspect · perm · device · behavior · dex disasm · vm exec · app run (contrato de erro JSON)",
     ),
     (
         "rd-dex",
@@ -69,7 +69,7 @@ const CRATE_STATUS: &[(&str, &str, &str)] = &[
     (
         "rd-vm",
         "M2–M3",
-        "interpretador Dalvik + golden harness vs JVM + framework host headless (Activity/View/Handler/Looper)",
+        "interpretador Dalvik + golden harness vs JVM + framework host headless (Activity/View/Handler/Looper) + LayoutInflater AXML/ARSC",
     ),
     ("rd-render", "M4", "stub NOT_IMPLEMENTED"),
     ("rd-agent", "M5", "stub NOT_IMPLEMENTED"),
@@ -120,7 +120,7 @@ fn compat_report(root: &Path, out: &Path) -> Result<()> {
     md.push_str("| M0 | workspace · rd-apk inspect · motor de permissões · devices · behavior | **✅ implementado** |\n");
     md.push_str("| M1 | rd-dex 100% + disassembler | **✅ implementado** |\n");
     md.push_str("| M2 | VM Dalvik mínima | **✅ implementado** |\n");
-    md.push_str("| M3 | framework essencial headless | **✅ núcleo implementado** |\n");
+    md.push_str("| M3 | framework essencial headless | **✅ implementado (rounds 1+2: lifecycle/touch + LayoutInflater XML)** |\n");
     for (fase, entrega) in [
         ("M4", "render + UI dump"),
         ("M5", "agente MCP v1 (~20 tools)"),
@@ -154,7 +154,8 @@ fn compat_report(root: &Path, out: &Path) -> Result<()> {
     md.push_str(
         "- Núcleo (0.0): parcial (CORE-01..06 M0; rd-dex M1; VM M2 — métodos puros executam)\n",
     );
-    md.push_str("- Framework/render/agente: `NOT_IMPLEMENTED(module_id)` estruturado (M3+)\n");
+    md.push_str("- Framework (M3): Activity lifecycle + views host + Handler/Looper + touch + **LayoutInflater de layout XML real** (setContentView(I): resid → @layout/key no arsc → AXML do APK → árvore host; attrs id/text/orientation/visibility/enabled/onClick/layout_height; setText(I), getString(I), findViewById) — classes de view sem host (ImageView/…) e configs específicas (land/locale) respondem tipadas\n");
+    md.push_str("- Render/agente: `NOT_IMPLEMENTED(module_id)` estruturado (M4+)\n");
 
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new(".")))?;
     std::fs::write(out, &md).with_context(|| format!("writing {}", out.display()))?;

@@ -10,6 +10,7 @@ pub mod engine;
 pub mod err;
 pub mod framework;
 pub mod heap;
+pub mod inflate;
 pub mod interp;
 pub mod intrinsics;
 pub mod repr;

@@ -10,7 +10,7 @@
 | **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ✅ **implementado (2026-10)** |
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
-| M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10)** |
+| M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
 | M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ⬜ |
 | M5 | Agente MCP v1 (~20 tools) | LLM instala, navega e assera estado só com as tools | ⬜ |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ⬜ |
@@ -87,22 +87,47 @@
 5. CLI: `rd vm exec <apk|dex> --class --method --sig [--args] [--json]
    [--fuel/--depth/--heap-mb]` — contrato JSON {status: ok|exception|error}.
 
-## M3 — framework essencial (parcial: núcleo entregue, XML na sequência)
+## ✅ M3 concluído — framework essencial (2026-10, rounds 1+2)
 
-Entregue (round 1):
-1. Activity/Window/View/TextView/Button/LinearLayout/FrameLayout headless como
+**Round 1 — núcleo host:**
+
+1. ✅ Activity/Window/View/TextView/Button/LinearLayout/FrameLayout headless como
    classes HOST (`rd-vm::framework`) — estado fora do heap Dalvik, dispatch
    igual ao dos intrinsics.
-2. Handler/Looper/Message com clock virtual determinístico (post/postDelayed
+2. ✅ Handler/Looper/Message com clock virtual determinístico (post/postDelayed
    + `advance_clock`); single-thread = UI thread.
-3. Lifecycle (onCreate/onStart/onResume/onPause) dirigido por `launch_app`;
+3. ✅ Lifecycle (onCreate/onStart/onResume/onPause) dirigido por `launch_app`;
    navegação via `Intent(Context, Class)` + `startActivity` (const-class host).
-4. Touch simulado: hit-test top-down + dispatch de onClick via resolução DEX.
-5. CLI `rd app run` com script do agente (`tap X,Y` · `wait MS` · `dump`) e
+4. ✅ Touch simulado: hit-test top-down + dispatch de onClick via resolução DEX.
+5. ✅ CLI `rd app run` com script do agente (`tap X,Y` · `wait MS` · `dump`) e
    dump textual da árvore (seed do UI dump do M4).
-6. Critério de saída ATINGIDO: app trivial (activity+botão+texto) roda
+6. ✅ Critério de saída ATINGIDO: app trivial (activity+botão+texto) roda
    ponta a ponta e responde a toques simulados (testes de integração M3).
 
-Na sequência do M3 (round 2): LayoutInflater de layout XML real (AXML via
-rd-apk + Resources/ARSC multi-config) — `setContentView(I)` hoje responde
-`NOT_IMPLEMENTED` tipado.
+**Round 2 (M3.2) — LayoutInflater de layout XML real:**
+
+1. ✅ `setContentView(I)` funcional: resid → `@layout/key` (ARSC
+   `resolve_name`) → `res/layout/key.xml` (ZIP, fallback configs) →
+   `axml::parse` (rd-apk) → árvore de views host recursiva.
+2. ✅ Resources injetados na Engine (`Engine::set_resources(Apk)`); o CLI
+   `rd app run` abre o APK UMA vez (dex + arsc + layouts do mesmo `Apk`,
+   antes lia o zip 3×); `getPackageName` vem do manifest.
+3. ✅ Atributos aplicados: `id` (resid → findViewById + dump `@id/nome`),
+   `text` (string ou `@string/x` via ARSC), `orientation`,
+   `visibility` (0/1/2), `enabled`, `onClick` (método na ACTIVITY),
+   `layout_height` de folha com dimensão (dp/sp/px → px, DENSITY 2.0 =
+   viewport 360dp); attrs não modelados ignorados com log (RD_FW_DEBUG);
+   tags sem host (ImageView/…) falham TIPADAS (INFLATE).
+4. ✅ Hierarquia Android BUILTIN no classpath (`builtin_hierarchy`): APKs
+   reais não definem android.* no DEX — is_subtype(View/Activity/…) resolve
+   sem DEX; dispatch host funciona para views infladas.
+5. ✅ `setText(int resId)` + `Activity.getString(I)` resolvem no arsc;
+   **bug latente do `findViewById` corrigido** (guard exigia Obj em args[0]
+   e devolvia Null SEMPRE — sem cobertura até o M3.2).
+6. ✅ Fixtures determinísticos byte a byte (`tests/common/apkfix.rs`): ZIP
+   STORED + string pool UTF-16 + AXML + ARSC gerados em Rust (sem fixture
+   binário commitado); 6 testes de integração M3.2 (inclui DoD XML+toque e
+   erros tipados). 187 testes no workspace, clippy limpo, fmt ok, MSRV 1.76 ok.
+
+Na sequência do M3 (M4): render + UI dump rico (`get_ui_tree` com ids
+certos); configs específicas (land/locale/density) selecionáveis.

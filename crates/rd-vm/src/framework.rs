@@ -47,6 +47,9 @@ pub const WINDOW_W: i32 = 720;
 pub const WINDOW_H: i32 = 1440;
 /// Altura default de widget single-line (touch target de 1 linha).
 pub const ROW_H: i32 = 48;
+/// Densidade virtual dp→px do M3.2: 720px / 2.0 = viewport de 360dp (padrão
+/// Android). sp usa a mesma escala (sem font scale no modelo headless).
+pub const DENSITY: f32 = 2.0;
 
 /// Estado host de um objeto. O heap guarda apenas a classe; o estado Java
 /// real fica aqui. Um ObjRef = um HostObj.
@@ -73,6 +76,8 @@ pub enum HostObj {
         visible: bool,
         enabled: bool,
         click_listener: Option<ObjRef>,
+        /// android:onClick="metodo" (XML) — resolve no contexto da ACTIVITY
+        click_method: Option<String>,
         parent: Option<ObjRef>,
         text: String,
         children: Vec<ObjRef>,
@@ -111,6 +116,9 @@ pub struct HostState {
     pub current_activity: Option<ObjRef>,
     /// package do app (preenchido no launch_app; getPackageName)
     pub package_name: String,
+    /// M3.2: APK aberto (Resources) — layouts AXML + resources.arsc para o
+    /// LayoutInflater. Injetado via `Engine::set_resources` (CLI `rd app run`).
+    pub resources: Option<rd_apk::Apk>,
 }
 
 impl HostState {
@@ -120,6 +128,50 @@ impl HostState {
 
     pub fn clock(&self) -> u64 {
         self.clock_ms
+    }
+}
+
+impl Engine {
+    /// M3.2: injeta o APK aberto como fonte de Resources (layouts AXML +
+    /// resources.arsc). O CLI `rd app run` chama isto UMA vez por execução.
+    pub fn set_resources(&mut self, apk: rd_apk::Apk) {
+        self.fw.resources = Some(apk);
+    }
+
+    /// Resources injetados — erro tipado se ausentes (nunca silencioso).
+    pub fn resources(&self) -> Result<&rd_apk::Apk, VmExit> {
+        self.fw.resources.as_ref().ok_or_else(|| {
+            crate::err::with_suggestion(
+                crate::err::vm_error(
+                    "RESOURCES_MISSING",
+                    "operação de Resources sem APK injetado (layouts/arsc)",
+                ),
+                "use `rd app run <apk>` (ou Engine::set_resources) — chamadas via Engine::new direto não têm Resources",
+            )
+            .into()
+        })
+    }
+
+    /// String de recurso com fallback para o nome qualificado (mesmo padrão do
+    /// manifest.resolve_label: valor do arsc → "@type/key" como último recurso).
+    pub fn resolve_string(&self, resid: u32) -> Result<String, VmExit> {
+        let apk = self.resources()?;
+        let arsc = apk
+            .arsc
+            .as_ref()
+            .ok_or_else(|| crate::err::vm_error("RESOURCES_MISSING", "APK sem resources.arsc"))?;
+        Ok(arsc
+            .resolve_string(resid)
+            .or_else(|| arsc.resolve_name(resid))
+            .ok_or_else(|| {
+                crate::err::with_suggestion(
+                    crate::err::vm_error(
+                        "RESOURCE_NOT_FOUND",
+                        format!("recurso 0x{resid:08x} não resolvido no resources.arsc"),
+                    ),
+                    "resid inválido para este APK (R.string/R.id são gerados por APK)",
+                )
+            })?)
     }
 }
 
@@ -133,6 +185,7 @@ fn new_view() -> HostObj {
         visible: true,
         enabled: true,
         click_listener: None,
+        click_method: None,
         parent: None,
         text: String::new(),
         children: Vec::new(),
@@ -302,29 +355,59 @@ impl Engine {
             }
             return Ok(false);
         };
-        let Some(listener) = self.click_listener_of(target) else {
-            if std::env::var("RD_FW_DEBUG").is_ok() {
-                let cls = self.heap.class_of(target).unwrap_or("?");
-                let has = matches!(self.fw.get(target), Some(HostObj::View { .. }));
-                eprintln!("[fw] touch: alvo #{target} ({cls}) sem listener (host_obj={has})");
-            }
-            return Ok(false);
-        };
-        let lclass = self.heap.class_of(listener)?.to_string();
-        // View.OnClickListener.onClick(View) — o DEX do app implementa
-        let Some((d, def, m)) =
-            self.cp
-                .resolve_method(&lclass, "onClick", "(Landroid/view/View;)V")
-        else {
-            return Err(crate::classpath::unresolved_method(
-                &lclass,
-                "onClick",
-                "(Landroid/view/View;)V",
-            )
-            .into());
-        };
-        self.call(d, def, &m, vec![Value::Obj(listener), Value::Obj(target)])?;
-        Ok(true)
+        self.dispatch_click(target)
+    }
+
+    /// M3.2: dispatch do clique em `target` — listener do app
+    /// (setOnClickListener → onClick(View)) OU android:onClick="método"
+    /// (resolve no contexto da ACTIVITY corrente, semântica Android XML).
+    /// `false` = view sem nenhum dos dois (nunca silencioso com RD_FW_DEBUG).
+    pub(crate) fn dispatch_click(&mut self, target: ObjRef) -> Result<bool, VmExit> {
+        if let Some(listener) = self.click_listener_of(target) {
+            let lclass = self.heap.class_of(listener)?.to_string();
+            // View.OnClickListener.onClick(View) — o DEX do app implementa
+            let Some((d, def, m)) =
+                self.cp
+                    .resolve_method(&lclass, "onClick", "(Landroid/view/View;)V")
+            else {
+                return Err(crate::classpath::unresolved_method(
+                    &lclass,
+                    "onClick",
+                    "(Landroid/view/View;)V",
+                )
+                .into());
+            };
+            self.call(d, def, &m, vec![Value::Obj(listener), Value::Obj(target)])?;
+            return Ok(true);
+        }
+        if let Some(method) = self.click_method_of(target) {
+            let Some(activity) = self.fw.current_activity else {
+                return Err(crate::err::vm_error(
+                    "INVALID_STATE",
+                    "android:onClick sem activity corrente",
+                )
+                .into());
+            };
+            let aclass = self.heap.class_of(activity)?.to_string();
+            let Some((d, def, m)) =
+                self.cp
+                    .resolve_method(&aclass, &method, "(Landroid/view/View;)V")
+            else {
+                return Err(crate::classpath::unresolved_method(
+                    &aclass,
+                    &method,
+                    "(Landroid/view/View;)V",
+                )
+                .into());
+            };
+            self.call(d, def, &m, vec![Value::Obj(activity), Value::Obj(target)])?;
+            return Ok(true);
+        }
+        if std::env::var("RD_FW_DEBUG").is_ok() {
+            let cls = self.heap.class_of(target).unwrap_or("?");
+            eprintln!("[fw] touch: alvo #{target} ({cls}) sem listener nem android:onClick");
+        }
+        Ok(false)
     }
 
     /// Avança o clock virtual e executa as mensagens vencidas (postDelayed).
@@ -416,6 +499,14 @@ impl Engine {
     fn click_listener_of(&self, v: ObjRef) -> Option<ObjRef> {
         match self.fw.get(v)? {
             HostObj::View { click_listener, .. } => *click_listener,
+            _ => None,
+        }
+    }
+
+    /// android:onClick="metodo" capturado pelo LayoutInflater (M3.2).
+    fn click_method_of(&self, v: ObjRef) -> Option<String> {
+        match self.fw.get(v)? {
+            HostObj::View { click_method, .. } => click_method.clone(),
             _ => None,
         }
     }
@@ -542,13 +633,24 @@ impl Engine {
         } else {
             format!(" text={text:?}")
         };
+        // M3.2: id nomeado quando o arsc conhece (dump vira mapa do agente)
+        let idtxt = if *id == 0 {
+            "@id/0".to_string()
+        } else {
+            self.fw
+                .resources
+                .as_ref()
+                .and_then(|apk| apk.arsc.as_ref())
+                .and_then(|a| a.resolve_name(*id as u32))
+                .unwrap_or_else(|| format!("@id/{id}"))
+        };
         let orient = match (children.is_empty(), *orientation) {
             (true, _) => String::new(),
             (false, 1) => " vertical".to_string(),
             (false, _) => " horizontal".to_string(),
         };
         out.push_str(&format!(
-            "{indent}{name} @id/{id} [{x},{y} {w}x{h}]{orient}{txt}{vis}{en}\n"
+            "{indent}{name} {idtxt} [{x},{y} {w}x{h}]{orient}{txt}{vis}{en}\n"
         ));
         for c in children {
             self.dump_view(*c, depth + 1, out);
@@ -676,18 +778,34 @@ pub fn call_host_instance(
             Ok(Some(Value::Null))
         }
         (ACTIVITY, "setContentView") if sig == "(I)V" => {
-            // M3.2: LayoutInflater de layout XML via Resources/ARSC — por ora
-            // falha tipada (nunca silenciosa)
-            Err(crate::err::not_implemented(
-                "setContentView(int layoutRes) — LayoutInflater com Resources entra na sequência do M3; use setContentView(View) no app trivial",
-            )
-            .into())
+            // M3.2: LayoutInflater de layout XML real — resid → @layout/key →
+            // AXML do APK → árvore de views host (erro tipado, nunca silencioso)
+            let resid = args[0].as_int()? as u32;
+            let root = crate::inflate::inflate_resource(vm, resid)?;
+            set_content_view(vm, recv, root)?;
+            Ok(Some(Value::Null))
+        }
+        (ACTIVITY, "getString") | (CONTEXT, "getString") if sig == "(I)Ljava/lang/String;" => {
+            let resid = args[0].as_int()? as u32;
+            let s = vm.resolve_string(resid)?;
+            Ok(Some(Value::Obj(intrinsics::alloc_string(vm, s)?)))
         }
         (ACTIVITY, "findViewById") | (CONTEXT, "findViewById") | (VIEW, "findViewById") => {
-            let Some(Value::Obj(_)) = args.first() else {
-                return Ok(Some(Value::Null));
+            // Assinatura canônica (I)Landroid/view/View; — args[0] é o RESID
+            // (o receiver já saiu em `recv`). O guard antigo exigia Obj em
+            // args[0] e fazia o findViewById devolver Null SEMPRE (bug
+            // latente, sem cobertura até o M3.2 exercitar a rota).
+            let want = match args.first() {
+                Some(Value::Int(v)) => *v,
+                Some(Value::Null) | None => return Ok(Some(Value::Null)),
+                _ => {
+                    return Err(crate::err::vm_error(
+                        "INVALID_FORMAT",
+                        "findViewById: resid não é int",
+                    )
+                    .into())
+                }
             };
-            let want = args[0].as_int()?;
             let Some(content) = vm.window_content_of(recv) else {
                 return Ok(Some(Value::Null));
             };
@@ -812,23 +930,8 @@ pub fn call_host_instance(
             Ok(Some(Value::Null))
         }
         (VIEW, "performClick") if is_view(vm) => {
-            let Some(listener) = vm.click_listener_of(recv) else {
-                return Ok(Some(Value::Int(0)));
-            };
-            let lclass = vm.heap.class_of(listener)?.to_string();
-            let Some((d, def, m)) =
-                vm.cp
-                    .resolve_method(&lclass, "onClick", "(Landroid/view/View;)V")
-            else {
-                return Err(crate::classpath::unresolved_method(
-                    &lclass,
-                    "onClick",
-                    "(Landroid/view/View;)V",
-                )
-                .into());
-            };
-            vm.call(d, def, &m, vec![Value::Obj(listener), Value::Obj(recv)])?;
-            Ok(Some(Value::Int(1)))
+            let hit = vm.dispatch_click(recv)?;
+            Ok(Some(Value::Int(hit as i32)))
         }
         (VIEW, "getParent") if is_view(vm) => {
             let p = match vm.fw.get(recv) {
@@ -857,9 +960,12 @@ pub fn call_host_instance(
         (TEXTVIEW, "setText") | (BUTTON, "setText") if is_view(vm) => {
             let s = match args.first() {
                 Some(Value::Obj(sr)) => vm.heap.as_str(*sr)?.to_string(),
+                // M3.2: setText(int resId) resolve no resources.arsc
+                Some(Value::Int(resid)) => vm.resolve_string(*resid as u32)?,
                 _ => {
-                    return Err(crate::err::not_implemented(
-                        "setText(int resId) — Resources chegam na sequência do M3",
+                    return Err(crate::err::vm_error(
+                        "INVALID_FORMAT",
+                        "setText: argumento não é String nem resid",
                     )
                     .into())
                 }
@@ -1072,7 +1178,7 @@ fn class_name_of(vm: &Engine, cls: ObjRef) -> Result<String, VmExit> {
     }
 }
 
-fn ensure_window(vm: &mut Engine, activity: ObjRef) -> Result<ObjRef, VmExit> {
+pub(crate) fn ensure_window(vm: &mut Engine, activity: ObjRef) -> Result<ObjRef, VmExit> {
     if let Some(HostObj::Activity {
         window: Some(w), ..
     }) = vm.fw.get(activity)
@@ -1089,7 +1195,12 @@ fn ensure_window(vm: &mut Engine, activity: ObjRef) -> Result<ObjRef, VmExit> {
     Ok(w)
 }
 
-fn set_content_view(vm: &mut Engine, activity: ObjRef, content: ObjRef) -> Result<(), VmExit> {
+/// M3.2 (pub(crate)): também usado pelo LayoutInflater (setContentView(I)).
+pub(crate) fn set_content_view(
+    vm: &mut Engine,
+    activity: ObjRef,
+    content: ObjRef,
+) -> Result<(), VmExit> {
     let w = ensure_window(vm, activity)?;
     if let Some(HostObj::Window { content: c }) = vm.fw.objects.get_mut(&w) {
         *c = Some(content);
@@ -1100,7 +1211,8 @@ fn set_content_view(vm: &mut Engine, activity: ObjRef, content: ObjRef) -> Resul
     Ok(())
 }
 
-fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
+/// M3.2 (pub(crate)): também usado pelo LayoutInflater ao montar a árvore.
+pub(crate) fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
     // parent do child aponta para o container
     if let Some(HostObj::View { parent: p, .. }) = vm.fw.objects.get_mut(&child) {
         *p = Some(parent);

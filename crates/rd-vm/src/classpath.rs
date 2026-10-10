@@ -349,7 +349,9 @@ impl Classpath {
 }
 
 /// Hierarquia embutida mínima para classes de plataforma que a VM conhece sem
-/// DEX (catch/instanceof/ hierarquia de exceções).
+/// DEX (catch/instanceof/ hierarquia de exceções; M3.2: hierarquia Android do
+/// framework host — APKs REAIS não definem android.* no DEX, e o LayoutInflater
+/// precisa de is_subtype(View/Activity/…) para attach/dispatch corretos).
 fn builtin_hierarchy(class: &str) -> Option<Vec<&'static str>> {
     const EXC: &[&str] = &[
         "Ljava/lang/Exception;",
@@ -365,6 +367,39 @@ fn builtin_hierarchy(class: &str) -> Option<Vec<&'static str>> {
         "Ljava/lang/RuntimeException;",
         "Ljava/lang/Exception;",
         "Ljava/lang/Throwable;",
+        "Ljava/lang/Object;",
+    ];
+    // M3.2 — cadeia do framework host (ancestrais completos em cada entrada;
+    // simplificação documentada: Activity estende ContextThemeWrapper→…→Context)
+    const OBJECT: &[&str] = &["Ljava/lang/Object;"];
+    const CONTEXT: &[&str] = &["Ljava/content/Context;", "Ljava/lang/Object;"];
+    const VIEW: &[&str] = &["Landroid/view/View;", "Ljava/lang/Object;"];
+    const VIEWGROUP: &[&str] = &[
+        "Landroid/view/ViewGroup;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
+    const TEXTVIEW: &[&str] = &[
+        "Landroid/widget/TextView;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
+    const BUTTON: &[&str] = &[
+        "Landroid/widget/Button;",
+        "Landroid/widget/TextView;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
+    const LINEARLAYOUT: &[&str] = &[
+        "Landroid/widget/LinearLayout;",
+        "Landroid/view/ViewGroup;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
+    const FRAMELAYOUT: &[&str] = &[
+        "Landroid/widget/FrameLayout;",
+        "Landroid/view/ViewGroup;",
+        "Landroid/view/View;",
         "Ljava/lang/Object;",
     ];
     match class {
@@ -384,6 +419,21 @@ fn builtin_hierarchy(class: &str) -> Option<Vec<&'static str>> {
         "Ljava/lang/Throwable;" => Some(vec!["Ljava/lang/Object;"]),
         "Ljava/lang/Exception;" => Some(EXC.to_vec()),
         "Ljava/lang/Error;" => Some(ERR.to_vec()),
+        // ── M3.2: framework host Android ───────────────────────────────────
+        "Landroid/content/Context;" => Some(OBJECT.to_vec()),
+        "Landroid/app/Activity;" => Some(CONTEXT.to_vec()),
+        "Landroid/app/Application;" => Some(CONTEXT.to_vec()),
+        "Landroid/content/Intent;" => Some(OBJECT.to_vec()),
+        "Landroid/os/Bundle;" => Some(OBJECT.to_vec()),
+        "Landroid/os/Handler;" => Some(OBJECT.to_vec()),
+        "Landroid/os/Looper;" => Some(OBJECT.to_vec()),
+        "Landroid/view/Window;" => Some(OBJECT.to_vec()),
+        "Landroid/view/View;" => Some(VIEW.to_vec()),
+        "Landroid/view/ViewGroup;" => Some(VIEWGROUP.to_vec()),
+        "Landroid/widget/TextView;" => Some(TEXTVIEW.to_vec()),
+        "Landroid/widget/Button;" => Some(BUTTON.to_vec()),
+        "Landroid/widget/LinearLayout;" => Some(LINEARLAYOUT.to_vec()),
+        "Landroid/widget/FrameLayout;" => Some(FRAMELAYOUT.to_vec()),
         _ => None,
     }
 }

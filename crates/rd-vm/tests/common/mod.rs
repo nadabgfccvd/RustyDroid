@@ -3,6 +3,8 @@
 //! construídos byte a byte (mesma política dos fixtures do rd-dex).
 //! Cada teste valida um grupo de opcodes do contrato M2 ("métodos puros").
 
+pub mod apkfix;
+
 use rd_vm::engine::{Engine, VmConfig};
 use rd_vm::err::VmExit;
 use rd_vm::value::Value;

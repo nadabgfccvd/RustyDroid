@@ -415,6 +415,12 @@ fn load_dex_files(path: &Path) -> Result<Vec<(String, Dex)>, RdError> {
         return Ok(vec![("classes.dex".into(), d)]);
     }
     let apk = open_apk(path)?;
+    dexes_of_apk(&apk)
+}
+
+/// M3.2: dex de um APK JÁ aberto — o mesmo `Apk` vira Resources da Engine
+/// (leitura única do arquivo; antes `app run` relia o zip 3x).
+fn dexes_of_apk(apk: &Apk) -> Result<Vec<(String, Dex)>, RdError> {
     let mut out = Vec::new();
     for name in &apk.dex_files {
         let entry = apk
@@ -1022,17 +1028,35 @@ fn cmd_app_run(
     scripts: &[String],
     json: bool,
 ) -> Result<(), RdError> {
-    let files = load_dex_files(path)?;
+    // M3.2: o APK é aberto UMA vez — o mesmo `Apk` fornece dex E Resources
+    // (layouts AXML + resources.arsc do LayoutInflater). .dex solto segue
+    // válido (sem Resources: setContentView(I) responde RESOURCES_MISSING).
+    let apk = open_apk(path).ok();
+    let files = match &apk {
+        Some(a) => dexes_of_apk(a)?,
+        None => load_dex_files(path)?,
+    };
     let dexes: Vec<Dex> = files.into_iter().map(|(_, d)| d).collect();
     let (activity_desc, package) = match activity {
         Some(a) => {
             let desc = normalize_activity_desc(a);
-            let pkg = package_of_desc(&desc);
+            // M3.2: com o APK aberto, o package é o do MANIFEST (fonte da
+            // verdade — getPackageName correto mesmo com --activity explícito)
+            let pkg = match &apk {
+                Some(ap) => ap.manifest.package.clone(),
+                None => package_of_desc(&desc),
+            };
             (desc, pkg)
         }
-        None => launcher_of_apk(path)?,
+        None => match &apk {
+            Some(a) => launcher_of(a)?,
+            None => launcher_of_apk(path)?,
+        },
     };
     let mut eng = rd_vm::Engine::new(dexes, rd_vm::VmConfig::default());
+    if let Some(a) = apk {
+        eng.set_resources(a);
+    }
     eng.launch_app(&activity_desc, &package, Vec::new())
         .map_err(vm_err_to_rd)?;
 
@@ -1121,7 +1145,11 @@ fn package_of_desc(desc: &str) -> String {
 
 /// Descobre a LAUNCHER activity + package pelo manifest do APK.
 fn launcher_of_apk(path: &Path) -> Result<(String, String), RdError> {
-    let apk = open_apk(path)?;
+    launcher_of(&open_apk(path)?)
+}
+
+/// M3.2: LAUNCHER a partir de um APK já aberto (mesma leitura única).
+fn launcher_of(apk: &Apk) -> Result<(String, String), RdError> {
     let pkg = apk.manifest.package.clone();
     let app = &apk.manifest.application;
     let launcher = app
