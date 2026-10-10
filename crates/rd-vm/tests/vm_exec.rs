@@ -1548,3 +1548,295 @@ fn system_out_println_executes() {
     invoke(&mut e, "oi", "()V", &[]).expect("println(String) não pode falhar");
     invoke(&mut e, "oi_num", "()V", &[]).expect("println(Object box) não pode falhar");
 }
+
+// ── issues #41/#49: gating de erros (EIIE capturável, OOM tipado, if-eq misto)
+
+/// issue #41: ExceptionInInitializerError é CAPTURÁVEL — dispatch na frame
+/// corrente (step! no new-instance/sget/sput) + hierarquia EIIE→LinkageError→
+/// Error→Throwable no builtin_hierarchy. Antes: `?` bypassava o try/catch e
+/// matava o run inteiro. Segundo acesso → NoClassDefFoundError (JLS 12.4.2).
+#[test]
+fn eiie_is_catchable_and_second_access_is_ncdfe() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/ArithmeticException;");
+    b.type_idx("Ljava/lang/Error;");
+    let fail = b.class("LFail;", "Ljava/lang/Object;");
+    b.direct(
+        fail,
+        "<clinit>",
+        "V",
+        vec![],
+        ACC_STATIC | ACC_CONSTRUCTOR,
+        Some(b.code(2, 0, 0, {
+            let mut u = op11n(0x12, 0, 1);
+            u.extend(op11n(0x12, 1, 0));
+            u.extend(op23x(0x93, 0, 0, 1)); // div por zero no clinit
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let fail_tidx = b.types.iter().position(|t| t == "LFail;").unwrap() as u16;
+    // direto()I: new-instance SEM try → EIIE/NCDFE escapam como Exception
+    b.direct(
+        cls,
+        "direto",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(2, 0, 0, {
+            let mut u = op21c(0x22, 1, fail_tidx); // new-instance v1, LFail
+            u.extend(op11n(0x12, 0, 99));
+            u.extend(op11x(0x0F, 0)); // return v0
+            u
+        })),
+    );
+    // tenta()I: try { new-instance LFail } catch (Error) → flag=1
+    let mut blob = b.code(3, 0, 0, {
+        let mut u = op11n(0x12, 0, 0); // 0: flag=0
+        u.extend(op21c(0x22, 1, fail_tidx)); // 1..3: new-instance v1 (TRY)
+        u.extend(op11n(0x12, 0, 9)); // 3: flag=9 (não deve ocorrer)
+        u.extend(op11x(0x0F, 0)); // 4: return flag
+        u.extend(op11x(0x0D, 2)); // 5: handler: move-exception v2
+        u.extend(op11n(0x12, 0, 1)); // 6: flag=1
+        u.extend(op11x(0x0F, 0)); // 7: return flag
+        u
+    });
+    blob.tries.push(TryBlob {
+        start: 1,
+        count: 2,
+        typed: vec![("Ljava/lang/Error;".to_string(), 5)],
+        catch_all: None,
+    });
+    b.direct(cls, "tenta", "I", vec![], ACC_PUBLIC | ACC_STATIC, Some(blob));
+    let mut e = engine_of(&b);
+    // 1º acesso sem try: EIIE (não Arithmetic cru — ensure_initialized wrapa)
+    match invoke(&mut e, "direto", "()I", &[]) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/ExceptionInInitializerError;")
+        }
+        other => panic!("1º acesso: esperava EIIE, got {other:?}"),
+    }
+    // 2º acesso: NCDFE
+    match invoke(&mut e, "direto", "()I", &[]) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/NoClassDefFoundError;")
+        }
+        other => panic!("2º acesso: esperava NCDFE, got {other:?}"),
+    }
+    // COM try: catch (Error) captura o EIIE (hierarquia nova + step!)
+    // (o 1º invoke de tenta re-abre? não — LFail já está clinit_failed →
+    // NCDFE, que também é <: Error → captura igualmente válida)
+    let v = invoke(&mut e, "tenta", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 1, "exceção de clinit deve ser capturável por catch (Error)");
+}
+
+/// issue #41 (JLS 12.4.2): falha de <clinit> na SUPERCLASSE propaga o EIIE
+/// original — sem duplo-wrap (a message não contém "ExceptionInInitializerError").
+#[test]
+fn clinit_super_failure_no_double_wrap() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/ArithmeticException;");
+    let base = b.class("LBase2;", "Ljava/lang/Object;");
+    b.direct(
+        base,
+        "<clinit>",
+        "V",
+        vec![],
+        ACC_STATIC | ACC_CONSTRUCTOR,
+        Some(b.code(2, 0, 0, {
+            let mut u = op11n(0x12, 0, 1);
+            u.extend(op11n(0x12, 1, 0));
+            u.extend(op23x(0x93, 0, 0, 1)); // div/0
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let _sub = b.class("LSub2;", "LBase2;");
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let sub_tidx = b.types.iter().position(|t| t == "LSub2;").unwrap() as u16;
+    b.direct(
+        cls,
+        "instancia_sub",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(2, 0, 0, {
+            let mut u = op21c(0x22, 1, sub_tidx); // new-instance LSub2
+            u.extend(op11n(0x12, 0, 7));
+            u.extend(op11x(0x0F, 0));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    match invoke(&mut e, "instancia_sub", "()I", &[]) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/ExceptionInInitializerError;");
+            let msg = t.message.clone().unwrap_or_default();
+            assert!(
+                !msg.contains("ExceptionInInitializerError"),
+                "duplo-wrap: message = {msg}"
+            );
+        }
+        other => panic!("esperava EIIE propagado da super, got {other:?}"),
+    }
+}
+
+/// issue #49: put_field sem budget lança OutOfMemoryError CAPTURÁVEL
+/// (antes: VM_TYPE_ERROR mentiroso e run-killer).
+#[test]
+fn iput_oom_is_catchable_oome() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/Throwable;");
+    let lt = b.class("LT;", "Ljava/lang/Object;");
+    b.instance_field(lt, "f", "I");
+    let f_f = b.field_idx("LT;", "I", "f");
+    let lt_tidx = b.types.iter().position(|t| t == "LT;").unwrap() as u16;
+    let p_void = b.proto_idx("V", vec![]);
+    let obj_init = b.method_idx("Ljava/lang/Object;", p_void, "<init>");
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    // sem try: Err = Exception OOME (não Error VM_TYPE_ERROR)
+    b.direct(
+        cls,
+        "escreve",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(3, 0, 0, {
+            let mut u = op21c(0x22, 0, lt_tidx); // new-instance v0, LT
+            u.extend(op35c(0x70, 1, obj_init, [0, 0, 0, 0, 0]));
+            u.extend(op11n(0x12, 1, 1)); // const/4 v1, 1
+            u.extend(op22c(0x59, 1, 0, f_f)); // iput v1, v0, f
+            u.extend(op11x(0x0F, 1)); // return v1
+            u
+        })),
+    );
+    // com try: OOME é capturado por catch (Throwable) → flag=1
+    let mut blob = b.code(3, 0, 0, {
+        let mut u = op11n(0x12, 0, 0); // flag=0
+        u.extend(op21c(0x22, 1, lt_tidx)); // TRY [1..8): new+init+iput
+        u.extend(op35c(0x70, 1, obj_init, [1, 0, 0, 0, 0]));
+        u.extend(op11n(0x12, 2, 1));
+        u.extend(op22c(0x59, 2, 1, f_f)); // iput v2, v1, f ← OOM aqui
+        u.extend(op11x(0x0F, 0)); // return flag (não deve ocorrer)
+        u.extend(op11x(0x0D, 1)); // handler: move-exception v1
+        u.extend(op11n(0x12, 0, 1)); // flag=1
+        u.extend(op11x(0x0F, 0)); // return flag
+        u
+    });
+    blob.tries.push(TryBlob {
+        // layout real (op35c = 3 units): new@1, invoke@3-5, const@6, iput@7-8,
+        // return@9, move-exception@10 — o try precisa cobrir até o iput
+        start: 1,
+        count: 8,
+        typed: vec![("Ljava/lang/Throwable;".to_string(), 10)],
+        catch_all: None,
+    });
+    b.direct(cls, "escreve_cap", "I", vec![], ACC_PUBLIC | ACC_STATIC, Some(blob));
+    // heap calibrado: new-instance (32 B) passa exato; o iput de campo novo
+    // custa size_of::<Value>() + len("f") e ESTOURA → OOM tipado no iput
+    let field_cost = std::mem::size_of::<rd_vm::Value>() + "f".len();
+    let mk = |b: &DexBuilder| {
+        let dex = rd_dex::Dex::parse(b.finish()).expect("DEX parseia");
+        Engine::new(
+            vec![dex],
+            VmConfig {
+                heap_budget: 32 + field_cost - 1,
+                ..Default::default()
+            },
+        )
+    };
+    let mut e = mk(&b);
+    match invoke(&mut e, "escreve", "()I", &[]) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/OutOfMemoryError;", "iput OOM: {t:?}")
+        }
+        other => panic!("esperava OOME Throwable, got {other:?}"),
+    }
+    let mut e2 = mk(&b);
+    let v = invoke(&mut e2, "escreve_cap", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 1, "OOME de iput deve ser capturável");
+}
+
+/// issue #49: OOM em Integer.valueOf/const-class → OutOfMemoryError Throwable.
+#[test]
+fn alloc_oom_is_oome_throwable() {
+    // valueOf com heap de 1 byte
+    let mut e = Engine::new(
+        vec![],
+        VmConfig {
+            heap_budget: 1,
+            ..Default::default()
+        },
+    );
+    match e.invoke_static(
+        "Ljava/lang/Integer;",
+        "valueOf",
+        "(I)Ljava/lang/Integer;",
+        &[Value::Int(5)],
+    ) {
+        Err(VmExit::Exception(t)) => assert_eq!(t.class, "Ljava/lang/OutOfMemoryError;"),
+        other => panic!("esperava OOME Throwable, got {other:?}"),
+    }
+    // const-class com heap que comporta a string do nome mas não o objeto Class
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let foo_tidx = b.type_idx("LFoo;");
+    b.direct(
+        cls,
+        "klass",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op21c(0x1C, 0, foo_tidx); // const-class v0, LFoo;
+            u.extend(op11n(0x12, 0, 1));
+            u.extend(op11x(0x0F, 0));
+            u
+        })),
+    );
+    let dex = rd_dex::Dex::parse(b.finish()).unwrap();
+    let mut e2 = Engine::new(
+        vec![dex],
+        VmConfig {
+            heap_budget: 60,
+            ..Default::default()
+        },
+    );
+    match invoke(&mut e2, "klass", "()I", &[]) {
+        Err(VmExit::Exception(t)) => assert_eq!(t.class, "Ljava/lang/OutOfMemoryError;"),
+        other => panic!("esperava OOME Throwable, got {other:?}"),
+    }
+}
+
+/// issue #49: if-eq entre Int e objeto NÃO mata o run — comparação mista
+/// dá false e segue (a convenção Int(0)=null continua válida vs Null).
+#[test]
+fn if_eq_mixed_int_obj_is_false_not_killer() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let s_x = b.intern("x") as u16;
+    b.direct(
+        cls,
+        "mistura",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(4, 0, 0, {
+            // v0 = Int(0) (convenção null); v1 = Obj; v3 = Null (nunca escrito)
+            // (const/4 só aceita [-8,7] — 0x32 é if-EQ; 0x33 é if-ne)
+            let mut u = op11n(0x12, 0, 0); // 0: const/4 v0, 0
+            u.extend(op21c(0x1A, 1, s_x)); // 1..3: const-string v1, "x"
+            u.extend(op11n(0x12, 2, 1)); // 3: v2 = 1 (default)
+            u.extend(op22t(0x32, 0, 3, 3)); // 4..6: if-eq v0, v3, +3 (Null: TRUE → pula p/ 7)
+            u.extend(op11n(0x12, 2, 2)); // 6: v2 = 2 (não deve executar)
+            u.extend(op22t(0x32, 0, 1, 3)); // 7..9: if-eq v0, v1, +3 (Obj: FALSE → segue)
+            u.extend(op11n(0x12, 2, 3)); // 9: v2 = 3 (executado)
+            u.extend(op11x(0x0F, 2)); // 10: return v2
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let v = invoke(&mut e, "mistura", "()I", &[]).unwrap().as_int().unwrap();
+    assert_eq!(v, 3, "if-eq (Int, Obj) dá false e segue; (Int0, Null) dá true");
+}

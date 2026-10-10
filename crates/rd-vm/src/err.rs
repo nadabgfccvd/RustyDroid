@@ -96,6 +96,32 @@ impl From<crate::heap::OomError> for VmExit {
     }
 }
 
+/// issue #49: OOM de alocação em site de execução Java é `OutOfMemoryError`
+/// THROWABLE (capturável por catch Throwable/Error — JLS), não `VM_OOM`
+/// run-killer. Todos os sites de alloc do interpretador usam isto.
+pub fn oom_throwable(e: crate::heap::OomError) -> VmExit {
+    VmExit::Exception(crate::err::Throwable::new(
+        "Ljava/lang/OutOfMemoryError;",
+        format!(
+            "alocação de {} bytes excede o heap de {} bytes (piso E5)",
+            e.requested, e.budget
+        ),
+    ))
+}
+
+/// issue #49: resultado de put_field → VmExit tipado (OOM vira
+/// OutOfMemoryError capturável; não-instância é bug interno → VM_TYPE_ERROR).
+pub fn put_field_result(res: Result<(), crate::heap::FieldWriteErr>) -> Result<(), VmExit> {
+    match res {
+        Ok(()) => Ok(()),
+        Err(crate::heap::FieldWriteErr::Oom(e)) => Err(oom_throwable(e)),
+        Err(crate::heap::FieldWriteErr::NotInstance) => Err(VmExit::Error(vm_error(
+            "VM_TYPE_ERROR",
+            "escrita de campo em objeto que não é instância",
+        ))),
+    }
+}
+
 impl std::fmt::Display for VmExit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

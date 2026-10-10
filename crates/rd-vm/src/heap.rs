@@ -236,30 +236,36 @@ impl Heap {
         }
     }
 
-    pub fn put_field(&mut self, r: ObjRef, name: &str, v: Value) -> Result<(), String> {
+    /// issue #49: escrita de campo é erro TIPADO — OOM não pode vira
+    /// `VM_TYPE_ERROR` mentiroso pelo `From<String>` do interp.
+    pub fn put_field(&mut self, r: ObjRef, name: &str, v: Value) -> Result<(), FieldWriteErr> {
         // issue #28: campo novo é cobrado no orçamento ANTES de materializar
         // (o push antigo não cobrava nada — leak de contabilidade). O check
         // vem antes do get_mut para não conflitar o borrow
-        let is_new = match self.get(r)? {
-            HeapObj::Instance { fields, .. } => !fields.iter().any(|(n, _)| n == name),
-            _ => return Err(format!("#{r} não é instância")),
+        let is_new = match self.get(r) {
+            Ok(HeapObj::Instance { fields, .. }) => !fields.iter().any(|(n, _)| n == name),
+            Ok(_) => return Err(FieldWriteErr::NotInstance),
+            Err(_) => return Err(FieldWriteErr::NotInstance),
         };
         if is_new {
             let cost = std::mem::size_of::<Value>() + name.len();
             let new_used = self
                 .used
                 .checked_add(cost)
-                .ok_or_else(|| "heap budget excedido (overflow)".to_string())?;
+                .ok_or(FieldWriteErr::Oom(OomError {
+                    requested: cost,
+                    budget: self.budget,
+                }))?;
             if new_used > self.budget {
-                return Err(format!(
-                    "heap budget de {} bytes excedido ao adicionar campo {name}",
-                    self.budget
-                ));
+                return Err(FieldWriteErr::Oom(OomError {
+                    requested: cost,
+                    budget: self.budget,
+                }));
             }
             self.used = new_used;
         }
-        match self.get_mut(r)? {
-            HeapObj::Instance { fields, .. } => {
+        match self.get_mut(r) {
+            Ok(HeapObj::Instance { fields, .. }) => {
                 if let Some(slot) = fields.iter_mut().find(|(n, _)| n == name) {
                     slot.1 = v;
                 } else {
@@ -267,9 +273,17 @@ impl Heap {
                 }
                 Ok(())
             }
-            _ => Err(format!("#{r} não é instância")),
+            _ => Err(FieldWriteErr::NotInstance),
         }
     }
+}
+
+/// issue #49: escrita de campo é erro TIPADO — OOM não pode virar
+/// `VM_TYPE_ERROR` mentiroso pelo `From<String>` do interp.
+#[derive(Debug)]
+pub enum FieldWriteErr {
+    Oom(OomError),
+    NotInstance,
 }
 
 /// (classe, campos) de uma instância — alias para o tipo complexo do clippy.

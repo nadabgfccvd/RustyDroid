@@ -216,6 +216,16 @@ impl Engine {
             }
             Err(e) => {
                 self.clinit_failed.insert(class.to_string());
+                // issue #41 (JLS 12.4.2): se a falha VEIO da superclasse (o erro
+                // já está embrulhado em EIIE/NCDFE), propaga o erro ORIGINAL —
+                // duplo-wrap divergia da JVM e mentia na message
+                if let VmExit::Exception(t) = &e {
+                    if t.class == "Ljava/lang/ExceptionInInitializerError;"
+                        || t.class == "Ljava/lang/NoClassDefFoundError;"
+                    {
+                        return Err(e);
+                    }
+                }
                 let cause = match &e {
                     VmExit::Exception(t) => {
                         format!("{}: {}", t.class, t.message.clone().unwrap_or_default())
@@ -321,20 +331,31 @@ impl Engine {
             return Ok(obj);
         }
         let msg = match &t.message {
-            Some(m) => Value::Obj(self.heap.alloc_string(m.clone())?),
+            Some(m) => Value::Obj(
+                self.heap
+                    .alloc_string(m.clone())
+                    .map_err(crate::err::oom_throwable)?,
+            ),
             None => Value::Null,
         };
         let obj = self
             .heap
-            .alloc_instance(t.class.clone(), vec![("message".to_string(), msg)])?;
+            .alloc_instance(t.class.clone(), vec![("message".to_string(), msg)])
+            .map_err(crate::err::oom_throwable)?;
         Ok(obj)
     }
 
     /// Cria um Throwable VM-built (ArithmeticException, NPE, …) com objeto.
     pub(super) fn vm_exception(&mut self, class: &str, message: &str) -> Result<Throwable, VmExit> {
-        let obj = self.heap.alloc_instance(class.to_string(), Vec::new())?;
-        let msg_ref = self.heap.alloc_string(message.to_string())?;
-        self.heap.put_field(obj, "message", Value::Obj(msg_ref))?;
+        let obj = self
+            .heap
+            .alloc_instance(class.to_string(), Vec::new())
+            .map_err(crate::err::oom_throwable)?;
+        let msg_ref = self
+            .heap
+            .alloc_string(message.to_string())
+            .map_err(crate::err::oom_throwable)?;
+        crate::err::put_field_result(self.heap.put_field(obj, "message", Value::Obj(msg_ref)))?;
         Ok(Throwable {
             class: class.to_string(),
             message: Some(message.to_string()),

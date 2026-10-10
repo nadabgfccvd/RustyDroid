@@ -240,10 +240,14 @@ pub fn call_static_intrinsic(
         // Collections; sem isto, código Java real falha logo no primeiro uso
         (INTEGER, "valueOf", "(I)Ljava/lang/Integer;") => {
             let v = args[0].as_int()?;
-            let r = vm.heap.alloc_instance(
-                INTEGER.to_string(),
-                vec![("value".to_string(), Value::Int(v))],
-            )?;
+            // issue #49: OOM → OutOfMemoryError capturável
+            let r = vm
+                .heap
+                .alloc_instance(
+                    INTEGER.to_string(),
+                    vec![("value".to_string(), Value::Int(v))],
+                )
+                .map_err(crate::err::oom_throwable)?;
             Ok(Some(Value::Obj(r)))
         }
         (INTEGER, "toString", "(I)Ljava/lang/String;") => {
@@ -261,10 +265,11 @@ pub fn call_static_intrinsic(
         }
         (LONG, "valueOf", "(J)Ljava/lang/Long;") => {
             let v = args[0].as_long()?;
-            let r = vm.heap.alloc_instance(
-                LONG.to_string(),
-                vec![("value".to_string(), Value::Long(v))],
-            )?;
+            // issue #49: OOM → OutOfMemoryError capturável
+            let r = vm
+                .heap
+                .alloc_instance(LONG.to_string(), vec![("value".to_string(), Value::Long(v))])
+                .map_err(crate::err::oom_throwable)?;
             Ok(Some(Value::Obj(r)))
         }
         (STRING, "valueOf", "(J)Ljava/lang/String;") => {
@@ -323,13 +328,13 @@ pub fn call_instance_intrinsic(
 
         (SB, "<init>", "()V") => {
             let buf = vm.heap.alloc_string(String::new())?;
-            vm.heap.put_field(recv, "buf", Value::Obj(buf))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "buf", Value::Obj(buf)))?;
             Ok(Some(Value::Null))
         }
         (SB, "<init>", "(Ljava/lang/String;)V") => {
             let s = string_arg(vm, &args[0])?;
             let buf = vm.heap.alloc_string(s)?;
-            vm.heap.put_field(recv, "buf", Value::Obj(buf))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "buf", Value::Obj(buf)))?;
             Ok(Some(Value::Null))
         }
         (SB, "append", "(I)Ljava/lang/StringBuilder;") => {
@@ -482,7 +487,7 @@ pub fn call_instance_intrinsic(
                 None => Value::Null,
                 Some(_) => Value::Obj(vm.heap.alloc_string(string_arg(vm, &args[0])?)?),
             };
-            vm.heap.put_field(recv, "message", msg)?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "message", msg))?;
             Ok(Some(Value::Null))
         }
         (_, "getMessage", "()Ljava/lang/String;") if is_throwable_class(vm, recv_class) => Ok(
@@ -716,8 +721,7 @@ fn sb_append(vm: &mut Engine, recv: crate::heap::ObjRef, s: &str) -> Result<(), 
     let mut buf = sb_buf(vm, recv)?;
     buf.push_str(s);
     let r = vm.heap.alloc_string(buf)?;
-    vm.heap.put_field(recv, "buf", Value::Obj(r))?;
-    Ok(())
+    crate::err::put_field_result(vm.heap.put_field(recv, "buf", Value::Obj(r)))
 }
 
 pub fn alloc_string(vm: &mut Engine, s: String) -> Result<crate::heap::ObjRef, VmExit> {

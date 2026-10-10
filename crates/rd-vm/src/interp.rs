@@ -174,8 +174,17 @@ pub(crate) fn exec_frame(
                     )
                     .into());
                 };
-                let obj = vm.materialize_throwable(&t)?;
-                regs[*a as usize] = Value::Obj(obj);
+                // issue #49: se o heap está esgotado, materializar o PRÓPRIO
+                // OutOfMemoryError OOMa dentro do OOM (objeto + message não
+                // cabem). JVM real pré-aloca o OOM; aqui o fallback é mover
+                // Null e deixar o catch executar — a exceção original nunca é
+                // substituída por um erro de materialização.
+                let obj = match vm.materialize_throwable(&t) {
+                    Ok(r) => Value::Obj(r),
+                    Err(VmExit::Exception(_)) => Value::Null,
+                    Err(e) => return Err(e),
+                };
+                regs[*a as usize] = obj;
             }
 
             // ── return family (0E..11) ──────────────────────────────────────
@@ -279,10 +288,14 @@ pub(crate) fn exec_frame(
                     .into());
                 }
                 let name_r = intrinsics::alloc_string(vm, desc)?;
-                let r = vm.heap.alloc_instance(
-                    "Ljava/lang/Class;".to_string(),
-                    vec![("name".to_string(), Value::Obj(name_r))],
-                )?;
+                // issue #49: OOM aqui é OutOfMemoryError capturável (não run-killer)
+                let r = step!(vm
+                    .heap
+                    .alloc_instance(
+                        "Ljava/lang/Class;".to_string(),
+                        vec![("name".to_string(), Value::Obj(name_r))],
+                    )
+                    .map_err(oom_exception));
                 regs[*a as usize] = Value::Obj(r);
             }
 
@@ -353,7 +366,9 @@ pub(crate) fn exec_frame(
                 // issue #25: criar instância é “ação ativa” (JLS 12.4.2) —
                 // <clinit> da classe roda ANTES do construtor; sem isto, o
                 // efeito do <clinit> só era observável no primeiro sget
-                vm.ensure_initialized(&class)?;
+                // issue #41: exceção de <clinit> (EIIE) é despachada na MESMA
+                // frame (try/catch do método corrente) — `?` bypassava o handler
+                step!(vm.ensure_initialized(&class));
                 let r = step!(match vm.heap.alloc_instance(class.clone(), Vec::new()) {
                     Ok(r) => Ok(r),
                     Err(e) => Err(oom_exception(e)),
@@ -702,7 +717,12 @@ pub(crate) fn exec_frame(
                     Ok(Some(r)) => Ok(r),
                     Err(e) => Err(e.into()),
                 });
-                vm.heap.put_field(r, &fname, regs[*a as usize].clone())?;
+                // issue #49: OOM de campo novo no iput é OutOfMemoryError
+                // CAPTURÁVEL (antes: VM_TYPE_ERROR mentiroso e run-killer)
+                step!(crate::err::put_field_result(
+                    vm.heap
+                        .put_field(r, &fname, regs[*a as usize].clone())
+                ));
             }
 
             // ── sget (60..66) / sput (67..6D) ───────────────────────────────
@@ -711,7 +731,8 @@ pub(crate) fn exec_frame(
                     return bad_kind(insn);
                 };
                 let (class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
-                vm.ensure_initialized(&class)?;
+                // issue #41: EIIE de <clinit> despacha na frame corrente
+                step!(vm.ensure_initialized(&class));
                 // issues #43/#48: System.out/.err materializam um PrintStream
                 // embutido na primeira leitura (println/print são intrínsecos;
                 // saída vai para stdout/stderr do host, spec PrintStream: nunca lança)
@@ -719,10 +740,13 @@ pub(crate) fn exec_frame(
                     let key = (class.clone(), fname.clone());
                     if !vm.statics.contains_key(&key) {
                         let fd = if fname == "err" { 2 } else { 1 };
-                        let r = vm.heap.alloc_instance(
-                            "Ljava/io/PrintStream;".to_string(),
-                            vec![("fd".to_string(), Value::Int(fd))],
-                        )?;
+                        let r = step!(vm
+                            .heap
+                            .alloc_instance(
+                                "Ljava/io/PrintStream;".to_string(),
+                                vec![("fd".to_string(), Value::Int(fd))],
+                            )
+                            .map_err(oom_exception));
                         vm.statics.insert(key, Value::Obj(r));
                     }
                 }
@@ -743,7 +767,8 @@ pub(crate) fn exec_frame(
                     return bad_kind(insn);
                 };
                 let (class, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
-                vm.ensure_initialized(&class)?;
+                // issue #41: EIIE de <clinit> despacha na frame corrente
+                step!(vm.ensure_initialized(&class));
                 vm.statics.insert((class, fname), regs[*a as usize].clone());
             }
 
@@ -967,6 +992,10 @@ fn values_ref_eq(a: &Value, b: &Value) -> Result<bool, String> {
         (Value::Int(x), Value::Int(y)) => Ok(x == y),
         (Value::Long(x), Value::Long(y)) => Ok(x == y),
         (Value::Int(x), Value::Null) | (Value::Null, Value::Int(x)) => Ok(*x == 0),
+        // issue #49: comparação mista int × objeto — Java nunca produz este
+        // bytecode com int ≠ convenção null, e `false` segue a execução em vez
+        // de matar o run com VM_TYPE_ERROR (Int(0)=null já cobre o par com Null)
+        (Value::Int(_), Value::Obj(_)) | (Value::Obj(_), Value::Int(_)) => Ok(false),
         (x, y) => Err(format!(
             "if sobre tipos incompatíveis: {} vs {}",
             x.type_name(),
