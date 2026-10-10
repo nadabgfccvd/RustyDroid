@@ -292,14 +292,18 @@ fn real_dex_all_classes_code_roundtrip_and_annotations() {
 }
 
 #[test]
-fn real_dex_disasm_contract_is_not_implemented() {
+fn real_dex_disasm_contract_renders_smali() {
     let Some(path) = dex_path() else {
         return;
     };
     let data = std::fs::read(&path).expect("ler .dex");
     let dex = Dex::parse(data).expect("parse");
-    // contrato M1: disassembler ainda não aterrissou — falha tipada, nunca pânico
-    let err = rd_dex::disasm::render_class(&dex, 0).unwrap_err();
-    assert_eq!(err.code, "NOT_IMPLEMENTED");
-    assert_eq!(err.module_id, "rd-dex");
+    // contrato pós-M1 (issue #36): o disassembler está implementado —
+    // render_class produz saída smali textual para a classe 0 sem pânico e
+    // sem NOT_IMPLEMENTED; diretivas .class/.source/.method são esperadas
+    let out = rd_dex::disasm::render_class(&dex, 0).expect("render class 0");
+    assert!(
+        out.contains(".class"),
+        "saída smali deve conter diretiva .class"
+    );
 }

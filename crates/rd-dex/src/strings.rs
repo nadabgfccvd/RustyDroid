@@ -80,17 +80,23 @@ fn read_string_data(data: &[u8], off: usize) -> RdResult<String> {
     // valor declarado NÃO é confiável em arquivos corrompidos — ver política
     // no comentário abaixo (issue #12)
     let _utf16_len = r.uleb128()? as usize;
-    // procura terminador 0x00 com bound — nunca sai da janela
+    // procura terminador 0x00 com bound — nunca sai da janela.
+    // issue #36: bound de progresso por string — sem ele, uma tabela de ids
+    // apontando para região sem NUL faz scan O(n²) (DoS de perf). Cap de
+    // 1 MiB: strings reais têm < 64 Ki UTF-16 (≈192 KiB em MUTF-8)
+    const MAX_STRING_BYTES: usize = 1 << 20;
     let start = r.pos;
     let mut end = start;
-    while end < data.len() {
-        if data[end] == 0 {
-            break;
-        }
+    while end < data.len() && data[end] != 0 && end - start < MAX_STRING_BYTES {
         end += 1;
     }
     if end >= data.len() {
         return Err(RdError::parse("string: terminador NUL ausente"));
+    }
+    if end - start >= MAX_STRING_BYTES {
+        return Err(RdError::parse(
+            "string: excede 1 MiB sem terminador NUL (stream malformada)",
+        ));
     }
     let s = mutf8::decode(&data[start..end]);
     // spec: utf16_len é o comprimento em unidades de código UTF-16. Um

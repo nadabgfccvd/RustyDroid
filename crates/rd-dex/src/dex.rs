@@ -127,10 +127,12 @@ impl MapType {
             0x2005 => MapType::EncodedArray,
             0x2006 => MapType::AnnotationsDirectory,
             // DEX 038+: invokedynamic / method handles (lambdas desugar,
-            // string concat, records) — sem estes braços o loop de população
-            // nunca preenche call_site_offsets/method_handles (issue #10)
-            0x7000 => MapType::CallSiteId,
-            0x7001 => MapType::MethodHandle,
+            // string concat, records) — códigos OFICIAIS da spec dex-format
+            // (TYPE_CALL_SITE_ID_ITEM=0x0007, TYPE_METHOD_HANDLE_ITEM=0x0008).
+            // Sem estes braços o loop de população nunca preenche
+            // call_site_offsets/method_handles (issues #10 e #21)
+            0x0007 => MapType::CallSiteId,
+            0x0008 => MapType::MethodHandle,
             0xF000 => MapType::HiddenapiClassData,
             _ => MapType::Unknown(code),
         }
@@ -157,8 +159,8 @@ impl MapType {
             MapType::EncodedArray => 0x2005,
             MapType::AnnotationsDirectory => 0x2006,
             MapType::HiddenapiClassData => 0xF000,
-            MapType::CallSiteId => 0x7000,
-            MapType::MethodHandle => 0x7001,
+            MapType::CallSiteId => 0x0007,
+            MapType::MethodHandle => 0x0008,
             MapType::Unknown(c) => *c,
         }
     }
@@ -581,7 +583,7 @@ mod tests {
     fn map_type_names_and_codes() {
         for code in [
             0x0000u16, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x1000, 0x1001, 0x1002,
-            0x1003, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x7000, 0x7001, 0xF000,
+            0x1003, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x0007, 0x0008, 0xF000,
         ] {
             let t = MapType::from_code(code);
             assert_eq!(t.code(), code, "roundtrip de 0x{code:04x}");
@@ -589,8 +591,12 @@ mod tests {
         }
         // o roundtrip sozinho passa vazio para Unknown (Unknown(c).code() == c);
         // from_code precisa reconhecer os códigos de verdade (issue #10)
-        assert!(matches!(MapType::from_code(0x7000), MapType::CallSiteId));
-        assert!(matches!(MapType::from_code(0x7001), MapType::MethodHandle));
+        // códigos oficiais da spec: 0x0007/0x0008 (issue #21 — 0x7000/0x7001
+        // não existem na tabela de type codes do dex-format)
+        assert!(matches!(MapType::from_code(0x0007), MapType::CallSiteId));
+        assert!(matches!(MapType::from_code(0x0008), MapType::MethodHandle));
+        assert!(matches!(MapType::from_code(0x7000), MapType::Unknown(0x7000)));
+        assert!(matches!(MapType::from_code(0x7001), MapType::Unknown(0x7001)));
         assert!(matches!(
             MapType::from_code(0xF000),
             MapType::HiddenapiClassData

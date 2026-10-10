@@ -330,6 +330,14 @@ pub fn parse(data: &[u8]) -> RdResult<AxmlDocument> {
                         }
                     }
                     (Some(el), _) => {
+                        // issue #35: segundo elemento top-level — documento
+                        // desbalanceado (Android rejeita). Sobrescrever o root
+                        // descartaria o primeiro (com filhos) — viola a Lei 2.
+                        if root.is_some() {
+                            return Err(RdError::parse(
+                                "axml: segundo elemento top-level (documento desbalanceado)",
+                            ));
+                        }
                         root = Some(el);
                         open_count = 0;
                     }

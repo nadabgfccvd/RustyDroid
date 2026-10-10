@@ -41,6 +41,10 @@ impl ZipEntry {
 pub struct Zip {
     data: Vec<u8>,
     entries: Vec<ZipEntry>,
+    /// Offset do central directory já resolvido (ZIP64-aware) — fonte única
+    /// para a detecção de assinatura (issue #35: o re-scan duplicado em
+    /// lib.rs tinha off-by-one e perdia o sentinela ZIP64).
+    cd_offset: u64,
 }
 
 // ─── leitores little-endian com bounds-check ────────────────────────────────
@@ -135,7 +139,11 @@ impl Zip {
             p += 46 + name_len + extra_len + comment_len;
         }
 
-        Ok(Zip { data, entries })
+        Ok(Zip {
+            data,
+            entries,
+            cd_offset,
+        })
     }
 
     /// Lê arquivo do disco e faz parse.
@@ -282,17 +290,24 @@ impl Zip {
         let out: Vec<u8> = match entry.method {
             METHOD_STORED => compressed.to_vec(),
             METHOD_DEFLATE => {
-                // Bomba de descompressão (issue #14): o teto declarado no CD
-                // tem que valer DURANTE o inflate, não só depois — um stream
-                // minúsculo que expande para GiB não pode crescer o buffer sem
-                // limite (budget do projeto: processo ≤ 512 MB no piso E5).
-                // `take(declared + 1)` corta a saída no limite; 1 byte extra
-                // permite distinguir "exatamente o declarado" (ok) de "passou
-                // do declarado" (bomba → erro tipado, não OOM kill).
+                // Bomba de descompressão (issues #14 e #30): dois tetos valem
+                // DURANTE/Antes do inflate —
+                // (a) orçamento GLOBAL de 512 MB checado ANTES de inflar: o
+                //     `declared` é campo do atacante; 712 KB podiam declarar
+                //     600 MB "honestos" e alocar isso na RAM. Piso E5 do spec:
+                //     processo ≤ 512 MB. Rejeita sem alocar.
+                // (b) o `declared` do CD vale durante o inflate (take + 1 byte
+                //     de folga): pega stream que expande além do declarado.
+                const MAX_INFLATE_BUDGET: u64 = 512 * 1024 * 1024;
                 let declared = entry.uncompressed_size;
+                if declared > MAX_INFLATE_BUDGET {
+                    return Err(RdError::invalid_format(format!(
+                        "zip: {:?} declara {} bytes descomprimidos (> teto global de {} bytes): entrada rejeitada antes do inflate (suspeita de bomba)",
+                        entry.name, declared, MAX_INFLATE_BUDGET
+                    )));
+                }
                 let mut decoder = DeflateDecoder::new(compressed).take(declared.saturating_add(1));
-                let mut buf =
-                    Vec::with_capacity(entry.uncompressed_size.min(64 * 1024 * 1024) as usize);
+                let mut buf = Vec::with_capacity(declared.min(64 * 1024 * 1024) as usize);
                 decoder
                     .read_to_end(&mut buf)
                     .map_err(|e| RdError::parse(format!("zip: inflate {:?}: {e}", entry.name)))?;
@@ -349,6 +364,13 @@ impl Zip {
 
     pub fn entry_count(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Offset do central directory já resolvido (ZIP64-aware) — o mesmo valor
+    /// usado no parse; garante que a detecção de assinatura e o leitor de
+    /// entradas nunca divergem (issue #35).
+    pub fn cd_offset(&self) -> u64 {
+        self.cd_offset
     }
 
     /// Bytes brutos do container (uso interno: detecção do bloco de assinatura).
@@ -533,10 +555,10 @@ mod tests {
         enc.finish().unwrap()
     }
 
-    /// Issue #14: stream deflate minúsculo (5 MB de zeros → ~5 KB comprimidos)
-    /// com CD declarando só 1000 bytes descomprimidos. Sem o `take()`, o
-    /// `read_to_end` cresceria o buffer sem teto ANTES da checagem do CD
-    /// (OOM kill em craft maior); agora corta no limite → erro tipado.
+    /// Issue #14 + #30: stream deflate minúsculo (5 MB de zeros → ~5 KB
+    /// comprimidos) com CD declarando só 1000 bytes descomprimidos. Sem o
+    /// `take()`, o `read_to_end` cresceria o buffer sem teto ANTES da checagem
+    /// do CD (OOM kill em craft maior); agora corta no limite → erro tipado.
     #[test]
     fn decompression_bomb_is_typed_error_not_oom() {
         let content = vec![0u8; 5 * 1024 * 1024];
@@ -548,6 +570,26 @@ mod tests {
         assert_eq!(err.code, "INVALID_FORMAT");
         assert!(
             err.cause.contains("descompressão limitada"),
+            "mensagem: {}",
+            err.cause
+        );
+    }
+
+    /// Issue #30: CD "honesto-grande" — declara 600 MB (> teto global de
+    /// 512 MB) para um payload de ~75 MB. Rejeitado ANTES do inflate (sem
+    /// alocar um byte da entrada) → erro tipado, não OOM.
+    #[test]
+    fn inflate_is_capped_by_global_budget_not_attacker_declared_size() {
+        // 75 MB de zeros comprimem para ~90 KB; CD declara 600 MB
+        let content = vec![0u8; 75 * 1024 * 1024];
+        let compressed = deflate_bytes(&content);
+        let declared: u32 = 600 * 1024 * 1024; // > teto global de 512 MB
+        let bytes = handcrafted_zip_deflate(&compressed, declared, 0, "big.bin");
+        let zip = Zip::parse(bytes).unwrap();
+        let err = zip.read("big.bin").unwrap_err();
+        assert_eq!(err.code, "INVALID_FORMAT");
+        assert!(
+            err.cause.contains("teto global"),
             "mensagem: {}",
             err.cause
         );

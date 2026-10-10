@@ -52,8 +52,23 @@ pub struct Apk {
 }
 
 impl Apk {
+    /// Teto de leitura whole-file (issue #38): o processo tem budget de
+    /// 512 MB (piso E5) e panic=abort em release — input maior vira erro
+    /// tipado ANTES de alocar, nunca abort sem contrato.
+    pub const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
+
     /// Abre e parseia um APK do disco.
     pub fn open(path: &Path) -> RdResult<Apk> {
+        let meta = std::fs::metadata(path)
+            .map_err(|e| RdError::io(&e, format!("stat {}", path.display())))?;
+        if meta.len() > Self::MAX_INPUT_BYTES {
+            return Err(RdError::invalid_format(format!(
+                "{} tem {} bytes (> teto de {} bytes): leitura recusada antes de alocar",
+                path.display(),
+                meta.len(),
+                Self::MAX_INPUT_BYTES
+            )));
+        }
         let data = std::fs::read(path)
             .map_err(|e| RdError::io(&e, format!("reading {}", path.display())))?;
         Self::from_bytes(data)
@@ -104,11 +119,13 @@ impl Apk {
             }
         }
 
-        // 4. assinaturas — precisa do offset do CD (re-walk barato do EOCD)
+        // 4. assinaturas — offset do CD único e canônico
         let signing = {
-            // zip não expõe o offset do CD; detectamos v2/v3 direto dos bytes finais
-            let cd_offset = find_cd_offset_for_signing(&zip);
-            signing::detect(peek_bytes(&zip), cd_offset, &zip)
+            // issue #35: o Zip já resolveu o EOCD (incluindo ZIP64) — reusar
+            // o offset em vez de re-variar (o scan duplicado tinha off-by-one
+            // em i==start e perdia o sentinela ZIP64 → APK v2-only reportado
+            // como unsigned)
+            signing::detect(zip.raw_bytes(), zip.cd_offset(), &zip)
         };
 
         let zip_entry_count = zip.entry_count();
@@ -177,31 +194,4 @@ impl Apk {
 pub enum FloorStatus {
     Ok,
     BelowFloor { min_sdk: u32, floor: u32 },
-}
-
-// ─── helpers de assinatura (o Zip não carrega o offset do CD) ───────────────
-
-fn find_cd_offset_for_signing(zip: &Zip) -> u64 {
-    // O bloco de assinatura termina exatamente no início do CD; encontramos o CD
-    // varrendo o EOCD novamente — mesmo algoritmo do zip.rs, enxuto aqui.
-    let data = peek_bytes(zip);
-    if data.len() < 22 {
-        return 0;
-    }
-    let start = data.len().saturating_sub(22 + 65_536);
-    let mut i = data.len() - 22;
-    while i > start {
-        if data[i] == 0x50 && data[i + 1] == 0x4b && data[i + 2] == 0x05 && data[i + 3] == 0x06 {
-            return u32::from_le_bytes([data[i + 16], data[i + 17], data[i + 18], data[i + 19]])
-                as u64;
-        }
-        i -= 1;
-    }
-    0
-}
-
-/// Acesso aos bytes brutos para a detecção de assinatura (evita clonar o arquivo).
-fn peek_bytes(zip: &Zip) -> &[u8] {
-    // Zip mantém os bytes em self.data; expomos via API interna do módulo zip.
-    zip.raw_bytes()
 }

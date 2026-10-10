@@ -151,6 +151,10 @@ pub enum GrantState {
     Denied,
     /// não existe na tabela versionada (desconhecida para o motor).
     Unknown,
+    /// issue #31: nem chega a ser pedida — maxSdkVersion vencido, since_api
+    /// acima do targetSdk, ou uses-permission-sdk-23 com target < 23 (o
+    /// Android real nem registra a permissão nesses casos).
+    NotRequested,
 }
 
 impl GrantState {
@@ -179,6 +183,9 @@ pub enum Severity {
 }
 
 /// Motor de permissões: instala um manifest e mantém estado consultável/mutável.
+/// issue #31: o gating por maxSdkVersion/since_api/sdk-23 está implementado —
+/// permissão fora da janela do targetSdk vira `NotRequested` (o Android real
+/// nem a registra).
 pub struct PermissionEngine {
     pub table: PermissionTable,
     states: BTreeMap<String, GrantState>,
@@ -205,12 +212,28 @@ impl PermissionEngine {
     }
 
     /// Instala as permissões declaradas de um manifest.
+    ///
+    /// issue #31: gating aplicado na instalação —
+    /// (a) `android:maxSdkVersion`: declarada só até aquela API; target acima
+    ///     → `NotRequested` (WRITE_EXTERNAL_STORAGE maxSdk=28 em target 33+);
+    /// (b) `since_api` da tabela: permissão que ainda não existe no targetSdk
+    ///     → `NotRequested` (POST_NOTIFICATIONS since 33 em target 26);
+    /// (c) `uses-permission-sdk-23`: só pedida com target ≥ 23.
     pub fn install(manifest: &Manifest, table: PermissionTable) -> Self {
         let mut states = BTreeMap::new();
         for up in &manifest.uses_permissions {
-            let state = match table.get(&up.name) {
-                Some(def) => Self::initial_state(def),
-                None => GrantState::Unknown,
+            let gated_out = up.max_sdk.is_some_and(|max| manifest.target_sdk > max)
+                || (up.sdk23 && manifest.target_sdk < 23);
+            let state = if gated_out {
+                GrantState::NotRequested
+            } else {
+                match table.get(&up.name) {
+                    Some(def) if def.since_api as u32 > manifest.target_sdk => {
+                        GrantState::NotRequested
+                    }
+                    Some(def) => Self::initial_state(def),
+                    None => GrantState::Unknown,
+                }
             };
             states.insert(up.name.clone(), state);
         }
@@ -223,6 +246,23 @@ impl PermissionEngine {
 
     pub fn target_sdk(&self) -> u32 {
         self.target_sdk
+    }
+
+    /// issue #31: marcador de confiança para o output — permissões de nível
+    /// signature/signatureOrSystem/internal são "auto-concedidas" apenas
+    /// porque o runtime se posiciona como system; apps reais de terceiros
+    /// as teriam NEGADAS. O JSON do CLI usa isto para não enganar agentes.
+    pub fn granted_by(&self, name: &str) -> Option<&'static str> {
+        if self.state(name) == Some(GrantState::AutoGranted) {
+            if let Some(def) = self.table.get(name) {
+                return matches!(
+                    def.level,
+                    ProtectionLevel::Signature | ProtectionLevel::SignatureOrSystem
+                )
+                .then_some("runtime-is-system");
+            }
+        }
+        None
     }
 
     pub fn state(&self, name: &str) -> Option<GrantState> {
@@ -530,5 +570,103 @@ mod tests {
         assert!(codes.contains(&"DEBUGGABLE"));
         // INTERNET é normal (auto-grant) e MYSTERY é unknown → nada pendente de runtime
         assert!(!codes.contains(&"RUNTIME_PENDING"));
+    }
+}
+
+#[cfg(test)]
+mod gating_tests {
+    use super::*;
+    use rd_apk::manifest::UsesPermission;
+
+    fn manifest_target(target: u32, perms: &[(&str, Option<u32>, bool)]) -> Manifest {
+        Manifest {
+            package: "com.t".into(),
+            min_sdk: 21,
+            target_sdk: target,
+            uses_permissions: perms
+                .iter()
+                .map(|(n, max, sdk23)| UsesPermission {
+                    name: format!("android.permission.{n}"),
+                    max_sdk: *max,
+                    sdk23: *sdk23,
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    /// issue #31: maxSdkVersion vencido → NotRequested; dentro da janela → normal
+    #[test]
+    fn max_sdk_version_gates_not_requested() {
+        let table = PermissionTable::embedded().unwrap();
+        let mut m = manifest_target(34, &[("WRITE_EXTERNAL_STORAGE", Some(28), false)]);
+        let e = PermissionEngine::install(&m, table.clone());
+        assert_eq!(
+            e.state("android.permission.WRITE_EXTERNAL_STORAGE"),
+            Some(GrantState::NotRequested),
+            "target 34 > maxSdk 28: o Android nem registra"
+        );
+        m.target_sdk = 26;
+        let e = PermissionEngine::install(&m, table);
+        assert_eq!(
+            e.state("android.permission.WRITE_EXTERNAL_STORAGE"),
+            Some(GrantState::RuntimePending),
+            "target 26 ≤ maxSdk 28: pedida normalmente"
+        );
+    }
+
+    /// issue #31: since_api acima do targetSdk → NotRequested
+    #[test]
+    fn since_api_gates_not_requested() {
+        let table = PermissionTable::embedded().unwrap();
+        let mut m = manifest_target(26, &[("POST_NOTIFICATIONS", None, false)]);
+        let e = PermissionEngine::install(&m, table.clone());
+        assert_eq!(
+            e.state("android.permission.POST_NOTIFICATIONS"),
+            Some(GrantState::NotRequested),
+            "POST_NOTIFICATIONS since 33 não existe em target 26"
+        );
+        m.target_sdk = 34;
+        let e = PermissionEngine::install(&m, table);
+        assert_eq!(
+            e.state("android.permission.POST_NOTIFICATIONS"),
+            Some(GrantState::RuntimePending),
+        );
+    }
+
+    /// issue #31: uses-permission-sdk-23 com target < 23 → NotRequested
+    #[test]
+    fn sdk23_tag_gates_below_23() {
+        let table = PermissionTable::embedded().unwrap();
+        let m = manifest_target(22, &[("CAMERA", None, true)]);
+        let e = PermissionEngine::install(&m, table.clone());
+        assert_eq!(
+            e.state("android.permission.CAMERA"),
+            Some(GrantState::NotRequested),
+        );
+        let m = manifest_target(23, &[("CAMERA", None, true)]);
+        let e = PermissionEngine::install(&m, table);
+        assert_eq!(e.state("android.permission.CAMERA"), Some(GrantState::RuntimePending));
+    }
+
+    /// issue #31: signature AutoGranted carrega marcador runtime-is-system
+    #[test]
+    fn signature_autogranted_has_trust_marker() {
+        let table = PermissionTable::embedded().unwrap();
+        let m = manifest_target(34, &[("WRITE_SECURE_SETTINGS", None, false)]);
+        let e = PermissionEngine::install(&m, table.clone());
+        assert_eq!(
+            e.state("android.permission.WRITE_SECURE_SETTINGS"),
+            Some(GrantState::AutoGranted)
+        );
+        assert_eq!(
+            e.granted_by("android.permission.WRITE_SECURE_SETTINGS"),
+            Some("runtime-is-system"),
+            "agents precisam saber que apps reais teriam essa NEGADA"
+        );
+        // dangerous não tem marcador
+        let m = manifest_target(34, &[("CAMERA", None, false)]);
+        let e = PermissionEngine::install(&m, table);
+        assert_eq!(e.granted_by("android.permission.CAMERA"), None);
     }
 }

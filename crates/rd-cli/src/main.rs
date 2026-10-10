@@ -1,4 +1,4 @@
-//! `rd` — CLI do RustyDroid (M0/M1).
+//! `rd` — CLI do RustyDroid (M0/M1/M2).
 //!
 //! Subcomandos:
 //! - `rd inspect <apk>`      — componentes/permissões/features/assinatura (DoD do M0)
@@ -8,7 +8,9 @@
 //! - `rd dex summary|disasm` — parser DEX 100% + disassembler smali (DoD do M1)
 //! - `rd vm exec`            — interpretador Dalvik mínimo (DoD do M2: métodos puros)
 //!
-//! Códigos de saída: 0 ok · 1 erro estruturado · 2 NOT_IMPLEMENTED.
+//! Códigos de saída (contrato API pública — issue #34):
+//! 0 ok · 1 erro estruturado · 2 NOT_IMPLEMENTED · 4 erro estruturado da VM
+//! (`rd vm exec`) · 64 usage inválida do CLI (não colide com NOT_IMPLEMENTED).
 
 use clap::{Parser, Subcommand};
 use rd_apk::{Apk, RdError};
@@ -26,7 +28,7 @@ use std::path::{Path, PathBuf};
     version,
     about = "RustyDroid — runtime Android em Rust, sem VM, headless-first, nativo para agentes de IA",
     long_about = None,
-    after_help = "Erros seguem o contrato {code, cause, suggestion, module_id} — consumível por agentes."
+    after_help = "Erros seguem o contrato {code, cause, suggestion, module_id} — consumível por agentes. Códigos de saída: 0 ok · 1 erro · 2 NOT_IMPLEMENTED · 4 erro VM (vm exec) · 64 usage."
 )]
 struct Cli {
     /// Diretório de dados versionados (default: ./data, env RD_DATA_DIR, fallback embutido)
@@ -175,31 +177,76 @@ enum DeviceSub {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    // issue #34: clap sai com 2 em usage error — colide com o 2 =
+    // NOT_IMPLEMENTED do contrato. Remapeado: help/version = 0; usage = 64
+    // (EX_USAGE, convenção BSD) — o contrato JSON do projeto fica intacto.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) if e.use_stderr() => {
+            let _ = e.print();
+            std::process::exit(64);
+        }
+        Err(e) => {
+            let _ = e.print(); // help/version
+            std::process::exit(0);
+        }
+    };
     let code = run(cli);
     std::process::exit(code);
+}
+
+/// Diretório de dados + se foi pedido EXPLICITAMENTE (--data/RD_DATA_DIR).
+/// issue #38: --data apontando para dir sem os TOMLs NÃO pode cair
+/// silenciosamente no embedded — o usuário acreditaria ter auditado contra
+/// a tabela dele.
+struct DataDir {
+    path: Option<PathBuf>,
+    explicit: bool,
+}
+
+impl DataDir {
+    /// Erro tipado se o arquivo esperado não existir num --data explícito.
+    fn require(&self, file: &str) -> Result<(), RdError> {
+        if self.explicit {
+            if let Some(d) = &self.path {
+                if !d.join(file).exists() {
+                    return Err(RdError::io(
+                        &std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("{} não encontrado", d.join(file).display()),
+                        ),
+                        format!("--data {file}: fallback para o embedded desativado"),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn run(cli: Cli) -> i32 {
     // resolução do diretório de dados: --data > RD_DATA_DIR > ./data
     let data_path = data_dir(cli.data.as_deref());
-    let data = data_path.as_deref();
+    let dd = DataDir {
+        path: data_path,
+        explicit: cli.data.is_some(),
+    };
     let result = match &cli.cmd {
-        Cmd::Inspect { path, json, device } => cmd_inspect(path, *json, device.as_deref(), data),
+        Cmd::Inspect { path, json, device } => cmd_inspect(path, *json, device.as_deref(), &dd),
         Cmd::Perm { sub } => match sub {
-            PermSub::List { path, json } => cmd_perm_list(path, *json, data),
-            PermSub::Info { name, json } => cmd_perm_info(name, *json, data),
-            PermSub::Audit { path, json } => cmd_perm_audit(path, *json, data),
+            PermSub::List { path, json } => cmd_perm_list(path, *json, &dd),
+            PermSub::Info { name, json } => cmd_perm_info(name, *json, &dd),
+            PermSub::Audit { path, json } => cmd_perm_audit(path, *json, &dd),
         },
         Cmd::Device { sub } => match sub {
-            DeviceSub::List { json } => cmd_device_list(*json, data),
-            DeviceSub::Show { id, json } => cmd_device_show(id, *json, data),
+            DeviceSub::List { json } => cmd_device_list(*json, &dd),
+            DeviceSub::Show { id, json } => cmd_device_show(id, *json, &dd),
         },
         Cmd::Behavior {
             target,
             impact,
             json,
-        } => cmd_behavior(*target, impact.as_deref(), *json, data),
+        } => cmd_behavior(*target, impact.as_deref(), *json, &dd),
         Cmd::Dex { sub } => match sub {
             DexSub::Summary { path, json } => cmd_dex_summary(path, *json),
             DexSub::Disasm {
@@ -285,8 +332,9 @@ fn data_dir(explicit: Option<&Path>) -> Option<PathBuf> {
         })
 }
 
-fn load_permissions(data: Option<&Path>) -> Result<PermissionTable, RdError> {
-    match data.and_then(|d| d.join("permissions.toml").exists().then_some(d)) {
+fn load_permissions(dd: &DataDir) -> Result<PermissionTable, RdError> {
+    dd.require("permissions.toml")?;
+    match dd.path.as_deref().and_then(|d| d.join("permissions.toml").exists().then_some(d)) {
         Some(d) => {
             let s = std::fs::read_to_string(d.join("permissions.toml"))
                 .map_err(|e| RdError::io(&e, "reading permissions.toml"))?;
@@ -313,6 +361,19 @@ fn dex_err(e: rd_dex::RdError) -> RdError {
 
 /// Carrega todos os dex de um APK (classes*.dex) ou de um arquivo .dex solto.
 fn load_dex_files(path: &Path) -> Result<Vec<(String, Dex)>, RdError> {
+    // issue #38: cap prévio tipado — whole-file read sem teto + panic=abort
+    // no release = abort sem erro estruturado em input gigante (budget piso E5)
+    const MAX_INPUT: u64 = 512 * 1024 * 1024;
+    let meta = std::fs::metadata(path)
+        .map_err(|e| RdError::io(&e, format!("stat {}", path.display())))?;
+    if meta.len() > MAX_INPUT {
+        return Err(RdError::invalid_format(format!(
+            "{} tem {} bytes (> teto de {} bytes): leitura recusada antes de alocar",
+            path.display(),
+            meta.len(),
+            MAX_INPUT
+        )));
+    }
     let raw =
         std::fs::read(path).map_err(|e| RdError::io(&e, format!("lendo {}", path.display())))?;
     if Dex::looks_like_dex(&raw) {
@@ -355,15 +416,16 @@ fn cmd_inspect(
     path: &Path,
     json: bool,
     device: Option<&str>,
-    data: Option<&Path>,
+    dd: &DataDir,
 ) -> Result<(), RdError> {
     let apk = open_apk(path)?;
-    let table = load_permissions(data)?;
+    let table = load_permissions(dd)?;
     let engine = PermissionEngine::install(&apk.manifest, table);
 
     let device_profile: Option<DeviceProfile> = match device {
         Some(id) => {
-            let dt = DeviceTable::load(data)?;
+            dd.require("devices.toml")?;
+    let dt = DeviceTable::load(dd.path.as_deref())?;
             Some(
                 dt.get(id)
                     .ok_or_else(|| {
@@ -503,10 +565,11 @@ fn cmd_inspect(
     // permissões — estados do motor
     let states = engine.all_states();
     let count = |pred: fn(GrantState) -> bool| states.values().filter(|s| pred(**s)).count();
+    // issue #38: contagem da tabela EM USO (load_permissions/--data), não do embedded
     out.push_str(&format!(
         "\npermissions ({} declaradas; tabela: {} permissões)\n",
         states.len(),
-        PermissionTable::embedded().map(|t| t.len()).unwrap_or(0)
+        engine.table.len()
     ));
     out.push_str(&format!(
         "  auto-granted: {} · runtime-pending: {} · special: {} · unknown: {}\n",
@@ -614,13 +677,23 @@ fn cmd_inspect(
 
 // ─── perm ───────────────────────────────────────────────────────────────────
 
-fn cmd_perm_list(path: &Path, json: bool, data: Option<&Path>) -> Result<(), RdError> {
+fn cmd_perm_list(path: &Path, json: bool, dd: &DataDir) -> Result<(), RdError> {
     let apk = open_apk(path)?;
-    let table = load_permissions(data)?;
+    let table = load_permissions(dd)?;
     let engine = PermissionEngine::install(&apk.manifest, table.clone());
     if json {
-        let mut v = serde_json::to_value(engine.all_states())
-            .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?;
+        // issue #38: permissão → {state, granted_by?} — signature AutoGranted
+        // carrega "runtime-is-system" para não enganar agents (issue #31)
+        let mut entries = serde_json::Map::new();
+        for (name, state) in engine.all_states() {
+            let mut o = serde_json::Map::new();
+            o.insert("state".into(), serde_json::json!(state));
+            if let Some(by) = engine.granted_by(name) {
+                o.insert("granted_by".into(), serde_json::json!(by));
+            }
+            entries.insert(name.clone(), serde_json::Value::Object(o));
+        }
+        let mut v = serde_json::Value::Object(entries);
         if let serde_json::Value::Object(map) = &mut v {
             map.insert(
                 "target_sdk".into(),
@@ -640,13 +713,17 @@ fn cmd_perm_list(path: &Path, json: bool, data: Option<&Path>) -> Result<(), RdE
         let level = def
             .map(|d| format!("{:?}", d.level))
             .unwrap_or_else(|| "?".into());
-        println!("  {:<28} {:<16} {level}", format!("{state:?}"), name);
+        let marker = engine
+            .granted_by(name)
+            .map(|b| format!(" [{b}]"))
+            .unwrap_or_default();
+        println!("  {:<28} {:<16} {level}{marker}", format!("{state:?}"), name);
     }
     Ok(())
 }
 
-fn cmd_perm_info(name: &str, json: bool, data: Option<&Path>) -> Result<(), RdError> {
-    let table = load_permissions(data)?;
+fn cmd_perm_info(name: &str, json: bool, dd: &DataDir) -> Result<(), RdError> {
+    let table = load_permissions(dd)?;
     let def = table.get(name).ok_or_else(|| {
         RdError::missing_entry(format!("permission {name:?}"))
             .with_suggestion("check data/permissions.toml — names follow android.permission.*")
@@ -670,9 +747,9 @@ fn cmd_perm_info(name: &str, json: bool, data: Option<&Path>) -> Result<(), RdEr
     Ok(())
 }
 
-fn cmd_perm_audit(path: &Path, json: bool, data: Option<&Path>) -> Result<(), RdError> {
+fn cmd_perm_audit(path: &Path, json: bool, dd: &DataDir) -> Result<(), RdError> {
     let apk = open_apk(path)?;
-    let table = load_permissions(data)?;
+    let table = load_permissions(dd)?;
     let engine = PermissionEngine::install(&apk.manifest, table);
     let findings = engine.audit(&apk.manifest);
     if json {
@@ -693,8 +770,9 @@ fn cmd_perm_audit(path: &Path, json: bool, data: Option<&Path>) -> Result<(), Rd
 
 // ─── device ─────────────────────────────────────────────────────────────────
 
-fn cmd_device_list(json: bool, data: Option<&Path>) -> Result<(), RdError> {
-    let table = DeviceTable::load(data)?;
+fn cmd_device_list(json: bool, dd: &DataDir) -> Result<(), RdError> {
+    dd.require("devices.toml")?;
+    let table = DeviceTable::load(dd.path.as_deref())?;
     if json {
         println!("{}", to_json(&table.device));
         return Ok(());
@@ -718,8 +796,9 @@ fn cmd_device_list(json: bool, data: Option<&Path>) -> Result<(), RdError> {
     Ok(())
 }
 
-fn cmd_device_show(id: &str, json: bool, data: Option<&Path>) -> Result<(), RdError> {
-    let table = DeviceTable::load(data)?;
+fn cmd_device_show(id: &str, json: bool, dd: &DataDir) -> Result<(), RdError> {
+    dd.require("devices.toml")?;
+    let table = DeviceTable::load(dd.path.as_deref())?;
     let d = table.get(id).ok_or_else(|| {
         RdError::missing_entry(format!("device profile {id:?}"))
             .with_suggestion("run `rd device list`")
@@ -772,9 +851,10 @@ fn cmd_behavior(
     target: Option<u32>,
     impact: Option<&str>,
     json: bool,
-    data: Option<&Path>,
+    dd: &DataDir,
 ) -> Result<(), RdError> {
-    let table = SwitchTable::load(data)?;
+    dd.require("behavior-switches.toml")?;
+    let table = SwitchTable::load(dd.path.as_deref())?;
     let target = target.unwrap_or(36);
     if !(26..=36).contains(&target) {
         return Err(RdError::new(
@@ -897,10 +977,15 @@ fn cmd_vm_exec(
 ) -> Result<i32, RdError> {
     let files = load_dex_files(path)?;
     let dexes: Vec<Dex> = files.into_iter().map(|(_, d)| d).collect();
+    // issue #37: heap-mb N*1024*1024 podia overflow (debug panic) — checked
+    let heap_budget = heap_mb
+        .unwrap_or(256)
+        .checked_mul(1024 * 1024)
+        .ok_or_else(|| RdError::invalid_format(format!("--heap-mb {} excede o limite", heap_mb.unwrap_or(256))))?;
     let cfg = rd_vm::VmConfig {
         fuel: fuel.unwrap_or(rd_vm::VmConfig::default().fuel),
         max_depth: depth.unwrap_or(rd_vm::VmConfig::default().max_depth),
-        heap_budget: heap_mb.unwrap_or(256) * 1024 * 1024,
+        heap_budget,
     };
     let mut eng = rd_vm::Engine::new(dexes, cfg);
 
@@ -1049,6 +1134,14 @@ fn cmd_dex_disasm(
     out: Option<&Path>,
     json: bool,
 ) -> Result<(), RdError> {
+    // issue #34: --method sem --class era silenciosamente ignorado — agora
+    // erro tipado com sugestão (mesmo padrão de behavior --target 99)
+    if method.is_some() && class.is_none() {
+        return Err(RdError::invalid_format(
+            "--method requer --class (use --class Lpkg/Cls; --method nome)",
+        )
+        .with_suggestion("passe --class para filtrar o método"));
+    }
     let files = load_dex_files(path)?;
     if let Some(desc) = class {
         // disassembly de UMA classe (primeiro dex que a contém)

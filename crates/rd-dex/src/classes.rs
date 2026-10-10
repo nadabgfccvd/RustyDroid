@@ -118,28 +118,37 @@ pub fn parse_class_data(data: &[u8], off: u32) -> RdResult<ClassData> {
     let mut idx: u32 = 0;
     for _ in 0..static_n {
         let mut f = fields::read_encoded_field(&mut r)?;
-        idx = idx.wrapping_add(f.field_idx);
+        // issue #36: delta overflow falha tipado (não wrapping silencioso)
+        idx = idx.checked_add(f.field_idx).ok_or_else(|| {
+            RdError::invalid_format("class_data: delta overflow nos índices de campo")
+        })?;
         f.field_idx = idx;
         cd.static_fields.push(f);
     }
     idx = 0;
     for _ in 0..instance_n {
         let mut f = fields::read_encoded_field(&mut r)?;
-        idx = idx.wrapping_add(f.field_idx);
+        idx = idx.checked_add(f.field_idx).ok_or_else(|| {
+            RdError::invalid_format("class_data: delta overflow nos índices de campo")
+        })?;
         f.field_idx = idx;
         cd.instance_fields.push(f);
     }
     idx = 0;
     for _ in 0..direct_n {
         let mut m = read_method(&mut r)?;
-        idx = idx.wrapping_add(m.method_idx);
+        idx = idx.checked_add(m.method_idx).ok_or_else(|| {
+            RdError::invalid_format("class_data: delta overflow nos índices de método")
+        })?;
         m.method_idx = idx;
         cd.direct_methods.push(m);
     }
     idx = 0;
     for _ in 0..virtual_n {
         let mut m = read_method(&mut r)?;
-        idx = idx.wrapping_add(m.method_idx);
+        idx = idx.checked_add(m.method_idx).ok_or_else(|| {
+            RdError::invalid_format("class_data: delta overflow nos índices de método")
+        })?;
         m.method_idx = idx;
         cd.virtual_methods.push(m);
     }

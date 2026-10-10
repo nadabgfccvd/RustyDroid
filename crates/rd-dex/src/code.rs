@@ -346,6 +346,15 @@ impl CodeItem {
         let debug_info_off = read::u32_at(data, off + 8)?;
         let insns_size = read::u32_at(data, off + 12)? as usize;
 
+        // issue #20: ins_size > registers_size é estruturalmente impossível
+        // (os registradores de entrada vivem no topo do vetor) — sem este
+        // check, o disassembler subtrai em wrap e produz nomes pNNNN absurdos
+        if ins_size > registers_size {
+            return Err(RdError::invalid_format(format!(
+                "code_item: ins_size ({ins_size}) > registers_size ({registers_size})"
+            )));
+        }
+
         let insns_off = off + 16;
         if insns_size.checked_mul(2).is_none() {
             return Err(RdError::parse("code_item: insns_size overflow"));
@@ -365,6 +374,12 @@ impl CodeItem {
 
         // decodificação — avanço obrigatório, overrun tipado
         let instructions = decode_all(&insns)?;
+
+        // issue #17: valida UMA vez por code_item que todos os índices de
+        // registrador das instruções decodificadas cabem em registers_size
+        // (incluindo o +1 dos pares wide) — sem isto, um DEX malformado de
+        // ~200 bytes pânica/aborta o interpretador em regs[a]
+        validate_registers(&instructions, registers_size)?;
 
         // tries (alinhados a 4 bytes; padding de 1 unit se insns_size ímpar)
         let mut tries = Vec::new();
@@ -685,6 +700,122 @@ pub fn decode_at(insns: &[u16], addr: usize) -> RdResult<(Insn, u16)> {
     }
 }
 
+/// Validação de registradores (issue #17): todo índice de registrador usado
+/// pelas instruções decodificadas deve ser < registers_size; operações wide
+/// (long/double) ocupam o par (v, v+1), então v+1 também precisa caber.
+///
+/// A wideness é derivada do nome do opcode (na spec Dalvik, wide ⇔ nome
+/// contém "wide"/"long"/"double") — exatamente os opcodes cujos operandos
+/// ocupam pares. Converte erros de índice em falha tipada no load, nunca
+/// pânico/abort no interpretador.
+fn validate_registers(instructions: &[(usize, Insn)], registers_size: u16) -> RdResult<()> {
+    let nregs = registers_size as usize;
+    let wide_name =
+        |n: &str| n.contains("wide") || n.contains("-long") || n.contains("-double");
+    let chk = |addr: usize, op: u8, r: u32, wide: bool| -> RdResult<()> {
+        let over = if wide {
+            r as usize >= nregs || r as usize + 1 >= nregs
+        } else {
+            r as usize >= nregs
+        };
+        if over {
+            let how = if wide { " (par wide)" } else { "" };
+            return Err(RdError::invalid_format(format!(
+                "code_item: registrador v{r}{how} fora do intervalo \
+                 (registers_size={registers_size}) @ insn 0x{addr:x} (op 0x{op:02x})"
+            )));
+        }
+        Ok(())
+    };
+
+    for (addr, insn) in instructions {
+        let (addr, op) = (*addr, insn.opcode);
+        let name = info(op).name;
+        match &insn.kind {
+            Kind::Plain | Kind::Branch8(_) | Kind::Branch16(_) | Kind::Branch32(_) => {}
+            Kind::Payload(_) => {} // pseudoinstrução: sem registradores
+            Kind::Regs(a, b) => {
+                // 12x: move-wide, neg/not-long e aritmética */2addr são wide
+                // nos dois; conversões int-to-long têm só o destino wide
+                let (dw, sw) = if wide_name(name) {
+                    match name.split_once("-to-") {
+                        Some((src, dst)) => (
+                            matches!(dst, "long" | "double"),
+                            matches!(src, "long" | "double"),
+                        ),
+                        None => (true, true),
+                    }
+                } else {
+                    (false, false)
+                };
+                chk(addr, op, *a as u32, dw)?;
+                chk(addr, op, *b as u32, sw)?;
+            }
+            Kind::RegLit4(a, _) => chk(addr, op, *a as u32, false)?, // const/4 narrow
+            Kind::Reg(a) => chk(addr, op, *a as u32, wide_name(name))?, // return-wide, move-result-wide
+            Kind::RegReg16(a, b) => {
+                // 22x/32x: move-wide/from16 e move-wide/16 — ambos wide
+                let w = wide_name(name);
+                chk(addr, op, *a as u32, w)?;
+                chk(addr, op, *b as u32, w)?;
+            }
+            Kind::RegBranch16(a, _)
+            | Kind::RegBranch32(a, _)
+            | Kind::RegLit16(a, _)
+            | Kind::RegHigh16(a, _)
+            | Kind::RegIndex(a, _)
+            | Kind::RegIndex32(a, _)
+            | Kind::RegLit32(a, _)
+            | Kind::Lit64(a, _) => {
+                chk(addr, op, *a as u32, wide_name(name))?; // família const-wide*
+            }
+            Kind::RegRegReg(a, b, c) => {
+                // 23x: aget/aput-wide têm só A em par; cmp-* têm B,C wide e
+                // A narrow; aritmética long/double é wide nos três
+                if name == "aget-wide" || name == "aput-wide" {
+                    chk(addr, op, *a as u32, true)?;
+                    chk(addr, op, *b as u32, false)?;
+                    chk(addr, op, *c as u32, false)?;
+                } else if name.starts_with("cmp") {
+                    chk(addr, op, *a as u32, false)?;
+                    chk(addr, op, *b as u32, true)?;
+                    chk(addr, op, *c as u32, true)?;
+                } else {
+                    let w = wide_name(name);
+                    chk(addr, op, *a as u32, w)?;
+                    chk(addr, op, *b as u32, w)?;
+                    chk(addr, op, *c as u32, w)?;
+                }
+            }
+            Kind::RegRegLit8(a, b, _)
+            | Kind::RegRegBranch16(a, b, _)
+            | Kind::RegRegLit16(a, b, _)
+            | Kind::RegRegIndex(a, b, _) => {
+                // 22b/22t/22s/22c: int/bool/refs — iget-wide/iput-wide têm A wide
+                chk(addr, op, *a as u32, wide_name(name))?;
+                chk(addr, op, *b as u32, false)?;
+            }
+            Kind::Invoke35c { count, regs, .. } | Kind::Invoke45cc { count, regs, .. } => {
+                for r in regs.iter().take((*count as usize).min(5)) {
+                    chk(addr, op, *r as u32, false)?;
+                }
+            }
+            Kind::InvokeRange3rc {
+                count, start, ..
+            }
+            | Kind::InvokeRange4rcc {
+                count, start, ..
+            } => {
+                chk(addr, op, *start as u32, false)?;
+                if *count > 0 {
+                    chk(addr, op, (*start as u32) + (*count as u32) - 1, false)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn decode_payload(insns: &[u16], addr: usize, kind: PayloadKind) -> RdResult<(Insn, u16)> {
     let unit = |i: usize| -> RdResult<u16> {
         insns
@@ -729,6 +860,18 @@ fn decode_payload(insns: &[u16], addr: usize, kind: PayloadKind) -> RdResult<(In
                 .checked_mul(element_width as u32)
                 .ok_or_else(|| RdError::parse("fill-array-data: tamanho overflow"))?;
             let padded = total.div_ceil(2) * 2;
+            // issue #19: o payload precisa caber no fluxo de instruções
+            // restante do método (header de 4 units + dados) — validar ANTES
+            // do with_capacity: element_count é u32 do atacante e a alocação
+            // de até 4 GiB abortava o processo (não é pânico capturável)
+            let needed = 4u64 + (padded as u64) / 2;
+            let available = (insns.len().saturating_sub(addr)) as u64;
+            if available < needed {
+                return Err(RdError::invalid_format(format!(
+                    "fill-array-data: payload de {padded} bytes excede o método \
+                     ({available} units restantes @ {addr})"
+                )));
+            }
             let mut data = Vec::with_capacity(padded as usize);
             for i in 0..padded {
                 let u = unit(4 + (i / 2) as usize)?;
@@ -747,6 +890,19 @@ fn decode_payload(insns: &[u16], addr: usize, kind: PayloadKind) -> RdResult<(In
     };
 
     let size = payload.size_in_units();
+    // issue #36: size_in_units trunca para u16 — um packed-switch com ≥32766
+    // alvos (só em stream malformada; dx/d8 nunca emitem) envolveria e
+    // desalinharía toda a decodificação seguinte. Falha tipada antes.
+    let units = match &payload {
+        Payload::PackedSwitch { targets, .. } => 4 + 2 * targets.len(),
+        Payload::SparseSwitch { keys, .. } => 2 + 4 * keys.len(),
+        Payload::ArrayData { data, .. } => 4 + data.len() / 2,
+    };
+    if units > u16::MAX as usize {
+        return Err(RdError::invalid_format(
+            "payload: tamanho excede 65535 code units (stream malformada)",
+        ));
+    }
     Ok((
         Insn {
             opcode: 0,
@@ -1009,5 +1165,94 @@ mod tests {
         let data = build_code_item(&insns, &[(0, 50, 0)], &[0x01, 0x02, 0x01]);
         let e = CodeItem::parse(&data, 0).unwrap_err();
         assert_eq!(e.code, "INVALID_FORMAT");
+    }
+
+    // issue #17: helper com registers_size/ins_size customizados
+    fn build_code_item_regs(
+        registers: u16,
+        ins: u16,
+        insns: &[u16],
+    ) -> Vec<u8> {
+        let mut data: Vec<u8> = Vec::new();
+        data.extend_from_slice(&registers.to_le_bytes());
+        data.extend_from_slice(&ins.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes()); // outs
+        data.extend_from_slice(&0u16.to_le_bytes()); // tries
+        data.extend_from_slice(&0u32.to_le_bytes()); // debug off
+        data.extend_from_slice(&(insns.len() as u32).to_le_bytes());
+        for u in insns {
+            data.extend_from_slice(&u.to_le_bytes());
+        }
+        data
+    }
+
+    #[test]
+    fn register_index_beyond_registers_size_is_invalid() {
+        // add-int v0, v1, v200 (23x: op 0x90) com registers_size=2 — PoC da issue #17
+        // unit0 = op | (AA<<8); unit1 = BB | (CC<<8)
+        let insns: Vec<u16> = vec![0x0090, 0xC801];
+        let data = build_code_item_regs(2, 0, &insns);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("registrador v200"));
+    }
+
+    #[test]
+    fn wide_pair_at_last_register_is_invalid() {
+        // const-wide/16 v0 (21s) com registers_size=1 — o par (v0,v1) não cabe
+        // encode 21s: op | (AA<<8); const-wide/16 é op 0x16
+        let insns: Vec<u16> = vec![0x0016, 0x0001];
+        let data = build_code_item_regs(1, 0, &insns);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("par wide"));
+        // com registers_size=2 o mesmo código é válido
+        let data = build_code_item_regs(2, 0, &insns);
+        CodeItem::parse(&data, 0).expect("const-wide/16 v0 cabe em 2 registradores");
+    }
+
+    #[test]
+    fn invoke_range_beyond_registers_size_is_invalid() {
+        // invoke-virtual/range {v2..v3}, meth@0 (3rc) com registers_size=2
+        // encode 3rc: op | (count<<8), idx, start — count=2, start=2
+        let insns: Vec<u16> = vec![0x0274, 0x0000, 0x0202];
+        let data = build_code_item_regs(2, 0, &insns);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+    }
+
+    #[test]
+    fn conversion_wide_dest_at_boundary_is_invalid() {
+        // int-to-long v0, v0 (12x) com registers_size=1: o destino wide (par v0+v1) não cabe
+        // encode 12x: op | (B<<12) | (A<<8) — A=B=0 → só o opcode
+        let insns: Vec<u16> = vec![0x81];
+        let data = build_code_item_regs(1, 0, &insns);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("par wide"));
+    }
+
+    #[test]
+    fn ins_size_greater_than_registers_size_is_invalid() {
+        // issue #20: registers_size=0, ins_size=1 — subtração do disasm wraparia
+        let data = build_code_item_regs(0, 1, &[0x000E]);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("ins_size"));
+    }
+
+    #[test]
+    fn fill_array_data_payload_beyond_method_is_invalid() {
+        // issue #19: payload declarado de 2 GiB num método de 10 units
+        // fill-array-data v0, +3 (31t: 3 units — op|AA + offset32)
+        // payload @3: ident=0x0300, width=2, element_count=0x40000000
+        // (u32 do atacante; sem u32 overflow no produto)
+        let insns: Vec<u16> = vec![
+            0x0026, 0x0003, 0x0000, 0x0300, 0x0002, 0x0000, 0x4000, 0x0000, 0x0000, 0x0000,
+        ];
+        let data = build_code_item_regs(4, 0, &insns);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("fill-array-data"));
     }
 }

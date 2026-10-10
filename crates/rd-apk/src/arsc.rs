@@ -245,6 +245,13 @@ fn parse_package(
             let entry_count = u32_at(data, p + 12)? as usize;
             let entries_start = u32_at(data, p + 16)? as usize;
 
+            // issue #29: ResTable_type tem no mínimo 20 bytes de header
+            // (8 do ResChunk_header + id/res0/res1 + entryCount + entriesStart);
+            // cheader < 20 causava underflow `cheader - 20` (pânico em
+            // overflow-checks, config garbage em release)
+            if cheader < 20 {
+                break; // chunk malformado: não fatal — o que veio antes fica
+            }
             let config = parse_config(data, p + 20, cheader - 20)?;
 
             let entries_abs = p + entries_start;

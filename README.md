@@ -93,7 +93,7 @@ SDK                min 24 · target 37 · compile 37
 api floor          ⚠ BELOW_FLOOR(minSdk=24, floor=26) — inspect ok; execução responde erro estruturado
 signing            v1, v2, v3
 components (36: activity×10 · activity-alias×3 · provider×4 · receiver×9 · service×10)
-permissions (31 declaradas; tabela: 173 permissões)
+permissions (31 declaradas; tabela: 175 permissões)
   auto-granted: 16 · runtime-pending: 8 · special: 5 · unknown: 2
 ```
 

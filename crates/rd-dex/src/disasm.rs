@@ -541,7 +541,10 @@ impl<'a> MethodRender<'a> {
         code: &'a CodeItem,
         debug: Option<&DebugInfo>,
     ) -> RdResult<MethodRender<'a>> {
-        let reg_base = code.registers_size as usize - code.ins_size as usize;
+        // issue #20: saturating_sub defensivo — o CodeItem::parse agora rejeita
+        // ins_size > registers_size, mas o render não deve wrapar mesmo se
+        // chamado com um CodeItem construído fora do parse
+        let reg_base = code.registers_size.saturating_sub(code.ins_size) as usize;
         let mut labels = Labels::default();
         let mut payload_switch: BTreeMap<u32, u32> = BTreeMap::new();
 
@@ -2089,7 +2092,7 @@ mod tests {
             0xf012u16, 0x0113, 0x00ff, 0x0218, 0xcdef, 0x89ab, 0x4567, 0x0123, 0x0415, 0x3f80,
             0x0519, 0x4059, 0x000e,
         ];
-        let code = b.code(6, 0, 0, &insns, &[], &[], None);
+        let code = b.code(7, 0, 0, &insns, &[], &[], None); // 7 regs: const-wide/high16 v5 ocupa o par (v5,v6)
         let cd = b.class_data(&[], &[], &[(m, 0x9, code)], &[]);
         b.class(t_foo, 0x1, t_obj, None, &[], None, Some(cd), None);
 

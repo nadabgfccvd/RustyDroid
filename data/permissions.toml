@@ -340,28 +340,28 @@ description = "Post notifications visible to the user (runtime permission since 
 
 # --- grupo HEALTH ---
 [[permission]]
-name = "READ_HEALTH_DATA"
+name = "health.READ_HEALTH_DATA"
 level = "dangerous"
 group = "HEALTH"
-since_api = 36
+since_api = 34
 flags = ["runtime"]
-description = "Read health data from the platform-integrated Health Connect provider."
+description = "Read health data from the platform-integrated Health Connect provider (canonical android.permission.health.READ_HEALTH_DATA; Android 14 / API 34, SDK extension 22+)."
 
 [[permission]]
-name = "READ_HEALTH_DATA_IN_BACKGROUND"
+name = "health.READ_HEALTH_DATA_IN_BACKGROUND"
 level = "dangerous"
 group = "HEALTH"
-since_api = 36
+since_api = 34
 flags = ["runtime"]
-description = "Read Health Connect health data while the app is in the background."
+description = "Read Health Connect health data while the app is in the background (canonical android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND)."
 
 [[permission]]
-name = "WRITE_HEALTH_DATA"
+name = "health.WRITE_HEALTH_DATA"
 level = "dangerous"
 group = "HEALTH"
-since_api = 36
+since_api = 34
 flags = ["runtime"]
-description = "Write health data into the Health Connect provider."
+description = "Write health data into the Health Connect provider (canonical android.permission.health.WRITE_HEALTH_DATA)."
 
 # ==================== B3 — ESPECIAIS (special app access, via AppOps/Settings) ====================
 [[permission]]
@@ -654,6 +654,22 @@ flags = []
 description = "Start a foreground service with the systemExempted type (API 34)."
 
 [[permission]]
+name = "FOREGROUND_SERVICE_SHORT_SERVICE"
+level = "normal"
+group = ""
+since_api = 34
+flags = []
+description = "Start a foreground service with the shortService type (API 34)."
+
+[[permission]]
+name = "FOREGROUND_SERVICE_MEDIA_PROCESSING"
+level = "normal"
+group = ""
+since_api = 35
+flags = []
+description = "Start a foreground service with the mediaProcessing type (API 35)."
+
+[[permission]]
 name = "NFC"
 level = "normal"
 group = ""
@@ -939,7 +955,7 @@ level = "normal"
 group = ""
 since_api = 1
 flags = []
-description = "Collect battery statistics."
+description = "Collect battery statistics (normal per Apêndice B4; AOSP real: signature|development — not for use by third-party apps since API 21)."
 
 [[permission]]
 name = "FLASHLIGHT"
@@ -1480,7 +1496,7 @@ description = "AppOp controlling whether the app may use the vibrator."
 # ——— complementos descobertos pelo audit em APK real (F-Droid, API 34–36) ———
 
 [[permission]]
-name = "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
+name = "FOREGROUND_SERVICE_CONNECTED_DEVICE"
 level = "normal"
 group = ""
 since_api = 34
@@ -1488,7 +1504,7 @@ flags = []
 description = "Allows a regular application to use Service.startForeground with the type connectedDevice."
 
 [[permission]]
-name = "android.permission.ENFORCE_UPDATE_OWNERSHIP"
+name = "ENFORCE_UPDATE_OWNERSHIP"
 level = "normal"
 group = ""
 since_api = 34
@@ -1496,7 +1512,7 @@ flags = []
 description = "Allows an application to enforce update ownership across device transfers."
 
 [[permission]]
-name = "android.permission.ACCESS_LOCAL_NETWORK"
+name = "ACCESS_LOCAL_NETWORK"
 level = "normal"
 group = ""
 since_api = 36

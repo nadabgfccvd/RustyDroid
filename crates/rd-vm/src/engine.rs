@@ -51,6 +51,9 @@ pub struct Engine {
     pub statics: HashMap<(String, String), Value>,
     clinit_done: HashSet<String>,
     clinit_running: HashSet<String>,
+    /// classes cujo `<clinit>` falhou — JLS 12.4.2: acessos seguintes levantam
+    /// NoClassDefFoundError (issue #37)
+    clinit_failed: HashSet<String>,
     depth: usize,
     pub(crate) fuel_used: u64,
 }
@@ -65,6 +68,7 @@ impl Engine {
             statics: HashMap::new(),
             clinit_done: HashSet::new(),
             clinit_running: HashSet::new(),
+            clinit_failed: HashSet::new(),
             depth: 0,
             fuel_used: 0,
         }
@@ -186,9 +190,18 @@ impl Engine {
     // ── inicialização de classe + campos estáticos ──────────────────────────
 
     /// Garante que a classe passou por static_values + `<clinit>`.
+    /// issue #37 (semântica JLS 12.4.2): falha de `<clinit>` converte para
+    /// `ExceptionInInitializerError` no primeiro acesso e vira
+    /// `NoClassDefFoundError` permanente nos acessos seguintes.
     pub fn ensure_initialized(&mut self, class: &str) -> Result<(), VmExit> {
         if self.clinit_done.contains(class) || self.clinit_running.contains(class) {
             return Ok(());
+        }
+        if self.clinit_failed.contains(class) {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NoClassDefFoundError;",
+                format!("{class} falhou na inicialização anterior (JLS 12.4.2)"),
+            )));
         }
         self.clinit_running.insert(class.to_string());
         let result = self.initialize_class(class);
@@ -198,11 +211,32 @@ impl Engine {
                 self.clinit_done.insert(class.to_string());
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                self.clinit_failed.insert(class.to_string());
+                let cause = match &e {
+                    VmExit::Exception(t) => format!(
+                        "{}: {}",
+                        t.class,
+                        t.message.clone().unwrap_or_default()
+                    ),
+                    VmExit::Error(rd) => rd.cause.clone(),
+                };
+                Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/ExceptionInInitializerError;",
+                    cause,
+                )))
+            }
         }
     }
 
     fn initialize_class(&mut self, class: &str) -> Result<(), VmExit> {
+        // issue #25: JLS 12.4.2 — a superclasse inicializa ANTES da subclasse
+        // (o guard de re-entrância em ensure_initialized protege ciclos)
+        if let Some(super_desc) = self.cp.superclass_of(class) {
+            if super_desc != class {
+                self.ensure_initialized(&super_desc)?;
+            }
+        }
         let Some((dex_idx, def)) = self.cp.find_class(class) else {
             return Ok(()); // classe de plataforma embutida: nada a inicializar
         };
@@ -213,10 +247,18 @@ impl Engine {
         if let Some(cd) = &data {
             for (i, f) in cd.static_fields.iter().enumerate() {
                 let (_fclass, fname, ftype) = self.cp.field_ref(dex_idx, f.field_idx)?;
-                let v = static_values
-                    .get(i)
-                    .and_then(|ev| crate::value_from_encoded(ev, &self.cp.dexes[dex_idx]))
-                    .unwrap_or_else(|| default_for(&ftype));
+                let v = match static_values.get(i) {
+                    // issue #25: EncodedValue::String alocado no heap — R8/otimizadores
+                    // elidem o sput de strings estáticas (viram static_values) e o
+                    // campo NÃO pode virar null silenciosamente
+                    Some(rd_dex::annotations::EncodedValue::String(idx)) => {
+                        let s = self.cp.dexes[dex_idx].string(*idx).to_string();
+                        Value::Obj(intrinsics::alloc_string(self, s)?)
+                    }
+                    Some(ev) => crate::value_from_encoded(ev, &self.cp.dexes[dex_idx])
+                        .unwrap_or_else(|| default_for(&ftype)),
+                    None => default_for(&ftype),
+                };
                 self.statics.insert((class.to_string(), fname), v);
             }
         }
@@ -231,6 +273,11 @@ impl Engine {
 
     /// Procura handler para a exceção lançada em `at_pc`. Materializa o
     /// Throwable como objeto quando o handler vai usá-lo.
+    ///
+    /// issue #23: o DEX ordena os tries por start_addr — um try EXTERNO que
+    /// contém o pc vem antes de um interno. ART/JVM selecionam o MAIS INTERNO
+    /// com handler compatível: coletamos todos os tries que cobrem `at_pc` e
+    /// vence o de maior start_addr com typed-handler ou catch-all casando.
     pub(super) fn enter_handler(
         &mut self,
         dex_idx: usize,
@@ -238,23 +285,31 @@ impl Engine {
         at_pc: usize,
         t: Throwable,
     ) -> Result<usize, VmExit> {
+        let mut best: Option<(u32, usize)> = None; // (start_addr, handler_addr)
         for (i, try_item) in code.tries.iter().enumerate() {
             let start = try_item.start_addr as usize;
             if at_pc < start || at_pc >= start + try_item.insn_count as usize {
                 continue;
             }
             let handler = &code.handlers[i];
+            let mut matched: Option<usize> = None;
             for (type_idx, addr) in &handler.typed {
                 let catch_desc = self.cp.type_str(dex_idx, *type_idx);
                 if catch_desc == t.class || self.cp.is_subtype(&t.class, &catch_desc) {
-                    return Ok(*addr as usize);
+                    matched = Some(*addr as usize);
+                    break;
                 }
             }
-            if let Some(addr) = handler.catch_all {
-                return Ok(addr as usize);
+            let matched = matched.or(handler.catch_all.map(|a| a as usize));
+            if let Some(addr) = matched {
+                // mais interno = maior start_addr que ainda cobre o pc
+                if best.map_or(true, |(bs, _)| start as u32 >= bs) {
+                    best = Some((start as u32, addr));
+                }
             }
         }
-        Err(VmExit::Exception(t))
+        best.map(|(_, addr)| Ok(addr))
+            .unwrap_or_else(|| Err(VmExit::Exception(t)))
     }
 
     /// Materializa um Throwable como instância de heap (para move-exception).
@@ -323,6 +378,9 @@ pub fn slot_form(args: &[Value], param_types: &[String]) -> Vec<Value> {
 }
 
 /// Quebra `(params)ret` em descritores de parâmetro.
+/// issue #37: assinatura malformada (ex. `(Lfoo)` sem `;`, `[` solto, letra
+/// inválida) devolve None — erro tipado no chamador, nunca pânico/abort
+/// (o loop antigo `while b[i] != b';'` estourava o buffer).
 pub fn parse_param_types(sig: &str) -> Option<Vec<String>> {
     let rest = sig.strip_prefix('(')?;
     let close = rest.rfind(')')?;
@@ -332,13 +390,23 @@ pub fn parse_param_types(sig: &str) -> Option<Vec<String>> {
     let mut i = 0;
     while i < b.len() {
         let start = i;
-        while b[i] == b'[' {
+        while i < b.len() && b[i] == b'[' {
             i += 1;
         }
-        if b[i] == b'L' {
-            while b[i] != b';' {
-                i += 1;
+        if i >= b.len() {
+            return None; // `[` sem componente
+        }
+        match b[i] {
+            b'L' => {
+                while i < b.len() && b[i] != b';' {
+                    i += 1;
+                }
+                if i >= b.len() {
+                    return None; // classe sem terminador `;`
+                }
             }
+            b'J' | b'F' | b'D' | b'B' | b'Z' | b'C' | b'S' | b'I' => {}
+            _ => return None, // desc de parâmetro inválido
         }
         i += 1;
         out.push(params[start..i].to_string());

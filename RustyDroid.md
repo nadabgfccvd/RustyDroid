@@ -571,9 +571,10 @@ rustydroid/                    # monorepo Cargo (workspace)
 │   ├── workflows/ (ci.yml, fuzz.yml, nightly-compat.yml, release.yml, docs.yml)
 │   ├── ISSUE_TEMPLATE/ (bug_report.yml, feature_request.yml, compat_gap.yml — perf-regression.yml planejado)
 │   └── PULL_REQUEST_TEMPLATE.md, FUNDING.yml, labels.json (labels em uso: triage, compat-gap, perf-regression)
-├── CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md  SUPPORT.md  GOVERNANCE.md
-├── README.md (PT)  README.en.md  LICENSE-MIT  LICENSE-APACHE
-└── CHANGELOG.md (Keep a Changelog)
+├── CONTRIBUTING.md  SECURITY.md  docs/labels.json (sync das labels out-of-band — issue #38)
+├── README.md (PT)  LICENSE (LICENSE-MIT/LICENSE-APACHE planejados)
+└── ⚠️ §3.1 descreve a estrutura ALVO (M12): SUPPORT.md, GOVERNANCE.md, CODE_OF_CONDUCT.md,
+    README.en.md, CHANGELOG.md, FUNDING.yml e workflows adicionais ainda são PLANEJADOS
 ```
 
 ## 3.2 CI/CD (GitHub Actions)

@@ -141,7 +141,9 @@ impl Classpath {
     }
 
     /// Resolve um método por (classe, nome, proto) caminhando a superclasse.
-    /// Retorna (dex_idx, class_def_idx, método, classe_que_declara).
+    /// issue #26: depois da cadeia de supers, procura na closure de interfaces
+    /// (métodos default — Java 8+/Kotlin massivo); retorna
+    /// (dex_idx, class_def_idx, método, classe_que_declara).
     pub fn resolve_method(
         &mut self,
         class_desc: &str,
@@ -152,7 +154,54 @@ impl Classpath {
         for _ in 0..16 {
             let (dex_idx, def) = self.find_class(&cur)?;
             let def = *def;
-            let data = self.class_data(dex_idx, &def).ok().flatten()?;
+            if let Some(data) = self.class_data(dex_idx, &def).ok().flatten() {
+                let found = data
+                    .direct_methods
+                    .iter()
+                    .chain(&data.virtual_methods)
+                    .find(|m| {
+                        m.method_idx != rd_dex::strings::NO_INDEX
+                            && self.method_name(dex_idx, m.method_idx) == Some(name.to_string())
+                            && self.method_proto(dex_idx, m.method_idx).as_deref() == Some(proto)
+                    })
+                    .cloned();
+                if let Some(m) = found {
+                    return Some((dex_idx, def, m));
+                }
+                // issue #26: métodos default de interface — procura na closure
+                // de interfaces da classe corrente antes de subir
+                let ifaces = self.interfaces_of(&cur);
+                for iface in ifaces {
+                    if let Some(hit) = self.resolve_in_interface(&iface, name, proto, 0) {
+                        return Some(hit);
+                    }
+                }
+            }
+            // sobe para a superclasse (dentro do mesmo conjunto de dex)
+            let super_desc = self.dexes[dex_idx].type_str(def.superclass_idx).to_string();
+            if super_desc.is_empty() || super_desc == cur {
+                return None;
+            }
+            cur = super_desc;
+        }
+        None
+    }
+
+    /// Busca um método em uma interface e nas suas superinterfaces (recursão
+    /// com guard de ciclo/cap — issue #26, métodos default incluídos).
+    fn resolve_in_interface(
+        &mut self,
+        iface: &str,
+        name: &str,
+        proto: &str,
+        depth: usize,
+    ) -> Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)> {
+        if depth > 16 {
+            return None;
+        }
+        let (dex_idx, def) = self.find_class(iface)?;
+        let def = *def;
+        if let Some(data) = self.class_data(dex_idx, &def).ok().flatten() {
             let found = data
                 .direct_methods
                 .iter()
@@ -166,12 +215,11 @@ impl Classpath {
             if let Some(m) = found {
                 return Some((dex_idx, def, m));
             }
-            // sobe para a superclasse (dentro do mesmo conjunto de dex)
-            let super_desc = self.dexes[dex_idx].type_str(def.superclass_idx).to_string();
-            if super_desc.is_empty() || super_desc == cur {
-                return None;
+        }
+        for super_iface in self.interfaces_of(iface) {
+            if let Some(hit) = self.resolve_in_interface(&super_iface, name, proto, depth + 1) {
+                return Some(hit);
             }
-            cur = super_desc;
         }
         None
     }
@@ -202,8 +250,53 @@ impl Classpath {
         None
     }
 
+    /// Interfaces declaradas por uma classe/interface (class_def.interfaces_off).
+    /// Vazio para classes de plataforma fora do DEX (String, etc. — cobertas
+    /// por `builtin_interfaces`).
+    pub fn interfaces_of(&self, class_desc: &str) -> Vec<String> {
+        for dex in &self.dexes {
+            if let Some(def) = dex.find_class(class_desc) {
+                return dex
+                    .interfaces(def)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|t| dex.type_str(*t).to_string())
+                    .collect();
+            }
+        }
+        Vec::new()
+    }
+
+    /// Closure de interfaces: `sup` é interface de `start` (direta ou via
+    /// superinterfaces, com guard de ciclo e cap de profundidade) — issue #26.
+    fn interface_closure_contains(&self, start: &str, sup: &str) -> bool {
+        let mut queue = self.interfaces_of(start);
+        let mut visited: std::collections::HashSet<String> =
+            queue.iter().cloned().collect();
+        let mut budget = 64;
+        while let Some(cur) = queue.pop() {
+            if cur == sup {
+                return true;
+            }
+            budget -= 1;
+            if budget == 0 {
+                return false;
+            }
+            for next in self.interfaces_of(&cur) {
+                if visited.insert(next.clone()) {
+                    queue.push(next);
+                }
+            }
+        }
+        false
+    }
+
     /// `class A <: B` caminhando supers (usado por instanceof/catch/check-cast).
     /// String é subtipo de CharSequence/Object/String hierarquia mínima embutida.
+    /// issue #26: além da cadeia de superclasses, fecha transitivamente sobre
+    /// as interfaces declaradas de cada classe da cadeia (com memo? não —
+    /// closure BFS por chamada, cap de orçamento). Interfaces de plataforma
+    /// (CharSequence/Comparable/…) vêm da tabela builtin.
     pub fn is_subtype(&self, sub: &str, sup: &str) -> bool {
         if sub == sup {
             return true;
@@ -215,8 +308,20 @@ impl Classpath {
                 return true;
             }
         }
+        if let Some(ifaces) = builtin_interfaces(sub) {
+            if ifaces.contains(&sup) {
+                return true;
+            }
+        }
         let mut cur = sub.to_string();
         for _ in 0..16 {
+            if cur == sup {
+                return true;
+            }
+            // interfaces declaradas por esta classe (closure transitiva)
+            if self.interface_closure_contains(&cur, sup) {
+                return true;
+            }
             let Some(next) = self.superclass_of(&cur) else {
                 return false;
             };
@@ -225,6 +330,11 @@ impl Classpath {
             }
             if let Some(supers) = builtin_hierarchy(&next) {
                 if supers.contains(&sup) {
+                    return true;
+                }
+            }
+            if let Some(ifaces) = builtin_interfaces(&next) {
+                if ifaces.contains(&sup) {
                     return true;
                 }
             }
@@ -275,6 +385,22 @@ fn builtin_hierarchy(class: &str) -> Option<Vec<&'static str>> {
         "Ljava/lang/Throwable;" => Some(vec!["Ljava/lang/Object;"]),
         "Ljava/lang/Exception;" => Some(EXC.to_vec()),
         "Ljava/lang/Error;" => Some(ERR.to_vec()),
+        _ => None,
+    }
+}
+
+/// Interfaces de plataforma conhecidas sem DEX (issue #26: check-cast /
+/// instanceof para CharSequence/Comparable/… sobre String/StringBuilder).
+fn builtin_interfaces(class: &str) -> Option<Vec<&'static str>> {
+    const STRING_IFACES: &[&str] = &[
+        "Ljava/lang/CharSequence;",
+        "Ljava/lang/Comparable;",
+        "Ljava/io/Serializable;",
+    ];
+    const SB_IFACES: &[&str] = &["Ljava/lang/CharSequence;", "Ljava/lang/Appendable;"];
+    match class {
+        "Ljava/lang/String;" => Some(STRING_IFACES.to_vec()),
+        "Ljava/lang/StringBuilder;" => Some(SB_IFACES.to_vec()),
         _ => None,
     }
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "preset": "TESTE-DEV",
-  "note": "M0 foundation build: only core + M0-scoped modules are implemented; all others are structured NOT_IMPLEMENTED stubs (Lei 1).",
+  "preset": "custom-m0-foundation",
+  "note": "Conjunto custom do M0 (fundação): core + módulos M0-scoped; fora do escopo = NOT_IMPLEMENTED estruturado (Lei 1). Não é um preset canônico do spec §B — preset \"TESTE-DEV\" do spec v2.1 não existe mais como tal.",
   "selected": [
     "CORE-01",
     "CORE-02",
@@ -23,5 +23,6 @@
     "AG-13",
     "TST-03"
   ],
-  "unselected_policy": "NOT_IMPLEMENTED(module_id)"
+  "unselected_policy": "NOT_IMPLEMENTED(module_id)",
+  "spec_version": "2.1"
 }

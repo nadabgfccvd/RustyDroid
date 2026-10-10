@@ -23,6 +23,8 @@ const ARITH: &str = "Ljava/lang/ArithmeticException;";
 const AIOOBE: &str = "Ljava/lang/ArrayIndexOutOfBoundsException;";
 const CCE: &str = "Ljava/lang/ClassCastException;";
 const NASE: &str = "Ljava/lang/NegativeArraySizeException;";
+const ASC: &str = "Ljava/lang/ArrayStoreException;";
+const OOME: &str = "Ljava/lang/OutOfMemoryError;";
 
 /// Executa um frame; `ins` já está em forma de registradores (wide = par).
 pub(crate) fn exec_frame(
@@ -111,6 +113,12 @@ pub(crate) fn exec_frame(
         }
 
         match insn.opcode {
+            // ── nop (0x00) — opcode REAL (format 10x, nenhum efeito):
+            // padding executável e código ofuscado legítimo. Não cai no braço
+            // unused (issue #22: tratá-lo como NOT_IMPLEMENTED matava a
+            // execução de código Java 100% válido)
+            0x00 => {}
+
             // ── move family (01..09) ────────────────────────────────────────
             0x01 | 0x07 => {
                 let Kind::Regs(a, b) = &insn.kind else {
@@ -258,9 +266,23 @@ pub(crate) fn exec_frame(
 
             0x1C => return Err(err::not_implemented("const-class (objetos Class)").into()),
 
-            // monitor-*: single-thread no M2 — no-op deliberado (monitores
-            // reais entram com threads, M3+; decisão documentada aqui)
-            0x1D | 0x1E => {}
+            // monitor-*: single-thread no M2 — no-op deliberado COM referência
+            // válida (monitores reais entram com threads, M3+); null → NPE
+            // como na JVM (issue #37, notadamente monitor-exit)
+            0x1D | 0x1E => {
+                let Kind::Reg(a) = &insn.kind else {
+                    return bad_kind(insn);
+                };
+                if regs[*a as usize].as_ref()?.is_none() {
+                    throw_exc!(
+                        NPE,
+                        format!(
+                            "monitor-{} em null",
+                            if insn.opcode == 0x1D { "enter" } else { "exit" }
+                        )
+                    );
+                }
+            }
 
             // ── check-cast (1F) / instance-of (20) ──────────────────────────
             0x1F => {
@@ -308,7 +330,14 @@ pub(crate) fn exec_frame(
                     return bad_kind(insn);
                 };
                 let class = vm.cp.type_str(dex_idx, *i as u32);
-                let r = vm.heap.alloc_instance(class, Vec::new()).map_err(oom_err)?;
+                // issue #25: criar instância é “ação ativa” (JLS 12.4.2) —
+                // <clinit> da classe roda ANTES do construtor; sem isto, o
+                // efeito do <clinit> só era observável no primeiro sget
+                vm.ensure_initialized(&class)?;
+                let r = step!(match vm.heap.alloc_instance(class, Vec::new()) {
+                    Ok(r) => Ok(r),
+                    Err(e) => Err(oom_exception(e)),
+                });
                 regs[*a as usize] = Value::Obj(r);
             }
             0x23 => {
@@ -328,7 +357,8 @@ pub(crate) fn exec_frame(
                 let Some(elem) = ElemKind::from_array_desc(&desc) else {
                     return Err(err::not_implemented(format!("new-array {desc}")).into());
                 };
-                let r = new_filled_array(vm, elem, len as usize)?;
+                // issue #37: OOM vira OutOfMemoryError capturável (Throwable)
+                let r = step!(new_filled_array(vm, elem, len as usize, &desc));
                 regs[*a as usize] = Value::Obj(r);
             }
             0x24 | 0x25 => {
@@ -357,7 +387,7 @@ pub(crate) fn exec_frame(
                 let Some(elem) = ElemKind::from_array_desc(&desc) else {
                     return Err(err::not_implemented(format!("filled-new-array {desc}")).into());
                 };
-                let r = new_filled_array(vm, elem, count)?;
+                let r = step!(new_filled_array(vm, elem, count, &desc));
                 let elems = vm.heap.array_elems_mut(r)?;
                 for (i, v) in src.into_iter().enumerate() {
                     elems[i] = v;
@@ -657,13 +687,15 @@ pub(crate) fn exec_frame(
                 let Kind::RegIndex(a, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let (class, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                let (class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
                 vm.ensure_initialized(&class)?;
                 let v = vm
                     .statics
                     .get(&(class.clone(), fname))
                     .cloned()
-                    .unwrap_or(Value::Int(0));
+                    // issue #37: default POR TIPO declarado — Int(0) genérico
+                    // quebrava sget-wide (Long lido como Int → VM_TYPE_ERROR)
+                    .unwrap_or_else(|| default_for(&ftype));
                 regs[*a as usize] = v;
                 if matches!(regs[*a as usize], Value::Long(_) | Value::Double(_)) {
                     regs[*a as usize + 1] = Value::WideHi; // sget-wide
@@ -852,21 +884,24 @@ fn bad_kind(insn: &Insn) -> Result<Value, VmExit> {
     .into())
 }
 
-fn oom_err(e: crate::heap::OomError) -> VmExit {
-    err::vm_error(
-        "VM_OOM",
+/// issue #37: OOM do heap vira exceção Java CAPTURÁVEL (OutOfMemoryError é
+/// um Throwable na JVM — `catch (OutOfMemoryError)` tem que funcionar),
+/// não erro estruturado inalcançável pelo código do app.
+fn oom_exception(e: crate::heap::OomError) -> VmExit {
+    VmExit::Exception(Throwable::new(
+        OOME,
         format!(
             "alocação de {} bytes excede o heap de {} bytes (piso E5)",
             e.requested, e.budget
         ),
-    )
-    .into()
+    ))
 }
 
 fn new_filled_array(
     vm: &mut Engine,
     elem: ElemKind,
     len: usize,
+    elem_class: &str,
 ) -> Result<crate::heap::ObjRef, VmExit> {
     let fill = match elem {
         ElemKind::Int => Value::Int(0),
@@ -875,13 +910,18 @@ fn new_filled_array(
         ElemKind::Double => Value::Double(0.0),
         ElemKind::Obj => Value::Null,
     };
-    let r = vm.heap.alloc_array(elem, len).map_err(oom_err)?;
+    let r = vm
+        .heap
+        .alloc_array(elem, len, elem_class)
+        .map_err(oom_exception)?;
     let elems = vm.heap.array_elems_mut(r)?;
     elems.extend(std::iter::repeat(fill).take(len));
     Ok(r)
 }
 
 /// if-eq/if-ne sobre referências: igualdade de identidade (Null == Null).
+/// issue #37: a convenção interna Int(0)=null vale também na comparação mista
+/// (`boolean isNull(String s){return s==null;}` via slot de arg Null).
 fn values_ref_eq(a: &Value, b: &Value) -> Result<bool, String> {
     match (a, b) {
         (Value::Obj(x), Value::Obj(y)) => Ok(x == y),
@@ -889,6 +929,7 @@ fn values_ref_eq(a: &Value, b: &Value) -> Result<bool, String> {
         (Value::Null, Value::Obj(_)) | (Value::Obj(_), Value::Null) => Ok(false),
         (Value::Int(x), Value::Int(y)) => Ok(x == y),
         (Value::Long(x), Value::Long(y)) => Ok(x == y),
+        (Value::Int(x), Value::Null) | (Value::Null, Value::Int(x)) => Ok(*x == 0),
         (x, y) => Err(format!(
             "if sobre tipos incompatíveis: {} vs {}",
             x.type_name(),
@@ -1106,15 +1147,42 @@ fn aput(
         let (elems, _kind) = vm.heap.as_array_elems(r)?;
         bounds_check(elems.len(), idx, "array put")?;
     }
+    // issue #37: store check para aput-object (0x4D) — ArrayStoreException
+    // quando o valor não é subtipo do elemento declarado do array
+    if op == 0x4D {
+        let desc = vm.heap.class_of(r)?.to_string();
+        if let Some(elem_cls) = desc.strip_prefix('[') {
+            match &v {
+                Value::Null => {}
+                Value::Obj(val) => {
+                    let val_cls = vm.heap.class_of(*val)?.to_string();
+                    if val_cls != elem_cls && !vm.cp.is_subtype(&val_cls, elem_cls) {
+                        return Err(VmExit::Exception(vm.vm_exception(
+                            ASC,
+                            &format!("{val_cls} cannot be stored into {desc}"),
+                        )?));
+                    }
+                }
+                _ => {
+                    return Err(VmExit::Exception(vm.vm_exception(
+                        ASC,
+                        &format!("primitivo não pode ser guardado em {desc}"),
+                    )?));
+                }
+            }
+        }
+    }
     let slot = match op {
+        // tabela validada vs baksmali (rd-dex opcode.rs): 0x4b aput (genérico),
+        // 0x4c aput-wide, 0x4d aput-object, 0x4e aput-boolean, 0x4f byte,
+        // 0x50 char, 0x51 short — o match antigo tratava 0x4d como float e
+        // 0x4e como double (bug latente descoberto pelo store check)
         0x4C => Value::Long(v.as_long()?),             // aput-wide
-        0x4D => Value::Float(v.as_float()?),           // aput-float
-        0x4E => Value::Double(v.as_double()?),         // aput-double
-        0x4B => v,                                     // aput (objeto)
-        0x4F => Value::Int(v.as_int()? as u16 as i32), // aput-char
-        0x50 => Value::Int(v.as_int()? as i8 as i32),  // aput-byte
+        0x4E => Value::Int((v.as_int()? != 0) as i32), // aput-boolean
+        0x4F => Value::Int(v.as_int()? as i8 as i32),  // aput-byte
+        0x50 => Value::Int(v.as_int()? as u16 as i32), // aput-char
         0x51 => Value::Int(v.as_int()? as i16 as i32), // aput-short
-        _ => v,
+        _ => v,                                        // aput / aput-object
     };
     let elems = vm.heap.array_elems_mut(r)?;
     elems[idx as usize] = slot;
@@ -1128,21 +1196,25 @@ fn fill_array(
     count: u32,
     data: &[u8],
 ) -> Result<(), VmExit> {
-    let want_kind = match width {
-        1 | 2 | 4 => ElemKind::Int,
-        8 => ElemKind::Long,
-        w => {
-            return Err(err::vm_error(
-                "INVALID_FORMAT",
-                format!("fill-array-data: element_width {w} inválido"),
-            )
-            .into())
-        }
-    };
-    // fase de leitura em bloco próprio — encerra o borrow imutável antes da escrita
+    // issue #24: o kind vem do ARRAY (não do width) — d8/Kotlin emitem
+    // fill-array-data para float[]/double[] rotineiramente; decodificar os
+    // bits com from_bits (não como inteiros)
     let values: Vec<Value> = {
         let (elems, kind) = vm.heap.as_array_elems(arr)?;
-        if kind != want_kind {
+        if kind == ElemKind::Obj {
+            return Err(err::vm_error(
+                "INVALID_FORMAT",
+                "fill-array-data em array de objetos (spec proíbe)",
+            )
+            .into());
+        }
+        let width_ok = match kind {
+            ElemKind::Int => matches!(width, 1 | 2 | 4),
+            ElemKind::Long | ElemKind::Double => width == 8,
+            ElemKind::Float => width == 4,
+            ElemKind::Obj => false,
+        };
+        if !width_ok {
             return Err(err::vm_error(
                 "INVALID_FORMAT",
                 "fill-array-data: largura do payload não casa com o array",
@@ -1166,22 +1238,30 @@ fn fill_array(
                     err::vm_error("INVALID_FORMAT", "fill-array-data: payload truncado").into(),
                 );
             };
-            values.push(match (kind, width) {
-                (ElemKind::Long, 8) => {
+            values.push(match kind {
+                ElemKind::Long => {
                     Value::Long(i64::from_le_bytes(slice.try_into().unwrap_or([0; 8])))
                 }
-                (ElemKind::Int, 1) => Value::Int(slice[0] as i8 as i32),
-                (ElemKind::Int, 2) => Value::Int(i16::from_le_bytes([slice[0], slice[1]]) as i32),
-                (ElemKind::Int, 4) => {
-                    Value::Int(i32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
-                }
-                _ => {
-                    return Err(err::vm_error(
-                        "INVALID_FORMAT",
-                        "fill-array-data: combinação width/kind inválida",
-                    )
-                    .into())
-                }
+                ElemKind::Float => Value::Float(f32::from_bits(u32::from_le_bytes(
+                    slice.try_into().unwrap_or([0; 4]),
+                ))),
+                ElemKind::Double => Value::Double(f64::from_bits(u64::from_le_bytes(
+                    slice.try_into().unwrap_or([0; 8]),
+                ))),
+                _ => match width {
+                    1 => Value::Int(slice[0] as i8 as i32),
+                    2 => Value::Int(i16::from_le_bytes([slice[0], slice[1]]) as i32),
+                    4 => {
+                        Value::Int(i32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
+                    }
+                    _ => {
+                        return Err(err::vm_error(
+                            "INVALID_FORMAT",
+                            "fill-array-data: combinação width/kind inválida",
+                        )
+                        .into())
+                    }
+                },
             });
         }
         values
@@ -1240,6 +1320,11 @@ fn do_invoke(
     // java/lang/Object.<init> é no-op (raiz de toda hierarquia de usuário)
     if mref.class == "Ljava/lang/Object;" && mref.name == "<init>" {
         return Ok(Value::Null);
+    }
+    // issue #25: construtores são “ação ativa” (JLS 12.4.2) — normalmente já
+    // inicializada pelo new-instance imediatamente anterior (no-op aqui)
+    if is_direct && mref.name == "<init>" {
+        vm.ensure_initialized(&mref.class)?;
     }
     let recv = match first.as_ref() {
         Ok(None) | Err(_) => {

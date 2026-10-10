@@ -132,7 +132,10 @@ pub fn parse_method_handles(data: &[u8], count: u32, off: u32) -> RdResult<Vec<M
         let base = i * 8;
         out.push(MethodHandle {
             method_handle_type: read::u16_at(window, base)?,
-            field_or_method_idx: read::u32_at(window, base + 4)?,
+            // issue #36: layout do method_handle_item é u2 type, u2 unused,
+            // u2 idx, u2 unused — ler u16 no offset 4 (o u32 antigo mesclava
+            // o idx com o campo unused seguinte em DEX malformado)
+            field_or_method_idx: read::u16_at(window, base + 4)? as u32,
         });
     }
     Ok(out)

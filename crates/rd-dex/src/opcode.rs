@@ -386,7 +386,7 @@ const fn build_table() -> [OpcodeInfo; 256] {
     set!(t, 0xe0, "shl-int/lit8", Format::F22b);
     set!(t, 0xe1, "shr-int/lit8", Format::F22b);
     set!(t, 0xe2, "ushr-int/lit8", Format::F22b);
-    // 0xe0..0xf9 unused
+    // 0xe3..0xf9 unused (0xd8..0xe2 são *int/lit8 válidos — issue #13/#36)
     set!(t, 0xfa, "invoke-polymorphic", Format::F45cc);
     set!(t, 0xfb, "invoke-polymorphic/range", Format::F4rcc);
     set!(t, 0xfc, "invoke-custom", Format::F35c);

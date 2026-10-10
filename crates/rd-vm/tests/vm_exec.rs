@@ -1541,3 +1541,377 @@ fn unop_conversions_follow_java() {
         i32::MAX
     );
 }
+
+// ═══════════════════ regressões da auditoria rodada 2 (issues #17–#28, #37) ═
+
+fn op31i(op: u8, a: u8, lit: i32) -> Vec<u16> {
+    vec![
+        (op as u16) | ((a as u16) << 8),
+        lit as u16,
+        (lit >> 16) as u16,
+    ]
+}
+fn array_payload(width: u16, count: u32, data_units: &[u16]) -> Vec<u16> {
+    let mut v = vec![
+        0x0300u16,
+        width,
+        count as u16,
+        (count >> 16) as u16,
+    ];
+    v.extend_from_slice(data_units);
+    v
+}
+
+/// issue #22: `nop` (0x00) é opcode REAL — não pode matar a execução
+#[test]
+fn nop_is_executable_real_opcode() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    b.direct(
+        cls,
+        "com_nop",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op21s(0x13, 0, 41); // const/16 v0, 41 (const/4 é 4-bit!)
+            u.extend(op10x(0x00)); // nop
+            u.extend(op10x(0x00)); // nop
+            u.extend(op11x(0x0F, 0)); // return v0
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    assert_eq!(
+        invoke(&mut e, "com_nop", "()I", &[]).unwrap().as_int().unwrap(),
+        41
+    );
+}
+
+/// issue #23: try aninhado — o handler escolhido é o do try MAIS INTERNO
+#[test]
+fn nested_try_selects_innermost_handler() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/ArithmeticException;");
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    // 0: const/4 v0, 10
+    // 1..2: div-int v0, v0, v3   ← dentro do try INTERNO [1..3)
+    // 3: return v0
+    // 4: move-exception v0       ← handler INTERNO
+    // 5: const/4 v0, -1
+    // 6: return v0
+    // 7: move-exception v0       ← handler EXTERNO
+    // 8: const/4 v0, -10
+    // 9: return v0
+    let mut blob = b.code(5, 2, 0, {
+        let mut u = op21s(0x13, 0, 10); // 0 (const/4 é 4-bit com sinal)
+        u.extend(op23x(0x93, 0, 0, 3)); // 1..2 div-int v0, v0, v3
+        u.extend(op11x(0x0F, 0)); // 3
+        u.extend(op11x(0x0D, 0)); // 4
+        u.extend(op11n(0x12, 0, -1)); // 5
+        u.extend(op11x(0x0F, 0)); // 6
+        u.extend(op11x(0x0D, 0)); // 7
+        u.extend(op11n(0x12, 0, -10)); // 8
+        u.extend(op11x(0x0F, 0)); // 9
+        u
+    });
+    // ordem do DEX: try EXTERNO (start 0) vem ANTES do interno (start 2)
+    // layout: const/16@0..1, div@2..3, ret@4, move-exc@5(inner), ret@7,
+    //         move-exc@8(outer), ret@10
+    blob.tries.push(TryBlob {
+        start: 0,
+        count: 4,
+        typed: vec![("Ljava/lang/ArithmeticException;".to_string(), 8)],
+        catch_all: None,
+    });
+    blob.tries.push(TryBlob {
+        start: 2,
+        count: 2,
+        typed: vec![("Ljava/lang/ArithmeticException;".to_string(), 5)],
+        catch_all: None,
+    });
+    b.direct(
+        cls,
+        "aninhado",
+        "I",
+        vec!["I", "I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(blob),
+    );
+    let mut e = engine_of(&b);
+    // Java: div por zero dentro do try interno → handler INTERNO (-1)
+    assert_eq!(
+        invoke(
+            &mut e,
+            "aninhado",
+            "(II)I",
+            &[Value::Int(0), Value::Int(0)]
+        )
+        .unwrap()
+        .as_int()
+        .unwrap(),
+        -1
+    );
+}
+
+/// issue #24: fill-array-data com float[]/double[] (bits decodificados)
+#[test]
+fn fill_array_data_float_and_double() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let f_arr = b.type_idx("[F");
+    // 1.5f = 0x3FC00000 → units LE [0x0000, 0x3FC0]; 2.5f = 0x40200000
+    b.direct(
+        cls,
+        "farr",
+        "F",
+        vec!["I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(5, 1, 0, {
+            let mut u = op11n(0x12, 0, 2); // 0: v0 = 2
+            u.extend(op22c(0x23, 0, 0, f_arr)); // 1..2: new-array v0, v0, [F
+            u.extend(op31t(0x26, 0, 3)); // 3..5: fill-array-data v0, +3
+            u.extend(array_payload(
+                4,
+                2,
+                &[0x0000, 0x3FC0, 0x0000, 0x4020],
+            )); // 6..9: payload (4 units)
+            u.extend(op11n(0x12, 2, 0)); // 10: v2 = 0
+            u.extend(op23x(0x44, 1, 0, 2)); // 11..12: aget v1, v0, v2
+            u.extend(op11x(0x0F, 1)); // 13: return v1
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let v = invoke(&mut e, "farr", "(I)F", &[Value::Int(0)]).unwrap();
+    match v {
+        Value::Float(f) => assert_eq!(f, 1.5, "bits do payload devem virar float"),
+        other => panic!("esperado Float, got {other:?}"),
+    }
+}
+
+/// issue #27: StringBuilder.append((String)null) apendeja "null" (não NPE);
+/// também exercita new-instance→<clinit> trigger e invoke-direct <init>
+#[test]
+fn stringbuilder_append_null_appends_literal() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let sb_tidx = b.type_idx("Ljava/lang/StringBuilder;");
+    let s_a = b.intern("a") as u16;
+    let p_str_ret_sb = b.proto_idx("Ljava/lang/StringBuilder;", vec!["Ljava/lang/String;".to_string()]);
+    let p_v_str = b.proto_idx("V", vec!["Ljava/lang/String;".to_string()]);
+    let init_str = b.method_idx("Ljava/lang/StringBuilder;", p_v_str, "<init>");
+    let p_sb_ret_str = b.proto_idx("Ljava/lang/String;", vec![]); // toString() — receiver não é param
+    let append = b.method_idx("Ljava/lang/StringBuilder;", p_str_ret_sb, "append");
+    let to_string = b.method_idx("Ljava/lang/StringBuilder;", p_sb_ret_str, "toString");
+    // regs=5, ins=1 → arg em v4; v3 fica Null (nunca escrito)
+    b.direct(
+        cls,
+        "concat_null",
+        "Ljava/lang/String;",
+        vec!["I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(5, 1, 2, {
+            let mut u = op21c(0x22, 0, sb_tidx); // 0..1: new-instance v0, SB
+            u.extend(op21c(0x1A, 1, s_a)); // 2..3: const-string v1, "a"
+            u.extend(op35c(0x70, 2, init_str, [0, 1, 0, 0, 0])); // 4..6: <init>{recv=v0, arg=v1}
+            u.extend(op35c(0x6E, 2, append, [0, 3, 0, 0, 0])); // 7..9: append(v0, v3=Null)
+            u.extend(op35c(0x6E, 1, to_string, [0, 0, 0, 0, 0])); // 10..12: toString
+            u.extend(op11x(0x0C, 1)); // 13: move-result-object v1
+            u.extend(op11x(0x0F, 1)); // 14: return v1
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let v = invoke(&mut e, "concat_null", "(I)Ljava/lang/String;", &[Value::Int(0)]).unwrap();
+    match v {
+        Value::Obj(r) => assert_eq!(e.heap.as_str(r).unwrap(), "anull"),
+        other => panic!("esperado Obj(String), got {other:?}"),
+    }
+}
+
+/// issue #27: autoboxing Integer.valueOf + intValue (d8 emite para todo
+/// List<Integer>/Collections)
+#[test]
+fn integer_boxing_roundtrip() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let p_int_ret_integer = b.proto_idx("Ljava/lang/Integer;", vec!["I".to_string()]);
+    let value_of = b.method_idx("Ljava/lang/Integer;", p_int_ret_integer, "valueOf");
+    let p_integer_ret_int = b.proto_idx("I", vec![]);
+    let int_value = b.method_idx("Ljava/lang/Integer;", p_integer_ret_int, "intValue");
+    b.direct(
+        cls,
+        "box_unbox",
+        "I",
+        vec!["I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(4, 1, 1, {
+            let mut u = op23x(0x90, 0, 3, 3); // 0..1: v0 = v3 + v3 (=arg*2)
+            u.extend(op35c(0x71, 1, value_of, [0, 0, 0, 0, 0])); // 2..4: invoke-static valueOf(v0)
+            u.extend(op11x(0x0C, 1)); // 5: move-result-object v1
+            u.extend(op35c(0x6E, 1, int_value, [1, 0, 0, 0, 0])); // 6..8: intValue()
+            u.extend(op11x(0x0A, 1)); // 9: move-result v1
+            u.extend(op11x(0x0F, 1)); // 10: return v1
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    assert_eq!(
+        invoke(&mut e, "box_unbox", "(I)I", &[Value::Int(21)])
+            .unwrap()
+            .as_int()
+            .unwrap(),
+        42
+    );
+}
+
+/// issue #26: check-cast de String para CharSequence (interface) é válido
+#[test]
+fn checkcast_to_interface_succeeds() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let charseq = b.type_idx("Ljava/lang/CharSequence;");
+    let s_x = b.intern("x") as u16;
+    b.direct(
+        cls,
+        "cast_iface",
+        "Ljava/lang/String;",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op21c(0x1A, 0, s_x); // const-string v0, "x"
+            u.extend(op21c(0x1F, 0, charseq)); // check-cast v0, CharSequence
+            u.extend(op11x(0x0F, 0)); // return-object v0
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    let v = invoke(&mut e, "cast_iface", "()Ljava/lang/String;", &[]).unwrap();
+    match v {
+        Value::Obj(r) => assert_eq!(e.heap.as_str(r).unwrap(), "x"),
+        other => panic!("esperado Obj(String), got {other:?}"),
+    }
+}
+
+/// issue #37: OOM de new-array vira OutOfMemoryError CAPTURÁVEL
+#[test]
+fn oom_from_new_array_is_catchable() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/OutOfMemoryError;");
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let int_arr = b.type_idx("[I");
+    // 0..2: const v0, 0x7FFFFFFF (2G elems × 32 B ≫ 256 MB)
+    // 3..4: new-array v0, v0, [I
+    // 5: return v0
+    // 6: move-exception v0
+    // 7: const/4 v0, -1
+    // 8: return v0
+    let mut blob = b.code(4, 0, 0, {
+        let mut u = op31i(0x14, 0, 0x7FFF_FFFF); // 0..2
+        u.extend(op22c(0x23, 0, 0, int_arr)); // 3..4
+        u.extend(op11x(0x0F, 0)); // 5
+        u.extend(op11x(0x0D, 0)); // 6
+        u.extend(op11n(0x12, 0, -1)); // 7
+        u.extend(op11x(0x0F, 0)); // 8
+        u
+    });
+    blob.tries.push(TryBlob {
+        start: 0,
+        count: 5,
+        typed: vec![("Ljava/lang/OutOfMemoryError;".to_string(), 6)],
+        catch_all: None,
+    });
+    b.direct(
+        cls,
+        "oom_ou_menos1",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(blob),
+    );
+    let mut e = engine_of(&b);
+    assert_eq!(
+        invoke(&mut e, "oom_ou_menos1", "()I", &[])
+            .unwrap()
+            .as_int()
+            .unwrap(),
+        -1
+    );
+}
+
+/// issue #25 + #37: <clinit> dispara em sget; falha vira
+/// ExceptionInInitializerError no 1º acesso e NoClassDefFoundError nos
+/// seguintes; superclasse inicializa antes da subclasse
+#[test]
+fn clinit_failure_semantics_and_super_first() {
+    let mut b = DexBuilder::new();
+    b.type_idx("Ljava/lang/ArithmeticException;");
+    // LBase; tem <clinit> que divide por zero (falha)
+    let base = b.class("LBase;", "Ljava/lang/Object;");
+    let _fs = b.field_idx("LBase;", "I", "s");
+    b.static_field(base, "s", "I", SVal::Int(0));
+    b.direct(
+        base,
+        "<clinit>",
+        "V",
+        vec![],
+        ACC_STATIC | ACC_CONSTRUCTOR,
+        Some(b.code(2, 0, 0, {
+            let mut u = op11n(0x12, 0, 1);
+            u.extend(op11n(0x12, 1, 0));
+            u.extend(op23x(0x93, 0, 0, 1)); // div-int v0, v0, v1 → Arith
+            u.extend(op10x(0x0E)); // return-void (nunca alcançado)
+            u
+        })),
+    );
+    // LSub; estende LBase; — se a ordem super-first estiver certa, a falha
+    // acontece ANTES do <clinit> de LSub rodar (que marcaria uma flag)
+    let sub = b.class("LSub;", "LBase;");
+    let _ft = b.field_idx("LSub;", "I", "t");
+    b.static_field(sub, "t", "I", SVal::Int(0));
+    b.direct(
+        sub,
+        "<clinit>",
+        "V",
+        vec![],
+        ACC_STATIC | ACC_CONSTRUCTOR,
+        Some(b.code(2, 0, 0, {
+            let mut u = op11n(0x12, 0, 7);
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    // LCaso.toque()I: sget LBase;->s → dispara a cadeia de init
+    let cls = b.class("LCaso;", "Ljava/lang/Object;");
+    let f_s = b.field_idx("LBase;", "I", "s");
+    b.direct(
+        cls,
+        "toque",
+        "I",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op21c(0x60, 0, f_s); // sget v0, LBase->s
+            u.extend(op11x(0x0F, 0));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    // 1º acesso → ExceptionInInitializerError (não ArithmeticException cru)
+    let err1 = invoke(&mut e, "toque", "()I", &[]).unwrap_err();
+    match &err1 {
+        VmExit::Exception(t) => {
+            assert_eq!(t.class, "Ljava/lang/ExceptionInInitializerError;", "1º acesso: {err1}")
+        }
+        other => panic!("1º acesso deveria ser Exception, got {other:?}"),
+    }
+    // 2º acesso → NoClassDefFoundError (JLS 12.4.2)
+    let err2 = invoke(&mut e, "toque", "()I", &[]).unwrap_err();
+    match &err2 {
+        VmExit::Exception(t) => {
+            assert_eq!(t.class, "Ljava/lang/NoClassDefFoundError;", "2º acesso: {err2}")
+        }
+        other => panic!("2º acesso deveria ser Exception, got {other:?}"),
+    }
+}

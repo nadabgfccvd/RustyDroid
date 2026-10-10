@@ -14,6 +14,7 @@ const OBJECT: &str = "Ljava/lang/Object;";
 const MATH: &str = "Ljava/lang/Math;";
 const INTEGER: &str = "Ljava/lang/Integer;";
 const LONG: &str = "Ljava/lang/Long;";
+const ARITH: &str = "Ljava/lang/ArithmeticException;";
 
 /// Intrínseco STATIC: chamado de invoke-static (e do entrypoint público).
 /// `Ok(None)` = nenhum intrínseco casa → segue resolução normal no DEX.
@@ -60,6 +61,31 @@ pub fn call_static_intrinsic(
         )))),
         (MATH, "floor", "(D)D") => Ok(Some(Value::Double(args[0].as_double()?.floor()))),
         (MATH, "ceil", "(D)D") => Ok(Some(Value::Double(args[0].as_double()?.ceil()))),
+        // issue #27: rotina emitida por d8 em código real
+        (MATH, "round", "(F)I") => {
+            let v = args[0].as_float()?;
+            Ok(Some(Value::Int(java_round_f32(v))))
+        }
+        (MATH, "round", "(D)J") => {
+            let v = args[0].as_double()?;
+            Ok(Some(Value::Long(java_round_f64(v))))
+        }
+        (MATH, "floorDiv", "(II)I") => {
+            let a = args[0].as_int()?;
+            let b = args[1].as_int()?;
+            if b == 0 {
+                return Err(VmExit::Exception(Throwable::new(ARITH, "divide by zero")));
+            }
+            Ok(Some(Value::Int(a.div_euclid(b))))
+        }
+        (MATH, "floorMod", "(II)I") => {
+            let a = args[0].as_int()?;
+            let b = args[1].as_int()?;
+            if b == 0 {
+                return Err(VmExit::Exception(Throwable::new(ARITH, "divide by zero")));
+            }
+            Ok(Some(Value::Int(a.rem_euclid(b))))
+        }
         (MATH, "signum", "(D)D") => {
             let v = args[0].as_double()?;
             Ok(Some(Value::Double(if v.is_nan() {
@@ -73,7 +99,12 @@ pub fn call_static_intrinsic(
             })))
         }
         (INTEGER, "parseInt", "(Ljava/lang/String;)I") => {
-            let s = string_arg(vm, &args[0])?;
+            // issue #37: parseInt(null) → NumberFormatException("null") na JVM
+            // (não NPE — o javadoc de Integer.parseInt especifica NFE)
+            let s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(_) => string_arg(vm, &args[0])?,
+            };
             parse_int(&s)
                 .map(|v| Ok(Some(Value::Int(v))))
                 .map_err(|e| {
@@ -91,6 +122,37 @@ pub fn call_static_intrinsic(
         (STRING, "valueOf", "(I)Ljava/lang/String;") => {
             let v = args[0].as_int()?;
             Ok(Some(Value::Obj(alloc_string(vm, v.to_string())?)))
+        }
+        // issue #27: autoboxing — d8 emite Integer.valueOf para TODO List<Integer>/
+        // Collections; sem isto, código Java real falha logo no primeiro uso
+        (INTEGER, "valueOf", "(I)Ljava/lang/Integer;") => {
+            let v = args[0].as_int()?;
+            let r = vm.heap.alloc_instance(
+                INTEGER.to_string(),
+                vec![("value".to_string(), Value::Int(v))],
+            )?;
+            Ok(Some(Value::Obj(r)))
+        }
+        (INTEGER, "toString", "(I)Ljava/lang/String;") => {
+            let v = args[0].as_int()?;
+            Ok(Some(Value::Obj(alloc_string(vm, v.to_string())?)))
+        }
+        (INTEGER, "compare", "(II)I") => {
+            let a = args[0].as_int()?;
+            let b = args[1].as_int()?;
+            Ok(Some(Value::Int(match a.cmp(&b) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            })))
+        }
+        (LONG, "valueOf", "(J)Ljava/lang/Long;") => {
+            let v = args[0].as_long()?;
+            let r = vm.heap.alloc_instance(
+                LONG.to_string(),
+                vec![("value".to_string(), Value::Long(v))],
+            )?;
+            Ok(Some(Value::Obj(r)))
         }
         (STRING, "valueOf", "(J)Ljava/lang/String;") => {
             let v = args[0].as_long()?;
@@ -184,7 +246,24 @@ pub fn call_instance_intrinsic(
             Ok(Some(Value::Obj(recv)))
         }
         (SB, "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;") => {
-            let s = string_arg(vm, &args[0])?;
+            // issue #27: Java apendeja o literal "null" (não NPE) — StringBuilder.append((String)null)
+            let s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(_) => string_arg(vm, &args[0])?,
+            };
+            sb_append(vm, recv, &s)?;
+            Ok(Some(Value::Obj(recv)))
+        }
+        (SB, "append", "(Ljava/lang/Object;)Ljava/lang/StringBuilder;") => {
+            // issue #27: append(Object) — null → "null"; String → conteúdo;
+            // outros objetos → toString default de Object
+            let s = match args[0].as_ref()? {
+                None => "null".to_string(),
+                Some(r) => match vm.heap.get(r) {
+                    Ok(HeapObj::Str(s)) => s.clone(),
+                    _ => default_to_string(vm.heap.class_of(r)?, r),
+                },
+            };
             sb_append(vm, recv, &s)?;
             Ok(Some(Value::Obj(recv)))
         }
@@ -252,6 +331,33 @@ pub fn call_instance_intrinsic(
         (STRING, "substring", "(II)Ljava/lang/String;") => {
             substring(vm, recv, args[0].as_int()?, Some(args[1].as_int()?))
         }
+        // issue #27: cobre usados rotineiramente por d8/código real
+        (STRING, "indexOf", "(Ljava/lang/String;)I") => {
+            let hay = vm.heap.as_str(recv)?.to_string();
+            let needle = string_arg(vm, &args[0])?;
+            // índice em unidades UTF-16 (semântica Java)
+            Ok(Some(Value::Int(match hay.find(&needle) {
+                Some(byte_pos) => hay[..byte_pos].encode_utf16().count() as i32,
+                None => -1,
+            })))
+        }
+        (STRING, "startsWith", "(Ljava/lang/String;)Z") => {
+            let hay = vm.heap.as_str(recv)?.to_string();
+            let needle = string_arg(vm, &args[0])?;
+            Ok(Some(Value::Int(hay.starts_with(&needle) as i32)))
+        }
+        (STRING, "endsWith", "(Ljava/lang/String;)Z") => {
+            let hay = vm.heap.as_str(recv)?.to_string();
+            let needle = string_arg(vm, &args[0])?;
+            Ok(Some(Value::Int(hay.ends_with(&needle) as i32)))
+        }
+        (STRING, "replace", "(CC)Ljava/lang/String;") => {
+            let hay = vm.heap.as_str(recv)?.to_string();
+            let from = char::from_u32(args[0].as_int()? as u32).unwrap_or('\u{FFFD}');
+            let to = char::from_u32(args[1].as_int()? as u32).unwrap_or('\u{FFFD}');
+            let out = hay.replace(from, &to.to_string());
+            Ok(Some(Value::Obj(alloc_string(vm, out)?)))
+        }
 
         // exceções construídas por `new` no bytecode do usuário
         ("Ljava/lang/Throwable;", "<init>", "()V") | (_, "<init>", "()V")
@@ -281,8 +387,64 @@ pub fn call_instance_intrinsic(
             ))
         }
 
+        // issue #27: unboxing (contraparte do valueOf que d8 emite)
+        (INTEGER, "intValue", "()I") => {
+            let v = vm.heap.get_field(recv, "value")?;
+            Ok(Some(Value::Int(v.as_int()?)))
+        }
+        (LONG, "longValue", "()J") => {
+            let v = vm.heap.get_field(recv, "value")?;
+            Ok(Some(Value::Long(v.as_long()?)))
+        }
+        (INTEGER, "toString", "()Ljava/lang/String;") => {
+            let v = vm.heap.get_field(recv, "value")?;
+            Ok(Some(Value::Obj(alloc_string(vm, v.as_int()?.to_string())?)))
+        }
+        (LONG, "toString", "()Ljava/lang/String;") => {
+            let v = vm.heap.get_field(recv, "value")?;
+            Ok(Some(Value::Obj(alloc_string(vm, v.as_long()?.to_string())?)))
+        }
+        (STRING, "toString", "()Ljava/lang/String;") => {
+            // toString de String retorna a própria string (antes do fallback
+            // de identidade de Object, que seria errado aqui)
+            let s = vm.heap.as_str(recv)?.to_string();
+            Ok(Some(Value::Obj(alloc_string(vm, s)?)))
+        }
+
+        // issue #27: métodos de Object para classes de usuário — o dispatch
+        // antigo morria com NOT_FOUND em java/lang/Object. Verifica primeiro
+        // se a classe do usuário NÃO declara o método (aí usa a identidade;
+        // se declara, cai no dispatch DEX normal)
+        (_, "equals", "(Ljava/lang/Object;)Z")
+        | (_, "hashCode", "()I")
+        | (_, "toString", "()Ljava/lang/String;")
+            if vm.cp.resolve_method(recv_class, name, sig).is_none() =>
+        {
+            match (name, sig) {
+                ("equals", "(Ljava/lang/Object;)Z") => {
+                    let other = args[0].as_ref()?;
+                    Ok(Some(Value::Int((other == Some(recv)) as i32)))
+                }
+                ("hashCode", "()I") => Ok(Some(Value::Int(recv as i32))),
+                ("toString", "()Ljava/lang/String;") => Ok(Some(Value::Obj(alloc_string(
+                    vm,
+                    default_to_string(recv_class, recv),
+                )?))),
+                _ => Ok(None),
+            }
+        }
+
         _ => Ok(None),
     }
+}
+
+/// toString default da JVM: `Classe@hash` (hex da identidade).
+fn default_to_string(class_desc: &str, r: crate::heap::ObjRef) -> String {
+    let name = class_desc
+        .trim_start_matches('L')
+        .trim_end_matches(';')
+        .replace('/', ".");
+    format!("{name}@{r:x}")
 }
 
 fn is_throwable_class(vm: &Engine, class: &str) -> bool {
@@ -327,14 +489,14 @@ fn sb_append(vm: &mut Engine, recv: crate::heap::ObjRef, s: &str) -> Result<(), 
 
 pub fn alloc_string(vm: &mut Engine, s: String) -> Result<crate::heap::ObjRef, VmExit> {
     vm.heap.alloc_string(s).map_err(|oom| {
-        crate::err::vm_error(
-            "VM_OOM",
+        // issue #37: OOM de string também é OutOfMemoryError capturável
+        VmExit::Exception(Throwable::new(
+            "Ljava/lang/OutOfMemoryError;",
             format!(
                 "alocação de {} bytes excede o heap de {} bytes",
                 oom.requested, oom.budget
             ),
-        )
-        .into()
+        ))
     })
 }
 
@@ -387,10 +549,13 @@ fn parse_long(s: &str) -> Result<i64, String> {
 }
 
 /// min/max/pow do Java: NaN em qualquer arg → NaN (diferente do Rust, que
-/// ignora NaN em min/max).
+/// ignora NaN em min/max); ±0.0 decide por sinal (issue #37 — Rust deixa
+/// não-especificado, Java retorna -0.0 no min e +0.0 no max).
 fn java_min_f32(a: f32, b: f32) -> f32 {
     if a.is_nan() || b.is_nan() {
         f32::NAN
+    } else if a == 0.0 && b == 0.0 {
+        if a.is_sign_negative() { a } else { b } // -0.0 vence no min
     } else {
         a.min(b)
     }
@@ -398,6 +563,8 @@ fn java_min_f32(a: f32, b: f32) -> f32 {
 fn java_max_f32(a: f32, b: f32) -> f32 {
     if a.is_nan() || b.is_nan() {
         f32::NAN
+    } else if a == 0.0 && b == 0.0 {
+        if a.is_sign_positive() { a } else { b } // +0.0 vence no max
     } else {
         a.max(b)
     }
@@ -405,6 +572,8 @@ fn java_max_f32(a: f32, b: f32) -> f32 {
 fn java_min_f64(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
+    } else if a == 0.0 && b == 0.0 {
+        if a.is_sign_negative() { a } else { b }
     } else {
         a.min(b)
     }
@@ -412,8 +581,27 @@ fn java_min_f64(a: f64, b: f64) -> f64 {
 fn java_max_f64(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
+    } else if a == 0.0 && b == 0.0 {
+        if a.is_sign_positive() { a } else { b }
     } else {
         a.max(b)
+    }
+}
+
+/// Math.round: floor(x + 0.5) com saturação nos limites do tipo (semântica
+/// Java — o `as` do Rust já satura, mas NaN → 0 e meio-ponto para cima).
+fn java_round_f32(v: f32) -> i32 {
+    if v.is_nan() {
+        0
+    } else {
+        (v + 0.5).floor() as i32
+    }
+}
+fn java_round_f64(v: f64) -> i64 {
+    if v.is_nan() {
+        0
+    } else {
+        (v + 0.5).floor() as i64
     }
 }
 fn java_pow(a: f64, b: f64) -> f64 {

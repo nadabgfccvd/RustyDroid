@@ -203,7 +203,7 @@ summary = "Health Connect passa a fazer parte da plataforma; permissões READ/WR
 
 [[switch]]
 id = "photo-picker-partial-access"
-api = 36
+api = 34
 title = "Photo picker partial access"
 impact = "media"
 default_state = "opt-in"

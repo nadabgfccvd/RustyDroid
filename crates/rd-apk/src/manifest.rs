@@ -562,7 +562,12 @@ fn resolve_label(
                 arsc.and_then(|a| a.resolve_string(*res).or_else(|| a.resolve_name(*res)));
             (resolved, Some(*res))
         }
-        _ => (raw.map(str::to_owned), None),
+        // issue #35: AXML craftado/stripped pode ter TYPE_STRING com raw=None —
+        // o valor decodificado (AttrValue::String) não pode ser descartado
+        _ => (
+            raw.map(str::to_owned).or_else(|| value.as_string().map(str::to_owned)),
+            None,
+        ),
     }
 }
 

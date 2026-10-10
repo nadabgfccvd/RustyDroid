@@ -54,6 +54,9 @@ pub enum HeapObj {
     Array {
         elem: ElemKind,
         elems: Vec<Value>,
+        /// descritor do tipo do elemento para arrays de objetos (`[LX;` —
+        /// issue #37); vazio/ignorado para primitivos
+        elem_class: String,
     },
     Instance {
         /// descritor da classe (`Ljava/lang/StringBuilder;`, `LCaso;`…)
@@ -128,13 +131,21 @@ impl Heap {
         self.alloc(bytes, HeapObj::Str(s))
     }
 
-    pub fn alloc_array(&mut self, elem: ElemKind, len: usize) -> Result<ObjRef, OomError> {
-        let bytes = len.saturating_mul(elem.byte_size()).saturating_add(16);
+    pub fn alloc_array(&mut self, elem: ElemKind, len: usize, elem_class: &str) -> Result<ObjRef, OomError> {
+        // issue #28: o orçamento cobra o custo REAL de armazenamento na arena
+        // (Value = 32 B), não o tamanho lógico do elemento (4/8 B) — com a
+        // contabilidade antiga o RSS real chegava a ~8× o orçamento (DoS)
+        let bytes = len
+            .saturating_mul(std::mem::size_of::<Value>())
+            .saturating_add(16);
         self.alloc(
             bytes,
             HeapObj::Array {
                 elem,
                 elems: Vec::new(),
+                // issue #37: arrays de objetos guardam o tipo do elemento
+                // (check-cast [LX; e ArrayStoreException precisam dele)
+                elem_class: elem_class.to_string(),
             },
         )
     }
@@ -171,7 +182,7 @@ impl Heap {
 
     pub fn as_array_elems(&self, r: ObjRef) -> Result<(&[Value], ElemKind), String> {
         match self.get(r)? {
-            HeapObj::Array { elem, elems } => Ok((elems, *elem)),
+            HeapObj::Array { elem, elems, .. } => Ok((elems, *elem)),
             other => Err(format!("esperado array, got {:?}", other.kind_name())),
         }
     }
@@ -195,12 +206,14 @@ impl Heap {
         match self.get(r)? {
             HeapObj::Instance { class, .. } => Ok(class),
             HeapObj::Str(_) => Ok("Ljava/lang/String;"),
-            HeapObj::Array { elem, .. } => match elem {
+            HeapObj::Array { elem, elem_class, .. } => match elem {
                 ElemKind::Int => Ok("[I"),
                 ElemKind::Long => Ok("[J"),
                 ElemKind::Float => Ok("[F"),
                 ElemKind::Double => Ok("[D"),
-                ElemKind::Obj => Ok("[Ljava/lang/Object;"),
+                // issue #37: o descritor real do array de objetos ([LX;) —
+                // nunca "[Ljava/lang/Object;" genérico
+                ElemKind::Obj => Ok(elem_class),
             },
         }
     }
@@ -217,15 +230,35 @@ impl Heap {
     }
 
     pub fn put_field(&mut self, r: ObjRef, name: &str, v: Value) -> Result<(), String> {
+        // issue #28: campo novo é cobrado no orçamento ANTES de materializar
+        // (o push antigo não cobrava nada — leak de contabilidade). O check
+        // vem antes do get_mut para não conflitar o borrow
+        let is_new = match self.get(r)? {
+            HeapObj::Instance { fields, .. } => !fields.iter().any(|(n, _)| n == name),
+            _ => return Err(format!("#{r} não é instância")),
+        };
+        if is_new {
+            let cost = std::mem::size_of::<Value>() + name.len();
+            let new_used = self
+                .used
+                .checked_add(cost)
+                .ok_or_else(|| "heap budget excedido (overflow)".to_string())?;
+            if new_used > self.budget {
+                return Err(format!(
+                    "heap budget de {} bytes excedido ao adicionar campo {name}",
+                    self.budget
+                ));
+            }
+            self.used = new_used;
+        }
         match self.get_mut(r)? {
             HeapObj::Instance { fields, .. } => {
                 if let Some(slot) = fields.iter_mut().find(|(n, _)| n == name) {
                     slot.1 = v;
-                    Ok(())
                 } else {
                     fields.push((name.to_string(), v));
-                    Ok(())
                 }
+                Ok(())
             }
             _ => Err(format!("#{r} não é instância")),
         }
