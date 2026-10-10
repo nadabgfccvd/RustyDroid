@@ -10,7 +10,7 @@
 | M0 | workspace · rd-apk inspect · motor de permissões · devices · behavior | **✅ implementado** |
 | M1 | rd-dex 100% + disassembler | **✅ implementado** |
 | M2 | VM Dalvik mínima | **✅ implementado** |
-| M3 | framework essencial headless | ⬜ |
+| M3 | framework essencial headless | **✅ núcleo implementado** |
 | M4 | render + UI dump | ⬜ |
 | M5 | agente MCP v1 (~20 tools) | ⬜ |
 | M6 | executor de testes + compat automatizada | ⬜ |
@@ -29,7 +29,7 @@
 | `rd-framework` | M0 | fd-permissions (motor completo + gating maxSdk/since_api) · fd-devices · fd-behavior |
 | `rd-cli` | M0–M2 | inspect · perm · device · behavior · dex disasm · vm exec (contrato de erro JSON) |
 | `rd-dex` | M1 | parser DEX completo + disassembler smali validado vs baksmali + fuzz targets |
-| `rd-vm` | M2 | interpretador Dalvik mínimo — métodos puros de APK real (golden harness vs JVM) + intrinsics |
+| `rd-vm` | M2–M3 | interpretador Dalvik + golden harness vs JVM + framework host headless (Activity/View/Handler/Looper) |
 | `rd-render` | M4 | stub NOT_IMPLEMENTED |
 | `rd-agent` | M5 | stub NOT_IMPLEMENTED |
 | `rd-jni` | M3+ | stub NOT_IMPLEMENTED |

@@ -10,7 +10,7 @@
 | **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ✅ **implementado (2026-10)** |
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
-| M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ⬜ |
+| M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10)** |
 | M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ⬜ |
 | M5 | Agente MCP v1 (~20 tools) | LLM instala, navega e assera estado só com as tools | ⬜ |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ⬜ |
@@ -87,9 +87,22 @@
 5. CLI: `rd vm exec <apk|dex> --class --method --sig [--args] [--json]
    [--fuel/--depth/--heap-mb]` — contrato JSON {status: ok|exception|error}.
 
-## Próxima fase — M3 (framework essencial)
+## M3 — framework essencial (parcial: núcleo entregue, XML na sequência)
 
-1. Activity/Window/View mínimos headless; app trivial (activity+botão+texto)
-   roda ponta a ponta.
-2. Handler/Looper básico (main thread = UI thread).
-3. Critério de saída: app trivial responde a toques simulados do agente.
+Entregue (round 1):
+1. Activity/Window/View/TextView/Button/LinearLayout/FrameLayout headless como
+   classes HOST (`rd-vm::framework`) — estado fora do heap Dalvik, dispatch
+   igual ao dos intrinsics.
+2. Handler/Looper/Message com clock virtual determinístico (post/postDelayed
+   + `advance_clock`); single-thread = UI thread.
+3. Lifecycle (onCreate/onStart/onResume/onPause) dirigido por `launch_app`;
+   navegação via `Intent(Context, Class)` + `startActivity` (const-class host).
+4. Touch simulado: hit-test top-down + dispatch de onClick via resolução DEX.
+5. CLI `rd app run` com script do agente (`tap X,Y` · `wait MS` · `dump`) e
+   dump textual da árvore (seed do UI dump do M4).
+6. Critério de saída ATINGIDO: app trivial (activity+botão+texto) roda
+   ponta a ponta e responde a toques simulados (testes de integração M3).
+
+Na sequência do M3 (round 2): LayoutInflater de layout XML real (AXML via
+rd-apk + Resources/ARSC multi-config) — `setContentView(I)` hoje responde
+`NOT_IMPLEMENTED` tipado.

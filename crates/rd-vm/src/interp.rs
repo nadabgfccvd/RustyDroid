@@ -264,7 +264,27 @@ pub(crate) fn exec_frame(
                 regs[*a as usize] = Value::Obj(r);
             }
 
-            0x1C => return Err(err::not_implemented("const-class (objetos Class)").into()),
+            0x1C => {
+                // M3: Class host mínimo — objeto Ljava/lang/Class; com o field
+                // "name" (descritor); Intent(Context, Class) e Class.getName
+                // dependem disso. Primitivos continuam NOT_IMPLEMENTED.
+                let Kind::RegIndex(a, i) = &insn.kind else {
+                    return bad_kind(insn);
+                };
+                let desc = vm.cp.type_str(dex_idx, *i as u32);
+                if !(desc.starts_with('L') || desc.starts_with('[')) {
+                    return Err(err::not_implemented(format!(
+                        "const-class {desc} (primitivos não têm Class host no M3)"
+                    ))
+                    .into());
+                }
+                let name_r = intrinsics::alloc_string(vm, desc)?;
+                let r = vm.heap.alloc_instance(
+                    "Ljava/lang/Class;".to_string(),
+                    vec![("name".to_string(), Value::Obj(name_r))],
+                )?;
+                regs[*a as usize] = Value::Obj(r);
+            }
 
             // monitor-*: single-thread no M2 — no-op deliberado COM referência
             // válida (monitores reais entram com threads, M3+); null → NPE
@@ -334,10 +354,13 @@ pub(crate) fn exec_frame(
                 // <clinit> da classe roda ANTES do construtor; sem isto, o
                 // efeito do <clinit> só era observável no primeiro sget
                 vm.ensure_initialized(&class)?;
-                let r = step!(match vm.heap.alloc_instance(class, Vec::new()) {
+                let r = step!(match vm.heap.alloc_instance(class.clone(), Vec::new()) {
                     Ok(r) => Ok(r),
                     Err(e) => Err(oom_exception(e)),
                 });
+                // M3: anexa estado host p/ classes de plataforma (Activity,
+                // View/TextView/Button/LinearLayout, Handler, Intent, Bundle)
+                step!(vm.attach_host_state(&class, r));
                 regs[*a as usize] = Value::Obj(r);
             }
             0x23 => {
@@ -1292,6 +1315,24 @@ fn do_invoke(
         {
             return Ok(v);
         }
+        // M3: classes android/* são HOST (framework.rs) — nunca estão no DEX
+        if mref.class.starts_with("Landroid/") {
+            return match crate::framework::call_host_static(
+                vm,
+                &mref.class,
+                &mref.name,
+                &mref.proto,
+                slots,
+            )? {
+                Some(v) => Ok(v),
+                None => {
+                    Err(
+                        crate::classpath::unresolved_method(&mref.class, &mref.name, &mref.proto)
+                            .into(),
+                    )
+                }
+            };
+        }
         vm.ensure_initialized(&mref.class)?;
         let Some((d2, def, m)) = vm.cp.resolve_method(&mref.class, &mref.name, &mref.proto) else {
             return Err(
@@ -1344,6 +1385,24 @@ fn do_invoke(
         &slots[1..],
     )? {
         return Ok(v);
+    }
+
+    // M3: framework host (Activity/View/TextView/Button/LinearLayout/
+    // Handler/Intent/Bundle) — a classe DECLARANTE do method ref é android/*
+    if mref.class.starts_with("Landroid/") {
+        return match crate::framework::call_host_instance(
+            vm,
+            &mref.class,
+            &mref.name,
+            &mref.proto,
+            recv,
+            &slots[1..],
+        )? {
+            Some(v) => Ok(v),
+            None => Err(
+                crate::classpath::unresolved_method(&mref.class, &mref.name, &mref.proto).into(),
+            ),
+        };
     }
 
     // classe inicial da resolução

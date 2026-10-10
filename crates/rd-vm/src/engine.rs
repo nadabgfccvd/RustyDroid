@@ -54,6 +54,8 @@ pub struct Engine {
     /// classes cujo `<clinit>` falhou — JLS 12.4.2: acessos seguintes levantam
     /// NoClassDefFoundError (issue #37)
     clinit_failed: HashSet<String>,
+    /// M3: estado host do framework (Activity/View/Handler/…)
+    pub fw: crate::framework::HostState,
     depth: usize,
     pub(crate) fuel_used: u64,
 }
@@ -69,6 +71,7 @@ impl Engine {
             clinit_done: HashSet::new(),
             clinit_running: HashSet::new(),
             clinit_failed: HashSet::new(),
+            fw: Default::default(),
             depth: 0,
             fuel_used: 0,
         }

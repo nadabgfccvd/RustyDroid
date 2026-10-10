@@ -81,6 +81,12 @@ enum Cmd {
         #[command(subcommand)]
         sub: VmSub,
     },
+    /// Executa o app headless (M3: lifecycle + views + touch do agente)
+    App {
+        path: PathBuf,
+        #[command(subcommand)]
+        sub: AppSub,
+    },
 }
 
 #[derive(Subcommand)]
@@ -111,6 +117,22 @@ enum VmSub {
         /// Heap do app em MB (default 256 = piso moto-e5)
         #[arg(long)]
         heap_mb: Option<usize>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AppSub {
+    /// Cria a activity, roda o lifecycle e aplica o script do agente
+    Run {
+        path: PathBuf,
+        /// Classe da activity (Lpkg/Cls; ou com.ex.Main). Default: LAUNCHER
+        #[arg(long)]
+        activity: Option<String>,
+        /// Ação por passo: "tap X,Y" | "wait MS" | "dump" (repetível)
+        #[arg(long = "script")]
+        scripts: Vec<String>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -262,6 +284,14 @@ fn run(cli: Cli) -> i32 {
                 out.as_deref(),
                 *json,
             ),
+        },
+        Cmd::App { path: _, sub } => match sub {
+            AppSub::Run {
+                path,
+                activity,
+                scripts,
+                json,
+            } => cmd_app_run(path, activity.as_deref(), scripts, *json),
         },
         Cmd::Vm { sub } => match sub {
             VmSub::Exec {
@@ -966,6 +996,146 @@ fn cmd_dex_summary(path: &Path, json: bool) -> Result<(), RdError> {
 
 /// M2: executa um método static puro na VM Dalvik interpretada.
 /// Exit codes: 0 = ok/exceção respondida; 4 = erro estruturado da VM.
+#[allow(clippy::too_many_arguments)]
+/// VmExit → RdError para o contrato {code, cause, module_id} do CLI.
+fn vm_err_to_rd(e: rd_vm::VmExit) -> RdError {
+    match e {
+        rd_vm::VmExit::Error(rd) => RdError::new(rd.code, rd.cause, rd.module_id),
+        rd_vm::VmExit::Exception(t) => RdError::new(
+            "VM_EXCEPTION",
+            format!(
+                "exceção não capturada: {}: {}",
+                t.name_without_l(),
+                t.message.unwrap_or_default()
+            ),
+            "rd-vm",
+        ),
+    }
+}
+
+/// M3 (DoD): roda o app trivial headless — lifecycle + script do agente
+/// ("tap X,Y", "wait MS", "dump"). O dump textual é a observabilidade do
+/// agente até o UI dump rico do M4.
+fn cmd_app_run(
+    path: &Path,
+    activity: Option<&str>,
+    scripts: &[String],
+    json: bool,
+) -> Result<(), RdError> {
+    let files = load_dex_files(path)?;
+    let dexes: Vec<Dex> = files.into_iter().map(|(_, d)| d).collect();
+    let (activity_desc, package) = match activity {
+        Some(a) => {
+            let desc = normalize_activity_desc(a);
+            let pkg = package_of_desc(&desc);
+            (desc, pkg)
+        }
+        None => launcher_of_apk(path)?,
+    };
+    let mut eng = rd_vm::Engine::new(dexes, rd_vm::VmConfig::default());
+    eng.launch_app(&activity_desc, &package, Vec::new())
+        .map_err(vm_err_to_rd)?;
+
+    let mut dumps: Vec<String> = Vec::new();
+    for script in scripts {
+        let parts: Vec<&str> = script.trim().splitn(2, ' ').collect();
+        match (parts[0], parts.get(1)) {
+            ("tap", rest) => {
+                let (x, y) = rest.and_then(|r| r.split_once(',')).ok_or_else(|| {
+                    RdError::invalid_format(format!("script tap inválido: {script:?}"))
+                        .with_suggestion("use --script \"tap X,Y\" (px inteiros)")
+                })?;
+                let x: i32 = x.trim().parse().map_err(|_| {
+                    RdError::invalid_format(format!("tap X inválido em {script:?}"))
+                })?;
+                let y: i32 = y.trim().parse().map_err(|_| {
+                    RdError::invalid_format(format!("tap Y inválido em {script:?}"))
+                })?;
+                let hit = eng.touch_app(x, y).map_err(vm_err_to_rd)?;
+                if !json {
+                    println!("[tap {x},{y}] listener acionado: {hit}");
+                }
+            }
+            ("wait", rest) => {
+                let ms: u64 = rest.and_then(|r| r.trim().parse().ok()).ok_or_else(|| {
+                    RdError::invalid_format(format!("script wait inválido: {script:?}"))
+                        .with_suggestion("use --script \"wait 250\" (ms)")
+                })?;
+                let ran = eng.advance_clock(ms).map_err(vm_err_to_rd)?;
+                if !json {
+                    println!("[wait {ms}ms] runnables executados: {ran}");
+                }
+            }
+            ("dump", _) => {
+                let d = eng.dump_ui();
+                dumps.push(d);
+                if !json {
+                    let d = dumps.last().unwrap();
+                    print!("{d}");
+                }
+            }
+            (other, _) => {
+                return Err(RdError::invalid_format(format!(
+                    "ação de script desconhecida: {other:?}"
+                ))
+                .with_suggestion("ações válidas: tap X,Y · wait MS · dump"));
+            }
+        }
+    }
+    if dumps.is_empty() {
+        dumps.push(eng.dump_ui());
+    }
+    if json {
+        println!(
+            "{}",
+            to_json(&serde_json::json!({
+                "activity": activity_desc,
+                "package": package,
+                "finished": eng.activity_is_finished(),
+                "clock_ms": eng.fw.clock(),
+                "ui_tree": dumps.last().cloned().unwrap_or_default(),
+            }))
+        );
+    } else if let Some(d) = dumps.last() {
+        print!("{d}");
+    }
+    Ok(())
+}
+
+/// "com.ex.Main" | "Lcom/ex/Main;" → "Lcom/ex/Main;"
+fn normalize_activity_desc(a: &str) -> String {
+    if a.starts_with('L') && a.ends_with(';') {
+        return a.to_string();
+    }
+    format!("L{};", a.replace('.', "/"))
+}
+
+/// "Lcom/ex/Main;" → "com.ex"
+fn package_of_desc(desc: &str) -> String {
+    let inner = desc.trim_start_matches('L').trim_end_matches(';');
+    inner
+        .rfind('/')
+        .map(|i| inner[..i].replace('/', "."))
+        .unwrap_or_default()
+}
+
+/// Descobre a LAUNCHER activity + package pelo manifest do APK.
+fn launcher_of_apk(path: &Path) -> Result<(String, String), RdError> {
+    let apk = open_apk(path)?;
+    let pkg = apk.manifest.package.clone();
+    let app = &apk.manifest.application;
+    let launcher = app
+        .components
+        .iter()
+        .find(|c| matches!(c.kind, rd_apk::manifest::ComponentKind::Activity) && c.is_launcher)
+        .ok_or_else(|| {
+            RdError::missing_entry("activity LAUNCHER no manifest")
+                .with_suggestion("passe --activity Lpkg/Cls; explicitamente")
+        })?;
+    let cls = launcher.class_name.clone();
+    Ok((format!("L{};", cls.replace('.', "/")), pkg))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_vm_exec(
     path: &Path,

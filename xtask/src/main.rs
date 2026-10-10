@@ -68,8 +68,8 @@ const CRATE_STATUS: &[(&str, &str, &str)] = &[
     ),
     (
         "rd-vm",
-        "M2",
-        "interpretador Dalvik mínimo — métodos puros de APK real (golden harness vs JVM) + intrinsics",
+        "M2–M3",
+        "interpretador Dalvik + golden harness vs JVM + framework host headless (Activity/View/Handler/Looper)",
     ),
     ("rd-render", "M4", "stub NOT_IMPLEMENTED"),
     ("rd-agent", "M5", "stub NOT_IMPLEMENTED"),
@@ -120,8 +120,8 @@ fn compat_report(root: &Path, out: &Path) -> Result<()> {
     md.push_str("| M0 | workspace · rd-apk inspect · motor de permissões · devices · behavior | **✅ implementado** |\n");
     md.push_str("| M1 | rd-dex 100% + disassembler | **✅ implementado** |\n");
     md.push_str("| M2 | VM Dalvik mínima | **✅ implementado** |\n");
+    md.push_str("| M3 | framework essencial headless | **✅ núcleo implementado** |\n");
     for (fase, entrega) in [
-        ("M3", "framework essencial headless"),
         ("M4", "render + UI dump"),
         ("M5", "agente MCP v1 (~20 tools)"),
         ("M6", "executor de testes + compat automatizada"),
