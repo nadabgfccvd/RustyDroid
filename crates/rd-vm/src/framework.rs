@@ -53,6 +53,32 @@ pub const DENSITY: f32 = 2.0;
 
 /// Estado host de um objeto. O heap guarda apenas a classe; o estado Java
 /// real fica aqui. Um ObjRef = um HostObj.
+/// issue #46: visibilidade com 3 estados reais do Android — INVISIBLE ocupa
+/// espaço (não desenha, não clica); GONE é removido do layout (irmãos sobem).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vis {
+    Visible,
+    Invisible,
+    Gone,
+}
+
+impl Vis {
+    pub fn from_java(v: i32) -> Self {
+        match v {
+            1 => Vis::Invisible,
+            2 => Vis::Gone,
+            _ => Vis::Visible, // 0 e valores desconhecidos → visible
+        }
+    }
+    pub fn to_java(self) -> i32 {
+        match self {
+            Vis::Visible => 0,
+            Vis::Invisible => 1,
+            Vis::Gone => 2,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum HostObj {
     /// Activity — window com a árvore de views; finished encerra o M3.
@@ -73,7 +99,7 @@ pub enum HostObj {
         y: i32,
         w: i32,
         h: i32,
-        visible: bool,
+        vis: Vis,
         enabled: bool,
         click_listener: Option<ObjRef>,
         /// android:onClick="metodo" (XML) — resolve no contexto da ACTIVITY
@@ -182,7 +208,7 @@ fn new_view() -> HostObj {
         y: 0,
         w: 0,
         h: 0,
-        visible: true,
+        vis: Vis::Visible,
         enabled: true,
         click_listener: None,
         click_method: None,
@@ -521,7 +547,7 @@ impl Engine {
             y: vy,
             w,
             h: vh,
-            visible,
+            vis,
             enabled,
             children,
             ..
@@ -529,7 +555,8 @@ impl Engine {
         else {
             return None;
         };
-        if !*visible || x < *vx || y < *vy || x >= vx + w || y >= vy + vh {
+        // issue #46: invisible e gone não recebem toque (só visible)
+        if *vis != Vis::Visible || x < *vx || y < *vy || x >= vx + w || y >= vy + vh {
             return None;
         }
         for c in children.iter().rev() {
@@ -564,6 +591,10 @@ impl Engine {
             w / children.len().max(1) as i32
         };
         for c in &children {
+            // issue #46: GONE é removido do layout — não ocupa nem acumula
+            if self.vis_of(*c) == Vis::Gone {
+                continue;
+            }
             let (cx, cy) = match orientation {
                 1 => (x, acc_y),
                 _ => (acc_x, y),
@@ -599,6 +630,14 @@ impl Engine {
         }
     }
 
+    /// issue #46: visibilidade host da view (layout/hit-test/dump).
+    fn vis_of(&self, v: ObjRef) -> Vis {
+        match self.fw.get(v) {
+            Some(HostObj::View { vis, .. }) => *vis,
+            _ => Vis::Visible,
+        }
+    }
+
     fn h_of(&self, v: ObjRef) -> i32 {
         match self.fw.get(v) {
             Some(HostObj::View { h, .. }) => *h,
@@ -613,7 +652,7 @@ impl Engine {
             y,
             w,
             h,
-            visible,
+            vis,
             enabled,
             text,
             children,
@@ -626,7 +665,11 @@ impl Engine {
         let class = self.heap.class_of(v).unwrap_or("?").to_string();
         let name = class.trim_start_matches('L').trim_end_matches(';');
         let indent = "  ".repeat(depth);
-        let vis = if *visible { "" } else { " INVISIBLE" };
+        let vis_tag = match *vis {
+            Vis::Visible => "",
+            Vis::Invisible => " INVISIBLE", // ocupa espaço, não desenha/clique
+            Vis::Gone => " GONE",           // removido do layout (issue #46)
+        };
         let en = if *enabled { "" } else { " DISABLED" };
         let txt = if text.is_empty() {
             String::new()
@@ -650,7 +693,7 @@ impl Engine {
             (false, _) => " horizontal".to_string(),
         };
         out.push_str(&format!(
-            "{indent}{name} {idtxt} [{x},{y} {w}x{h}]{orient}{txt}{vis}{en}\n"
+            "{indent}{name} {idtxt} [{x},{y} {w}x{h}]{orient}{txt}{vis_tag}{en}\n"
         ));
         for c in children {
             self.dump_view(*c, depth + 1, out);
@@ -900,17 +943,17 @@ pub fn call_host_instance(
         }
         (VIEW, "setVisibility") if is_view(vm) => {
             let v = args[0].as_int()?;
-            if let Some(HostObj::View { visible, .. }) = vm.fw.objects.get_mut(&recv) {
-                *visible = v == 0; // 0 = VISIBLE
+            if let Some(HostObj::View { vis, .. }) = vm.fw.objects.get_mut(&recv) {
+                *vis = Vis::from_java(v); // 0/1/2 → visible/invisible/gone
             }
             Ok(Some(Value::Null))
         }
         (VIEW, "getVisibility") if is_view(vm) => {
             let vis = match vm.fw.get(recv) {
-                Some(HostObj::View { visible, .. }) => *visible,
-                _ => false,
+                Some(HostObj::View { vis, .. }) => *vis,
+                _ => Vis::Visible,
             };
-            Ok(Some(Value::Int(vis as i32)))
+            Ok(Some(Value::Int(vis.to_java())))
         }
         (VIEW, "setOnClickListener") if is_view(vm) => {
             let listener = match args.first() {

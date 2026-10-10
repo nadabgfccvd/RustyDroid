@@ -438,11 +438,27 @@ fn xml_visibility_and_enabled_reach_host_state() {
         .expect("launch");
 
     let dump = e.dump_ui();
-    assert!(dump.contains("INVISIBLE"), "GONE marca invisível: {dump}");
+    // issue #46: GONE é estado PRÓPRIO (não INVISIBLE) e sai do layout —
+    // o Button (irmão seguinte) sobe para y=0
+    assert!(dump.contains("GONE"), "GONE é anotado no dump: {dump}");
+    assert!(
+        !dump.contains("INVISIBLE"),
+        "GONE não deve ser confundido com INVISIBLE: {dump}"
+    );
     assert!(dump.contains("DISABLED"), "enabled=false marca: {dump}");
+    let btn_line = dump
+        .lines()
+        .find(|l| l.contains("Button"))
+        .expect("button no dump");
+    assert!(
+        btn_line.contains("[0,0"),
+        "GONE não ocupa espaço — Button em y=0: {btn_line}"
+    );
+    assert!(btn_line.contains("DISABLED"), "enabled no dump: {btn_line}");
 
-    // toque no botão desabilitado: hit_test não devolve view disabled
-    let hit = e.touch_app(10, 60).expect("touch");
+    // toque no botão desabilitado (agora em y=0, GONE não empurrou):
+    // hit_test não devolve view disabled
+    let hit = e.touch_app(10, 10).expect("touch");
     assert!(!hit, "botão disabled não deve acionar onClick");
 }
 

@@ -73,6 +73,11 @@ fn layout_entry(apk: &rd_apk::Apk, key: &str) -> Result<String, VmExit> {
     }
     let suffix = format!("/{key}.xml");
     for n in apk.container().names_with_prefix("res/layout") {
+        // issue #46: o prefixo cru casa "res/layoutfoo/" — exigir res/layout/
+        // (canonical já tratado acima) ou res/layout-<config>/
+        if !n["res/layout".len()..].starts_with('-') {
+            continue;
+        }
         if n.ends_with(&suffix) {
             return Ok(n.to_string());
         }
@@ -179,17 +184,31 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement) -> Result<(), VmExit
                 }
             }
             "visibility" => {
-                let vis = match &a.value {
-                    AttrValue::Int(i) => *i == 0, // 0=VISIBLE (1=INVISIBLE, 2=GONE)
-                    AttrValue::String(s) => s == "visible",
-                    _ => true,
+                // issue #46: 3 estados reais — 0=VISIBLE, 1=INVISIBLE, 2=GONE
+                // (antes: colapsava em bool e GONE consumia espaço do layout)
+                let vis_state = match &a.value {
+                    AttrValue::Int(i) => framework::Vis::from_java(*i),
+                    AttrValue::String(s) => match s.as_str() {
+                        "invisible" => framework::Vis::Invisible,
+                        "gone" => framework::Vis::Gone,
+                        _ => framework::Vis::Visible,
+                    },
+                    _ => framework::Vis::Visible,
                 };
-                if let Some(framework::HostObj::View { visible, .. }) = vm.fw.objects.get_mut(&r) {
-                    *visible = vis;
+                if let Some(framework::HostObj::View { vis, .. }) = vm.fw.objects.get_mut(&r) {
+                    *vis = vis_state;
                 }
             }
             "enabled" => {
-                let en = a.value.as_bool().unwrap_or(true);
+                // issue #46: referência @bool/@string não resolvida NÃO pode
+                // virar true silencioso (resolução de typed-values chega no M4)
+                let en = match &a.value {
+                    AttrValue::Reference(_) => {
+                        debug_ref_unresolved("enabled", &a.value);
+                        true
+                    }
+                    v => v.as_bool().unwrap_or(true),
+                };
                 if let Some(framework::HostObj::View { enabled, .. }) = vm.fw.objects.get_mut(&r) {
                     *enabled = en;
                 }
@@ -215,6 +234,11 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement) -> Result<(), VmExit
                 // FOLHA: dimensão explícita → px; match_parent/wrap_content
                 // mantêm o default do modelo (touch target). Contêineres têm
                 // a altura COMPUTADA pelo passe de layout (soma/max).
+                // issue #46: @dimen/x por referência não pode virar default
+                // silencioso (bounds errados sem pista) — avisa em debug
+                if let AttrValue::Reference(_) = &a.value {
+                    debug_ref_unresolved("layout_height", &a.value);
+                }
                 if let Some(px) = dimension_px(a) {
                     if let Some(framework::HostObj::View { h, .. }) = vm.fw.objects.get_mut(&r) {
                         *h = px;
@@ -264,6 +288,15 @@ fn dimension_px(a: &XmlAttribute) -> Option<i32> {
         }
         AttrValue::Int(i) if *i >= 0 => Some(*i), // px puro
         _ => None,
+    }
+}
+
+/// issue #46: atributo conhecido em forma de referência (@dimen/@bool) não
+/// pode ser ignorado em silêncio — log em debug (resolução real de
+/// typed-values via arsc é M4/render, onde o consumidor conhece a config).
+fn debug_ref_unresolved(attr: &str, v: &AttrValue) {
+    if std::env::var("RD_FW_DEBUG").is_ok() {
+        eprintln!("[fw] inflate: android:{attr}={v:?} é referência — não resolvida no modelo headless (default aplicado); resolução de typed-values é M4");
     }
 }
 
