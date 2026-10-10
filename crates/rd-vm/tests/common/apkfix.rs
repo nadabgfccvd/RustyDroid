@@ -305,8 +305,8 @@ fn collect_android_attr_names(node: &AxNode, out: &mut Vec<String>) {
     }
 }
 
-/// Manifest mínimo válido (root <manifest package=…> + application/activity
-/// + uses-sdk + intent-filter MAIN/LAUNCHER — issue #47: fidelidade ao aapt;
+/// Manifest mínimo válido (root `<manifest package=…>` com application,
+/// uses-sdk e intent-filter MAIN/LAUNCHER — issue #47: fidelidade ao aapt;
 /// min/target=1 preserva o comportamento dos testes que assumem o default).
 pub fn build_manifest_axml(package: &str, activity_desc: &str) -> Vec<u8> {
     let root = AxNode::new(
