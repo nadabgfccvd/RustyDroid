@@ -51,6 +51,11 @@ pub const ROW_H: i32 = 48;
 /// Android). sp usa a mesma escala (sem font scale no modelo headless).
 pub const DENSITY: f32 = 2.0;
 
+/// issue #40: cap de profundidade para caminhos host na árvore de views
+/// (hit-test/layout/dump) — árvore programática profunda (addView) não pode
+/// estourar a stack Rust e abortar o processo. Mesmo teto do inflate.
+const MAX_VIEW_DEPTH: usize = 512;
+
 /// Estado host de um objeto. O heap guarda apenas a classe; o estado Java
 /// real fica aqui. Um ObjRef = um HostObj.
 /// issue #46: visibilidade com 3 estados reais do Android — INVISIBLE ocupa
@@ -540,7 +545,16 @@ impl Engine {
     /// Deepest view visível/habilitada contendo o ponto (z-order: último
     /// filho primeiro); devolve o topo com listener? Não — devolve o deepest
     /// hit; o dispatch checa listener nele.
+    /// issue #40: cap de profundidade — árvore programática hostil (addView
+    /// profundo) não pode estourar a stack no hit-test (abort do processo).
     fn hit_test(&self, root: ObjRef, x: i32, y: i32) -> Option<ObjRef> {
+        self.hit_test_depth(root, x, y, 0)
+    }
+
+    fn hit_test_depth(&self, root: ObjRef, x: i32, y: i32, depth: usize) -> Option<ObjRef> {
+        if depth > MAX_VIEW_DEPTH {
+            return None;
+        }
         let h = self.fw.get(root)?;
         let HostObj::View {
             x: vx,
@@ -560,7 +574,7 @@ impl Engine {
             return None;
         }
         for c in children.iter().rev() {
-            if let Some(hit) = self.hit_test(*c, x, y) {
+            if let Some(hit) = self.hit_test_depth(*c, x, y, depth + 1) {
                 return Some(hit);
             }
         }
@@ -571,6 +585,14 @@ impl Engine {
     /// M3); altura = default do leaf (48px p/ TextView/Button) ou soma
     /// (vertical) / máximo (horizontal) dos filhos.
     fn layout(&mut self, v: ObjRef, x: i32, y: i32, w: i32) {
+        self.layout_depth(v, x, y, w, 0)
+    }
+
+    fn layout_depth(&mut self, v: ObjRef, x: i32, y: i32, w: i32, depth: usize) {
+        // issue #40: cap — árvore programática profunda não aborta o processo
+        if depth > MAX_VIEW_DEPTH {
+            return;
+        }
         let (orientation, children, own_h) = match self.fw.get(v) {
             Some(HostObj::View {
                 orientation,
@@ -599,7 +621,7 @@ impl Engine {
                 1 => (x, acc_y),
                 _ => (acc_x, y),
             };
-            self.layout(*c, cx, cy, child_w);
+            self.layout_depth(*c, cx, cy, child_w, depth + 1);
             let ch = self.h_of(*c);
             match orientation {
                 1 => acc_y += ch,
@@ -646,6 +668,11 @@ impl Engine {
     }
 
     fn dump_view(&self, v: ObjRef, depth: usize, out: &mut String) {
+        // issue #40: cap — dump de árvore hostil profunda não estoura stack
+        if depth > MAX_VIEW_DEPTH {
+            out.push_str(&format!("  ...árvore além de {MAX_VIEW_DEPTH} níveis (cortado)\n"));
+            return;
+        }
         let Some(HostObj::View {
             id,
             x,

@@ -92,8 +92,27 @@ fn layout_entry(apk: &rd_apk::Apk, key: &str) -> Result<String, VmExit> {
     .into())
 }
 
+/// issue #40: cap de profundidade da inflação — AXML hostil aninhado (a
+/// profundidade é controlada pelo atacante) estourava a stack Rust e abortava
+/// o processo (não é VmExit, viola a Lei 1). 512 níveis ≈ Android real
+/// (StackOverflowError do LayoutInflater); frame Rust ~400 B → ~200 KB de stack.
+const MAX_INFLATE_DEPTH: usize = 512;
+
 /// Infla um elemento (e descendentes) em view host.
 fn inflate_element(vm: &mut Engine, el: &XmlElement) -> Result<ObjRef, VmExit> {
+    inflate_element_depth(vm, el, 0)
+}
+
+fn inflate_element_depth(
+    vm: &mut Engine,
+    el: &XmlElement,
+    depth: usize,
+) -> Result<ObjRef, VmExit> {
+    if depth > MAX_INFLATE_DEPTH {
+        return Err(inflate_error(format!(
+            "AXML aninhado além de {MAX_INFLATE_DEPTH} níveis — estrutura hostil (cap do LayoutInflater)"
+        )));
+    }
     let desc = view_desc_of(&el.name)?;
     if !vm.cp.is_subtype(&desc, framework::VIEW) {
         return Err(inflate_error(format!(
@@ -116,7 +135,7 @@ fn inflate_element(vm: &mut Engine, el: &XmlElement) -> Result<ObjRef, VmExit> {
     vm.attach_host_state(&desc, r)?;
     apply_attrs(vm, r, el)?;
     for child in &el.children {
-        let c = inflate_element(vm, child)?;
+        let c = inflate_element_depth(vm, child, depth + 1)?;
         framework::add_child(vm, r, c)?;
     }
     Ok(r)

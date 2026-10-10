@@ -230,6 +230,20 @@ pub struct XmlElement {
     pub text: Option<String>,
 }
 
+// issue #40: o drop recursivo padrão estoura a stack em AXML hostil com
+// ~200k níveis de aninhamento (o PARSE é iterativo, o drop não — abort do
+// processo). Visita iterativa com stack explícita: tira os filhos de cada
+// nó antes de soltá-lo, sem recursão.
+impl Drop for XmlElement {
+    fn drop(&mut self) {
+        let mut stack = Vec::new();
+        stack.extend(std::mem::take(&mut self.children));
+        while let Some(mut node) = stack.pop() {
+            stack.extend(std::mem::take(&mut node.children));
+        }
+    }
+}
+
 impl XmlElement {
     /// Primeiro atributo com `ns==android` e nome local dado.
     pub fn android_attr(&self, name: &str) -> Option<&XmlAttribute> {
@@ -605,5 +619,27 @@ mod tests {
         // "50%": mantissa 50, radix 0, unit 0
         let pct50 = 50u32 << 8;
         assert!((complex_to_float(pct50) - 50.0).abs() < 1e-4);
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    /// issue #40: drop iterativo — XmlElement de 200k níveis não pode estourar
+    /// a stack ao ser solto (o parse é iterativo; o drop default não era).
+    #[test]
+    fn deep_xml_element_drops_without_stack_overflow() {
+        let mut cur = XmlElement::default();
+        for _ in 0..200_000 {
+            cur = XmlElement {
+                name: "n".to_string(),
+                attrs: Vec::new(),
+                children: vec![cur],
+                text: None,
+            };
+        }
+        // assert implícito: o drop abaixo não aborta o processo
+        drop(cur);
     }
 }

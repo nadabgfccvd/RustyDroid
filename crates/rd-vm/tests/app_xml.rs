@@ -513,3 +513,51 @@ fn inflate_builds_host_tree_shape() {
     assert_eq!(*id, 0, "raiz sem id");
     let _ = act;
 }
+
+// ── issue #40: cap de profundidade do LayoutInflater (AXML hostil)
+
+/// AXML aninhado além do cap (2.000 níveis) falha TIPADO (INFLATE) — antes:
+/// estourava a stack Rust e ABORTAVA o processo (Lei 1 violada).
+#[test]
+fn hostile_deep_axml_is_typed_error_not_abort() {
+    // cadeia de 2.000 LinearLayouts com Button na ponta
+    let mut cur = AxNode::new("Button", vec![], vec![]);
+    for _ in 0..600 {
+        cur = AxNode::new(
+            "LinearLayout",
+            vec![a(true, "orientation", AxVal::Int(1))],
+            vec![cur],
+        );
+    }
+    let apk_bytes = build_fixture(vec![("activity_main", main_layout()), ("deep", cur)]);
+
+    let mut b = DexBuilder::new();
+    register_platform_classes(&mut b);
+    let refs = xml_refs(&mut b);
+    let main = b.class("LDeep;", "Landroid/app/Activity;");
+    b.direct(
+        main,
+        "onCreate",
+        "V",
+        vec!["Landroid/os/Bundle;"],
+        ACC_PUBLIC,
+        Some(b.code(4, 2, 2, {
+            let mut u = op31i(0x14, 1, LAYOUT_BAD); // reusa o slot do layout extra
+            u.extend(op35c(0x6E, 2, refs.set_content_i, [2, 1, 0, 0, 0]));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+    let mut e = engine_of(&b);
+    e.set_resources(rd_apk::Apk::from_bytes(apk_bytes).expect("apk"));
+    let err = e
+        .launch_app("LDeep;", "com.test.deep", Vec::new())
+        .expect_err("AXML profundo deve falhar tipado (cap 512), nunca abortar");
+    match err {
+        VmExit::Error(rde) => {
+            assert_eq!(rde.code, "INFLATE", "{rde}");
+            assert!(rde.cause.contains("níveis"), "{rde}");
+        }
+        other => panic!("esperava VmExit::Error (INFLATE), veio {other:?}"),
+    }
+}

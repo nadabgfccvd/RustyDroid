@@ -539,3 +539,16 @@ pub fn build_apk(
     }
     z.build()
 }
+
+// issue #40: o AxNode do fixture tem o MESMO risco de drop recursivo que o
+// XmlElement do parser (o teste de AXML profundo constrói a árvore com este
+// tipo) — drop iterativo com stack explícita.
+impl Drop for AxNode {
+    fn drop(&mut self) {
+        let mut stack = Vec::new();
+        stack.extend(std::mem::take(&mut self.children));
+        while let Some(mut node) = stack.pop() {
+            stack.extend(std::mem::take(&mut node.children));
+        }
+    }
+}
