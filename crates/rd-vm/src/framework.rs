@@ -1403,3 +1403,115 @@ fn string_arg_of(vm: &Engine, v: Option<&Value>) -> Result<String, VmExit> {
         ))),
     }
 }
+
+/// M4: nó da árvore de UI ESTRUTURADA — fonte de verdade para o uiautomator
+/// dump e o screenshot do rd-render (campo a campo, não string soup).
+#[derive(Debug, Clone)]
+pub struct UiNode {
+    /// Classe Java ("android.widget.TextView").
+    pub class: String,
+    /// resource-id no formato uiautomator ("com.pkg:id/tv"), se o id casar no
+    /// arsc; ids não resolvidos viram "com.pkg:id/<número>".
+    pub resource_id: Option<String>,
+    pub text: String,
+    /// (x, y, w, h) em px do viewport.
+    pub bounds: (i32, i32, i32, i32),
+    pub visibility: Vis,
+    pub enabled: bool,
+    pub clickable: bool,
+    pub children: Vec<UiNode>,
+}
+
+impl Engine {
+    /// M4 (DoD "get_ui_tree com ids certos"): árvore de UI da activity
+    /// corrente, estruturada — o rd-render formata (uiautomator XML) e pinta
+    /// (screenshot) a partir daqui. `None` = sem activity/window.
+    pub fn view_tree(&self) -> Option<UiNode> {
+        let activity = self.fw.current_activity?;
+        let content = self.window_content_of(activity)?;
+        Some(self.build_ui_node(content, 0))
+    }
+
+    fn build_ui_node(&self, v: ObjRef, depth: usize) -> UiNode {
+        // issue #40: mesmo cap do dump textual (árvore programática hostil)
+        let children_view: Vec<ObjRef> = if depth > MAX_VIEW_DEPTH {
+            Vec::new()
+        } else {
+            match self.fw.get(v) {
+                Some(HostObj::View { children, .. }) => children.clone(),
+                _ => Vec::new(),
+            }
+        };
+        let (class, resource_id, text, bounds, visibility, enabled, clickable) =
+            match self.fw.get(v) {
+                Some(HostObj::View {
+                    id,
+                    x,
+                    y,
+                    w,
+                    h,
+                    vis,
+                    enabled,
+                    text,
+                    click_listener,
+                    click_method,
+                    ..
+                }) => {
+                    let class = self
+                        .heap
+                        .class_of(v)
+                        .unwrap_or("Landroid/view/View;")
+                        .trim_start_matches('L')
+                        .trim_end_matches(';')
+                        .replace('/', ".");
+                    let resource_id = if *id == 0 {
+                        None
+                    } else {
+                        let name = self
+                            .fw
+                            .resources
+                            .as_ref()
+                            .and_then(|apk| apk.arsc.as_ref())
+                            .and_then(|a| a.resolve_name(*id as u32))
+                            .unwrap_or_else(|| format!("id/{id}"));
+                        // resolve_name devolve "@type/name" ou "type/name" —
+                        // uiautomator quer "package:type/name"
+                        let name = name.trim_start_matches('@');
+                        Some(format!("{}:{name}", self.fw.package_name))
+                    };
+                    (
+                        class,
+                        resource_id,
+                        text.clone(),
+                        (*x, *y, *w, *h),
+                        *vis,
+                        *enabled,
+                        click_listener.is_some() || click_method.is_some(),
+                    )
+                }
+                _ => (
+                    "android.view.View".to_string(),
+                    None,
+                    String::new(),
+                    (0, 0, 0, 0),
+                    Vis::Visible,
+                    true,
+                    false,
+                ),
+            };
+        let children = children_view
+            .iter()
+            .map(|c| self.build_ui_node(*c, depth + 1))
+            .collect();
+        UiNode {
+            class,
+            resource_id,
+            text,
+            bounds,
+            visibility,
+            enabled,
+            clickable,
+            children,
+        }
+    }
+}

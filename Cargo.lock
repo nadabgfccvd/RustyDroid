@@ -286,6 +286,7 @@ dependencies = [
 name = "rd-render"
 version = "0.1.0"
 dependencies = [
+ "rd-vm",
  "serde",
  "serde_json",
 ]

@@ -1,13 +1,19 @@
-//! rd-render — renderers headless/winit/web + uiautomator dump + a11y tree.
-//!
-//! M0: stub estruturado. Lei 1 (sem falha silenciosa): toda tentativa de uso
-//! responde `NOT_IMPLEMENTED` com o contrato {code, cause, suggestion, module_id}.
+//! rd-render — M4: UI dump uiautomator + screenshot headless (software
+//! renderer determinístico + PNG sem deps). Os renderers winit/web continuam
+//! stub (M11): toda tentativa de uso responde `NOT_IMPLEMENTED` com o
+//! contrato {code, cause, suggestion, module_id} (Lei 1).
 
 use serde::{Deserialize, Serialize};
 
+pub mod shot;
+pub mod ui_dump;
+
+pub use shot::{render_snapshot, Framebuffer, VIEW_H, VIEW_W};
+pub use ui_dump::uiautomator_xml;
+
 pub const MODULE_ID: &str = "rd-render";
-/// Milestone do roadmap em que este módulo entra de verdade.
-pub const MILESTONE: &str = "M4";
+/// Renderers de janela/web (winit/webcanvas) — outro milestone.
+pub const MILESTONE: &str = "M11";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RdError {
