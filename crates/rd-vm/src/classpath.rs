@@ -341,7 +341,7 @@ impl Classpath {
         //   · todo array <: Object, Cloneable, Serializable
         //   · [LSub; <: [LSup; ⇔ Sub <: Sup (recursão no elemento)
         //   · [X <: [LObject; ⇔ X é tipo de referência (primitivos invariantes)
-        if sub.starts_with('[') {
+        if let Some(sub_elem) = sub.strip_prefix('[') {
             if matches!(
                 sup,
                 "Ljava/lang/Object;" | "Ljava/lang/Cloneable;" | "Ljava/io/Serializable;"
@@ -349,7 +349,6 @@ impl Classpath {
                 return true;
             }
             if let Some(sup_elem) = sup.strip_prefix('[') {
-                let sub_elem = &sub[1..];
                 if sup_elem == "Ljava/lang/Object;" {
                     return !matches!(
                         sub_elem,

@@ -1870,7 +1870,7 @@ fn array_covariance_aput_and_instanceof() {
             u.extend(op11n(0x12, 3, 0)); // const/4 v3, 0
             u.extend(op23x(0x4D, 2, 1, 3)); // aput-object v2, v1, v3
             u.extend(op11n(0x12, 0, 1)); // v0 = 1 (chegou aqui)
-            u.extend(op10x(0x0E)); // return v0
+            u.extend(op11x(0x0F, 0)); // return v0
             u
         })),
     );
@@ -1942,7 +1942,7 @@ fn aput_object_unrelated_still_ase() {
             u.extend(op11n(0x12, 3, 0)); // const/4 v3, 0
             u.extend(op23x(0x4D, 5, 1, 3)); // aput-object v5, v1, v3 → ASE
             u.extend(op11n(0x12, 0, 1));
-            u.extend(op10x(0x0E));
+            u.extend(op11x(0x0F, 0));
             u
         })),
     );
