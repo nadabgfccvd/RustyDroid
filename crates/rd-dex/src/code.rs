@@ -866,15 +866,18 @@ fn decode_payload(insns: &[u16], addr: usize, kind: PayloadKind) -> RdResult<(In
             let lo = unit(2)? as u32;
             let hi = unit(3)? as u32;
             let element_count = (hi << 16) | lo;
-            let total = element_count
-                .checked_mul(element_width as u32)
-                .ok_or_else(|| RdError::parse("fill-array-data: tamanho overflow"))?;
+            // issue #44: total × padded em u64 — element_count=0x00010001 ×
+            // width=0xFFFF → o produto (0xFFFFFFFF) cabe em u32, mas
+            // div_ceil(2)*2 = 0x100000000 estoura u32: panic em debug, e em
+            // release envolve para 0 → o guard "cabe no método" passava e o
+            // decoder emitia Payload interno inconsistente (data: [])
+            let total = (element_count as u64) * (element_width as u64);
             let padded = total.div_ceil(2) * 2;
             // issue #19: o payload precisa caber no fluxo de instruções
             // restante do método (header de 4 units + dados) — validar ANTES
             // do with_capacity: element_count é u32 do atacante e a alocação
             // de até 4 GiB abortava o processo (não é pânico capturável)
-            let needed = 4u64 + (padded as u64) / 2;
+            let needed = 4u64 + padded / 2;
             let available = (insns.len().saturating_sub(addr)) as u64;
             if available < needed {
                 return Err(RdError::invalid_format(format!(
@@ -1278,6 +1281,21 @@ mod tests {
         // (u32 do atacante; sem u32 overflow no produto)
         let insns: Vec<u16> = vec![
             0x0026, 0x0003, 0x0000, 0x0300, 0x0002, 0x0000, 0x4000, 0x0000, 0x0000, 0x0000,
+        ];
+        let data = build_code_item_regs(4, 0, &insns);
+        let e = CodeItem::parse(&data, 0).unwrap_err();
+        assert_eq!(e.code, "INVALID_FORMAT");
+        assert!(e.cause.contains("fill-array-data"));
+    }
+
+    #[test]
+    fn fill_array_data_padded_u32_wrap_is_typed_error() {
+        // issue #44: count=0x00010001 × width=0xFFFF → produto 0xFFFFFFFF CABE
+        // em u32, mas div_ceil(2)*2 = 0x100000000 estourava: panic "multiply
+        // with overflow" em debug; em release envolvia para 0 → guard passava
+        // e o decoder emitia Payload::ArrayData inconsistente (data: [])
+        let insns: Vec<u16> = vec![
+            0x0026, 0x0003, 0x0000, 0x0300, 0xFFFF, 0x0001, 0x0001, 0x0000, 0x0000, 0x0000,
         ];
         let data = build_code_item_regs(4, 0, &insns);
         let e = CodeItem::parse(&data, 0).unwrap_err();
