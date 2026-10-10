@@ -42,3 +42,6 @@ crates/*/fuzz/corpus
 # Golden VM harness (política GH-05: jars/binários nunca commitados — ver golden/vm/README.md)
 /golden/vm/cache/
 /golden/vm/build/
+
+# local fuzz campaign logs (scripts/fuzz-campaign.sh)
+fuzz-logs/
