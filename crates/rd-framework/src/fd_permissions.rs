@@ -189,8 +189,6 @@ pub enum Severity {
 pub struct PermissionEngine {
     pub table: PermissionTable,
     states: BTreeMap<String, GrantState>,
-    /// targetSdk do app instalado — comuta semânticas (ex.: permissions @23+).
-    target_sdk: u32,
 }
 
 impl PermissionEngine {
@@ -237,27 +235,22 @@ impl PermissionEngine {
             };
             states.insert(up.name.clone(), state);
         }
-        PermissionEngine {
-            table,
-            states,
-            target_sdk: manifest.target_sdk,
-        }
-    }
-
-    pub fn target_sdk(&self) -> u32 {
-        self.target_sdk
+        PermissionEngine { table, states }
     }
 
     /// issue #31: marcador de confiança para o output — permissões de nível
     /// signature/signatureOrSystem/internal são "auto-concedidas" apenas
     /// porque o runtime se posiciona como system; apps reais de terceiros
     /// as teriam NEGADAS. O JSON do CLI usa isto para não enganar agentes.
+    /// issue #51: Internal é o mais system-only de todos — entrou no marker.
     pub fn granted_by(&self, name: &str) -> Option<&'static str> {
         if self.state(name) == Some(GrantState::AutoGranted) {
             if let Some(def) = self.table.get(name) {
                 return matches!(
                     def.level,
-                    ProtectionLevel::Signature | ProtectionLevel::SignatureOrSystem
+                    ProtectionLevel::Signature
+                        | ProtectionLevel::SignatureOrSystem
+                        | ProtectionLevel::Internal
                 )
                 .then_some("runtime-is-system");
             }

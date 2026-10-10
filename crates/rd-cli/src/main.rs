@@ -227,17 +227,21 @@ struct DataDir {
 }
 
 impl DataDir {
-    /// Erro tipado se o arquivo esperado não existir num --data explícito.
+    /// Erro tipado se o arquivo esperado não existir num --data explícito
+    /// (ou RD_DATA_DIR — issue #51: env é explícito também).
     fn require(&self, file: &str) -> Result<(), RdError> {
         if self.explicit {
             if let Some(d) = &self.path {
                 if !d.join(file).exists() {
-                    return Err(RdError::io(
-                        &std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("{} não encontrado", d.join(file).display()),
+                    // issue #51: module_id correto — este erro nasce no rd-cli
+                    // (não no rd-apk, que era o MODULE_ID do RdError::io herdado)
+                    return Err(RdError::new(
+                        "IO_ERROR",
+                        format!(
+                            "--data {file}: {} não encontrado: fallback para o embedded desativado",
+                            d.join(file).display()
                         ),
-                        format!("--data {file}: fallback para o embedded desativado"),
+                        "rd-cli",
                     ));
                 }
             }
@@ -251,7 +255,10 @@ fn run(cli: Cli) -> i32 {
     let data_path = data_dir(cli.data.as_deref());
     let dd = DataDir {
         path: data_path,
-        explicit: cli.data.is_some(),
+        // issue #51: RD_DATA_DIR (env) também é escolha explícita do usuário —
+        // sem isso, um env apontando para diretório vazio caía silenciosamente
+        // no embedded, sem o warning do require()
+        explicit: cli.data.is_some() || std::env::var_os("RD_DATA_DIR").is_some(),
     };
     let result = match &cli.cmd {
         Cmd::Inspect { path, json, device } => cmd_inspect(path, *json, device.as_deref(), &dd),
@@ -477,10 +484,20 @@ fn cmd_inspect(path: &Path, json: bool, device: Option<&str>, dd: &DataDir) -> R
         let mut v = serde_json::to_value(&apk)
             .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?;
         if let serde_json::Value::Object(map) = &mut v {
+            // issue #51: mesmo shape do `rd perm list --json` ({state, granted_by?})
+            // — granted_by é o contrato primário de confiança para agents
+            let mut perms = serde_json::Map::new();
+            for (name, state) in engine.all_states() {
+                let mut o = serde_json::Map::new();
+                o.insert("state".into(), serde_json::json!(state));
+                if let Some(by) = engine.granted_by(name) {
+                    o.insert("granted_by".into(), serde_json::json!(by));
+                }
+                perms.insert(name.clone(), serde_json::Value::Object(o));
+            }
             map.insert(
                 "permissions_state".into(),
-                serde_json::to_value(engine.all_states())
-                    .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?,
+                serde_json::Value::Object(perms),
             );
             map.insert(
                 "floor_status".into(),
