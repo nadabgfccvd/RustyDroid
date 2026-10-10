@@ -73,19 +73,13 @@ pub fn detect(data: &[u8], cd_offset: u64, zip: &Zip) -> SigningInfo {
     // obrigatório antes de qualquer slice; o sentinela ZIP64 (0xFFFFFFFF)
     // nunca aponta para um bloco real (o Zip::parse resolve ZIP64 e expõe o
     // offset verdadeiro via `cd_offset()`)
-    if cd_offset >= 32
-        && cd_offset != 0xFFFF_FFFF
-        && cd_offset <= data.len() as u64
-    {
+    if cd_offset >= 32 && cd_offset != 0xFFFF_FFFF && cd_offset <= data.len() as u64 {
         let cd = cd_offset as usize;
         if &data[cd - 16..cd] == APK_SIG_BLOCK_MAGIC {
             // issue #18: block_size lido do arquivo — toda aritmética checked
             // (a soma não-checada `block_size + 8` envolvia em release)
             if let Some(block_size) = u64_at(data, cd - 24).map(|v| v as usize) {
-                if block_size
-                    .checked_add(8)
-                    .is_some_and(|v| v <= cd)
-                {
+                if block_size.checked_add(8).is_some_and(|v| v <= cd) {
                     let block_start = cd - block_size - 8;
                     if block_start + 8 <= data.len() {
                         walk_pairs(data, block_start + 8, cd - 24, &mut info);
@@ -105,7 +99,9 @@ fn walk_pairs(data: &[u8], mut p: usize, end: usize, info: &mut SigningInfo) {
         if q > end || q > data.len() {
             break;
         }
-        let Some(pair_len) = u64_at(data, p) else { break };
+        let Some(pair_len) = u64_at(data, p) else {
+            break;
+        };
         // fim do par: p + 8 + pair_len (u64 para não truncar/envolver)
         let Some(pair_end) = (p as u64)
             .checked_add(8)
@@ -113,9 +109,7 @@ fn walk_pairs(data: &[u8], mut p: usize, end: usize, info: &mut SigningInfo) {
         else {
             break;
         };
-        if pair_len < 4
-            || pair_end > (end as u64).saturating_add(8)
-            || pair_end > data.len() as u64
+        if pair_len < 4 || pair_end > (end as u64).saturating_add(8) || pair_end > data.len() as u64
         {
             break; // par malformado: não travamos a detecção
         }

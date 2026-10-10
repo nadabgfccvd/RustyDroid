@@ -588,11 +588,7 @@ mod tests {
         let zip = Zip::parse(bytes).unwrap();
         let err = zip.read("big.bin").unwrap_err();
         assert_eq!(err.code, "INVALID_FORMAT");
-        assert!(
-            err.cause.contains("teto global"),
-            "mensagem: {}",
-            err.cause
-        );
+        assert!(err.cause.contains("teto global"), "mensagem: {}", err.cause);
     }
 
     /// Entrada DEFLATE legítima (declaração honesta) continua inflando igual.

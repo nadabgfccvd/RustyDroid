@@ -646,7 +646,10 @@ mod gating_tests {
         );
         let m = manifest_target(23, &[("CAMERA", None, true)]);
         let e = PermissionEngine::install(&m, table);
-        assert_eq!(e.state("android.permission.CAMERA"), Some(GrantState::RuntimePending));
+        assert_eq!(
+            e.state("android.permission.CAMERA"),
+            Some(GrantState::RuntimePending)
+        );
     }
 
     /// issue #31: signature AutoGranted carrega marcador runtime-is-system

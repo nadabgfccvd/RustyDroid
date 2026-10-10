@@ -1552,12 +1552,7 @@ fn op31i(op: u8, a: u8, lit: i32) -> Vec<u16> {
     ]
 }
 fn array_payload(width: u16, count: u32, data_units: &[u16]) -> Vec<u16> {
-    let mut v = vec![
-        0x0300u16,
-        width,
-        count as u16,
-        (count >> 16) as u16,
-    ];
+    let mut v = vec![0x0300u16, width, count as u16, (count >> 16) as u16];
     v.extend_from_slice(data_units);
     v
 }
@@ -1583,7 +1578,10 @@ fn nop_is_executable_real_opcode() {
     );
     let mut e = engine_of(&b);
     assert_eq!(
-        invoke(&mut e, "com_nop", "()I", &[]).unwrap().as_int().unwrap(),
+        invoke(&mut e, "com_nop", "()I", &[])
+            .unwrap()
+            .as_int()
+            .unwrap(),
         41
     );
 }
@@ -1641,15 +1639,10 @@ fn nested_try_selects_innermost_handler() {
     let mut e = engine_of(&b);
     // Java: div por zero dentro do try interno → handler INTERNO (-1)
     assert_eq!(
-        invoke(
-            &mut e,
-            "aninhado",
-            "(II)I",
-            &[Value::Int(0), Value::Int(0)]
-        )
-        .unwrap()
-        .as_int()
-        .unwrap(),
+        invoke(&mut e, "aninhado", "(II)I", &[Value::Int(0), Value::Int(0)])
+            .unwrap()
+            .as_int()
+            .unwrap(),
         -1
     );
 }
@@ -1671,11 +1664,7 @@ fn fill_array_data_float_and_double() {
             let mut u = op11n(0x12, 0, 2); // 0: v0 = 2
             u.extend(op22c(0x23, 0, 0, f_arr)); // 1..2: new-array v0, v0, [F
             u.extend(op31t(0x26, 0, 3)); // 3..5: fill-array-data v0, +3
-            u.extend(array_payload(
-                4,
-                2,
-                &[0x0000, 0x3FC0, 0x0000, 0x4020],
-            )); // 6..9: payload (4 units)
+            u.extend(array_payload(4, 2, &[0x0000, 0x3FC0, 0x0000, 0x4020])); // 6..9: payload (4 units)
             u.extend(op11n(0x12, 2, 0)); // 10: v2 = 0
             u.extend(op23x(0x44, 1, 0, 2)); // 11..12: aget v1, v0, v2
             u.extend(op11x(0x0F, 1)); // 13: return v1
@@ -1698,7 +1687,10 @@ fn stringbuilder_append_null_appends_literal() {
     let cls = b.class("LCaso;", "Ljava/lang/Object;");
     let sb_tidx = b.type_idx("Ljava/lang/StringBuilder;");
     let s_a = b.intern("a") as u16;
-    let p_str_ret_sb = b.proto_idx("Ljava/lang/StringBuilder;", vec!["Ljava/lang/String;".to_string()]);
+    let p_str_ret_sb = b.proto_idx(
+        "Ljava/lang/StringBuilder;",
+        vec!["Ljava/lang/String;".to_string()],
+    );
     let p_v_str = b.proto_idx("V", vec!["Ljava/lang/String;".to_string()]);
     let init_str = b.method_idx("Ljava/lang/StringBuilder;", p_v_str, "<init>");
     let p_sb_ret_str = b.proto_idx("Ljava/lang/String;", vec![]); // toString() — receiver não é param
@@ -1723,7 +1715,13 @@ fn stringbuilder_append_null_appends_literal() {
         })),
     );
     let mut e = engine_of(&b);
-    let v = invoke(&mut e, "concat_null", "(I)Ljava/lang/String;", &[Value::Int(0)]).unwrap();
+    let v = invoke(
+        &mut e,
+        "concat_null",
+        "(I)Ljava/lang/String;",
+        &[Value::Int(0)],
+    )
+    .unwrap();
     match v {
         Value::Obj(r) => assert_eq!(e.heap.as_str(r).unwrap(), "anull"),
         other => panic!("esperado Obj(String), got {other:?}"),
@@ -1902,7 +1900,10 @@ fn clinit_failure_semantics_and_super_first() {
     let err1 = invoke(&mut e, "toque", "()I", &[]).unwrap_err();
     match &err1 {
         VmExit::Exception(t) => {
-            assert_eq!(t.class, "Ljava/lang/ExceptionInInitializerError;", "1º acesso: {err1}")
+            assert_eq!(
+                t.class, "Ljava/lang/ExceptionInInitializerError;",
+                "1º acesso: {err1}"
+            )
         }
         other => panic!("1º acesso deveria ser Exception, got {other:?}"),
     }
@@ -1910,7 +1911,10 @@ fn clinit_failure_semantics_and_super_first() {
     let err2 = invoke(&mut e, "toque", "()I", &[]).unwrap_err();
     match &err2 {
         VmExit::Exception(t) => {
-            assert_eq!(t.class, "Ljava/lang/NoClassDefFoundError;", "2º acesso: {err2}")
+            assert_eq!(
+                t.class, "Ljava/lang/NoClassDefFoundError;",
+                "2º acesso: {err2}"
+            )
         }
         other => panic!("2º acesso deveria ser Exception, got {other:?}"),
     }

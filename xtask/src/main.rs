@@ -151,7 +151,9 @@ fn compat_report(root: &Path, out: &Path) -> Result<()> {
         "- behavior-switches.toml: **{switch_count}** comutadores targetSdk 26→36 (PRF-07)\n"
     ));
     md.push_str("\n## Compatibilidade por módulo (checklist PARTE 0)\n\n");
-    md.push_str("- Núcleo (0.0): parcial (CORE-01..06 M0; rd-dex M1; VM M2 — métodos puros executam)\n");
+    md.push_str(
+        "- Núcleo (0.0): parcial (CORE-01..06 M0; rd-dex M1; VM M2 — métodos puros executam)\n",
+    );
     md.push_str("- Framework/render/agente: `NOT_IMPLEMENTED(module_id)` estruturado (M3+)\n");
 
     std::fs::create_dir_all(out.parent().unwrap_or(Path::new(".")))?;

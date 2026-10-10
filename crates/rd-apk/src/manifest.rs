@@ -565,7 +565,8 @@ fn resolve_label(
         // issue #35: AXML craftado/stripped pode ter TYPE_STRING com raw=None —
         // o valor decodificado (AttrValue::String) não pode ser descartado
         _ => (
-            raw.map(str::to_owned).or_else(|| value.as_string().map(str::to_owned)),
+            raw.map(str::to_owned)
+                .or_else(|| value.as_string().map(str::to_owned)),
             None,
         ),
     }

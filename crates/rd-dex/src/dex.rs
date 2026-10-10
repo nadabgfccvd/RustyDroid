@@ -595,8 +595,14 @@ mod tests {
         // não existem na tabela de type codes do dex-format)
         assert!(matches!(MapType::from_code(0x0007), MapType::CallSiteId));
         assert!(matches!(MapType::from_code(0x0008), MapType::MethodHandle));
-        assert!(matches!(MapType::from_code(0x7000), MapType::Unknown(0x7000)));
-        assert!(matches!(MapType::from_code(0x7001), MapType::Unknown(0x7001)));
+        assert!(matches!(
+            MapType::from_code(0x7000),
+            MapType::Unknown(0x7000)
+        ));
+        assert!(matches!(
+            MapType::from_code(0x7001),
+            MapType::Unknown(0x7001)
+        ));
         assert!(matches!(
             MapType::from_code(0xF000),
             MapType::HiddenapiClassData

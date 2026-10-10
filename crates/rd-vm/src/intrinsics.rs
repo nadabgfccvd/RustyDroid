@@ -402,7 +402,10 @@ pub fn call_instance_intrinsic(
         }
         (LONG, "toString", "()Ljava/lang/String;") => {
             let v = vm.heap.get_field(recv, "value")?;
-            Ok(Some(Value::Obj(alloc_string(vm, v.as_long()?.to_string())?)))
+            Ok(Some(Value::Obj(alloc_string(
+                vm,
+                v.as_long()?.to_string(),
+            )?)))
         }
         (STRING, "toString", "()Ljava/lang/String;") => {
             // toString de String retorna a própria string (antes do fallback
@@ -555,7 +558,11 @@ fn java_min_f32(a: f32, b: f32) -> f32 {
     if a.is_nan() || b.is_nan() {
         f32::NAN
     } else if a == 0.0 && b == 0.0 {
-        if a.is_sign_negative() { a } else { b } // -0.0 vence no min
+        if a.is_sign_negative() {
+            a
+        } else {
+            b
+        } // -0.0 vence no min
     } else {
         a.min(b)
     }
@@ -564,7 +571,11 @@ fn java_max_f32(a: f32, b: f32) -> f32 {
     if a.is_nan() || b.is_nan() {
         f32::NAN
     } else if a == 0.0 && b == 0.0 {
-        if a.is_sign_positive() { a } else { b } // +0.0 vence no max
+        if a.is_sign_positive() {
+            a
+        } else {
+            b
+        } // +0.0 vence no max
     } else {
         a.max(b)
     }
@@ -573,7 +584,11 @@ fn java_min_f64(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
     } else if a == 0.0 && b == 0.0 {
-        if a.is_sign_negative() { a } else { b }
+        if a.is_sign_negative() {
+            a
+        } else {
+            b
+        }
     } else {
         a.min(b)
     }
@@ -582,7 +597,11 @@ fn java_max_f64(a: f64, b: f64) -> f64 {
     if a.is_nan() || b.is_nan() {
         f64::NAN
     } else if a == 0.0 && b == 0.0 {
-        if a.is_sign_positive() { a } else { b }
+        if a.is_sign_positive() {
+            a
+        } else {
+            b
+        }
     } else {
         a.max(b)
     }

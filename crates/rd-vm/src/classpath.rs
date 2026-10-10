@@ -271,8 +271,7 @@ impl Classpath {
     /// superinterfaces, com guard de ciclo e cap de profundidade) — issue #26.
     fn interface_closure_contains(&self, start: &str, sup: &str) -> bool {
         let mut queue = self.interfaces_of(start);
-        let mut visited: std::collections::HashSet<String> =
-            queue.iter().cloned().collect();
+        let mut visited: std::collections::HashSet<String> = queue.iter().cloned().collect();
         let mut budget = 64;
         while let Some(cur) = queue.pop() {
             if cur == sup {

@@ -131,7 +131,12 @@ impl Heap {
         self.alloc(bytes, HeapObj::Str(s))
     }
 
-    pub fn alloc_array(&mut self, elem: ElemKind, len: usize, elem_class: &str) -> Result<ObjRef, OomError> {
+    pub fn alloc_array(
+        &mut self,
+        elem: ElemKind,
+        len: usize,
+        elem_class: &str,
+    ) -> Result<ObjRef, OomError> {
         // issue #28: o orçamento cobra o custo REAL de armazenamento na arena
         // (Value = 32 B), não o tamanho lógico do elemento (4/8 B) — com a
         // contabilidade antiga o RSS real chegava a ~8× o orçamento (DoS)
@@ -206,7 +211,9 @@ impl Heap {
         match self.get(r)? {
             HeapObj::Instance { class, .. } => Ok(class),
             HeapObj::Str(_) => Ok("Ljava/lang/String;"),
-            HeapObj::Array { elem, elem_class, .. } => match elem {
+            HeapObj::Array {
+                elem, elem_class, ..
+            } => match elem {
                 ElemKind::Int => Ok("[I"),
                 ElemKind::Long => Ok("[J"),
                 ElemKind::Float => Ok("[F"),

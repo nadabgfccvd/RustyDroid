@@ -334,7 +334,11 @@ fn data_dir(explicit: Option<&Path>) -> Option<PathBuf> {
 
 fn load_permissions(dd: &DataDir) -> Result<PermissionTable, RdError> {
     dd.require("permissions.toml")?;
-    match dd.path.as_deref().and_then(|d| d.join("permissions.toml").exists().then_some(d)) {
+    match dd
+        .path
+        .as_deref()
+        .and_then(|d| d.join("permissions.toml").exists().then_some(d))
+    {
         Some(d) => {
             let s = std::fs::read_to_string(d.join("permissions.toml"))
                 .map_err(|e| RdError::io(&e, "reading permissions.toml"))?;
@@ -364,8 +368,8 @@ fn load_dex_files(path: &Path) -> Result<Vec<(String, Dex)>, RdError> {
     // issue #38: cap prévio tipado — whole-file read sem teto + panic=abort
     // no release = abort sem erro estruturado em input gigante (budget piso E5)
     const MAX_INPUT: u64 = 512 * 1024 * 1024;
-    let meta = std::fs::metadata(path)
-        .map_err(|e| RdError::io(&e, format!("stat {}", path.display())))?;
+    let meta =
+        std::fs::metadata(path).map_err(|e| RdError::io(&e, format!("stat {}", path.display())))?;
     if meta.len() > MAX_INPUT {
         return Err(RdError::invalid_format(format!(
             "{} tem {} bytes (> teto de {} bytes): leitura recusada antes de alocar",
@@ -412,12 +416,7 @@ fn map_size(dex: &Dex, want: rd_dex::MapType) -> u32 {
 
 // ─── inspect ────────────────────────────────────────────────────────────────
 
-fn cmd_inspect(
-    path: &Path,
-    json: bool,
-    device: Option<&str>,
-    dd: &DataDir,
-) -> Result<(), RdError> {
+fn cmd_inspect(path: &Path, json: bool, device: Option<&str>, dd: &DataDir) -> Result<(), RdError> {
     let apk = open_apk(path)?;
     let table = load_permissions(dd)?;
     let engine = PermissionEngine::install(&apk.manifest, table);
@@ -425,7 +424,7 @@ fn cmd_inspect(
     let device_profile: Option<DeviceProfile> = match device {
         Some(id) => {
             dd.require("devices.toml")?;
-    let dt = DeviceTable::load(dd.path.as_deref())?;
+            let dt = DeviceTable::load(dd.path.as_deref())?;
             Some(
                 dt.get(id)
                     .ok_or_else(|| {
@@ -717,7 +716,11 @@ fn cmd_perm_list(path: &Path, json: bool, dd: &DataDir) -> Result<(), RdError> {
             .granted_by(name)
             .map(|b| format!(" [{b}]"))
             .unwrap_or_default();
-        println!("  {:<28} {:<16} {level}{marker}", format!("{state:?}"), name);
+        println!(
+            "  {:<28} {:<16} {level}{marker}",
+            format!("{state:?}"),
+            name
+        );
     }
     Ok(())
 }
@@ -981,7 +984,12 @@ fn cmd_vm_exec(
     let heap_budget = heap_mb
         .unwrap_or(256)
         .checked_mul(1024 * 1024)
-        .ok_or_else(|| RdError::invalid_format(format!("--heap-mb {} excede o limite", heap_mb.unwrap_or(256))))?;
+        .ok_or_else(|| {
+            RdError::invalid_format(format!(
+                "--heap-mb {} excede o limite",
+                heap_mb.unwrap_or(256)
+            ))
+        })?;
     let cfg = rd_vm::VmConfig {
         fuel: fuel.unwrap_or(rd_vm::VmConfig::default().fuel),
         max_depth: depth.unwrap_or(rd_vm::VmConfig::default().max_depth),

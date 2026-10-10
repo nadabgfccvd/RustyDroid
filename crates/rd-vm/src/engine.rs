@@ -214,11 +214,9 @@ impl Engine {
             Err(e) => {
                 self.clinit_failed.insert(class.to_string());
                 let cause = match &e {
-                    VmExit::Exception(t) => format!(
-                        "{}: {}",
-                        t.class,
-                        t.message.clone().unwrap_or_default()
-                    ),
+                    VmExit::Exception(t) => {
+                        format!("{}: {}", t.class, t.message.clone().unwrap_or_default())
+                    }
                     VmExit::Error(rd) => rd.cause.clone(),
                 };
                 Err(VmExit::Exception(Throwable::new(

@@ -1251,9 +1251,7 @@ fn fill_array(
                 _ => match width {
                     1 => Value::Int(slice[0] as i8 as i32),
                     2 => Value::Int(i16::from_le_bytes([slice[0], slice[1]]) as i32),
-                    4 => {
-                        Value::Int(i32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
-                    }
+                    4 => Value::Int(i32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]])),
                     _ => {
                         return Err(err::vm_error(
                             "INVALID_FORMAT",

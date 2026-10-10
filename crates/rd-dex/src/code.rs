@@ -700,6 +700,12 @@ pub fn decode_at(insns: &[u16], addr: usize) -> RdResult<(Insn, u16)> {
     }
 }
 
+/// shifts de long têm o contador como INT (spec Dalvik) — o segundo
+/// operando NÃO é par wide.
+fn is_long_shift(name: &str) -> bool {
+    name.starts_with("shl-long") || name.starts_with("shr-long") || name.starts_with("ushr-long")
+}
+
 /// Validação de registradores (issue #17): todo índice de registrador usado
 /// pelas instruções decodificadas deve ser < registers_size; operações wide
 /// (long/double) ocupam o par (v, v+1), então v+1 também precisa caber.
@@ -710,8 +716,7 @@ pub fn decode_at(insns: &[u16], addr: usize) -> RdResult<(Insn, u16)> {
 /// pânico/abort no interpretador.
 fn validate_registers(instructions: &[(usize, Insn)], registers_size: u16) -> RdResult<()> {
     let nregs = registers_size as usize;
-    let wide_name =
-        |n: &str| n.contains("wide") || n.contains("-long") || n.contains("-double");
+    let wide_name = |n: &str| n.contains("wide") || n.contains("-long") || n.contains("-double");
     let chk = |addr: usize, op: u8, r: u32, wide: bool| -> RdResult<()> {
         let over = if wide {
             r as usize >= nregs || r as usize + 1 >= nregs
@@ -736,13 +741,15 @@ fn validate_registers(instructions: &[(usize, Insn)], registers_size: u16) -> Rd
             Kind::Payload(_) => {} // pseudoinstrução: sem registradores
             Kind::Regs(a, b) => {
                 // 12x: move-wide, neg/not-long e aritmética */2addr são wide
-                // nos dois; conversões int-to-long têm só o destino wide
+                // nos dois; conversões int-to-long têm só o destino wide;
+                // shifts-long/2addr têm contador INT (não par) no segundo op
                 let (dw, sw) = if wide_name(name) {
                     match name.split_once("-to-") {
                         Some((src, dst)) => (
                             matches!(dst, "long" | "double"),
                             matches!(src, "long" | "double"),
                         ),
+                        None if is_long_shift(name) => (true, false),
                         None => (true, true),
                     }
                 } else {
@@ -770,16 +777,23 @@ fn validate_registers(instructions: &[(usize, Insn)], registers_size: u16) -> Rd
                 chk(addr, op, *a as u32, wide_name(name))?; // família const-wide*
             }
             Kind::RegRegReg(a, b, c) => {
-                // 23x: aget/aput-wide têm só A em par; cmp-* têm B,C wide e
-                // A narrow; aritmética long/double é wide nos três
+                // 23x: aget/aput-wide têm só A em par; cmp-long/cmp*-double
+                // têm B,C wide e A narrow (cmp*-float é TODO narrow);
+                // shifts-long têm o contador INT em C; demais long/double
+                // aritmética é wide nos três
                 if name == "aget-wide" || name == "aput-wide" {
                     chk(addr, op, *a as u32, true)?;
                     chk(addr, op, *b as u32, false)?;
                     chk(addr, op, *c as u32, false)?;
                 } else if name.starts_with("cmp") {
+                    let w = name.contains("long") || name.contains("double");
                     chk(addr, op, *a as u32, false)?;
+                    chk(addr, op, *b as u32, w)?;
+                    chk(addr, op, *c as u32, w)?;
+                } else if is_long_shift(name) {
+                    chk(addr, op, *a as u32, true)?;
                     chk(addr, op, *b as u32, true)?;
-                    chk(addr, op, *c as u32, true)?;
+                    chk(addr, op, *c as u32, false)?;
                 } else {
                     let w = wide_name(name);
                     chk(addr, op, *a as u32, w)?;
@@ -800,12 +814,8 @@ fn validate_registers(instructions: &[(usize, Insn)], registers_size: u16) -> Rd
                     chk(addr, op, *r as u32, false)?;
                 }
             }
-            Kind::InvokeRange3rc {
-                count, start, ..
-            }
-            | Kind::InvokeRange4rcc {
-                count, start, ..
-            } => {
+            Kind::InvokeRange3rc { count, start, .. }
+            | Kind::InvokeRange4rcc { count, start, .. } => {
                 chk(addr, op, *start as u32, false)?;
                 if *count > 0 {
                     chk(addr, op, (*start as u32) + (*count as u32) - 1, false)?;
@@ -1168,11 +1178,7 @@ mod tests {
     }
 
     // issue #17: helper com registers_size/ins_size customizados
-    fn build_code_item_regs(
-        registers: u16,
-        ins: u16,
-        insns: &[u16],
-    ) -> Vec<u8> {
+    fn build_code_item_regs(registers: u16, ins: u16, insns: &[u16]) -> Vec<u8> {
         let mut data: Vec<u8> = Vec::new();
         data.extend_from_slice(&registers.to_le_bytes());
         data.extend_from_slice(&ins.to_le_bytes());
@@ -1230,6 +1236,29 @@ mod tests {
         let e = CodeItem::parse(&data, 0).unwrap_err();
         assert_eq!(e.code, "INVALID_FORMAT");
         assert!(e.cause.contains("par wide"));
+    }
+
+    #[test]
+    fn long_shift_count_is_narrow_operand() {
+        // regressão golden (shlJJ(JI)J, regs=3): shl-long/2addr v1, v2 —
+        // A é par wide (v1,v2)... não: A wide (v1+v2 espera regs=3) e o
+        // CONTADOR v2 é int — em 12x: A=1 wide (pair 1,2 ok com regs=3),
+        // B=2 narrow (sem +1)
+        let insns: Vec<u16> = vec![0xC3 | (2 << 12) | (1 << 8)]; // shl-long/2addr v1, v2
+        let data = build_code_item_regs(3, 3, &insns);
+        CodeItem::parse(&data, 0).expect("contador de shift é int, não par");
+        // e o par wide do destino precisa caber: shl-long/2addr v2, v1 com regs=3 → pair (2,3) estoura
+        let insns: Vec<u16> = vec![0xC3 | (1 << 12) | (2 << 8)];
+        let data = build_code_item_regs(3, 3, &insns);
+        assert!(CodeItem::parse(&data, 0).is_err());
+    }
+
+    #[test]
+    fn cmp_float_is_all_narrow() {
+        // regressão golden (ltFF(FF)Z, regs=2): cmpg-float v0, v0, v1
+        let insns: Vec<u16> = vec![0x002E, 0x0100]; // cmpg-float vAA=0, vBB=0, vCC=1
+        let data = build_code_item_regs(2, 2, &insns);
+        CodeItem::parse(&data, 0).expect("cmpl/cmpg-float não usa pares wide");
     }
 
     #[test]
