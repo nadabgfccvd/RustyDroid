@@ -49,3 +49,73 @@ Stage Summary:
 - 187 testes no workspace (0 falhas; +6 M3.2), clippy limpo, fmt ok, MSRV 1.76 ok, smoke CLI verificado.
 - Decisões: rd-vm→rd-apk como dep de produção (sem ciclo); hierarquia Android builtin no classpath (chave p/ APKs reais); DENSITY 2.0 (viewport 360dp); attrs não modelados ignorados (semântica Android) com log debug; classes sem host falham tipadas.
 - Pendências M4: render pixel + UI dump rico (get_ui_tree), configs específicas (land/locale/density) selecionáveis, weights/gravidade no layout.
+
+---
+Task ID: 4
+Agent: Z.ai Code (principal)
+Task: Auditoria read-only do DoD de M0/M1/M2 (sem tocar no GitHub)
+
+Work Log:
+- HEAD local 6d6440e (M3.2), working tree limpa; GitHub intocado por instrução do usuário.
+- cargo test --workspace: 187 testes, 0 falhas (bate com worklog do M3.2).
+- M0: rd inspect no APK real org.fdroid.fdroid 2.0.1 — features (10), permissões (31 classificadas em auto/runtime/special/unknown), 36 componentes (10 act + 3 alias + 4 provider + 9 recv + 10 svc), signing v1/v2/v3, label via ARSC; perm audit com 11 findings estruturados; device list mostra moto-e5 ★ como piso; behavior --target 33 mostra 17/25 switches. DoD inspect ✅.
+- M1: dex summary dos 3 DEX (24.520 classes, checksum ok, map 18/18); disasm 8/8 classes reais de amostra (3 dexes) sem falha. Paridade baksmali (24.913 classes / 3 APKs / 100% idênticas) foi validação ÚNICA com comparador em /tmp — não repetível hoje (só 1 APK em disco; comparador não commitado). Campanha fuzz 24h NUNCA executada (o próprio ROADMAP.md registra "pendente de runner dedicado"). Sem nightly/cargo-fuzz nesta máquina.
+- M2: harness golden re-executado fresco — 150/150 PASS vs JVM real (exit 0). Spot-check de 7 casos em métodos puros do APK REAL (ContainerHelpersKt.idealByteArraySize×3, idealLongArraySize, IntIntPair.getFirst-impl, ScatterMapKt.loadedCapacity×2): 7/7 valores corretos, verificados contra implementação Python INDEPENDENTE derivada do smali do nosso disassembler.
+
+Stage Summary:
+- Veredito: M0 ✅ completo (ressalva: CI do HEAD 6d6440e não re-verificado — GitHub intocado; último verde conhecido fb37e28/run 38026991552). M2 ✅ completo (golden 150/150 fresco + 7/7 métodos puros de APK real). M1 ⚠️ QUASE — código 100%, mas o sub-item do DoD "fuzz 24h sem crash" nunca rodou, e a paridade baksmali em 3 APKs não é repetível (comparador differential não commitado; 2 dos 3 APKs ausentes em disco).
+- Recomendações: (1) campanha fuzz (24h ideal, ≥4h aceitável) em runner dedicado; (2) commitar comparador differential baksmali + fixar os 3 APKs golden no fetch.sh para paridade repetível; (3) re-verificar CI/push do HEAD atual quando liberado tocar no GitHub.
+- Nenhum arquivo de código alterado; registro appendado no worklog local sem commit.
+
+---
+Task ID: 5
+Agent: Z.ai Code (principal)
+Task: Script de campanha fuzz 24h (DoD M1) + tutorial WSL2 para notebook Win 11 do usuário
+
+Work Log:
+- Lido docs/FUZZING.md (política: 5 targets em paralelo, crashes arquivados com input minimizado) e os 5 fuzz targets (todos byte-slice puro: zip/axml/arsc/apk_full no rd-apk, dex no rd-dex).
+- Criado scripts/fuzz-campaign.sh (executável, sintaxe validada com bash -n): seeds automáticos do APK golden para os 5 corpus (APK inteiro p/ apk_full/zip, manifest+res/*.xml p/ axml, resources.arsc p/ arsc, classes*.dex p/ dex), modo -fork com -ignore_crashes/ooms/timeouts=1 (continua e arquiva achados), max_len ≥ maior seed (16MB apk/zip, 10MB dex, 4MB arsc, 2MB axml — evita truncar EOCD do ZIP), workers auto = cores/5, relatório final que distingue crash-* (P0, Lei 1) de oom/timeout, exit 1 se houver achados.
+- fuzz-logs/ adicionado ao .gitignore.
+- Tutorial WSL2 entregue no chat (PowerShell wsl --install → apt deps → rustup nightly → cargo-fuzz@0.13.2 --locked → clone → tmux + energia "nunca suspender" + pausar Windows Update 1 semana → rodar smoke 10 min → campanha 24h → checar artifacts).
+- Nada commitado/pushed (GitHub segue intocado); script aguarda liberação para commit.
+
+Stage Summary:
+- Campanha fuzz do DoD M1 agora é 1 comando: ./scripts/fuzz-campaign.sh (padrão 24h; smoke com ./scripts/fuzz-campaign.sh 600). DoD = nenhum crash-* em crates/*/fuzz/artifacts após o tempo total.
+
+---
+Task ID: 6
+Agent: Z.ai Code (principal)
+Task: Revisão + validação executável do scripts/fuzz-campaign.sh + push (GitHub liberado)
+
+Work Log:
+- Revisão linha a linha encontrou 3 bugs reais (nenhum pego por bash -n):
+  (1) find -path '*/fuzz/artifacts/crash-*' nunca casaria — cargo-fuzz grava
+      em artifacts/<target>/crash-* (SUBDIRETÓRIO) → relatório diria "SEM CRASH"
+      com crash real (falso negativo do DoD). Fix: casar por NOME dentro de
+      artifacts/ (-type f -name 'crash-*' -path '*/fuzz/artifacts/*'), provado
+      com artifact falso (1 encontrado, 0 após remover).
+  (2) GNU find `-size -1M` arredonda PRA CIMA em unidades de 1 MiB — só casa
+      arquivo VAZIO; os 329 XMLs de res/ do APK golden eram todos filtrados
+      (axml ficava com 1 seed). Fix: -size -1048576c → axml foi a 183 seeds.
+  (3) `find | head | while` sob pipefail morre com SIGPIPE (exit 141) no APK
+      real; `wait` sem args esconde falhas de job; stat:: não existe em fork
+      mode (contador real é o último pulso #N:). Todos corrigidos.
+- Adições de robustez: checagem amigável de nightly/cargo-fuzz/unzip, export
+  RUSTUP_TOOLCHAIN=nightly (não depende de rustup default), env.txt com
+  proveniência, guarda de disco (<5 GB livres → aviso), du -sh do corpus no
+  relatório, procedimento de resgate `cargo fuzz merge` no cabeçalho, gate do
+  DoD = crash-* (oom/timeout são avisos, alinhado a docs/FUZZING.md).
+- Validação EXECUTÁVEL nesta máquina (nightly 1.101.0-nightly + cargo-fuzz
+  0.13.2 instalados aqui): 3 smokes completos (15s/15s/5s) — pipeline inteiro
+  rodou, seeds corretos, corpus cresceu (axml 1→237, dex 126 MB), 0 crash/oom/
+  timeout, exit 0 nas três rodadas. Corpus de smoke ficou como semente extra
+  para a campanha real (gitignored).
+- Descoberta de operação: corpus dex ~108 MB nos primeiros 30s — documentado
+  monitoramento du -sh + resgate via cargo fuzz merge.
+- Push: commits feat(fuzz) + docs(worklog) → main.
+
+Stage Summary:
+- scripts/fuzz-campaign.sh validado 3× ponta a ponta e pronto para a campanha
+  24h do usuário (notebook Win 11 via WSL2). DoD = zero crash-* após 24h.
+- Bugs de falso-negativo no gate de crash eram o risco real de desperdiçar as
+  24h — eliminados e provados por teste.
