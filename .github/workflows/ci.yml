@@ -66,6 +66,26 @@ jobs:
           ./target/release/rd --help
           ./target/release/rd device list
 
+  vm-golden:
+    name: VM golden vectors vs real JVM (M2 DoD)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: Swatinem/rust-cache@v2
+      - name: Build rd CLI
+        run: cargo build --release -p rd-cli
+      - name: Fetch harness tools (r8; ecj pulado — javac presente)
+        run: bash golden/vm/fetch-tools.sh
+      - name: Compile + dex golden cases
+        run: bash golden/vm/build.sh
+      - name: Compare rd vm exec vs real JVM execution
+        run: bash golden/vm/run-golden.sh target/release/rd
+
   rust-msrv:
     name: Rust MSRV (1.76)
     runs-on: ubuntu-latest

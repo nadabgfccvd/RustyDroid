@@ -242,6 +242,7 @@ dependencies = [
  "rd-apk",
  "rd-dex",
  "rd-framework",
+ "rd-vm",
  "serde",
  "serde_json",
 ]
@@ -293,6 +294,8 @@ dependencies = [
 name = "rd-vm"
 version = "0.1.0"
 dependencies = [
+ "rd-apk",
+ "rd-dex",
  "serde",
  "serde_json",
 ]

@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 rd-apk = { workspace = true }
 rd-dex = { workspace = true }
+rd-vm = { workspace = true }
 rd-framework = { workspace = true }
 clap.workspace = true
 anyhow.workspace = true

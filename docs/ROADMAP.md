@@ -9,7 +9,7 @@
 |---|---|---|---|
 | **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ✅ **implementado (2026-10)** |
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
-| M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ⬜ |
+| M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ⬜ |
 | M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ⬜ |
 | M5 | Agente MCP v1 (~20 tools) | LLM instala, navega e assera estado só com as tools | ⬜ |
@@ -61,9 +61,35 @@
    smoke local limpo, campanha 24h pendente de runner dedicado (não bloqueia
    M2; parsers são fuzz-hardened por construção, Lei nº 1).
 
-## Próxima fase — M2 (rd-vm)
+## ✅ M2 concluído — rd-vm (2026-10)
 
-1. Interpretador Dalvik mínimo executando métodos puros de APK real.
-2. Arena/GC do piso moto-e5 (RSS ≤ 512 MB, heap ≤ 256 MB).
-3. Critério de saída: métodos puros de APK real retornam valores corretos
-   (golden vectors vs execução real).
+1. ✅ Interpretador Dalvik mínimo: dispatch por OPCODE EXATO (tabela canônica
+   validada vs baksmali no M1) — move/const/return, aritmética int/long/float/
+   double com semântica Java exata (wrapping, saturação, NaN, div por zero →
+   ArithmeticException), shifts (contador int mesmo em long — pego em APK
+   real), branches/switch (packed+sparse via payload), arrays com bounds,
+   iget/iput/sget/sput, new-instance/new-array, invocações
+   static/direct/virtual/super com resolução por superclasse, try/catch de
+   exceções em QUALQUER instrução, strings (const-string, hashCode spec,
+   concat, StringBuilder) e exceções de plataforma materializadas.
+2. ✅ Arena heap do piso moto-e5: heap ≤ 256 MB (PRF-06) + teto de 1M objetos;
+   OOM é erro tipado `VM_OOM` (Lei 1); arena-por-execução = o "GC" contratual
+   do M2. Fuel anti-loop (200M default) e profundidade máxima de pilha.
+3. ✅ Critério de saída — **150/150 golden vectors PASS vs execução real**:
+   pipeline `golden/vm/` compila casos Java (javac no CI / ecj local), dexa
+   com D8 `--min-api 26` e compara `rd vm exec --json` contra a execução
+   real na JVM (GoldenRunner via reflexão) — resultado byte-a-byte igual
+   (inclusive Float/Double.toString, MIN/-1 wrapping, NaN/Infinity).
+4. ✅ Métodos puros de APK real executados e verificados à mão contra o smali:
+   `ContainerHelpersKt.idealByteArraySize` (116/20/1048564),
+   `idealLongArraySize` (cadeia invoke-static → 126), `IntIntPair.getFirst-impl`
+   (empacotamento Kotlin: 1), `ScatterMapKt.loadedCapacity` (9).
+5. CLI: `rd vm exec <apk|dex> --class --method --sig [--args] [--json]
+   [--fuel/--depth/--heap-mb]` — contrato JSON {status: ok|exception|error}.
+
+## Próxima fase — M3 (framework essencial)
+
+1. Activity/Window/View mínimos headless; app trivial (activity+botão+texto)
+   roda ponta a ponta.
+2. Handler/Looper básico (main thread = UI thread).
+3. Critério de saída: app trivial responde a toques simulados do agente.

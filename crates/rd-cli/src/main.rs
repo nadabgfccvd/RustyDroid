@@ -6,6 +6,7 @@
 //! - `rd device list|show`   — perfis de device (piso: moto-e5)
 //! - `rd behavior`           — comutadores por targetSdk 26→36
 //! - `rd dex summary|disasm` — parser DEX 100% + disassembler smali (DoD do M1)
+//! - `rd vm exec`            — interpretador Dalvik mínimo (DoD do M2: métodos puros)
 //!
 //! Códigos de saída: 0 ok · 1 erro estruturado · 2 NOT_IMPLEMENTED.
 
@@ -72,6 +73,42 @@ enum Cmd {
     Dex {
         #[command(subcommand)]
         sub: DexSub,
+    },
+    /// VM Dalvik mínima (M2): executa métodos static puros de APK/DEX real
+    Vm {
+        #[command(subcommand)]
+        sub: VmSub,
+    },
+}
+
+#[derive(Subcommand)]
+enum VmSub {
+    /// Invoca um método static e imprime o resultado (ou a exceção escapada)
+    Exec {
+        path: PathBuf,
+        /// Descritor da classe (ex.: Lcom/x/Calc;)
+        #[arg(long)]
+        class: String,
+        /// Nome do método
+        #[arg(long)]
+        method: String,
+        /// Descritor completo (ex.: (II)I) — desambigua sobrecargas
+        #[arg(long)]
+        sig: String,
+        /// Literais Java separados por vírgula: 42, -7, 1L, 1.5f, 2.5, 'c', "txt", true
+        #[arg(long)]
+        args: Option<String>,
+        #[arg(long)]
+        json: bool,
+        /// Limite de instruções (anti-loop)
+        #[arg(long)]
+        fuel: Option<u64>,
+        /// Profundidade máxima de chamadas
+        #[arg(long)]
+        depth: Option<usize>,
+        /// Heap do app em MB (default 256 = piso moto-e5)
+        #[arg(long)]
+        heap_mb: Option<usize>,
     },
 }
 
@@ -178,6 +215,43 @@ fn run(cli: Cli) -> i32 {
                 out.as_deref(),
                 *json,
             ),
+        },
+        Cmd::Vm { sub } => match sub {
+            VmSub::Exec {
+                path,
+                class,
+                method,
+                sig,
+                args,
+                json,
+                fuel,
+                depth,
+                heap_mb,
+            } => {
+                // exit code próprio: 0 ok/exceção · 4 erro estruturado da VM
+                return match cmd_vm_exec(
+                    path,
+                    class,
+                    method,
+                    sig,
+                    args.as_deref(),
+                    *json,
+                    *fuel,
+                    *depth,
+                    *heap_mb,
+                ) {
+                    Ok(code) => code,
+                    Err(e) => {
+                        let mut stderr = std::io::stderr();
+                        let _ = writeln!(stderr, "{}", to_json(&e));
+                        if e.code == "NOT_IMPLEMENTED" {
+                            2
+                        } else {
+                            1
+                        }
+                    }
+                };
+            }
         },
     };
     match result {
@@ -805,6 +879,167 @@ fn cmd_dex_summary(path: &Path, json: bool) -> Result<(), RdError> {
         );
     }
     Ok(())
+}
+
+/// M2: executa um método static puro na VM Dalvik interpretada.
+/// Exit codes: 0 = ok/exceção respondida; 4 = erro estruturado da VM.
+#[allow(clippy::too_many_arguments)]
+fn cmd_vm_exec(
+    path: &Path,
+    class: &str,
+    method: &str,
+    sig: &str,
+    args: Option<&str>,
+    json: bool,
+    fuel: Option<u64>,
+    depth: Option<usize>,
+    heap_mb: Option<usize>,
+) -> Result<i32, RdError> {
+    let files = load_dex_files(path)?;
+    let dexes: Vec<Dex> = files.into_iter().map(|(_, d)| d).collect();
+    let cfg = rd_vm::VmConfig {
+        fuel: fuel.unwrap_or(rd_vm::VmConfig::default().fuel),
+        max_depth: depth.unwrap_or(rd_vm::VmConfig::default().max_depth),
+        heap_budget: heap_mb.unwrap_or(256) * 1024 * 1024,
+    };
+    let mut eng = rd_vm::Engine::new(dexes, cfg);
+
+    let param_types = rd_vm::engine::parse_param_types(sig)
+        .ok_or_else(|| RdError::invalid_format(format!("assinatura malformada: {sig}")))?;
+    let mut values: Vec<rd_vm::Value> = Vec::new();
+    if let Some(raw) = args {
+        let lits: Vec<&str> = split_args(raw);
+        if lits.len() != param_types.len() {
+            return Err(RdError::invalid_format(format!(
+                "{sig} pede {} argumentos, recebi {}",
+                param_types.len(),
+                lits.len()
+            ))
+            .with_suggestion("passe --args 'a, b' com um literal por parâmetro"));
+        }
+        for (lit, t) in lits.iter().zip(&param_types) {
+            values.push(rd_vm::parse_arg_value(lit, t).map_err(RdError::invalid_format)?);
+        }
+    } else if !param_types.is_empty() {
+        return Err(RdError::invalid_format(format!(
+            "{sig} pede {} argumentos — passe --args",
+            param_types.len()
+        )));
+    }
+
+    let ret_desc = sig.rsplit(')').next().unwrap_or("V").to_string();
+    match eng.invoke_static(class, method, sig, &values) {
+        Ok(v) => {
+            // String do heap vira conteúdo; outros objetos continuam opacos
+            let string_content = match &v {
+                rd_vm::Value::Obj(r) => eng.heap.as_str(*r).ok().map(str::to_string),
+                _ => None,
+            };
+            if json {
+                println!("{}", result_json(&v, &ret_desc, string_content.as_deref()));
+            } else if let Some(s) = string_content {
+                println!("{s}");
+            } else {
+                match &v {
+                    rd_vm::Value::Null => println!("null"),
+                    other => println!("{}", rd_vm::interp::render_result(other, &ret_desc)),
+                }
+            }
+            Ok(0)
+        }
+        Err(rd_vm::VmExit::Exception(t)) => {
+            let name = t.name_without_l();
+            let msg = t.message.clone().unwrap_or_default();
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "exception",
+                        "class": name,
+                        "message": msg,
+                    })
+                );
+            } else {
+                eprintln!("exception: {name}: {msg}");
+            }
+            Ok(0)
+        }
+        Err(rd_vm::VmExit::Error(e)) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "error",
+                        "code": e.code,
+                        "cause": e.cause,
+                        "suggestion": e.suggestion,
+                        "module_id": e.module_id,
+                    })
+                );
+            } else {
+                eprintln!("{e}");
+            }
+            Ok(4)
+        }
+    }
+}
+
+/// Separa literais por vírgula respeitando aspas simples/duplas.
+fn split_args(raw: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = None;
+    let mut quote: Option<char> = None;
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = raw[i..].chars().next().unwrap();
+        let clen = c.len_utf8();
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => match c {
+                '\'' | '"' => quote = Some(c),
+                ',' => {
+                    if let Some(s) = start.take() {
+                        out.push(raw[s..i].trim());
+                    }
+                }
+                _ => {}
+            },
+        }
+        if start.is_none() && !c.is_whitespace() && c != ',' {
+            start = Some(i);
+        }
+        i += clen;
+    }
+    if let Some(s) = start {
+        out.push(raw[s..].trim());
+    }
+    out
+}
+
+/// JSON do resultado no contrato do M2 (float/double no estilo Java;
+/// String do heap vira conteúdo).
+fn result_json(v: &rd_vm::Value, ret_desc: &str, string_content: Option<&str>) -> String {
+    let (ty, value): (&str, serde_json::Value) = match v {
+        rd_vm::Value::Int(i) => ("int", serde_json::json!(i.to_string())),
+        rd_vm::Value::Long(l) => ("long", serde_json::json!(l.to_string())),
+        rd_vm::Value::Float(f) => ("float", serde_json::json!(rd_vm::repr::java_float(*f))),
+        rd_vm::Value::Double(d) => ("double", serde_json::json!(rd_vm::repr::java_double(*d))),
+        rd_vm::Value::Obj(_) => match string_content {
+            Some(s) => ("string", serde_json::json!(s)),
+            None => ("object", serde_json::json!("<object>")),
+        },
+        rd_vm::Value::Null => ("null", serde_json::Value::Null),
+        rd_vm::Value::WideHi => ("wide-hi", serde_json::json!("<wide-hi>")),
+        rd_vm::Value::StrPlaceholder(_) => ("string", serde_json::json!("<string>")),
+    };
+    let _ = ret_desc;
+    serde_json::json!({
+        "status": "ok",
+        "result": { "type": ty, "value": value },
+    })
+    .to_string()
 }
 
 fn cmd_dex_disasm(

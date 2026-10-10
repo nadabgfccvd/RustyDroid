@@ -55,8 +55,8 @@ RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android O
 | Phase | Delivers |
 |---|---|
 | **M0** | ✅ **DONE** — workspace + CI + APK inspector + permission engine (full Android permission matrix as data) |
-| **M1** | DEX parser 100% + disassembler (validated against baksmali, fuzzed) |
-| **M2** | Minimal Dalvik VM (all core opcodes, real APK methods run) |
+| **M1** | ✅ **DONE** — DEX parser 100% + disassembler (validated against baksmali 2.5.2, fuzzed) |
+| **M2** | ✅ **DONE** — minimal Dalvik interpreter: **150/150 golden vectors PASS vs real JVM execution** + real APK pure methods verified |
 | **M3** | Essential framework: Activity lifecycle, Handler/Looper, LayoutInflater, Resources |
 | **M4** | Software rendering + UI dump (uiautomator-compatible) |
 | **M5** | **AI-agent mode v1**: MCP server with ~20 tools |
@@ -73,7 +73,7 @@ APKs below the floor are inspected fine but refuse to run with a structured `BEL
 
 ---
 
-## 🚧 Status — M0 + M1 landed (2026-10)
+## 🚧 Status — M0 + M1 + M2 landed (2026-10)
 
 The foundation is **real, tested code** — verified end-to-end against the F-Droid client APK (973 zip entries, 36 components, 31 permissions):
 
@@ -83,6 +83,7 @@ The foundation is **real, tested code** — verified end-to-end against the F-Dr
 - ✅ **Behavior switches** per targetSdk 26→36 (25 entries, PRF-07)
 - ✅ Structured errors everywhere: `{code, cause, suggestion, module_id}` — never a silent failure (unimplemented modules answer `NOT_IMPLEMENTED` with exit code 2)
 - ✅ **`rd dex` (M1)** — 100% DEX parser (header/map/MUTF-8 strings/types/protos/fields/methods/classes/code/debug/annotations/call-sites/method-handles) + **smali disassembler validated against baksmali 2.5.2: 24.913 classes across 3 golden APKs, 100% identical instruction sequences** + fuzz targets for every binary parser (ZIP/AXML/ARSC/DEX)
+- ✅ **`rd vm` (M2)** — minimal Dalvik interpreter over rd-dex: core opcodes with exact Java semantics (wrapping, saturating casts, NaN/Infinity, `MIN/-1` wrapping div), exceptions (try/catch on any instruction, platform exceptions materialized), strings/StringBuilder intrinsics, static fields + `<clinit>`, virtual dispatch through superclass chains, **heap arena capped at the moto-e5 floor (256 MB, typed `VM_OOM`)**, fuel + call-depth guards. **Golden harness `golden/vm/`: 150/150 vectors byte-identical to real JVM execution** (javac→D8→`rd vm exec --json` vs reflection runner). Real APK pure methods executed and hand-verified against smali (androidx ContainerHelpers/IntIntPair/ScatterMap)
 
 ```console
 $ rd inspect F-Droid.apk

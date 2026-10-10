@@ -1,44 +1,167 @@
-//! rd-vm — VM Dalvik (interpretador -> JIT Cranelift) + GC arena + threads.
+//! rd-vm — VM Dalvik (interpretador → JIT Cranelift) + GC arena + threads.
 //!
-//! M0: stub estruturado. Lei 1 (sem falha silenciosa): toda tentativa de uso
-//! responde `NOT_IMPLEMENTED` com o contrato {code, cause, suggestion, module_id}.
+//! M2: interpretador mínimo — opcodes núcleo, invocações, exceções, strings,
+//! fields; métodos puros de APK real retornam valores corretos (golden
+//! vectors vs execução real). Heap arena com o orçamento do piso moto-e5
+//! (heap ≤ 256 MB — PRF-06/A2); OOM é erro tipado, nunca abort (Lei 1).
 
-use serde::{Deserialize, Serialize};
+pub mod classpath;
+pub mod engine;
+pub mod err;
+pub mod heap;
+pub mod interp;
+pub mod intrinsics;
+pub mod repr;
+pub mod value;
 
+use rd_dex::annotations::EncodedValue;
+use rd_dex::Dex;
+
+pub use engine::{Engine, VmConfig};
+pub use err::{Throwable, VmExit};
+pub use heap::ObjRef;
+pub use value::Value;
+
+/// Módulo do contrato de erro.
 pub const MODULE_ID: &str = "rd-vm";
-/// Milestone do roadmap em que este módulo entra de verdade.
-pub const MILESTONE: &str = "M2";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RdError {
-    pub code: String,
-    pub cause: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suggestion: Option<String>,
-    pub module_id: String,
+/// Converte um `EncodedValue` (static_values de class_def) em `Value`,
+/// alocando strings no heap da VM. `None` = tipo não representável no M2
+/// (arrays/annotations aninhadas em static_values — raras; o campo fica
+/// com o default).
+pub fn value_from_encoded(ev: &EncodedValue, dex: &Dex) -> Option<Value> {
+    Some(match ev {
+        EncodedValue::Byte(v) => Value::Int(*v as i32),
+        EncodedValue::Short(v) => Value::Int(*v as i32),
+        EncodedValue::Char(v) => Value::Int(*v as i32),
+        EncodedValue::Int(v) => Value::Int(*v),
+        EncodedValue::Long(v) => Value::Long(*v),
+        EncodedValue::Float(v) => Value::Float(*v),
+        EncodedValue::Double(v) => Value::Double(*v),
+        EncodedValue::Boolean(v) => Value::Int(*v as i32),
+        EncodedValue::Null => Value::Null,
+        EncodedValue::String(idx) => {
+            // texto resolvido aqui; quem chama aloca no heap (ver
+            // Engine::ensure_initialized) — por isso devolvemos Obj só se
+            // o texto for vazio (caso degenerado); caso geral: None e o
+            // caller trata String(idx) especificamente
+            let _ = dex.string(*idx);
+            return None;
+        }
+        _ => return None,
+    })
 }
 
-impl RdError {
-    pub fn not_implemented() -> Self {
-        RdError {
-            code: "NOT_IMPLEMENTED".into(),
-            cause: format!("{MODULE_ID} lands in milestone {MILESTONE}"),
-            suggestion: Some("track docs/ROADMAP.md and the compat-matrix".into()),
-            module_id: MODULE_ID.into(),
+/// Converte um literal de argumento (linha de comando / harness) para `Value`
+/// conforme o tipo do parâmetro. Aceita: `42`, `-7`, `1L`, `1.5f`, `2.5`,
+/// `'c'`, `"texto"`, `true`/`false`, `null`.
+pub fn parse_arg_value(lit: &str, param_type: &str) -> Result<Value, String> {
+    let lit = lit.trim();
+    let bad = |msg: &str| format!("literal '{lit}' inválido para {param_type}: {msg}");
+    match param_type {
+        "I" | "B" | "S" | "C" | "Z" => {
+            if lit == "true" || lit == "false" {
+                return Ok(Value::Int((lit == "true") as i32));
+            }
+            if param_type == "C" && lit.len() >= 3 && lit.starts_with('\'') && lit.ends_with('\'') {
+                let inner = &lit[1..lit.len() - 1];
+                let c = match inner {
+                    "\\n" => '\n',
+                    "\\t" => '\t',
+                    "\\\\" => '\\',
+                    "\\'" => '\'',
+                    s if s.chars().count() == 1 => s.chars().next().unwrap(),
+                    _ => return Err(bad("char literal com mais de um caractere")),
+                };
+                return Ok(Value::Int(c as u32 as i32));
+            }
+            lit.parse::<i32>()
+                .map(Value::Int)
+                .map_err(|e| bad(&e.to_string()))
+        }
+        "J" => {
+            let digits = lit.strip_suffix('L').unwrap_or(lit);
+            digits
+                .parse::<i64>()
+                .map(Value::Long)
+                .map_err(|e| bad(&e.to_string()))
+        }
+        "F" => {
+            let digits = lit
+                .strip_suffix('f')
+                .or_else(|| lit.strip_suffix('F'))
+                .unwrap_or(lit);
+            match digits.to_ascii_lowercase().as_str() {
+                "nan" => Ok(Value::Float(f32::NAN)),
+                "infinity" | "+infinity" | "inf" => Ok(Value::Float(f32::INFINITY)),
+                "-infinity" | "-inf" => Ok(Value::Float(f32::NEG_INFINITY)),
+                _ => digits
+                    .parse::<f32>()
+                    .map(Value::Float)
+                    .map_err(|e| bad(&e.to_string())),
+            }
+        }
+        "D" => {
+            let digits = lit
+                .strip_suffix('d')
+                .or_else(|| lit.strip_suffix('D'))
+                .unwrap_or(lit);
+            match digits.to_ascii_lowercase().as_str() {
+                "nan" => Ok(Value::Double(f64::NAN)),
+                "infinity" | "+infinity" | "inf" => Ok(Value::Double(f64::INFINITY)),
+                "-infinity" | "-inf" => Ok(Value::Double(f64::NEG_INFINITY)),
+                _ => digits
+                    .parse::<f64>()
+                    .map(Value::Double)
+                    .map_err(|e| bad(&e.to_string())),
+            }
+        }
+        "Ljava/lang/String;" => {
+            if lit == "null" {
+                return Ok(Value::Null);
+            }
+            let unquoted = if lit.starts_with('"') && lit.ends_with('"') && lit.len() >= 2 {
+                &lit[1..lit.len() - 1]
+            } else {
+                lit
+            };
+            let unescaped = unescaped_java(unquoted);
+            Ok(Value::StrPlaceholder(unescaped))
+        }
+        t if t.starts_with('L') || t.starts_with('[') => {
+            if lit == "null" {
+                Ok(Value::Null)
+            } else {
+                Err(format!("tipo {t} só aceita 'null' no M2 (recebi '{lit}')"))
+            }
+        }
+        _ => Err(format!("tipo de parâmetro {param_type} não suportado")),
+    }
+}
+
+/// Escapes mínimos de string Java (\n, \t, \\, \", \').
+pub fn unescaped_java(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('\\') => out.push('\\'),
+                Some('"') => out.push('"'),
+                Some('\'') => out.push('\''),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
         }
     }
-}
-
-impl std::fmt::Display for RdError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [{}]: {}", self.code, self.module_id, self.cause)
-    }
-}
-
-impl std::error::Error for RdError {}
-
-pub fn not_implemented<T>() -> Result<T, RdError> {
-    Err(RdError::not_implemented())
+    out
 }
 
 #[cfg(test)]
@@ -46,13 +169,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stub_contract_is_stable() {
-        let e = RdError::not_implemented();
-        assert_eq!(e.code, "NOT_IMPLEMENTED");
-        assert_eq!(e.module_id, MODULE_ID);
-        assert_eq!(e.module_id, "rd-vm");
-        let json = serde_json::to_value(&e).unwrap();
-        assert_eq!(json["code"], "NOT_IMPLEMENTED");
-        assert_eq!(json["module_id"], "rd-vm");
+    fn stub_contract_gone_vm_has_real_api() {
+        // o stub do M0 sumiu: a API pública do M2 deve existir
+        let e = Engine::new(Vec::new(), VmConfig::default());
+        assert_eq!(e.heap_used(), 0);
+        assert_eq!(VmConfig::default().heap_budget, heap::DEFAULT_HEAP_BUDGET);
+    }
+
+    #[test]
+    fn arg_parsing_matches_types() {
+        assert_eq!(parse_arg_value("42", "I"), Ok(Value::Int(42)));
+        assert_eq!(parse_arg_value("-7", "I"), Ok(Value::Int(-7)));
+        assert_eq!(parse_arg_value("true", "Z"), Ok(Value::Int(1)));
+        assert_eq!(parse_arg_value("1L", "J"), Ok(Value::Long(1)));
+        assert_eq!(parse_arg_value("1.5f", "F"), Ok(Value::Float(1.5)));
+        assert_eq!(parse_arg_value("2.5", "D"), Ok(Value::Double(2.5)));
+        assert_eq!(parse_arg_value("'A'", "C"), Ok(Value::Int(0x41)));
+        assert_eq!(
+            parse_arg_value("\"oi\\n\"", "Ljava/lang/String;"),
+            Ok(Value::StrPlaceholder("oi\n".into()))
+        );
+        assert_eq!(
+            parse_arg_value("null", "Ljava/lang/String;"),
+            Ok(Value::Null)
+        );
+        assert!(parse_arg_value("x", "I").is_err());
     }
 }
