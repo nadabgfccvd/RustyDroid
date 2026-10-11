@@ -28,7 +28,7 @@ RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android O
 - 📦 **Parses** the APK (ZIP, binary `AndroidManifest.xml`, `resources.arsc`, `classes.dex`)
 - ⚙️ **Executes** Dalvik bytecode in a **Rust VM** (interpreter → Cranelift JIT later)
 - 🧩 **Implements** `android.*` framework APIs natively in Rust
-- 🎨 **Renders** the UI in software (tiny-skia): headless PNG, desktop window, web canvas
+- 🎨 **Renders** the UI in software: headless PNG today (own rasterizer, placeholder glyphs); tiny-skia + shaping are the spec target, pending [ADR 003](docs/adr/003-renderer-tiny-skia-pendente.md); desktop window and web canvas are not implemented
 - 🤖 **Drives everything through MCP** — built for AI agents from day one
 
 ### Why it's different
@@ -54,11 +54,11 @@ RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android O
 
 | Phase | Delivers |
 |---|---|
-| **M0** | ✅ **DONE** — workspace + CI + APK inspector + permission engine (full Android permission matrix as data) |
-| **M1** | ✅ **DONE** — DEX parser 100% + disassembler (validated against baksmali 2.5.2, fuzzed) |
+| **M0** | ⚠️ **PARTIAL** (DoD asks for 5 real APKs; 1 in corpus, below floor) — workspace + CI + APK inspector + permission engine (full Android permission matrix as data) |
+| **M1** | ⚠️ **PARTIAL** — DEX parser + disassembler implemented; baksmali parity not reproducible from the repo yet; 24 h fuzz campaign not yet run |
 | **M2** | ✅ **DONE** — minimal Dalvik interpreter: **150/150 golden vectors PASS vs real JVM execution** + real APK pure methods verified |
-| **M3** | ✅ **DONE** — Essential framework: Activity lifecycle, Handler/Looper, LayoutInflater, Resources |
-| **M4** | ✅ **DONE** — software rendering determinístico + UI dump uiautomator-compatible |
+| **M3** | ⚠️ **PARTIAL** — Essential framework implemented; proof with real APKs still pending (synthetic fixtures only) |
+| **M4** | ⚠️ **PARTIAL** — deterministic software rendering + uiautomator-compatible UI dump; no real font/shaping, no device-config resource selection, no Android golden yet |
 | **M5** | ✅ **DONE** — MCP agent v1 (`rd mcp`, JSON-RPC stdio, **30 tools**: pacote (install/list/remove/clear/launch), input (tap/swipe/type/key), observação (ui_tree/screenshot/logs), wait/wait_for + asserts, permissões, runtime_health, compat_gaps, batch idempotente, sandbox+caps de segurança, `--describe-tools` + docs geradas) |
 | **M6** | Test executor: scenario DSL, JUnit XML, automated compat matrix |
 | **M7** | Performance + **Moto E5 floor gate** (release blocked if budgets blown) |
@@ -74,6 +74,8 @@ APKs below the floor are inspected fine but refuse to run with a structured `BEL
 ---
 
 ## 🚧 Status — M0 + M1 + M2 + M3 + M4 + M5 landed (2026-10)
+
+> **Auditoria 2026-10:** só **M2** e **M5** cumprem a regra de status (DoD reproduzível no CI). M0, M1, M3 e M4 têm código presente com DoD incompleto (⚠️ parcial). Detalhes e lacunas em [docs/ROADMAP.md](docs/ROADMAP.md).
 
 The foundation is **real, tested code** — verified end-to-end against the F-Droid client APK (973 zip entries, 36 components, 31 permissions):
 

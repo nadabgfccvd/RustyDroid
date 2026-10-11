@@ -5,14 +5,16 @@
 
 ## Status atual
 
+**Regra de status (proposta, 2026-10):** "concluído" só quando o DoD é reproduzível a partir do repositório e executado no CI ou em uma campanha documentada. Código presente, benchmark local não repetível ou uma nota no worklog não bastam, isoladamente. Fase com código presente mas DoD incompleto = ⚠️ **parcial**, com a lacuna explícita. Esta tabela é espelhada em `xtask/src/main.rs` (`PHASE_STATUS`) e no placar gerado `docs/compat-matrix.md`.
+
 | Fase | Entrega central | DoD (done quando…) | Status |
 |---|---|---|---|
-| **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ✅ **implementado (2026-10)** |
-| M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
+| **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ⚠️ **parcial** — DoD pede 5 APKs reais (há 1, minSdk 24 < 26) |
+| M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⚠️ **parcial** — fuzz 24 h nunca executado; comparador não versionado |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
-| M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ✅ |
-| M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ |
+| M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ⚠️ **parcial** — código rounds 1+2; DoD exige 3 APKs reais (hoje só sintéticos) |
+| M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — dump/screenshot ativos; sem tiny-skia (ADR 003), sem seleção por config, sem golden Android |
+| M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (e2e em processo separado no CI; APK de teste sintético, não APK real) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ⬜ |
 | M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | ⬜ |
 | M8 | Compat real | app OSS médio navega funcional; v0.9 | ⬜ |
@@ -21,7 +23,10 @@
 | M11 | Engines | Flutter → RN → Mono → wasm: 1 app de cada em golden flow | ⬜ |
 | M12 | Ecossistema GH | docs site, compat-matrix viva, releases; v1.0 | ⬜ |
 
-## O que o M0 entregou (verificado em APK real: F-Droid 2.0.1)
+## O que o M0 entregou (inspecionado em APK real: F-Droid 2.0.1)
+
+> **Ressalva de auditoria (2026-10):** o único APK do corpus (`org.fdroid.fdroid` 2.0.1) tem `minSdk 24`, abaixo do piso 26; `rd inspect` o marca `BELOW_FLOOR(minSdk=24, floor=26)`. O DoD do M0 pede `rd inspect --json` determinístico em **5** APKs reais, incluindo APKs dentro do piso — isso ainda não existe. Comparação com ferramentas Android de referência também não tem snapshot versionado.
+
 
 - **Workspace Cargo** com 9 crates + xtask, dependências só apontam para baixo,
   MSRV 1.76, perfil release calibrado para hardware fraco.
@@ -45,7 +50,9 @@
 - **CI**: fmt + clippy `-D warnings` + test + MSRV 1.76 + smoke do binário.
 - **Fixture GH-05**: `golden-apks/fetch.sh` baixa APKs OSS (nunca commitados).
 
-## ✅ M1 concluído — rd-dex (2026-10)
+## ⚠️ M1 parcial — rd-dex (2026-10)
+
+> **Auditoria:** a versão anterior desta seção marcava M1 como concluído com o fuzz 24 h pendente. Isso viola a regra de status. Estado real abaixo.
 
 1. ✅ Parser DEX 100% (header, maps, strings MUTF-8, types, protos, fields,
    methods, classes, code items, debug info, annotations, call sites,
@@ -53,13 +60,11 @@
    falha (0 pulos)**.
 2. ✅ Disassembler smali fiel (alvo baksmali 2.5.2): **24.913 classes
    comparadas por método — 100% idênticas na sequência de instruções**
-   (comparador differential: `/tmp/compare.py`, artefato de validação).
+   (comparador differential: `/tmp/compare.py` — **não versionado**; a paridade de 24.913 classes não é repetível a partir do repositório, e só 1 dos 3 APKs golden está em disco).
 3. ✅ Fuzz targets (`cargo-fuzz`): `zip`, `axml`, `arsc`, `apk_full`, `dex`;
    CI compila os targets em nightly (execução 24h fora do CI — ver
    `docs/FUZZING.md`).
-4. Gate de saída: idêntico ao baksmali nos 3 APKs ✅; fuzz 24h sem crash —
-   smoke local limpo, campanha 24h pendente de runner dedicado (não bloqueia
-   M2; parsers são fuzz-hardened por construção, Lei nº 1).
+4. Gate de saída **pendente**: (a) paridade baksmali nos 3 APKs não é repetível — falta versionar o comparador e fixar os 3 APKs (`golden-apks/fetch.sh` baixa só o F-Droid); (b) fuzz 24 h nos 5 targets nunca executado (`scripts/fuzz-campaign.sh`, ver `docs/FUZZING.md`). Parsers são fuzz-hardened por construção (Lei nº 1), mas isso não substitui a campanha.
 
 ## ✅ M2 concluído — rd-vm (2026-10)
 
@@ -87,7 +92,9 @@
 5. CLI: `rd vm exec <apk|dex> --class --method --sig [--args] [--json]
    [--fuel/--depth/--heap-mb]` — contrato JSON {status: ok|exception|error}.
 
-## ✅ M3 concluído — framework essencial (2026-10, rounds 1+2)
+## ⚠️ M3 parcial — framework essencial (2026-10, rounds 1+2)
+
+> **Auditoria:** DoD exige ≥3 APKs reais Java/Kotlin do corpus iniciando e completando um fluxo. Hoje as provas são fixtures sintéticas (`apkfix`); o único APK real do corpus tem minSdk abaixo do piso.
 
 **Round 1 — núcleo host:**
 
@@ -101,8 +108,7 @@
 4. ✅ Touch simulado: hit-test top-down + dispatch de onClick via resolução DEX.
 5. ✅ CLI `rd app run` com script do agente (`tap X,Y` · `wait MS` · `dump`) e
    dump textual da árvore (seed do UI dump do M4).
-6. ✅ Critério de saída ATINGIDO: app trivial (activity+botão+texto) roda
-   ponta a ponta e responde a toques simulados (testes de integração M3).
+6. ✅ App trivial sintético (activity+botão+texto) roda ponta a ponta e responde a toques simulados (testes de integração M3). Prova com APK real: pendente.
 
 **Round 2 (M3.2) — LayoutInflater de layout XML real:**
 
@@ -132,7 +138,9 @@
 Na sequência do M3 (M4): render + UI dump rico (`get_ui_tree` com ids
 certos); configs específicas (land/locale/density) selecionáveis.
 
-## ✅ M4 concluído (2026-10) — rd-render real
+## ⚠️ M4 parcial (2026-10) — rd-render
+
+> **Auditoria (ver ADR 003):** o DoD diz "Seguir `tiny-skia` + shaping definido na especificação, ou aprovar ADR que substitua essa decisão". Não há `tiny-skia` nas dependências; o texto é desenhado com glifos de bloco 3×7. Não há ADR aprovado ainda. Também não há golden de referência Android.
 
 1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
    (class/resource-id `package:id/nome`/text/bounds/visibility/enabled/
@@ -148,5 +156,11 @@ certos); configs específicas (land/locale/density) selecionáveis.
 4. ✅ Testes e2e contra fixture real: ids/bounds/clickable/text na árvore;
    pixels do PNG (TextView branco / Button cinza / borda / fundo); PNG
    determinístico (mesmo input → mesmos bytes); dump escape XML.
-   Round 2 do M4: seleção de configs por device-config (land/locale) no
-   resolve (o parse das 2 configs já chega no modelo — issue #47).
+   **NÃO implementado (corrige o round 2 anterior):** seleção de configs por
+   device-config. `Arsc::resolve_string`/`resolve_value` escolhem a config
+   mais genérica (default) independentemente de locale/orientação/densidade/
+   night. O inflater (`rd-vm::inflate`) usa `res/layout/<key>.xml` e, na
+   ausência, um fallback pontuado (`-land`/`-night`) — não é seleção pelo
+   perfil do device. Pendente para fechar o M4: `DeviceConfig` (locale,
+   orientação, densidade, night) passado ao resolver e ao inflater, com
+   teste de dois perfis que escolhem recursos diferentes.

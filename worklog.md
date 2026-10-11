@@ -322,3 +322,22 @@ Stage Summary:
 - DoD M5: cliente em processo separado (e2e McpProc com binário real) instala/inicia/interage/observa/asserta sem comandos manuais ✓; testes de schema/JSON/timeout/erro/batch/isolamento ✓; conjunto publicado == --describe-tools == docs geradas (teste trava a convergência) ✓.
 - Catálogo: 20 → 30 tools. Novos erros tipados: PATH_OUTSIDE_SANDBOX, URL_NOT_ALLOWED, APK_TOO_LARGE, LIMIT_EXCEEDED, PACKAGE_NOT_INSTALLED.
 - Próximo (M6): executor de testes — suíte JSON → JUnit XML; compat-matrix automatizada.
+
+---
+Task: Auditoria de consistência antes de ampliar (5 inconsistências do revisor) — status honesto, placar gerado, ADR do renderer
+Agent: Arena Agent Mode (sessão auditoria)
+
+Work Log:
+- Clone do repo; toolchain 1.88 instalada localmente só para reproduzir (MSRV do CI continua 1.76). `cargo test --workspace` verde antes das mudanças.
+- Inconsistência 1 (ROADMAP M1 ✅ com fuzz 24 h pendente): CONFIRMADA. Status de M1 → ⚠️ parcial.
+- Inconsistência 2 (compat-matrix com M4 aberto e rd-render stub): CONFIRMADA e com causa raiz — o placar é gerado, mas a tabela de fases era hardcoded no xtask (M4 ⬜). O gate do CI passava porque comparava o arquivo com o próprio gerador. Corrigido: tabela `PHASE_STATUS` no xtask (espelho da ROADMAP) + crates `rd-render` e `rd-agent` atualizados + placar regenerado.
+- Inconsistência 3 (seleção por config): CONFIRMADA. `Arsc::resolve_string`/`resolve_value` escolhem `min_by_key(specificity, !is_default)` → config default, sem receber device-config. O inflater só faz fallback pontuado (`-land`/`-night`) quando falta `res/layout/<key>.xml`. O round 2 de M4 ("seleção por device-config, issue #47") estava errado no ROADMAP. Corrigido nos docs; implementação fica como pendência do M4.
+- Inconsistência 4 (tiny-skia): CONFIRMADA. Nenhuma dependência tiny-skia/rustybuzz no Cargo.lock; README afirmava uso. Corrigido README; criado docs/adr/003-renderer-tiny-skia-pendente.md com status PROPOSTO (decisão do mantenedor; MSRV 1.76 de tiny-skia/rustybuzz ainda não verificado).
+- Inconsistência 5 (APK de validação abaixo do piso): CONFIRMADA. golden-apks/org.fdroid.fdroid.apk (v2.0.1) → minSdk 24, `rd inspect` responde BELOW_FLOOR(minSdk=24, floor=26). É o único APK do corpus; M0/M3/M4 pedem 3–5 APKs reais.
+- Extra: comparador baksmali (`/tmp/compare.py`) não versionado → paridade do M1 não repetível. Registrado como lacuna no ROADMAP.
+- Regra de status (proposta pelo mantenedor) aplicada: ✅ só M2 e M5; M0, M1, M3, M4 → ⚠️ parcial. README ganhou aviso equivalente.
+
+Stage Summary:
+- Mudanças: docs/ROADMAP.md (regra de status, tabela, seções M0/M1/M3/M4), docs/compat-matrix.md (regenerada por `cargo xtask compat-report`), xtask/src/main.rs (PHASE_STATUS, CRATE_STATUS), README.md (status + renderer), docs/adr/003 (novo, Proposto).
+- Não feito (exige trabalho/infra fora desta sessão): campanha fuzz 24 h; versionar comparador baksmali + fixar 3 APKs golden; APKs reais dentro do piso para M0/M3/M4/M5; renderer com tiny-skia ou ADR 003 aprovado; seleção de recursos por DeviceConfig (locale/orientação/densidade/night); golden screenshots de referência Android.
+- Pendente de decisão do mantenedor: opção do ADR 003 (adotar tiny-skia+rustybuzz, substituir por rasterizador próprio, ou híbrido).
