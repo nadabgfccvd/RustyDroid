@@ -103,7 +103,7 @@ fn gf_mul(mut a: u8, mut b: u8) -> u8 {
 
 fn sbox() -> [u8; 256] {
     let mut s = [0u8; 256];
-    for i in 0..256usize {
+    for (i, slot) in s.iter_mut().enumerate() {
         let x = i as u8;
         // multiplicative inverse in GF(2^8)
         let inv = if x == 0 {
@@ -111,7 +111,7 @@ fn sbox() -> [u8; 256] {
         } else {
             (1..256u16).find(|&k| gf_mul(x, k as u8) == 1).unwrap_or(0) as u8
         };
-        s[i] = inv
+        *slot = inv
             ^ inv.rotate_left(1)
             ^ inv.rotate_left(2)
             ^ inv.rotate_left(3)
@@ -244,7 +244,7 @@ fn xor16(a: &mut [u8], b: &[u8]) {
 fn pkcs7_pad(data: &[u8]) -> Vec<u8> {
     let pad = 16 - (data.len() % 16);
     let mut out = data.to_vec();
-    out.extend(std::iter::repeat_n(pad as u8, pad));
+    out.extend(std::iter::repeat(pad as u8).take(pad));
     out
 }
 
@@ -268,11 +268,11 @@ fn pkcs7_unpad(data: &[u8]) -> Result<Vec<u8>, VmExit> {
 fn gf128_mul(x: &[u8; 16], y: &[u8; 16]) -> [u8; 16] {
     let mut z = [0u8; 16];
     let mut v = *y;
-    for i in 0..16 {
+    for &xb in x.iter() {
         for j in 0..8 {
-            if (x[i] >> (7 - j)) & 1 == 1 {
-                for k in 0..16 {
-                    z[k] ^= v[k];
+            if (xb >> (7 - j)) & 1 == 1 {
+                for (zk, vk) in z.iter_mut().zip(v.iter()) {
+                    *zk ^= *vk;
                 }
             }
             let lsb = v[15] & 1;
@@ -743,7 +743,7 @@ struct Transform {
 
 fn parse_transform(t: &str) -> Result<Transform, VmExit> {
     let parts: Vec<&str> = t.split('/').collect();
-    if parts.len() > 3 || parts[0].to_ascii_uppercase() != "AES" {
+    if parts.len() > 3 || !parts[0].eq_ignore_ascii_case("AES") {
         return Err(exc(
             "Ljava/security/NoSuchAlgorithmException;",
             format!("Algorithm {t} not available"),
@@ -957,7 +957,7 @@ pub(crate) fn static_intrinsic(
         }
         (KEY_GENERATOR, "getInstance") => {
             let a = str0(vm);
-            if a.to_ascii_uppercase() != "AES" {
+            if !a.eq_ignore_ascii_case("AES") {
                 return Err(exc(
                     "Ljava/security/NoSuchAlgorithmException;",
                     format!("Algorithm {a} not available"),

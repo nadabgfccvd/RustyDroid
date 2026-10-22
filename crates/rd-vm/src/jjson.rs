@@ -393,7 +393,7 @@ fn write_value(vm: &mut Engine, v: &Value, out: &mut String) -> Result<(), VmExi
             } else if class == JSON_ARRAY {
                 write_array(vm, *o, out)
             } else if let Ok(s) = vm.heap.as_str(*o) {
-                quote_into(&s, out);
+                quote_into(s, out);
                 Ok(())
             } else {
                 let text = match vm.invoke_instance(*o, "toString", "()Ljava/lang/String;", &[]) {

@@ -1218,6 +1218,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroidx/room/RoomDatabase$Builder;" => Some(OBJECT),
         "Landroid/os/Bundle;" => Some(OBJECT),
         "Landroid/os/Handler;" => Some(OBJECT),
+        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
         "Landroid/os/Looper;" => Some(OBJECT),
         "Landroid/view/Window;" => Some(OBJECT),
         "Landroid/view/ViewGroup$LayoutParams;" => Some(VIEWGROUP_LAYOUT_PARAMS),
@@ -1345,6 +1346,20 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Ljava/util/concurrent/AbstractExecutorService;" => Some(OBJECT),
         "Ljava/util/concurrent/ForkJoinPool;" => Some(&[
             "Ljava/util/concurrent/AbstractExecutorService;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/util/concurrent/ThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/AbstractExecutorService;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/util/concurrent/ScheduledThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ThreadPoolExecutor;",
+            "Ljava/util/concurrent/AbstractExecutorService;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/util/concurrent/SynchronousQueue;" => Some(&[
+            "Ljava/util/AbstractQueue;",
+            "Ljava/util/AbstractCollection;",
             "Ljava/lang/Object;",
         ]),
         "Landroid/text/method/BaseMovementMethod;" => Some(OBJECT),
@@ -1721,6 +1736,31 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/util/concurrent/Executor;",
         ]),
         "Ljava/util/concurrent/ExecutorService;" => Some(&["Ljava/util/concurrent/Executor;"]),
+        "Ljava/util/concurrent/ScheduledExecutorService;" => Some(&[
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ScheduledThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ScheduledExecutorService;",
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ScheduledFuture;" => Some(&[
+            "Ljava/util/concurrent/Future;",
+            "Ljava/util/concurrent/Delayed;",
+            "Ljava/lang/Comparable;",
+        ]),
+        "Ljava/util/concurrent/SynchronousQueue;" => Some(&[
+            "Ljava/util/concurrent/BlockingQueue;",
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
         "Ljava/util/ServiceLoader;" => Some(&["Ljava/lang/Iterable;"]),
         "Ljava/math/BigDecimal;" | "Ljava/math/BigInteger;" => {
             Some(&["Ljava/lang/Comparable;", "Ljava/io/Serializable;"])

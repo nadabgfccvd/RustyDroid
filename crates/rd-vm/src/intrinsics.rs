@@ -32,6 +32,11 @@ const EXECUTORS: &str = "Ljava/util/concurrent/Executors;";
 const EXECUTOR: &str = "Ljava/util/concurrent/Executor;";
 const EXECUTOR_SVC: &str = "Ljava/util/concurrent/ExecutorService;";
 const FORK_JOIN_POOL: &str = "Ljava/util/concurrent/ForkJoinPool;";
+const THREAD_POOL_EXEC: &str = "Ljava/util/concurrent/ThreadPoolExecutor;";
+const SCHEDULED_POOL: &str = "Ljava/util/concurrent/ScheduledThreadPoolExecutor;";
+const SCHEDULED_SVC: &str = "Ljava/util/concurrent/ScheduledExecutorService;";
+const SCHEDULED_FUTURE: &str = "Ljava/util/concurrent/ScheduledFuture;";
+const SYNC_QUEUE: &str = "Ljava/util/concurrent/SynchronousQueue;";
 const FUTURE: &str = "Ljava/util/concurrent/Future;";
 /// M8: 24º gap do launch real (`ServiceLoader.load`). Sem leitura de
 /// `META-INF/services` no APK, o loader é deliberadamente vazio; isso mantém
@@ -549,7 +554,34 @@ fn call_static_intrinsic_rooted(
             return Ok(Some(Value::Obj(alloc_string(vm, text)?)));
         }
     }
+    // dalvik.system.ZipPathValidator (API 34): apps register/clear a
+    // zip-entry name callback at startup. The headless runtime extracts
+    // nothing to the host file system, so validation is a no-op and no
+    // callback is ever installed.
+    if class == "Ldalvik/system/ZipPathValidator;" {
+        return Ok(Some(match sig.rsplit(')').next().unwrap_or("V") {
+            "Z" => Value::Int(0),
+            "I" | "B" | "S" | "C" => Value::Int(0),
+            "J" => Value::Long(0),
+            "F" => Value::Float(0.0),
+            "D" => Value::Double(0.0),
+            _ => Value::Null,
+        }));
+    }
     match (class, name, sig) {
+        // ConcurrentHashMap.newKeySet(): a Set view over a CHM. The host
+        // model is a plain HashSet (single-threaded VM; same Set contract).
+        (CONCURRENT_MAP, "newKeySet", "()Ljava/util/concurrent/ConcurrentHashMap$KeySetView;")
+        | (CONCURRENT_MAP, "newKeySet", "(I)Ljava/util/concurrent/ConcurrentHashMap$KeySetView;") => {
+            let s = vm
+                .heap
+                .alloc_instance(VIEW_SET.to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            vm.fw
+                .objects
+                .insert(s, crate::framework::HostObj::List { elems: Vec::new() });
+            Ok(Some(Value::Obj(s)))
+        }
         ("Ljava/util/Arrays;", "asList", "([Ljava/lang/Object;)Ljava/util/List;") => {
             let array = args.first().and_then(|v| v.as_ref().ok().flatten()).ok_or_else(|| VmExit::Exception(Throwable::new("Ljava/lang/NullPointerException;", "Arrays.asList array null")))?;
             let elems = vm.heap.as_array_elems(array)?.0.to_vec();
@@ -1025,7 +1057,23 @@ fn call_static_intrinsic_rooted(
         // M8: fábricas de thread pool → executor host (execução inline).
         // Tamanho do pool e ThreadFactory são ignorados (VM single-threaded).
         (c, n, s) if c == EXECUTORS && executors_factory(n, s) => {
-            let r = vm.heap.alloc_instance(EXECUTOR_SVC.to_string(), vec![])?;
+            // Allocate the concrete JDK class (apps check-cast
+            // newFixedThreadPool/newCachedThreadPool results to
+            // ThreadPoolExecutor, scheduled factories to
+            // ScheduledThreadPoolExecutor).
+            let cls = if n.contains("Scheduled") || n.contains("scheduled") {
+                SCHEDULED_POOL
+            } else if n == "newSingleThreadExecutor" {
+                // JDK returns a DelegatedExecutorService wrapper (not a
+                // ThreadPoolExecutor); the interface descriptor keeps a
+                // cast to ThreadPoolExecutor honestly failing.
+                EXECUTOR_SVC
+            } else if n == "newWorkStealingPool" {
+                FORK_JOIN_POOL
+            } else {
+                THREAD_POOL_EXEC
+            };
+            let r = vm.heap.alloc_instance(cls.to_string(), vec![])?;
             Ok(Some(Value::Obj(r)))
         }
         (FORK_JOIN_POOL, "commonPool", "()Ljava/util/concurrent/ForkJoinPool;") => {
@@ -1752,15 +1800,85 @@ fn executors_factory(name: &str, sig: &str) -> bool {
         ) | (
             "newCachedThreadPool",
             "(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;"
-        )
+        ) | ("newWorkStealingPool", "()Ljava/util/concurrent/ExecutorService;")
+            | ("newWorkStealingPool", "(I)Ljava/util/concurrent/ExecutorService;")
+            | (
+                "newScheduledThreadPool",
+                "(I)Ljava/util/concurrent/ScheduledExecutorService;"
+            )
+            | (
+                "newScheduledThreadPool",
+                "(ILjava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ScheduledExecutorService;"
+            )
+            | (
+                "newSingleThreadScheduledExecutor",
+                "()Ljava/util/concurrent/ScheduledExecutorService;"
+            )
+            | (
+                "newSingleThreadScheduledExecutor",
+                "(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ScheduledExecutorService;"
+            )
     )
 }
 
 /// (name, sig) de ExecutorService host suportados (M8).
 fn exec_supported(name: &str, sig: &str) -> bool {
+    // ThreadPoolExecutor / ScheduledThreadPoolExecutor direct ctors and
+    // the state queries apps probe (pool is inline: sizes are 0/1).
+    if name == "<init>" {
+        return true;
+    }
+    if matches!(
+        (name, sig),
+        ("getPoolSize", "()I")
+            | ("getActiveCount", "()I")
+            | ("getCorePoolSize", "()I")
+            | ("getMaximumPoolSize", "()I")
+            | ("prestartAllCoreThreads", "()I")
+            | ("prestartCoreThread", "()Z")
+            | ("allowsCoreThreadTimeOut", "()Z")
+            | ("getKeepAliveTime", "(Ljava/util/concurrent/TimeUnit;)J")
+            | ("getQueue", "()Ljava/util/concurrent/BlockingQueue;")
+            | ("getTaskCount", "()J")
+            | ("getCompletedTaskCount", "()J")
+            | ("getLargestPoolSize", "()I")
+            | ("remove", "(Ljava/lang/Runnable;)Z")
+            | ("purge", "()V")
+    ) {
+        return true;
+    }
+    if name.starts_with("set") || name.starts_with("allow") {
+        return sig.ends_with(")V");
+    }
     matches!(
         (name, sig),
         ("execute", "(Ljava/lang/Runnable;)V")
+            | (
+                "schedule",
+                "(Ljava/lang/Runnable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
+            )
+            | (
+                "schedule",
+                "(Ljava/util/concurrent/Callable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
+            )
+            | (
+                "scheduleAtFixedRate",
+                "(Ljava/lang/Runnable;JJLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
+            )
+            | (
+                "scheduleWithFixedDelay",
+                "(Ljava/lang/Runnable;JJLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
+            )
+            | ("invokeAll", "(Ljava/util/Collection;)Ljava/util/List;")
+            | (
+                "invokeAll",
+                "(Ljava/util/Collection;JLjava/util/concurrent/TimeUnit;)Ljava/util/List;"
+            )
+            | ("invokeAny", "(Ljava/util/Collection;)Ljava/lang/Object;")
+            | (
+                "invokeAny",
+                "(Ljava/util/Collection;JLjava/util/concurrent/TimeUnit;)Ljava/lang/Object;"
+            )
             | (
                 "submit",
                 "(Ljava/lang/Runnable;)Ljava/util/concurrent/Future;"
@@ -1793,6 +1911,8 @@ fn future_supported(name: &str, sig: &str) -> bool {
             | ("isDone", "()Z")
             | ("isCancelled", "()Z")
             | ("cancel", "(Z)Z")
+            | ("getDelay", "(Ljava/util/concurrent/TimeUnit;)J")
+            | ("compareTo", "(Ljava/lang/Object;)I")
     )
 }
 
@@ -1840,6 +1960,97 @@ fn exec_intrinsic(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match (name, sig) {
+        ("<init>", _) => {
+            // ThreadPoolExecutor/ScheduledThreadPoolExecutor ctor: pool
+            // sizing/queue/factory are inert under inline execution; the
+            // work queue (first BlockingQueue argument, if any) is kept
+            // for getQueue().
+            for a in args {
+                if let Value::Obj(o) = a {
+                    if vm.fw.objects.contains_key(o) {
+                        crate::err::put_field_result(vm.heap.put_field(
+                            recv,
+                            "exec_queue",
+                            Value::Obj(*o),
+                        ))?;
+                        break;
+                    }
+                }
+            }
+            Ok(Some(Value::Null))
+        }
+        ("schedule", _) | ("scheduleAtFixedRate", _) | ("scheduleWithFixedDelay", _) => {
+            // Deterministic inline scheduling: the task runs once, now
+            // (delays/periods are virtual-clock concepts the inline
+            // executor does not defer; documented deviation).
+            let Some(r) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {
+                return Err(exec_npe("schedule sem task"));
+            };
+            let result = if sig.contains("Callable") {
+                exec_call_inline(vm, r)?
+            } else {
+                exec_run_inline(vm, r)?;
+                Value::Null
+            };
+            let f = vm
+                .heap
+                .alloc_instance(SCHEDULED_FUTURE.to_string(), vec![])?;
+            crate::err::put_field_result(vm.heap.put_field(f, "future_result", result))?;
+            Ok(Some(Value::Obj(f)))
+        }
+        ("invokeAll", _) => {
+            let tasks: Vec<Value> = match args.first().and_then(|v| v.as_ref().ok().flatten()) {
+                Some(c) => match vm.fw.objects.get(&c) {
+                    Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+                    _ => Vec::new(),
+                },
+                None => Vec::new(),
+            };
+            let mut futs = Vec::new();
+            for task in tasks {
+                let v = match task.as_ref().ok().flatten() {
+                    Some(r) => exec_call_inline(vm, r)?,
+                    None => Value::Null,
+                };
+                if let Some(f) = exec_completed_future(vm, v)? {
+                    futs.push(f)
+                }
+            }
+            let l = vm.heap.alloc_instance(ARRAY_LIST.to_string(), vec![])?;
+            vm.fw
+                .objects
+                .insert(l, crate::framework::HostObj::List { elems: futs });
+            Ok(Some(Value::Obj(l)))
+        }
+        ("invokeAny", _) => {
+            let tasks: Vec<Value> = match args.first().and_then(|v| v.as_ref().ok().flatten()) {
+                Some(c) => match vm.fw.objects.get(&c) {
+                    Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+                    _ => Vec::new(),
+                },
+                None => Vec::new(),
+            };
+            match tasks.first().and_then(|v| v.as_ref().ok().flatten()) {
+                Some(r) => exec_call_inline(vm, r).map(Some),
+                None => Ok(Some(Value::Null)),
+            }
+        }
+        ("getQueue", _) => Ok(Some(
+            vm.heap.get_field(recv, "exec_queue").unwrap_or(Value::Null),
+        )),
+        ("getPoolSize", _)
+        | ("getCorePoolSize", _)
+        | ("getMaximumPoolSize", _)
+        | ("getLargestPoolSize", _) => Ok(Some(Value::Int(1))),
+        ("getActiveCount", _) | ("prestartAllCoreThreads", _) => Ok(Some(Value::Int(0))),
+        ("getTaskCount", _) | ("getCompletedTaskCount", _) | ("getKeepAliveTime", _) => {
+            Ok(Some(Value::Long(0)))
+        }
+        ("prestartCoreThread", _) | ("allowsCoreThreadTimeOut", _) | ("remove", _) => {
+            Ok(Some(Value::Int(0)))
+        }
+        ("purge", _) => Ok(Some(Value::Null)),
+        (n, _) if n.starts_with("set") || n.starts_with("allow") => Ok(Some(Value::Null)),
         ("execute", _) => {
             let Some(r) = args[0].as_ref()? else {
                 return Err(exec_npe("execute sem runnable"));
@@ -1909,6 +2120,8 @@ fn future_intrinsic(
                 .get_field(recv, "future_result")
                 .unwrap_or(Value::Null),
         )),
+        "getDelay" => Ok(Some(Value::Long(0))),
+        "compareTo" => Ok(Some(Value::Int(0))),
         "isDone" => Ok(Some(Value::Int(1))),
         "isCancelled" => Ok(Some(Value::Int(0))),
         "cancel" => Ok(Some(Value::Int(0))), // já completado → não cancelável
@@ -2674,6 +2887,7 @@ fn list_supported(name: &str, sig: &str) -> bool {
             | ("size", "()I")
             | ("isEmpty", "()Z")
             | ("clear", "()V")
+            | ("sort", "(Ljava/util/Comparator;)V")
     )
 }
 
@@ -3062,6 +3276,8 @@ fn queue_supported(name: &str, sig: &str) -> bool {
         (name, sig),
         ("<init>", "()V")
             | ("<init>", "(I)V")
+            | ("<init>", "(Z)V")
+            | ("<init>", "(Ljava/util/Collection;)V")
             | ("offer", "(Ljava/lang/Object;)Z")
             | (
                 "offer",
@@ -3864,6 +4080,19 @@ fn list_intrinsic(
             list_elems(vm, recv)?.clear();
             Ok(Some(Value::Null))
         }
+        ("sort", _) => {
+            // List.sort(Comparator) (Java 8 default method): stable sort
+            // in place; a null comparator means natural ordering, exactly
+            // like Collections.sort.
+            let items = list_elems(vm, recv)?.clone();
+            let cmp = args
+                .first()
+                .filter(|v| !matches!(v, Value::Null | Value::Int(0)))
+                .cloned();
+            let sorted = crate::arrays::merge_sort(vm, items, cmp.as_ref())?;
+            *list_elems(vm, recv)? = sorted;
+            Ok(Some(Value::Null))
+        }
         _ => Ok(None),
     }
 }
@@ -3961,8 +4190,36 @@ fn call_instance_intrinsic_mref_rooted(
         return call_instance_intrinsic_mref(vm, &tc, mref_class, name, sig, target, args);
     }
     let r = instance_intrinsic_dispatch(vm, recv_class, mref_class, name, sig, recv, args)?;
-    if r.is_some() || name == "<init>" {
+    if r.is_some() {
         return Ok(r);
+    }
+    // super-<init> retry under the declaring (platform) class: a DEX
+    // subclass constructor calls invoke-direct PlatformBase.<init>, but
+    // the intrinsic gates key on the receiver class (the DEX subclass),
+    // so the platform arm misses. <init> is direct (never virtual), so
+    // dispatching as the platform class itself cannot hijack an override.
+    if name == "<init>" {
+        if recv_class != mref_class && vm.cp.find_class(mref_class).is_none() {
+            return instance_intrinsic_dispatch(vm, mref_class, mref_class, name, sig, recv, args);
+        }
+        return Ok(r);
+    }
+    // Symmetric host-mref case: the method reference names a host
+    // (platform) class directly while the receiver is a DEX subclass of
+    // it (e.g. protobuf's MapFieldLite extends LinkedHashMap and calls
+    // AbstractMap methods). Class-gated arms key on recv_class and miss;
+    // dispatch as the host class itself, but only when no DEX class in
+    // the receiver chain overrides the method.
+    if recv_class != mref_class
+        && vm.cp.find_class(mref_class).is_none()
+        && vm.cp.resolve_method(recv_class, name, sig).is_none()
+        && vm.cp.is_subtype(recv_class, mref_class)
+    {
+        if let Some(v) =
+            instance_intrinsic_dispatch(vm, mref_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(v));
+        }
     }
     // Inherited platform method named through a DEX subclass (e.g.
     // `invoke-virtual LApp/MyRef;->get()` on `class MyRef extends
@@ -3983,7 +4240,10 @@ fn call_instance_intrinsic_mref_rooted(
                 if sup == OBJECT {
                     break;
                 }
-                return instance_intrinsic_dispatch(vm, recv_class, &sup, name, sig, recv, args);
+                // Dispatch as the platform ancestor itself: class-gated
+                // arms key on recv_class, which is still the DEX
+                // subclass here and would miss them.
+                return instance_intrinsic_dispatch(vm, &sup, &sup, name, sig, recv, args);
             }
             c = sup;
         }
@@ -4117,6 +4377,7 @@ fn instance_intrinsic_dispatch(
     }
     // PackageManager backed by the manifest (android_pm.rs)
     if name == "getPackageManager"
+        || (name == "getApplicationInfo" && args.is_empty())
         || recv_class == crate::android_pm::APM
         || recv_class == "Landroid/content/pm/PackageInfo;"
     {
@@ -4535,8 +4796,10 @@ fn instance_intrinsic_dispatch(
                 .unwrap_or(Value::Long(1))
                 .as_long()
                 .unwrap_or(1);
+            // Instance intrinsic args exclude the receiver, and wide
+            // placeholders are already stripped: args = [duration, source].
             let source = args
-                .get(2)
+                .get(1)
                 .and_then(|v| v.as_ref().ok().flatten())
                 .ok_or_else(|| {
                     VmExit::Exception(Throwable::new(
@@ -4864,12 +5127,24 @@ fn instance_intrinsic_dispatch(
         (c, name, sig)
             if (vm.cp.is_subtype(c, EXECUTOR_SVC)
                 || vm.cp.is_subtype(mref_class, EXECUTOR_SVC)
+                || c == THREAD_POOL_EXEC
+                || c == SCHEDULED_POOL
+                || mref_class == THREAD_POOL_EXEC
+                || mref_class == SCHEDULED_POOL
+                || mref_class == SCHEDULED_SVC
                 || mref_class == EXECUTOR)
                 && exec_supported(name, sig) =>
         {
             exec_intrinsic(vm, recv, name, sig, args)
         }
-        (c, name, sig) if (c == FUTURE || mref_class == FUTURE) && future_supported(name, sig) => {
+        (c, name, sig)
+            if (c == FUTURE
+                || c == SCHEDULED_FUTURE
+                || mref_class == FUTURE
+                || mref_class == SCHEDULED_FUTURE
+                || vm.heap.get_field(recv, "future_result").is_ok())
+                && future_supported(name, sig) =>
+        {
             future_intrinsic(vm, recv, name)
         }
 
@@ -5213,7 +5488,7 @@ fn instance_intrinsic_dispatch(
             }
         }
         // java.util.logging.Logger: output discarded, nothing loggable.
-        (c, name, _sig) if c == "Ljava/util/logging/Logger;" => match name {
+        ("Ljava/util/logging/Logger;", name, _sig) => match name {
             "log"
             | "severe"
             | "warning"
@@ -5245,7 +5520,7 @@ fn instance_intrinsic_dispatch(
             _ => Ok(None),
         },
         // LinkedBlockingQueue (M8): FIFO; bloqueantes fail-fast (sem deadlock)
-        (c, name, sig) if c == BLOCKING_Q && queue_supported(name, sig) => {
+        (c, name, sig) if (c == BLOCKING_Q || c == SYNC_QUEUE) && queue_supported(name, sig) => {
             queue_intrinsic(vm, recv, name, sig, args)
         }
         // ThreadLocal (M8): um valor por VM. <init> só quando o mref DECLARA
