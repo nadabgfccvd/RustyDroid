@@ -406,6 +406,13 @@ fn call_run(vm: &mut Engine, r: ObjRef) -> Result<(), VmExit> {
         return Ok(());
     }
     let Some((d, def, m)) = vm.cp.resolve_method(&class, "run", "()V") else {
+        // A platform Thread subclass with no DEX run() of its own
+        // (HandlerThread, whose run() just prepares/loops a Looper that
+        // this single-Looper runtime coalesces into main) terminates
+        // immediately, as Thread.run does with no target.
+        if vm.cp.find_class(&class).is_none() || vm.cp.is_subtype(&class, THREAD) {
+            return Ok(());
+        }
         return Err(crate::classpath::unresolved_method(&class, "run", "()V").into());
     };
     vm.call(d, def, &m, vec![Value::Obj(r)])?;

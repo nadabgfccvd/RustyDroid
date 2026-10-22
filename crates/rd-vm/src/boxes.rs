@@ -110,6 +110,22 @@ pub(crate) fn host_static(
     field: &str,
 ) -> Result<Option<Value>, VmExit> {
     Ok(Some(match (owner, field) {
+        (crate::jnio::BYTE_ORDER, "BIG_ENDIAN") => {
+            Value::Obj(crate::jnio::byte_order_obj(vm, true)?)
+        }
+        (crate::jnio::BYTE_ORDER, "LITTLE_ENDIAN") => {
+            Value::Obj(crate::jnio::byte_order_obj(vm, false)?)
+        }
+        (crate::jjson::JSON_OBJECT, "NULL") => crate::jjson::null_value(vm)?,
+        // java.io.File path constants (Unix file system, as on Android).
+        ("Ljava/io/File;", "separator") => {
+            Value::Obj(crate::intrinsics::alloc_string(vm, "/".to_string())?)
+        }
+        ("Ljava/io/File;", "separatorChar") => Value::Int('/' as i32),
+        ("Ljava/io/File;", "pathSeparator") => {
+            Value::Obj(crate::intrinsics::alloc_string(vm, ":".to_string())?)
+        }
+        ("Ljava/io/File;", "pathSeparatorChar") => Value::Int(':' as i32),
         (BOOLEAN, "TRUE") => Value::Obj(boolean_obj(vm, true)?),
         (BOOLEAN, "FALSE") => Value::Obj(boolean_obj(vm, false)?),
         (INTEGER, "MAX_VALUE") => Value::Int(i32::MAX),

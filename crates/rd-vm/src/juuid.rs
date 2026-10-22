@@ -190,6 +190,12 @@ pub fn instance_intrinsic(
 }
 
 /// MD5 (RFC 1321), for `nameUUIDFromBytes`.
+/// MD5 for `MessageDigest.getInstance("MD5")` (jcrypto.rs) — same
+/// implementation UUID.nameUUIDFromBytes uses.
+pub(crate) fn md5_pub(input: &[u8]) -> [u8; 16] {
+    md5(input)
+}
+
 fn md5(input: &[u8]) -> [u8; 16] {
     const S: [u32; 64] = [
         7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,

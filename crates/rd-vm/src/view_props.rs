@@ -263,6 +263,14 @@ pub(crate) fn fallback(
         ("playSoundEffect", "(I)V") | ("drawableHotspotChanged", "(FF)V") => {
             return Ok(Some(Value::Null))
         }
+        // Two-arg setter the generic single-arg rule below cannot take:
+        // the layer paint is recorded but not rasterized headless.
+        ("setLayerType", "(ILandroid/graphics/Paint;)V") => {
+            let t = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+            vm.view_props
+                .insert((recv, "LayerType".to_string()), Value::Int(t));
+            return Ok(Some(Value::Null));
+        }
         ("performHapticFeedback", _) => return Ok(Some(Value::Int(0))),
         _ => {}
     }
