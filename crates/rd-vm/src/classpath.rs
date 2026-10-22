@@ -1875,6 +1875,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/os/Bundle;" => Some(OBJECT),
         "Landroid/os/Handler;" => Some(OBJECT),
         "Landroid/os/HandlerExecutor;" => Some(OBJECT),
+        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
         "Landroid/os/Looper;" => Some(OBJECT),
         "Landroid/view/Window;" => Some(OBJECT),
         "Landroid/view/ViewGroup$LayoutParams;" => Some(VIEWGROUP_LAYOUT_PARAMS),
@@ -2027,13 +2028,22 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
                 "Ljava/lang/Object;",
             ])
         }
+        "Ljava/util/concurrent/ScheduledThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ThreadPoolExecutor;",
+            "Ljava/util/concurrent/AbstractExecutorService;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/util/concurrent/SynchronousQueue;" => Some(&[
+            "Ljava/util/AbstractQueue;",
+            "Ljava/util/AbstractCollection;",
+            "Ljava/lang/Object;",
+        ]),
         "Landroid/text/method/BaseMovementMethod;" => Some(OBJECT),
         "Landroid/text/method/LinkMovementMethod;" => Some(&[
             "Landroid/text/method/BaseMovementMethod;",
             "Ljava/lang/Object;",
         ]),
         "Ljava/lang/Thread;" => Some(OBJECT),
-        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
         "Ljava/util/logging/Logger;" => Some(OBJECT),
         "Ljava/lang/ThreadLocal;" => Some(OBJECT),
         "Ljava/lang/InheritableThreadLocal;" => {
@@ -2871,23 +2881,18 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Landroid/graphics/ComposeShader;" => {
             Some(&["Landroid/graphics/Shader;", "Ljava/lang/Object;"])
         }
-        // javax.crypto / java.security host classes (jcrypto.rs)
-        "Ljavax/crypto/Cipher;"
-        | "Ljavax/crypto/Mac;"
-        | "Ljavax/crypto/KeyGenerator;"
+        // javax.crypto / java.security host classes (jcrypto.rs), restantes
+        "Ljavax/crypto/Mac;"
         | "Ljava/security/MessageDigest;"
-        | "Ljava/security/KeyStore;"
         | "Ljava/security/SecureRandom;" => Some(OBJECT),
         "Ljavax/crypto/spec/SecretKeySpec;"
-        | "Ljavax/crypto/spec/IvParameterSpec;"
-        | "Ljavax/crypto/spec/GCMParameterSpec;" => Some(OBJECT),
+        | "Ljavax/crypto/spec/IvParameterSpec;" => Some(OBJECT),
         // org.json host classes (jjson.rs)
         "Lorg/json/JSONObject;" | "Lorg/json/JSONArray;" => Some(OBJECT),
         // java.nio host classes (jnio.rs)
         "Ljava/nio/Buffer;" | "Ljava/nio/ByteOrder;" => Some(OBJECT),
         "Ljava/nio/ByteBuffer;" => Some(&["Ljava/nio/Buffer;", "Ljava/lang/Object;"]),
         "Ljava/util/BitSet;" => Some(OBJECT),
-        "Ljava/util/logging/Logger;" => Some(OBJECT),
         _ => None,
     }
 }
@@ -3257,6 +3262,27 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         ]),
         "Ljava/util/concurrent/ExecutorService;" => Some(&["Ljava/util/concurrent/Executor;"]),
         "Landroid/os/HandlerExecutor;" => Some(&["Ljava/util/concurrent/Executor;"]),
+        "Ljava/util/concurrent/ScheduledExecutorService;" => Some(&[
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ScheduledThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ScheduledExecutorService;",
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ScheduledFuture;" => Some(&[
+            "Ljava/util/concurrent/Future;",
+            "Ljava/util/concurrent/Delayed;",
+            "Ljava/lang/Comparable;",
+        ]),
+        "Ljava/util/concurrent/SynchronousQueue;" => Some(&[
+            "Ljava/util/concurrent/BlockingQueue;",
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
         "Ljava/util/ServiceLoader;" => Some(&["Ljava/lang/Iterable;"]),
         "Ljava/math/BigDecimal;" | "Ljava/math/BigInteger;" => {
             Some(&["Ljava/lang/Comparable;", "Ljava/io/Serializable;"])

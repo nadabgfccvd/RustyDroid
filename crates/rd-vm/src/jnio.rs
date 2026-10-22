@@ -32,6 +32,7 @@ fn geti(vm: &Engine, r: ObjRef, f: &str, d: i32) -> i32 {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // buffer state mirrors java.nio.Buffer fields
 fn new_buffer(
     vm: &mut Engine,
     arr: Value,

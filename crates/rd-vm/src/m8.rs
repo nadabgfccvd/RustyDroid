@@ -2452,7 +2452,7 @@ fn okhttp(
     vm: &mut Engine,
     _mref: &str,
     name: &str,
-    _sig: &str,
+    sig: &str,
     recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
@@ -2472,6 +2472,15 @@ fn okhttp(
             Ok(Some(Value::Obj(recv)))
         }
         "build" => {
+            // Request$Builder.build() -> Request, but
+            // OkHttpClient$Builder.build() -> OkHttpClient and
+            // Response$Builder.build() -> Response: allocate the type the
+            // signature actually returns.
+            let ret = sig.rsplit(')').next().unwrap_or(OK_REQUEST);
+            if ret != OK_REQUEST {
+                let r = alloc(vm, ret)?;
+                return Ok(Some(Value::Obj(r)));
+            }
             let url = vm
                 .heap
                 .get_field(recv, "m8_url")

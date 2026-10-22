@@ -1852,6 +1852,22 @@ impl Engine {
                 if let Some((d, def, m)) = self.cp.resolve_method(&app_cls, "<init>", "()V") {
                     self.call(d, def, &m, vec![Value::Obj(ar)])?;
                 }
+                // Android: attachBaseContext(ContextImpl) runs between the
+                // Application constructor and onCreate (ContextWrapper
+                // attach). Apps stash the base in a static Context there;
+                // skipping it left that static null in onCreate.
+                {
+                    let base = crate::intrinsics::context_impl(self)?;
+                    self.view_props
+                        .insert((ar, "ctx:mBase".to_string()), Value::Obj(base));
+                    if let Some((d, def, m)) = self.cp.resolve_method(
+                        &app_cls,
+                        "attachBaseContext",
+                        "(Landroid/content/Context;)V",
+                    ) {
+                        self.call(d, def, &m, vec![Value::Obj(ar), Value::Obj(base)])?;
+                    }
+                }
                 // Android: providers do manifest são criados ANTES de
                 // Application.onCreate (installContentProviders).
                 self.install_sdk_providers()?;
@@ -3284,6 +3300,8 @@ fn call_host_static_rooted(
             // not grant Android 11+ all-files access to the app by default.
             Ok(Some(Value::Int(0)))
         }
+        // Application.getProcessName() (API 28): the main process name is
+        // the package name (single-process headless runtime).
         (LOOPER, "getMainLooper") => Ok(Some(Value::Obj(vm.main_looper_obj()?))),
         // Fora do main thread (task de Executor inline) não há Looper preparado.
         // Thread Java (green) ou task inline sem Looper preparado → null, como
@@ -4825,6 +4843,24 @@ fn call_host_instance_rooted(
                 .cloned()
                 .unwrap_or(Value::Int(0x0080_0033)),
         )),
+
+        // ── HandlerThread ─────────────────────────────────────────────────
+        // A Thread with its own Looper on a device; this runtime has one
+        // (main) Looper, so getLooper returns it (posted work drains with
+        // the main loop) and quit* succeed trivially.
+        ("Landroid/os/HandlerThread;", "<init>") => Ok(Some(Value::Null)),
+        ("Landroid/os/HandlerThread;", "getLooper") => Ok(Some(Value::Obj(vm.main_looper_obj()?))),
+        ("Landroid/os/HandlerThread;", "getThreadHandler") => {
+            let looper = vm.main_looper_obj()?;
+            let h = vm.heap.alloc_instance(HANDLER.to_string(), Vec::new())?;
+            vm.fw.objects.insert(h, HostObj::Handler { looper });
+            Ok(Some(Value::Obj(h)))
+        }
+        ("Landroid/os/HandlerThread;", "quit") | ("Landroid/os/HandlerThread;", "quitSafely") => {
+            Ok(Some(Value::Int(1)))
+        }
+        ("Landroid/os/HandlerThread;", "onLooperPrepared") => Ok(Some(Value::Null)),
+        ("Landroid/os/HandlerThread;", "run") => Ok(Some(Value::Null)),
 
         // ── Handler ────────────────────────────────────────────────────────
         (HANDLER, "<init>") => {

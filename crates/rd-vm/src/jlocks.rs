@@ -27,6 +27,7 @@ const WLOCK: &str = "Ljava/util/concurrent/locks/ReentrantReadWriteLock$WriteLoc
 const LOCK: &str = "Ljava/util/concurrent/locks/Lock;";
 const COND: &str = "Ljava/util/concurrent/locks/Condition;";
 const AOS: &str = "Ljava/util/concurrent/locks/AbstractOwnableSynchronizer;";
+const LATCH: &str = "Ljava/util/concurrent/CountDownLatch;";
 
 fn get_i(vm: &Engine, r: ObjRef, f: &str) -> i32 {
     match vm.heap.get_field(r, f) {
@@ -56,6 +57,9 @@ pub(crate) fn instance_intrinsic(
     recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if mref_class == LATCH || recv_class == LATCH {
+        return latch(vm, name, recv, args);
+    }
     let class = match mref_class {
         RL | RWL | RLOCK | WLOCK | AOS => mref_class,
         LOCK | COND => recv_class,
@@ -139,6 +143,56 @@ pub(crate) fn instance_intrinsic(
         "toString" => Value::Obj(crate::intrinsics::alloc_string(
             vm,
             format!("{class}[holds={}]", get_i(vm, target, field)),
+        )?),
+        _ => return Ok(None),
+    }))
+}
+
+/// `java.util.concurrent.CountDownLatch` on a heap counter (`rd_count`).
+/// Tasks that would count the latch down run inline in this VM before
+/// any await can block, so `await` returns at once (spurious-wakeup
+/// style, as with `Condition` above) rather than deadlocking: a caller
+/// that awaits a latch nobody will count down proceeds, documented
+/// deviation. The timed form reports the latch as released.
+fn latch(
+    vm: &mut Engine,
+    name: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    Ok(Some(match name {
+        "<init>" => {
+            let n = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+            if n < 0 {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/IllegalArgumentException;",
+                    format!("count < 0: {n}"),
+                )));
+            }
+            put(vm, recv, "rd_count", Value::Int(n))?;
+            Value::Null
+        }
+        "countDown" => {
+            let n = get_i(vm, recv, "rd_count");
+            if n > 0 {
+                put(vm, recv, "rd_count", Value::Int(n - 1))?;
+            }
+            Value::Null
+        }
+        "getCount" => Value::Long(get_i(vm, recv, "rd_count") as i64),
+        "await" => {
+            if args.is_empty() {
+                Value::Null
+            } else {
+                Value::Int(1)
+            }
+        }
+        "toString" => Value::Obj(crate::intrinsics::alloc_string(
+            vm,
+            format!(
+                "java.util.concurrent.CountDownLatch[count = {}]",
+                get_i(vm, recv, "rd_count")
+            ),
         )?),
         _ => return Ok(None),
     }))
