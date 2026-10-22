@@ -1323,6 +1323,9 @@ pub(crate) fn instance_intrinsic(
     recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if let Some(v) = porter_duff_xfermode(vm, recv_class, name, recv, args)? {
+        return Ok(Some(v));
+    }
     if let Some(v) = color_filter(vm, recv_class, name, recv, args)? {
         return Ok(Some(v));
     }
@@ -3932,6 +3935,28 @@ impl Engine {
 ///
 /// **Deviation:** the rasterizer does not apply color filters; a paint's
 /// filter is recorded but not rendered.
+/// `PorterDuffXfermode(Mode)`: stores the mode (`rd_mode`) like the
+/// color filters; the rasterizer records but does not apply xfermodes.
+fn porter_duff_xfermode(
+    vm: &mut Engine,
+    recv_class: &str,
+    name: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if recv_class != "Landroid/graphics/PorterDuffXfermode;" {
+        return Ok(None);
+    }
+    Ok(Some(match name {
+        "<init>" => {
+            let mode = args.first().cloned().unwrap_or(Value::Null);
+            crate::err::put_field_result(vm.heap.put_field(recv, "rd_mode", mode))?;
+            Value::Null
+        }
+        _ => return Ok(None),
+    }))
+}
+
 fn color_filter(
     vm: &mut Engine,
     recv_class: &str,

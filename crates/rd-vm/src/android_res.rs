@@ -580,6 +580,25 @@ pub(crate) fn instance_intrinsic(
                     let v = value_of(vm, int(0))?;
                     Value::Int(dimension_px(vm, &v, int(0))? as i32)
                 }
+                ("getDrawable", _) => {
+                    // Color resources become a ColorDrawable carrying the
+                    // colour; anything else is a plain Drawable state
+                    // object (XML drawable rasterization is handled by
+                    // the layout inflater path, not Resources).
+                    match value_of(vm, int(0))? {
+                        ResolvedValue::Integer(i) => {
+                            let d = vm.heap.alloc_instance(
+                                "Landroid/graphics/drawable/ColorDrawable;".to_string(),
+                                vec![("rd_color".to_string(), Value::Int(i))],
+                            )?;
+                            Value::Obj(d)
+                        }
+                        _ => Value::Obj(vm.heap.alloc_instance(
+                            "Landroid/graphics/drawable/Drawable;".to_string(),
+                            Vec::new(),
+                        )?),
+                    }
+                }
                 ("getInteger", "(I)I") | ("getColor", _) => match value_of(vm, int(0))? {
                     ResolvedValue::Integer(i) => Value::Int(i),
                     _ => return Err(not_found(int(0))),

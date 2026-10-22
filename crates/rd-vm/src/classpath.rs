@@ -1389,6 +1389,23 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             Some(&["Ljava/lang/ref/Reference;", "Ljava/lang/Object;"])
         }
         "Ljava/lang/ref/ReferenceQueue;" => Some(OBJECT),
+        // javax.crypto / java.security host classes (jcrypto.rs)
+        "Ljavax/crypto/Cipher;"
+        | "Ljavax/crypto/Mac;"
+        | "Ljavax/crypto/KeyGenerator;"
+        | "Ljava/security/MessageDigest;"
+        | "Ljava/security/KeyStore;"
+        | "Ljava/security/SecureRandom;" => Some(OBJECT),
+        "Ljavax/crypto/spec/SecretKeySpec;"
+        | "Ljavax/crypto/spec/IvParameterSpec;"
+        | "Ljavax/crypto/spec/GCMParameterSpec;" => Some(OBJECT),
+        // org.json host classes (jjson.rs)
+        "Lorg/json/JSONObject;" | "Lorg/json/JSONArray;" => Some(OBJECT),
+        // java.nio host classes (jnio.rs)
+        "Ljava/nio/Buffer;" | "Ljava/nio/ByteOrder;" => Some(OBJECT),
+        "Ljava/nio/ByteBuffer;" => Some(&["Ljava/nio/Buffer;", "Ljava/lang/Object;"]),
+        "Ljava/util/BitSet;" => Some(OBJECT),
+        "Ljava/util/logging/Logger;" => Some(OBJECT),
         _ => None,
     }
 }

@@ -985,6 +985,9 @@ pub struct HostState {
     /// Dialogs, OkHttp, SQLite/Room, Services/Broadcasts/DeepLinks,
     /// WorkManager, SharedPreferences stateful) — ver `crate::m8`.
     pub m8: crate::m8::M8State,
+    /// Deterministic key-generation counter (jcrypto.rs, Law 4): each
+    /// generated key derives from a hash of this counter, never OS entropy.
+    pub(crate) jcrypto_key_counter: u64,
     #[cfg(feature = "advanced-components")]
     pub m9: crate::m9::State,
 }

@@ -110,6 +110,13 @@ pub(crate) fn host_static(
     field: &str,
 ) -> Result<Option<Value>, VmExit> {
     Ok(Some(match (owner, field) {
+        (crate::jnio::BYTE_ORDER, "BIG_ENDIAN") => {
+            Value::Obj(crate::jnio::byte_order_obj(vm, true)?)
+        }
+        (crate::jnio::BYTE_ORDER, "LITTLE_ENDIAN") => {
+            Value::Obj(crate::jnio::byte_order_obj(vm, false)?)
+        }
+        (crate::jjson::JSON_OBJECT, "NULL") => crate::jjson::null_value(vm)?,
         (BOOLEAN, "TRUE") => Value::Obj(boolean_obj(vm, true)?),
         (BOOLEAN, "FALSE") => Value::Obj(boolean_obj(vm, false)?),
         (INTEGER, "MAX_VALUE") => Value::Int(i32::MAX),

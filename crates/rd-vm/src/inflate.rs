@@ -760,6 +760,14 @@ fn dimension_px(a: &XmlAttribute, cap: i32, eixo: &str) -> Result<Option<i32>, V
     match px {
         None => Ok(None),
         Some(f) if f >= 0.0 && f <= cap as f32 => Ok(Some(f as i32)),
+        // Negative margins are legal Android (overlap layouts, e.g.
+        // Zoom's dial pad uses -8dp marginTop); bounded by the axis cap.
+        Some(f) if f < 0.0 && eixo.contains("margin") && f >= -(cap as f32) => {
+            Ok(Some(f as i32))
+        }
+        // Negative width/height dimensions: treat like the negative Int
+        // sentinels (wrap/default) instead of a hard error.
+        Some(f) if f < 0.0 && f >= -(cap as f32) => Ok(None),
         Some(f) => Err(inflate_error(format!(
             "dimensão de layout {f}px excede o viewport de {cap}px no eixo {eixo} (hostil ou bug do app)"
         ))),
@@ -790,7 +798,9 @@ fn ref_dimension_px(vm: &Engine, attr: &str, resid: u32, cap: i32) -> Result<i32
                     _ => framework::DENSITY, // dip/sp/pt/in/mm → escala do viewport
                 };
                 let f = (value * scale).round();
-                if f < 0.0 || f > cap as f32 {
+                // Margins may be negative (legal overlap); sizes keep
+                // the same [-cap, cap] sanity window as literal dims.
+                if f < -(cap as f32) || f > cap as f32 {
                     return Err(inflate_error(format!(
                         "android:{attr}=@0x{resid:08x}: dimensão {f}px excede o viewport de {cap}px no eixo (hostil ou bug do app)"
                     )));
