@@ -867,6 +867,12 @@ fn dimension_px(a: &XmlAttribute, cap: i32, eixo: &str) -> Result<Option<i32>, V
     match px {
         None => Ok(None),
         Some(f) if f >= 0.0 && f <= cap as f64 => Ok(Some(f as i32)),
+        // Margens negativas são legais no Android (sobreposição de layout, ex.:
+        // o teclado do Zoom usa marginTop de -8dp); limitadas pelo teto do eixo.
+        // Largura/altura negativas continuam sendo erro (validação do main).
+        Some(f) if f < 0.0 && eixo.contains("margin") && f >= -(cap as f64) => {
+            Ok(Some(f as i32))
+        }
         Some(f) => Err(inflate_error(format!(
             "dimensão de layout {f}px excede o viewport de {cap}px no eixo {eixo} (hostil ou bug do app)"
         ))),
@@ -897,7 +903,10 @@ fn ref_dimension_px(vm: &Engine, attr: &str, resid: u32, cap: i32) -> Result<i32
                     _ => framework::DENSITY, // dip/sp/pt/in/mm → escala do viewport
                 };
                 let f = ((value as f64) * (scale as f64)).round();
-                if f < 0.0 || f > cap as f64 {
+                // Margens podem ser negativas (sobreposição legal); demais
+                // dimensões mantêm a janela [0, cap].
+                let lower = if attr.contains("margin") { -(cap as f64) } else { 0.0 };
+                if f < lower || f > cap as f64 {
                     return Err(inflate_error(format!(
                         "android:{attr}=@0x{resid:08x}: dimensão {f}px excede o viewport de {cap}px no eixo (hostil ou bug do app)"
                     )));
