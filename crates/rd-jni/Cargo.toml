@@ -15,7 +15,7 @@ authors.workspace = true
 unsafe_code = "deny"
 
 [dependencies]
-cranelift-codegen = { version = "=0.104.3", optional = true }
+cranelift-codegen = { version = "=0.136.3", optional = true }
 cranelift-frontend = { version = "=0.104.3", optional = true }
 cranelift-jit = { version = "=0.104.3", optional = true }
 cranelift-module = { version = "=0.104.3", optional = true }
