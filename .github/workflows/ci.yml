@@ -14,7 +14,7 @@ jobs:
     name: Docs integrity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # issue #73: o placar oficial é GERADO — o CI precisa da toolchain para
       # provar que o arquivo versionado está em sincronia com `cargo xtask`.
       - uses: dtolnay/rust-toolchain@stable
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lint markdown files
         run: |
           # Version pinned (issue #6) for deterministic runs; config in
@@ -67,7 +67,7 @@ jobs:
     name: Rust (stable)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -103,7 +103,7 @@ jobs:
     name: Appendix G (minimal / individual / all features)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -134,7 +134,7 @@ jobs:
     name: VM golden vectors vs real JVM (M2 DoD)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-java@v4
         with:
@@ -159,7 +159,7 @@ jobs:
     name: Native NDK/JNI (M9, 3 ABIs)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -199,7 +199,7 @@ jobs:
     name: Rust MSRV (1.76)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.76
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace
@@ -210,7 +210,7 @@ jobs:
     name: Fuzz targets build (nightly)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       # pin determinístico (issue #14): --locked fixa as deps, mas não a
@@ -227,7 +227,7 @@ jobs:
     name: Cranelift integer leaf JIT (opt-in)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -241,7 +241,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-linux-android,aarch64-linux-android,armv7-linux-androideabi
