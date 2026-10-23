@@ -33,7 +33,7 @@ authors = ["RustyDroid contributors"]
 
 [workspace.dependencies]
 # error handling — thiserror nas libs, anyhow no binário (decisão da spec)
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # serialização / dados versionados
