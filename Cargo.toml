@@ -39,7 +39,7 @@ anyhow = "1.0"
 # serialização / dados versionados
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.8"
+toml = "1.1"
 
 # compressão ZIP (APK) — backend puro Rust (miniz_oxide), sem toolchain C
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
