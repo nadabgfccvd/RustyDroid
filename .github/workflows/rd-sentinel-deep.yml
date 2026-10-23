@@ -163,7 +163,7 @@ jobs:
             args+=(--baseline-proposal)
           fi
           python3 tools/rd-sentinel/rd_sentinel.py "${args[@]}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-partial-core
@@ -231,7 +231,7 @@ jobs:
           rm -rf sentinel-real/bin sentinel-real/snapshots
           find sentinel-real -name '*.png' -delete || true
           exit "$code"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-partial-real-apk
@@ -279,7 +279,7 @@ jobs:
             --output-dir "$GITHUB_WORKSPACE/sentinel-fuzz" \
             --json-out "$GITHUB_WORKSPACE/sentinel-fuzz/rd-sentinel-report.json" \
             --markdown-out "$GITHUB_WORKSPACE/sentinel-fuzz/rd-sentinel-report.md"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-partial-fuzz
@@ -328,7 +328,7 @@ jobs:
             --json-out "$GITHUB_WORKSPACE/sentinel-mutants/rd-sentinel-report.json" \
             --markdown-out "$GITHUB_WORKSPACE/sentinel-mutants/rd-sentinel-report.md" \
             --sarif-out "$GITHUB_WORKSPACE/sentinel-mutants/rd-sentinel-report.sarif"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-partial-mutants
@@ -384,7 +384,7 @@ jobs:
             --output-dir "$GITHUB_WORKSPACE/sentinel-soak" \
             --json-out "$GITHUB_WORKSPACE/sentinel-soak/rd-sentinel-report.json" \
             --markdown-out "$GITHUB_WORKSPACE/sentinel-soak/rd-sentinel-report.md"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-partial-soak
@@ -437,7 +437,7 @@ jobs:
             --output-dir "$GITHUB_WORKSPACE/sentinel-golden" \
             --json-out "$GITHUB_WORKSPACE/sentinel-golden/rd-sentinel-report.json" \
             --markdown-out "$GITHUB_WORKSPACE/sentinel-golden/rd-sentinel-report.md"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-partial-golden
@@ -490,7 +490,7 @@ jobs:
             --out "$GITHUB_WORKSPACE/rd-sentinel-report.json" \
             --markdown-out "$GITHUB_WORKSPACE/rd-sentinel-report.md" \
             --sarif-out "$GITHUB_WORKSPACE/rd-sentinel-report.sarif"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: rd-sentinel-report

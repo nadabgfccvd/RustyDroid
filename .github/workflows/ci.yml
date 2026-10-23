@@ -264,7 +264,7 @@ jobs:
           python -m pip install unicorn==2.1.4
       - name: Build source APKs, adapter API tests, and positive full MCP matrices
         run: bash golden/native-languages/gate.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-languages-apks-and-mcp-evidence
