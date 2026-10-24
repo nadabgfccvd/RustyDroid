@@ -256,6 +256,51 @@ that exact prefix:
   its public catalogue, including XML helpers and event/log types,
   remains incomplete.
 
+## Round 11 — `ArrayMap` / `ArraySet` hash-ordered containers
+
+- `ArrayMap`/`SimpleArrayMap` and `ArraySet` now have dedicated host
+  dispatch in `android_util.rs`. Their storage reuses the existing host
+  Map/List state, but every insertion is placed by signed Java `hashCode`
+  order; distinct keys/elements with the same hash retain insertion order,
+  matching AOSP's binary-search insertion point rather than the generic
+  insertion-ordered `java.util` host maps.
+- The implemented core surface includes constructors (empty, capacity,
+  copy/collection forms), `put`/`putAll`/`get`/`getOrDefault`,
+  `putIfAbsent`, conditional `remove`/`replace`, key `removeAll`/
+  `retainAll`, `containsKey`, `containsValue`, `indexOfKey`/
+  `indexOfValue`, `keyAt`, `valueAt`, `setValueAt`, `removeAt`,
+  `ensureCapacity`, Map `equals`/`hashCode`/`toString`, snapshot
+  `keySet`/`values`/`entrySet` views, and ArraySet `add`/`addAll`/
+  `removeAll`/`retainAll`/`containsAll`, Set `equals`/`hashCode`/
+  `toString`, indexed `valueAt`/`removeAt`, iterator and `toArray`
+  paths. `append` keeps AOSP's fast-path meaning instead of becoming
+  `put`/`add`: it stores at the end without de-duplicating when the new
+  signed hash is not before the last hash, and only an out-of-order hash
+  falls back to the normal insertion path.
+- Guest `hashCode` is consulted through the existing Java object hash
+  helper and guest `equals` is consulted for distinct object keys/elements
+  after the host String/wrapper fast paths. Views remain snapshots, as in
+  the existing host collection model; exact live-view/write-through and
+  every Java 8 default-method edge remain tracked under the still-partial
+  `android.util` surface.
+- Proof: `array_map_and_array_set_keep_signed_hash_order` inserts boxed
+  integer keys out of order, verifies signed-hash order, checks the
+  equal-hash strings `"Aa"`/`"BB"` keep insertion order, iterates an
+  `ArraySet` in that order, keeps that order when `addAll` is named
+  through `java.util.Collection`, and typed `toArray(T[])` preserves the
+  runtime component/reuses a large-enough array.
+  `array_containers_append_and_set_object_methods_match_aosp` covers the
+  non-de-duplicating `append` fast path and its out-of-order fallback,
+  ArrayMap key `removeAll`/`retainAll`, ArraySet `equals`/`hashCode`/
+  `toString`, and the void `addAll(ArraySet)` overload.
+  `android_array_containers.rs` additionally
+  proves a guest key's DEX `hashCode`/`equals` drive both containers and
+  that DEX subclasses inherit the host `ArrayMap`/`ArraySet` operations
+  when they do not override them.
+- Status after Round 11: `android.util` remains **partial**. The rest of
+  its public catalogue, including XML helpers and event/log types,
+  remains incomplete.
+
 ## Remaining literal blockers by partial surface
 
 | Domain | Surface | Main literal blockers |

@@ -22,6 +22,9 @@ const SPARSE: &[&str] = &[
     "Landroid/util/SparseLongArray;",
     "Landroid/util/LongSparseArray;",
 ];
+const ARRAY_MAP: &str = "Landroid/util/ArrayMap;";
+const SIMPLE_ARRAY_MAP: &str = "Landroid/util/SimpleArrayMap;";
+const ARRAY_SET: &str = "Landroid/util/ArraySet;";
 
 fn key(v: Option<&Value>) -> i64 {
     match v {
@@ -160,6 +163,727 @@ fn sparse(
                     .join(", ")
             );
             Value::Obj(crate::intrinsics::alloc_string(vm, s)?)
+        }
+        _ => return Ok(None),
+    }))
+}
+
+fn array_throw(class: &str, message: impl Into<String>) -> VmExit {
+    VmExit::Exception(Throwable::new(class, message.into()))
+}
+
+fn array_hash(vm: &mut Engine, value: &Value) -> Result<i32, VmExit> {
+    Ok(match value {
+        Value::Null => 0,
+        Value::Obj(_) => crate::arrays::obj_hash(vm, value)?,
+        Value::Int(x) => *x,
+        Value::Long(x) => (*x ^ ((*x as u64) >> 32) as i64) as i32,
+        Value::Float(x) => {
+            if x.is_nan() {
+                0x7fc0_0000
+            } else {
+                x.to_bits() as i32
+            }
+        }
+        Value::Double(x) => {
+            let bits = if x.is_nan() {
+                0x7ff8_0000_0000_0000u64
+            } else {
+                x.to_bits()
+            };
+            ((bits ^ (bits >> 32)) & 0xffff_ffff) as u32 as i32
+        }
+        _ => 0,
+    })
+}
+
+fn array_equal(vm: &mut Engine, needle: &Value, candidate: &Value) -> Result<bool, VmExit> {
+    if crate::intrinsics::values_equal(&vm.heap, needle, candidate)? {
+        return Ok(true);
+    }
+    let Value::Obj(recv) = needle else {
+        return Ok(false);
+    };
+    if matches!(candidate, Value::Null) {
+        return Ok(false);
+    }
+    match crate::jcollections::guest_call(
+        vm,
+        *recv,
+        "equals",
+        "(Ljava/lang/Object;)Z",
+        std::slice::from_ref(candidate),
+    )? {
+        Some(value) => Ok(value.as_int().unwrap_or(0) != 0),
+        None => Ok(false),
+    }
+}
+
+/// Locate `needle` in a hash-ordered key slice. `Ok(index)` is an equal
+/// key; `Err(index)` is the AOSP insertion point: after every existing key
+/// with the same signed hash, before the first greater hash.
+fn array_find_in(
+    vm: &mut Engine,
+    keys: &[Value],
+    needle: &Value,
+) -> Result<Result<usize, usize>, VmExit> {
+    let target = array_hash(vm, needle)?;
+    let mut hashes = Vec::with_capacity(keys.len());
+    for key in keys {
+        hashes.push(array_hash(vm, key)?);
+    }
+    let insert = hashes
+        .iter()
+        .position(|hash| *hash > target)
+        .unwrap_or(hashes.len());
+    for (index, hash) in hashes.iter().enumerate() {
+        if *hash == target && array_equal(vm, needle, &keys[index])? {
+            return Ok(Ok(index));
+        }
+    }
+    Ok(Err(insert))
+}
+
+fn array_contains_linear(
+    vm: &mut Engine,
+    values: &[Value],
+    needle: &Value,
+) -> Result<bool, VmExit> {
+    for value in values {
+        if array_equal(vm, needle, value)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn array_map_entries(vm: &Engine, recv: ObjRef) -> Vec<(Value, Value)> {
+    match vm.fw.objects.get(&recv) {
+        Some(HostObj::Map { entries }) => entries.clone(),
+        _ => Vec::new(),
+    }
+}
+
+fn array_map_store(vm: &mut Engine, recv: ObjRef, entries: Vec<(Value, Value)>) {
+    vm.fw.objects.insert(recv, HostObj::Map { entries });
+}
+
+fn array_map_put_into(
+    vm: &mut Engine,
+    entries: &mut Vec<(Value, Value)>,
+    key: Value,
+    value: Value,
+) -> Result<Value, VmExit> {
+    let keys: Vec<Value> = entries.iter().map(|(k, _)| k.clone()).collect();
+    match array_find_in(vm, &keys, &key)? {
+        Ok(index) => Ok(std::mem::replace(&mut entries[index].1, value)),
+        Err(index) => {
+            entries.insert(index, (key, value));
+            Ok(Value::Null)
+        }
+    }
+}
+
+fn array_map_source_entries(
+    vm: &mut Engine,
+    value: Option<&Value>,
+) -> Result<Vec<(Value, Value)>, VmExit> {
+    let Some(Value::Obj(source)) = value else {
+        return Err(array_throw(
+            "Ljava/lang/NullPointerException;",
+            "map == null",
+        ));
+    };
+    let source = *source;
+    if let Some(HostObj::Map { entries }) = vm.fw.objects.get(&source) {
+        return Ok(entries.clone());
+    }
+    let entry_set = vm.invoke_instance(source, "entrySet", "()Ljava/util/Set;", &[])?;
+    let entries = crate::jcollections::elems_of(vm, &entry_set)?;
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Value::Obj(entry) = entry else {
+            continue;
+        };
+        let key = vm.invoke_instance(entry, "getKey", "()Ljava/lang/Object;", &[])?;
+        let value = vm.invoke_instance(entry, "getValue", "()Ljava/lang/Object;", &[])?;
+        out.push((key, value));
+    }
+    Ok(out)
+}
+
+fn array_value_string(
+    vm: &mut Engine,
+    this: ObjRef,
+    this_label: &str,
+    value: &Value,
+) -> Result<String, VmExit> {
+    Ok(match value {
+        Value::Null => "null".to_string(),
+        Value::Obj(obj) if *obj == this => this_label.to_string(),
+        Value::Obj(obj) => crate::intrinsics::object_to_string(vm, *obj)?,
+        Value::Int(x) => x.to_string(),
+        Value::Long(x) => x.to_string(),
+        Value::Float(x) => crate::repr::java_float(*x),
+        Value::Double(x) => crate::repr::java_double(*x),
+        other => format!("{other:?}"),
+    })
+}
+
+fn array_map_view(
+    vm: &mut Engine,
+    recv: ObjRef,
+    name: &str,
+    entries: &[(Value, Value)],
+) -> Result<Value, VmExit> {
+    let mut elems = Vec::with_capacity(entries.len());
+    let mut keys = Vec::with_capacity(entries.len());
+    for (key, value) in entries {
+        keys.push(key.clone());
+        elems.push(match name {
+            "keySet" => key.clone(),
+            "values" => value.clone(),
+            _ => {
+                let entry = vm
+                    .heap
+                    .alloc_instance("Ljava/util/Map$Entry;".to_string(), Vec::new())
+                    .map_err(crate::err::oom_throwable)?;
+                put(vm, entry, "entry_key", key.clone())?;
+                put(vm, entry, "entry_value", value.clone())?;
+                Value::Obj(entry)
+            }
+        });
+    }
+    let view = vm
+        .heap
+        .alloc_instance("Ljava/util/HashSet;".to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    vm.fw.objects.insert(view, HostObj::List { elems });
+    put(vm, view, "rd$map", Value::Obj(recv))?;
+    for (index, key) in keys.into_iter().enumerate() {
+        put(vm, view, &format!("rd$key{index}"), key)?;
+    }
+    Ok(Value::Obj(view))
+}
+
+fn array_map(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let arg = |index: usize| args.get(index).cloned().unwrap_or(Value::Null);
+    if name == "<init>" {
+        let source = if matches!(
+            sig,
+            "(Ljava/util/Map;)V"
+                | "(Landroid/util/ArrayMap;)V"
+                | "(Landroid/util/SimpleArrayMap;)V"
+        ) {
+            array_map_source_entries(vm, args.first())?
+        } else {
+            Vec::new()
+        };
+        let mut entries = Vec::new();
+        for (key, value) in source {
+            array_map_put_into(vm, &mut entries, key, value)?;
+        }
+        array_map_store(vm, recv, entries);
+        return Ok(Some(Value::Null));
+    }
+
+    let entries_snapshot = array_map_entries(vm, recv);
+    let keys_snapshot: Vec<Value> = entries_snapshot.iter().map(|(k, _)| k.clone()).collect();
+    Ok(Some(match name {
+        "put" => {
+            let mut entries = entries_snapshot;
+            let old = array_map_put_into(vm, &mut entries, arg(0), arg(1))?;
+            array_map_store(vm, recv, entries);
+            old
+        }
+        "append" => {
+            // AOSP append is a fast path, not put(): when the new signed
+            // hash is not before the current last hash it stores at the end
+            // without de-duplicating (validate() exists to detect the
+            // resulting duplicate keys). Only an out-of-order hash falls
+            // back to put().
+            let key = arg(0);
+            let value = arg(1);
+            let mut entries = entries_snapshot;
+            let last_hash = match entries.last() {
+                Some((last_key, _)) => Some(array_hash(vm, last_key)?),
+                None => None,
+            };
+            let new_hash = array_hash(vm, &key)?;
+            if last_hash.map_or(true, |hash| hash <= new_hash) {
+                entries.push((key, value));
+            } else {
+                array_map_put_into(vm, &mut entries, key, value)?;
+            }
+            array_map_store(vm, recv, entries);
+            Value::Null
+        }
+        "putAll" => {
+            let source = array_map_source_entries(vm, args.first())?;
+            let mut entries = entries_snapshot;
+            for (key, value) in source {
+                array_map_put_into(vm, &mut entries, key, value)?;
+            }
+            array_map_store(vm, recv, entries);
+            Value::Null
+        }
+        "get" => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) => entries_snapshot[index].1.clone(),
+            Err(_) => Value::Null,
+        },
+        "getOrDefault" => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) => entries_snapshot[index].1.clone(),
+            Err(_) => arg(1),
+        },
+        "putIfAbsent" => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) if !matches!(entries_snapshot[index].1, Value::Null) => {
+                entries_snapshot[index].1.clone()
+            }
+            Ok(index) => {
+                let mut entries = entries_snapshot;
+                entries[index].1 = arg(1);
+                array_map_store(vm, recv, entries);
+                Value::Null
+            }
+            Err(index) => {
+                let mut entries = entries_snapshot;
+                entries.insert(index, (arg(0), arg(1)));
+                array_map_store(vm, recv, entries);
+                Value::Null
+            }
+        },
+        "remove" if args.len() >= 2 => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) if array_equal(vm, &entries_snapshot[index].1.clone(), &arg(1))? => {
+                let mut entries = entries_snapshot;
+                entries.remove(index);
+                array_map_store(vm, recv, entries);
+                Value::Int(1)
+            }
+            _ => Value::Int(0),
+        },
+        "remove" => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) => {
+                let mut entries = entries_snapshot;
+                let old = entries.remove(index).1;
+                array_map_store(vm, recv, entries);
+                old
+            }
+            Err(_) => Value::Null,
+        },
+        "replace" if args.len() >= 3 => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) if array_equal(vm, &entries_snapshot[index].1.clone(), &arg(1))? => {
+                let mut entries = entries_snapshot;
+                entries[index].1 = arg(2);
+                array_map_store(vm, recv, entries);
+                Value::Int(1)
+            }
+            _ => Value::Int(0),
+        },
+        "replace" => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) => {
+                let mut entries = entries_snapshot;
+                let old = std::mem::replace(&mut entries[index].1, arg(1));
+                array_map_store(vm, recv, entries);
+                old
+            }
+            Err(_) => Value::Null,
+        },
+        "removeAll" | "retainAll" => {
+            // ArrayMap's own (non-Map) bulk operations act on keys.
+            let source = crate::jcollections::elems_of(vm, &arg(0))?;
+            let mut kept = Vec::with_capacity(entries_snapshot.len());
+            let mut changed = false;
+            for (key, value) in entries_snapshot {
+                let inside = array_contains_linear(vm, &source, &key)?;
+                if inside == (name == "retainAll") {
+                    kept.push((key, value));
+                } else {
+                    changed = true;
+                }
+            }
+            array_map_store(vm, recv, kept);
+            Value::Int(changed as i32)
+        }
+        "containsKey" => Value::Int(array_find_in(vm, &keys_snapshot, &arg(0))?.is_ok() as i32),
+        "containsValue" => {
+            let mut found = false;
+            for (_, value) in &entries_snapshot {
+                if array_equal(vm, &arg(0), value)? {
+                    found = true;
+                    break;
+                }
+            }
+            Value::Int(found as i32)
+        }
+        "indexOfKey" => match array_find_in(vm, &keys_snapshot, &arg(0))? {
+            Ok(index) => Value::Int(index as i32),
+            Err(index) => Value::Int(-(index as i32) - 1),
+        },
+        "indexOfValue" => {
+            let mut found = -1i32;
+            for (index, (_, value)) in entries_snapshot.iter().enumerate() {
+                if array_equal(vm, &arg(0), value)? {
+                    found = index as i32;
+                    break;
+                }
+            }
+            Value::Int(found)
+        }
+        "keyAt" => {
+            let index = arg(0).as_int().unwrap_or(0);
+            let Some((key, _)) = usize::try_from(index)
+                .ok()
+                .and_then(|i| entries_snapshot.get(i))
+            else {
+                return Err(oob(index as i64));
+            };
+            key.clone()
+        }
+        "valueAt" => {
+            let index = arg(0).as_int().unwrap_or(0);
+            let Some((_, value)) = usize::try_from(index)
+                .ok()
+                .and_then(|i| entries_snapshot.get(i))
+            else {
+                return Err(oob(index as i64));
+            };
+            value.clone()
+        }
+        "setValueAt" => {
+            let index = arg(0).as_int().unwrap_or(0);
+            let Ok(index_usize) = usize::try_from(index) else {
+                return Err(oob(index as i64));
+            };
+            if index_usize >= entries_snapshot.len() {
+                return Err(oob(index as i64));
+            }
+            let mut entries = entries_snapshot;
+            let old = std::mem::replace(&mut entries[index_usize].1, arg(1));
+            array_map_store(vm, recv, entries);
+            old
+        }
+        "removeAt" => {
+            let index = arg(0).as_int().unwrap_or(0);
+            let Ok(index_usize) = usize::try_from(index) else {
+                return Err(oob(index as i64));
+            };
+            if index_usize >= entries_snapshot.len() {
+                return Err(oob(index as i64));
+            }
+            let mut entries = entries_snapshot;
+            let old = entries.remove(index_usize).1;
+            array_map_store(vm, recv, entries);
+            old
+        }
+        "size" => Value::Int(entries_snapshot.len() as i32),
+        "isEmpty" => Value::Int(entries_snapshot.is_empty() as i32),
+        "clear" => {
+            array_map_store(vm, recv, Vec::new());
+            Value::Null
+        }
+        "ensureCapacity" => Value::Null,
+        "keySet" | "values" | "entrySet" => array_map_view(vm, recv, name, &entries_snapshot)?,
+        "hashCode" => {
+            let mut hash = 0i32;
+            for (key, value) in &entries_snapshot {
+                hash = hash.wrapping_add(array_hash(vm, key)? ^ array_hash(vm, value)?);
+            }
+            Value::Int(hash)
+        }
+        "equals" => {
+            let Some(Value::Obj(other)) = args.first() else {
+                return Ok(Some(Value::Int(0)));
+            };
+            if *other == recv {
+                Value::Int(1)
+            } else {
+                let other_entries = array_map_entries(vm, *other);
+                if other_entries.len() != entries_snapshot.len() {
+                    Value::Int(0)
+                } else {
+                    let other_keys: Vec<Value> =
+                        other_entries.iter().map(|(k, _)| k.clone()).collect();
+                    let mut equal = true;
+                    for (key, value) in &entries_snapshot {
+                        match array_find_in(vm, &other_keys, key)? {
+                            Ok(index)
+                                if array_equal(vm, value, &other_entries[index].1.clone())? => {}
+                            _ => {
+                                equal = false;
+                                break;
+                            }
+                        }
+                    }
+                    Value::Int(equal as i32)
+                }
+            }
+        }
+        "toString" => {
+            let mut parts = Vec::with_capacity(entries_snapshot.len());
+            for (key, value) in &entries_snapshot {
+                parts.push(format!(
+                    "{}={}",
+                    array_value_string(vm, recv, "(this Map)", key)?,
+                    array_value_string(vm, recv, "(this Map)", value)?
+                ));
+            }
+            Value::Obj(crate::intrinsics::alloc_string(
+                vm,
+                format!("{{{}}}", parts.join(", ")),
+            )?)
+        }
+        _ => return Ok(None),
+    }))
+}
+
+fn array_set_elems(vm: &Engine, recv: ObjRef) -> Vec<Value> {
+    match vm.fw.objects.get(&recv) {
+        Some(HostObj::List { elems }) => elems.clone(),
+        _ => Vec::new(),
+    }
+}
+
+fn array_set_store(vm: &mut Engine, recv: ObjRef, elems: Vec<Value>) {
+    vm.fw.objects.insert(recv, HostObj::List { elems });
+}
+
+fn array_set_add_into(
+    vm: &mut Engine,
+    elems: &mut Vec<Value>,
+    value: Value,
+) -> Result<bool, VmExit> {
+    match array_find_in(vm, elems, &value)? {
+        Ok(_) => Ok(false),
+        Err(index) => {
+            elems.insert(index, value);
+            Ok(true)
+        }
+    }
+}
+
+fn array_set(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let arg = |index: usize| args.get(index).cloned().unwrap_or(Value::Null);
+    if name == "<init>" {
+        let source = if matches!(
+            sig,
+            "(Ljava/util/Collection;)V" | "(Landroid/util/ArraySet;)V"
+        ) {
+            crate::jcollections::elems_of(vm, &arg(0))?
+        } else {
+            Vec::new()
+        };
+        let mut elems = Vec::new();
+        for value in source {
+            array_set_add_into(vm, &mut elems, value)?;
+        }
+        array_set_store(vm, recv, elems);
+        return Ok(Some(Value::Null));
+    }
+
+    let elems_snapshot = array_set_elems(vm, recv);
+    Ok(Some(match name {
+        "add" => {
+            let mut elems = elems_snapshot;
+            let changed = array_set_add_into(vm, &mut elems, arg(0))?;
+            array_set_store(vm, recv, elems);
+            Value::Int(changed as i32)
+        }
+        "append" => {
+            // Same AOSP fast path as ArrayMap.append: store at the end when
+            // the signed hash is not before the last hash (no de-dup), else
+            // fall back to add().
+            let value = arg(0);
+            let mut elems = elems_snapshot;
+            let last_hash = match elems.last() {
+                Some(last) => Some(array_hash(vm, last)?),
+                None => None,
+            };
+            let new_hash = array_hash(vm, &value)?;
+            if last_hash.map_or(true, |hash| hash <= new_hash) {
+                elems.push(value);
+            } else {
+                array_set_add_into(vm, &mut elems, value)?;
+            }
+            array_set_store(vm, recv, elems);
+            Value::Null
+        }
+        "addAll" => {
+            let source = crate::jcollections::elems_of(vm, &arg(0))?;
+            let mut elems = elems_snapshot;
+            let mut changed = false;
+            for value in source {
+                changed |= array_set_add_into(vm, &mut elems, value)?;
+            }
+            array_set_store(vm, recv, elems);
+            // ArraySet.addAll(ArraySet) is void; Collection.addAll returns
+            // whether the set changed.
+            if sig == "(Landroid/util/ArraySet;)V" {
+                Value::Null
+            } else {
+                Value::Int(changed as i32)
+            }
+        }
+        "remove" => match array_find_in(vm, &elems_snapshot, &arg(0))? {
+            Ok(index) => {
+                let mut elems = elems_snapshot;
+                elems.remove(index);
+                array_set_store(vm, recv, elems);
+                Value::Int(1)
+            }
+            Err(_) => Value::Int(0),
+        },
+        "removeAt" => {
+            let index = arg(0).as_int().unwrap_or(0);
+            let Ok(index_usize) = usize::try_from(index) else {
+                return Err(oob(index as i64));
+            };
+            if index_usize >= elems_snapshot.len() {
+                return Err(oob(index as i64));
+            }
+            let mut elems = elems_snapshot;
+            let old = elems.remove(index_usize);
+            array_set_store(vm, recv, elems);
+            old
+        }
+        "removeAll" | "retainAll" => {
+            let source = crate::jcollections::elems_of(vm, &arg(0))?;
+            let mut kept = Vec::with_capacity(elems_snapshot.len());
+            let mut changed = false;
+            for value in elems_snapshot {
+                let inside = array_contains_linear(vm, &source, &value)?;
+                if inside == (name == "retainAll") {
+                    kept.push(value);
+                } else {
+                    changed = true;
+                }
+            }
+            array_set_store(vm, recv, kept);
+            Value::Int(changed as i32)
+        }
+        "contains" => Value::Int(array_find_in(vm, &elems_snapshot, &arg(0))?.is_ok() as i32),
+        "containsAll" => {
+            let source = crate::jcollections::elems_of(vm, &arg(0))?;
+            let mut all = true;
+            for value in &source {
+                if array_find_in(vm, &elems_snapshot, value)?.is_err() {
+                    all = false;
+                    break;
+                }
+            }
+            Value::Int(all as i32)
+        }
+        "indexOf" => match array_find_in(vm, &elems_snapshot, &arg(0))? {
+            Ok(index) => Value::Int(index as i32),
+            Err(index) => Value::Int(-(index as i32) - 1),
+        },
+        "valueAt" => {
+            let index = arg(0).as_int().unwrap_or(0);
+            let Some(value) = usize::try_from(index)
+                .ok()
+                .and_then(|i| elems_snapshot.get(i))
+            else {
+                return Err(oob(index as i64));
+            };
+            value.clone()
+        }
+        "size" => Value::Int(elems_snapshot.len() as i32),
+        "isEmpty" => Value::Int(elems_snapshot.is_empty() as i32),
+        "clear" => {
+            array_set_store(vm, recv, Vec::new());
+            Value::Null
+        }
+        "ensureCapacity" => Value::Null,
+        "iterator" => {
+            let iterator = vm
+                .heap
+                .alloc_instance("Ljava/util/Iterator;".to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            vm.fw.objects.insert(
+                iterator,
+                HostObj::Iter {
+                    elems: elems_snapshot,
+                    pos: 0,
+                },
+            );
+            crate::jiterator::bind(vm, iterator, recv)?;
+            Value::Obj(iterator)
+        }
+        "toArray" => crate::jcollections::to_array(
+            vm,
+            elems_snapshot,
+            if sig == "()[Ljava/lang/Object;" {
+                None
+            } else {
+                args.first()
+            },
+        )?,
+        "equals" => {
+            let Some(Value::Obj(other)) = args.first() else {
+                return Ok(Some(Value::Int(0)));
+            };
+            if *other == recv {
+                Value::Int(1)
+            } else {
+                let other_class = vm.heap.class_of(*other).unwrap_or("");
+                let is_set = other_class == ARRAY_SET
+                    || vm.cp.is_subtype(other_class, ARRAY_SET)
+                    || vm.cp.is_subtype(other_class, "Ljava/util/Set;");
+                if !is_set {
+                    Value::Int(0)
+                } else {
+                    // Host sets share the List state; other Set receivers are
+                    // materialized through the collection layer. A receiver
+                    // that cannot be materialized is simply not equal here.
+                    let other_elems =
+                        if matches!(vm.fw.objects.get(other), Some(HostObj::List { .. })) {
+                            array_set_elems(vm, *other)
+                        } else {
+                            crate::jcollections::elems_of(vm, &Value::Obj(*other))
+                                .unwrap_or_default()
+                        };
+                    if other_elems.len() != elems_snapshot.len() {
+                        Value::Int(0)
+                    } else {
+                        let mut equal = true;
+                        for value in &elems_snapshot {
+                            if !array_contains_linear(vm, &other_elems, value)? {
+                                equal = false;
+                                break;
+                            }
+                        }
+                        Value::Int(equal as i32)
+                    }
+                }
+            }
+        }
+        "hashCode" => {
+            let mut hash = 0i32;
+            for value in &elems_snapshot {
+                hash = hash.wrapping_add(array_hash(vm, value)?);
+            }
+            Value::Int(hash)
+        }
+        "toString" => {
+            let mut parts = Vec::with_capacity(elems_snapshot.len());
+            for value in &elems_snapshot {
+                parts.push(array_value_string(vm, recv, "(this Set)", value)?);
+            }
+            Value::Obj(crate::intrinsics::alloc_string(
+                vm,
+                format!("{{{}}}", parts.join(", ")),
+            )?)
         }
         _ => return Ok(None),
     }))
@@ -364,8 +1088,13 @@ fn base64_static(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Option<V
         }
         "encodeToString" => {
             let input = base64_input_slice(vm, args)?;
-            let encoded =
-                String::from_utf8(base64_encode(&input, flags)).expect("Base64 output is ASCII");
+            // The encoder emits only the ASCII Base64 alphabet, padding and
+            // line breaks; decode that byte alphabet directly instead of
+            // relying on a panicking UTF-8 assertion.
+            let encoded = base64_encode(&input, flags)
+                .iter()
+                .map(|byte| char::from(*byte))
+                .collect::<String>();
             Value::Obj(crate::intrinsics::alloc_string(vm, encoded)?)
         }
         _ => return Ok(None),
@@ -1164,27 +1893,30 @@ pub(crate) fn static_intrinsic(
 
 pub(crate) fn instance_intrinsic(
     vm: &mut Engine,
+    recv_class: &str,
     mref_class: &str,
     name: &str,
     sig: &str,
     recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
-    let json_recv_class = vm
-        .heap
-        .class_of(recv)
-        .map(str::to_string)
-        .unwrap_or_default();
-    if let Some(value) = crate::android_json::instance_intrinsic(
-        vm,
+    // This dispatcher is consulted for host calls on *every* receiver class
+    // (including hot java.lang.String operations). Keep the non-Android path
+    // free of receiver-class allocation, method resolution, and subtype
+    // walks: only do that work after an exact Android class/method gate says
+    // this module could actually handle the call.
+    if matches!(
         mref_class,
-        &json_recv_class,
-        name,
-        sig,
-        recv,
-        args,
-    )? {
-        return Ok(Some(value));
+        "Landroid/util/JsonReader;" | "Landroid/util/JsonWriter;"
+    ) || matches!(
+        recv_class,
+        "Landroid/util/JsonReader;" | "Landroid/util/JsonWriter;"
+    ) {
+        if let Some(value) = crate::android_json::instance_intrinsic(
+            vm, mref_class, recv_class, name, sig, recv, args,
+        )? {
+            return Ok(Some(value));
+        }
     }
     // LruCache's state operations are final, so a DEX subclass reference
     // can safely use the same host implementation while its create/sizeOf/
@@ -1207,26 +1939,109 @@ pub(crate) fn instance_intrinsic(
             | "evictionCount"
             | "snapshot"
     );
-    if mref_class == LRU_CACHE
-        || (lru_final_method
-            && vm
-                .heap
-                .class_of(recv)
-                .is_ok_and(|class| vm.cp.is_subtype(class, LRU_CACHE)))
-    {
+    if mref_class == LRU_CACHE || (lru_final_method && vm.cp.is_subtype(recv_class, LRU_CACHE)) {
         return lru_cache(vm, name, sig, recv, args);
     }
-    let recv_class = vm.heap.class_of(recv).unwrap_or("");
-    let stream_override = vm.cp.resolve_method(recv_class, name, sig).is_some();
-    if mref_class == BASE64_INPUT_STREAM
-        || (!stream_override && vm.cp.is_subtype(recv_class, BASE64_INPUT_STREAM))
+    if matches!(mref_class, ARRAY_MAP | SIMPLE_ARRAY_MAP)
+        || matches!(recv_class, ARRAY_MAP | SIMPLE_ARRAY_MAP)
     {
-        return base64_input_stream(vm, name, sig, recv, args);
+        return array_map(vm, name, sig, recv, args);
     }
-    if mref_class == BASE64_OUTPUT_STREAM
-        || (!stream_override && vm.cp.is_subtype(recv_class, BASE64_OUTPUT_STREAM))
-    {
-        return base64_output_stream(vm, name, sig, recv, args);
+    if mref_class == ARRAY_SET || recv_class == ARRAY_SET {
+        return array_set(vm, name, sig, recv, args);
+    }
+    // DEX subclasses inherit ArrayMap/ArraySet's host state operations when
+    // they do not declare the method themselves. Gate this expensive subtype
+    // check on a DEX-defined receiver plus an Array* operation name so
+    // platform receivers (String, collections, streams) stay on the cheap
+    // exact-class path above.
+    let array_container_method = matches!(
+        name,
+        "put"
+            | "append"
+            | "putAll"
+            | "get"
+            | "getOrDefault"
+            | "putIfAbsent"
+            | "remove"
+            | "replace"
+            | "containsKey"
+            | "containsValue"
+            | "indexOfKey"
+            | "indexOfValue"
+            | "keyAt"
+            | "valueAt"
+            | "setValueAt"
+            | "removeAt"
+            | "size"
+            | "isEmpty"
+            | "clear"
+            | "ensureCapacity"
+            | "keySet"
+            | "values"
+            | "entrySet"
+            | "hashCode"
+            | "equals"
+            | "toString"
+            | "add"
+            | "addAll"
+            | "removeAll"
+            | "retainAll"
+            | "contains"
+            | "containsAll"
+            | "indexOf"
+            | "iterator"
+            | "toArray"
+    );
+    if array_container_method && vm.cp.find_class(recv_class).is_some() {
+        if vm.cp.is_subtype(recv_class, ARRAY_MAP)
+            && vm.cp.resolve_method(recv_class, name, sig).is_none()
+        {
+            return array_map(vm, name, sig, recv, args);
+        }
+        if vm.cp.is_subtype(recv_class, ARRAY_SET)
+            && vm.cp.resolve_method(recv_class, name, sig).is_none()
+        {
+            return array_set(vm, name, sig, recv, args);
+        }
+    }
+    // Base64 streams: first require one of the exact operations implemented
+    // below. A platform receiver that is not the stream class itself cannot
+    // be an unloaded subtype; only a DEX-defined receiver can need the
+    // subtype + guest-override checks.
+    let base64_input_method = matches!(
+        (name, sig),
+        ("<init>", "(Ljava/io/InputStream;I)V")
+            | ("read", "()I" | "([B)I" | "([BII)I")
+            | ("available", "()I")
+            | ("close", "()V")
+    );
+    if base64_input_method {
+        let exact_stream = mref_class == BASE64_INPUT_STREAM || recv_class == BASE64_INPUT_STREAM;
+        let dex_subclass = !exact_stream
+            && vm.cp.find_class(recv_class).is_some()
+            && vm.cp.is_subtype(recv_class, BASE64_INPUT_STREAM)
+            && vm.cp.resolve_method(recv_class, name, sig).is_none();
+        if exact_stream || dex_subclass {
+            return base64_input_stream(vm, name, sig, recv, args);
+        }
+    }
+    let base64_output_method = matches!(
+        (name, sig),
+        ("<init>", "(Ljava/io/OutputStream;I)V")
+            | ("write", "(I)V" | "([B)V" | "([BII)V")
+            | ("flush", "()V")
+            | ("close", "()V")
+    );
+    if base64_output_method {
+        let exact_stream = mref_class == BASE64_OUTPUT_STREAM || recv_class == BASE64_OUTPUT_STREAM;
+        let dex_subclass = !exact_stream
+            && vm.cp.find_class(recv_class).is_some()
+            && vm.cp.is_subtype(recv_class, BASE64_OUTPUT_STREAM)
+            && vm.cp.resolve_method(recv_class, name, sig).is_none();
+        if exact_stream || dex_subclass {
+            return base64_output_stream(vm, name, sig, recv, args);
+        }
     }
     if !mref_class.starts_with("Landroid/util/") {
         return Ok(None);
@@ -1448,7 +2263,7 @@ mod tests {
             .alloc_instance(LRU_CACHE.to_string(), Vec::new())
             .unwrap();
         let call = |vm: &mut Engine, name: &str, sig: &str, args: &[Value]| {
-            instance_intrinsic(vm, LRU_CACHE, name, sig, cache, args)
+            instance_intrinsic(vm, LRU_CACHE, LRU_CACHE, name, sig, cache, args)
                 .unwrap()
                 .unwrap()
         };
@@ -1532,12 +2347,609 @@ mod tests {
         assert!(instance_intrinsic(
             &mut vm,
             LRU_CACHE,
+            LRU_CACHE,
             "put",
             "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
             cache,
             &[Value::Null, Value::Null],
         )
         .is_err());
+    }
+
+    #[test]
+    fn array_map_and_array_set_keep_signed_hash_order() {
+        let mut vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        let text = |vm: &mut Engine, value: &str| {
+            Value::Obj(vm.heap.alloc_string(value.to_string()).unwrap())
+        };
+        let boxed = |vm: &mut Engine, value: i32| {
+            Value::Obj(
+                crate::boxes::box_value(vm, "Ljava/lang/Integer;", Value::Int(value)).unwrap(),
+            )
+        };
+        let unboxed = |vm: &Engine, value: &Value| match value {
+            Value::Obj(obj) => vm.heap.get_field(*obj, "value").unwrap().as_int().unwrap(),
+            other => panic!("expected Integer, got {other:?}"),
+        };
+
+        let map = vm
+            .heap
+            .alloc_instance(ARRAY_MAP.to_string(), Vec::new())
+            .unwrap();
+        let call_map = |vm: &mut Engine, name: &str, sig: &str, args: &[Value]| {
+            instance_intrinsic(vm, ARRAY_MAP, ARRAY_MAP, name, sig, map, args)
+                .unwrap()
+                .unwrap()
+        };
+        call_map(&mut vm, "<init>", "()V", &[]);
+        for (key, value) in [(2, "two"), (-1, "minus"), (0, "zero"), (1, "one")] {
+            let key = boxed(&mut vm, key);
+            let value = text(&mut vm, value);
+            call_map(
+                &mut vm,
+                "put",
+                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                &[key, value],
+            );
+        }
+        for (key, value) in [("Aa", "aa"), ("BB", "bb")] {
+            let key = text(&mut vm, key);
+            let value = text(&mut vm, value);
+            call_map(
+                &mut vm,
+                "put",
+                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                &[key, value],
+            );
+        }
+        let ordered_int_keys: Vec<i32> = (0..4)
+            .map(|index| {
+                let key = call_map(
+                    &mut vm,
+                    "keyAt",
+                    "(I)Ljava/lang/Object;",
+                    &[Value::Int(index)],
+                );
+                unboxed(&vm, &key)
+            })
+            .collect();
+        assert_eq!(ordered_int_keys, [-1, 0, 1, 2]);
+        let aa_key = call_map(&mut vm, "keyAt", "(I)Ljava/lang/Object;", &[Value::Int(4)]);
+        let Value::Obj(aa_key) = aa_key else {
+            panic!("keyAt(4) was not a String");
+        };
+        assert_eq!(vm.heap.as_str(aa_key).unwrap(), "Aa");
+        let bb = text(&mut vm, "BB");
+        assert_eq!(
+            call_map(
+                &mut vm,
+                "indexOfKey",
+                "(Ljava/lang/Object;)I",
+                std::slice::from_ref(&bb),
+            ),
+            Value::Int(5)
+        );
+        let bb_value = call_map(
+            &mut vm,
+            "get",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            std::slice::from_ref(&bb),
+        );
+        let Value::Obj(bb_value) = bb_value else {
+            panic!("BB value was not a String");
+        };
+        assert_eq!(vm.heap.as_str(bb_value).unwrap(), "bb");
+
+        let set = vm
+            .heap
+            .alloc_instance(ARRAY_SET.to_string(), Vec::new())
+            .unwrap();
+        let call_set = |vm: &mut Engine, name: &str, sig: &str, args: &[Value]| {
+            instance_intrinsic(vm, ARRAY_SET, ARRAY_SET, name, sig, set, args)
+                .unwrap()
+                .unwrap()
+        };
+        call_set(&mut vm, "<init>", "()V", &[]);
+        for value in [2, -1, 0] {
+            let boxed_value = boxed(&mut vm, value);
+            assert_eq!(
+                call_set(
+                    &mut vm,
+                    "add",
+                    "(Ljava/lang/Object;)Z",
+                    std::slice::from_ref(&boxed_value),
+                ),
+                Value::Int(1)
+            );
+        }
+        let duplicate = boxed(&mut vm, 2);
+        assert_eq!(
+            call_set(
+                &mut vm,
+                "add",
+                "(Ljava/lang/Object;)Z",
+                std::slice::from_ref(&duplicate),
+            ),
+            Value::Int(0)
+        );
+        let ordered_values: Vec<i32> = (0..3)
+            .map(|index| {
+                let value = call_set(
+                    &mut vm,
+                    "valueAt",
+                    "(I)Ljava/lang/Object;",
+                    &[Value::Int(index)],
+                );
+                unboxed(&vm, &value)
+            })
+            .collect();
+        assert_eq!(ordered_values, [-1, 0, 2]);
+        let iterator = call_set(&mut vm, "iterator", "()Ljava/util/Iterator;", &[]);
+        let Value::Obj(iterator) = iterator else {
+            panic!("iterator was not an object");
+        };
+        assert_eq!(
+            vm.invoke_instance(iterator, "hasNext", "()Z", &[]).unwrap(),
+            Value::Int(1)
+        );
+        let first = vm
+            .invoke_instance(iterator, "next", "()Ljava/lang/Object;", &[])
+            .unwrap();
+        assert_eq!(unboxed(&vm, &first), -1);
+    }
+
+    #[test]
+    fn array_set_collection_add_all_keeps_signed_hash_order() {
+        let mut vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        let boxed = |vm: &mut Engine, value: i32| {
+            Value::Obj(
+                crate::boxes::box_value(vm, "Ljava/lang/Integer;", Value::Int(value)).unwrap(),
+            )
+        };
+        let source = vm
+            .heap
+            .alloc_instance("Ljava/util/ArrayList;".to_string(), Vec::new())
+            .unwrap();
+        vm.invoke_instance(source, "<init>", "()V", &[]).unwrap();
+        for value in [2, -1, 0] {
+            let boxed_value = boxed(&mut vm, value);
+            vm.invoke_instance(
+                source,
+                "add",
+                "(Ljava/lang/Object;)Z",
+                std::slice::from_ref(&boxed_value),
+            )
+            .unwrap();
+        }
+
+        let set = vm
+            .heap
+            .alloc_instance(ARRAY_SET.to_string(), Vec::new())
+            .unwrap();
+        instance_intrinsic(&mut vm, ARRAY_SET, ARRAY_SET, "<init>", "()V", set, &[])
+            .unwrap()
+            .unwrap();
+        // Name the call through Collection, as invoke-interface does. The
+        // generic collection layer must not append in source order.
+        assert_eq!(
+            crate::intrinsics::call_instance_intrinsic_mref(
+                &mut vm,
+                ARRAY_SET,
+                "Ljava/util/Collection;",
+                "addAll",
+                "(Ljava/util/Collection;)Z",
+                set,
+                &[Value::Obj(source)],
+            )
+            .unwrap(),
+            Some(Value::Int(1))
+        );
+        let ordered: Vec<i32> = (0..3)
+            .map(|index| {
+                let value = instance_intrinsic(
+                    &mut vm,
+                    ARRAY_SET,
+                    ARRAY_SET,
+                    "valueAt",
+                    "(I)Ljava/lang/Object;",
+                    set,
+                    &[Value::Int(index)],
+                )
+                .unwrap()
+                .unwrap();
+                let Value::Obj(obj) = value else {
+                    panic!("valueAt({index}) was not an Integer");
+                };
+                vm.heap.get_field(obj, "value").unwrap().as_int().unwrap()
+            })
+            .collect();
+        assert_eq!(ordered, [-1, 0, 2]);
+    }
+
+    #[test]
+    fn array_set_typed_to_array_preserves_component_and_reuses_large_array() {
+        let mut vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        let text = |vm: &mut Engine, value: &str| {
+            Value::Obj(vm.heap.alloc_string(value.to_string()).unwrap())
+        };
+        let set = vm
+            .heap
+            .alloc_instance(ARRAY_SET.to_string(), Vec::new())
+            .unwrap();
+        let call_set = |vm: &mut Engine, name: &str, sig: &str, args: &[Value]| {
+            instance_intrinsic(vm, ARRAY_SET, ARRAY_SET, name, sig, set, args)
+                .unwrap()
+                .unwrap()
+        };
+        call_set(&mut vm, "<init>", "()V", &[]);
+        for value in ["b", "a"] {
+            let element = text(&mut vm, value);
+            call_set(
+                &mut vm,
+                "add",
+                "(Ljava/lang/Object;)Z",
+                std::slice::from_ref(&element),
+            );
+        }
+
+        let large = crate::arrays::new_array(
+            &mut vm,
+            "[Ljava/lang/String;",
+            crate::heap::ElemKind::Obj,
+            vec![Value::Null; 3],
+        )
+        .unwrap();
+        let reused = call_set(
+            &mut vm,
+            "toArray",
+            "([Ljava/lang/Object;)[Ljava/lang/Object;",
+            std::slice::from_ref(&large),
+        );
+        assert_eq!(reused, large);
+        let Value::Obj(large_ref) = large else {
+            panic!("large array fixture was not an object");
+        };
+        let (elements, _, descriptor) = crate::arrays::elems(&vm, large_ref).unwrap();
+        assert_eq!(descriptor, "[Ljava/lang/String;");
+        let rendered: Vec<Option<String>> = elements
+            .iter()
+            .map(|value| match value {
+                Value::Obj(obj) => vm.heap.as_str(*obj).ok().map(str::to_string),
+                Value::Null => None,
+                other => panic!("unexpected ArraySet element {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            rendered,
+            [Some("a".to_string()), Some("b".to_string()), None]
+        );
+
+        let small = crate::arrays::new_array(
+            &mut vm,
+            "[Ljava/lang/String;",
+            crate::heap::ElemKind::Obj,
+            vec![Value::Null],
+        )
+        .unwrap();
+        let replaced = call_set(
+            &mut vm,
+            "toArray",
+            "([Ljava/lang/Object;)[Ljava/lang/Object;",
+            std::slice::from_ref(&small),
+        );
+        assert_ne!(replaced, small);
+        let Value::Obj(replaced_ref) = replaced else {
+            panic!("typed toArray did not return an array object");
+        };
+        let (elements, _, descriptor) = crate::arrays::elems(&vm, replaced_ref).unwrap();
+        assert_eq!(descriptor, "[Ljava/lang/String;");
+        assert_eq!(elements.len(), 2);
+    }
+
+    #[test]
+    fn array_containers_append_and_set_object_methods_match_aosp() {
+        let mut vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        let text = |vm: &mut Engine, value: &str| {
+            Value::Obj(vm.heap.alloc_string(value.to_string()).unwrap())
+        };
+        let boxed = |vm: &mut Engine, value: i32| {
+            Value::Obj(
+                crate::boxes::box_value(vm, "Ljava/lang/Integer;", Value::Int(value)).unwrap(),
+            )
+        };
+        let unboxed = |vm: &Engine, value: &Value| match value {
+            Value::Obj(obj) => vm.heap.get_field(*obj, "value").unwrap().as_int().unwrap(),
+            other => panic!("expected Integer, got {other:?}"),
+        };
+        let as_text = |vm: &Engine, value: &Value| match value {
+            Value::Obj(obj) => vm.heap.as_str(*obj).unwrap().to_string(),
+            other => panic!("expected String, got {other:?}"),
+        };
+        let call = |vm: &mut Engine,
+                    class: &str,
+                    recv: crate::heap::ObjRef,
+                    name: &str,
+                    sig: &str,
+                    args: &[Value]| {
+            instance_intrinsic(vm, class, class, name, sig, recv, args)
+                .unwrap()
+                .unwrap()
+        };
+        let new_map = |vm: &mut Engine| {
+            let map = vm
+                .heap
+                .alloc_instance(ARRAY_MAP.to_string(), Vec::new())
+                .unwrap();
+            instance_intrinsic(vm, ARRAY_MAP, ARRAY_MAP, "<init>", "()V", map, &[])
+                .unwrap()
+                .unwrap();
+            map
+        };
+        let new_set = |vm: &mut Engine| {
+            let set = vm
+                .heap
+                .alloc_instance(ARRAY_SET.to_string(), Vec::new())
+                .unwrap();
+            instance_intrinsic(vm, ARRAY_SET, ARRAY_SET, "<init>", "()V", set, &[])
+                .unwrap()
+                .unwrap();
+            set
+        };
+        let list_of = |vm: &mut Engine, values: &[i32]| {
+            let list = vm
+                .heap
+                .alloc_instance("Ljava/util/ArrayList;".to_string(), Vec::new())
+                .unwrap();
+            vm.invoke_instance(list, "<init>", "()V", &[]).unwrap();
+            for value in values {
+                let element = Value::Obj(
+                    crate::boxes::box_value(vm, "Ljava/lang/Integer;", Value::Int(*value)).unwrap(),
+                );
+                vm.invoke_instance(
+                    list,
+                    "add",
+                    "(Ljava/lang/Object;)Z",
+                    std::slice::from_ref(&element),
+                )
+                .unwrap();
+            }
+            Value::Obj(list)
+        };
+        let put_sig = "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;";
+        let append_map_sig = "(Ljava/lang/Object;Ljava/lang/Object;)V";
+        let add_sig = "(Ljava/lang/Object;)Z";
+
+        // append() does not de-duplicate when the new hash belongs at the
+        // end; an out-of-order append falls back to put().
+        let map = new_map(&mut vm);
+        let key = boxed(&mut vm, 1);
+        let value = text(&mut vm, "one");
+        call(&mut vm, ARRAY_MAP, map, "put", put_sig, &[key, value]);
+        let dup_key = boxed(&mut vm, 1);
+        let dup_value = text(&mut vm, "dup");
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_MAP,
+                map,
+                "append",
+                append_map_sig,
+                &[dup_key, dup_value]
+            ),
+            Value::Null
+        );
+        assert_eq!(
+            call(&mut vm, ARRAY_MAP, map, "size", "()I", &[]),
+            Value::Int(2)
+        );
+        let second = call(
+            &mut vm,
+            ARRAY_MAP,
+            map,
+            "valueAt",
+            "(I)Ljava/lang/Object;",
+            &[Value::Int(1)],
+        );
+        assert_eq!(as_text(&vm, &second), "dup");
+        let low_key = boxed(&mut vm, -1);
+        let low_value = text(&mut vm, "minus");
+        call(
+            &mut vm,
+            ARRAY_MAP,
+            map,
+            "append",
+            append_map_sig,
+            &[low_key, low_value],
+        );
+        let first_key = call(
+            &mut vm,
+            ARRAY_MAP,
+            map,
+            "keyAt",
+            "(I)Ljava/lang/Object;",
+            &[Value::Int(0)],
+        );
+        assert_eq!(unboxed(&vm, &first_key), -1);
+
+        // ArrayMap's own removeAll/retainAll operate on keys.
+        let removing = new_map(&mut vm);
+        for key in [2, -1, 0] {
+            let k = boxed(&mut vm, key);
+            let v = text(&mut vm, "v");
+            call(&mut vm, ARRAY_MAP, removing, "put", put_sig, &[k, v]);
+        }
+        let keys = list_of(&mut vm, &[0, 2]);
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_MAP,
+                removing,
+                "removeAll",
+                "(Ljava/util/Collection;)Z",
+                std::slice::from_ref(&keys)
+            ),
+            Value::Int(1)
+        );
+        let only = call(
+            &mut vm,
+            ARRAY_MAP,
+            removing,
+            "keyAt",
+            "(I)Ljava/lang/Object;",
+            &[Value::Int(0)],
+        );
+        assert_eq!(unboxed(&vm, &only), -1);
+        let retaining = new_map(&mut vm);
+        for key in [2, -1, 0] {
+            let k = boxed(&mut vm, key);
+            let v = text(&mut vm, "v");
+            call(&mut vm, ARRAY_MAP, retaining, "put", put_sig, &[k, v]);
+        }
+        let keep = list_of(&mut vm, &[2]);
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_MAP,
+                retaining,
+                "retainAll",
+                "(Ljava/util/Collection;)Z",
+                std::slice::from_ref(&keep)
+            ),
+            Value::Int(1)
+        );
+        let only = call(
+            &mut vm,
+            ARRAY_MAP,
+            retaining,
+            "keyAt",
+            "(I)Ljava/lang/Object;",
+            &[Value::Int(0)],
+        );
+        assert_eq!(unboxed(&vm, &only), 2);
+
+        // ArraySet append mirrors the map fast path.
+        let appended = new_set(&mut vm);
+        let two = boxed(&mut vm, 2);
+        call(
+            &mut vm,
+            ARRAY_SET,
+            appended,
+            "add",
+            add_sig,
+            std::slice::from_ref(&two),
+        );
+        let minus = boxed(&mut vm, -1);
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_SET,
+                appended,
+                "append",
+                "(Ljava/lang/Object;)V",
+                std::slice::from_ref(&minus)
+            ),
+            Value::Null
+        );
+        let first = call(
+            &mut vm,
+            ARRAY_SET,
+            appended,
+            "valueAt",
+            "(I)Ljava/lang/Object;",
+            &[Value::Int(0)],
+        );
+        assert_eq!(unboxed(&vm, &first), -1);
+        let dup_two = boxed(&mut vm, 2);
+        call(
+            &mut vm,
+            ARRAY_SET,
+            appended,
+            "append",
+            "(Ljava/lang/Object;)V",
+            std::slice::from_ref(&dup_two),
+        );
+        assert_eq!(
+            call(&mut vm, ARRAY_SET, appended, "size", "()I", &[]),
+            Value::Int(3)
+        );
+
+        // Set-contract equals/hashCode/toString, plus void addAll(ArraySet).
+        let set_a = new_set(&mut vm);
+        let set_b = new_set(&mut vm);
+        for value in [2, -1] {
+            let element = boxed(&mut vm, value);
+            call(
+                &mut vm,
+                ARRAY_SET,
+                set_a,
+                "add",
+                add_sig,
+                std::slice::from_ref(&element),
+            );
+        }
+        for value in [-1, 2] {
+            let element = boxed(&mut vm, value);
+            call(
+                &mut vm,
+                ARRAY_SET,
+                set_b,
+                "add",
+                add_sig,
+                std::slice::from_ref(&element),
+            );
+        }
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_SET,
+                set_a,
+                "equals",
+                "(Ljava/lang/Object;)Z",
+                &[Value::Obj(set_b)]
+            ),
+            Value::Int(1)
+        );
+        let same_list = list_of(&mut vm, &[-1, 2]);
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_SET,
+                set_a,
+                "equals",
+                "(Ljava/lang/Object;)Z",
+                std::slice::from_ref(&same_list)
+            ),
+            Value::Int(0)
+        );
+        assert_eq!(
+            call(&mut vm, ARRAY_SET, set_a, "hashCode", "()I", &[]),
+            Value::Int(1)
+        );
+        let rendered = call(
+            &mut vm,
+            ARRAY_SET,
+            set_a,
+            "toString",
+            "()Ljava/lang/String;",
+            &[],
+        );
+        assert_eq!(as_text(&vm, &rendered), "{-1, 2}");
+        let copied = new_set(&mut vm);
+        assert_eq!(
+            call(
+                &mut vm,
+                ARRAY_SET,
+                copied,
+                "addAll",
+                "(Landroid/util/ArraySet;)V",
+                &[Value::Obj(set_a)]
+            ),
+            Value::Null
+        );
+        assert_eq!(
+            call(&mut vm, ARRAY_SET, copied, "size", "()I", &[]),
+            Value::Int(2)
+        );
     }
 
     #[test]
