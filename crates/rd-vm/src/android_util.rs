@@ -26,6 +26,10 @@ const ARRAY_MAP: &str = "Landroid/util/ArrayMap;";
 const SIMPLE_ARRAY_MAP: &str = "Landroid/util/SimpleArrayMap;";
 const ARRAY_SET: &str = "Landroid/util/ArraySet;";
 const STATE_SET: &str = "Landroid/util/StateSet;";
+const LOG_PRINTER: &str = "Landroid/util/LogPrinter;";
+const PRINT_STREAM_PRINTER: &str = "Landroid/util/PrintStreamPrinter;";
+const PRINT_WRITER_PRINTER: &str = "Landroid/util/PrintWriterPrinter;";
+const STRING_BUILDER_PRINTER: &str = "Landroid/util/StringBuilderPrinter;";
 // android.R.attr IDs used by StateSet.dump (public-final.xml).
 const ATTR_STATE_WINDOW_FOCUSED: i32 = 0x0101_009d;
 const ATTR_STATE_PRESSED: i32 = 0x0101_00a7;
@@ -1096,6 +1100,108 @@ fn state_set_static(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Optio
         }
         _ => return Ok(None),
     }))
+}
+
+// ── android.util.Printer family ─────────────────────────────────────────
+// Thin delegating wrappers exactly as in AOSP. LogPrinter's native buffer
+// selection collapses onto the single host log channel used by Log.println;
+// every other observable effect (delegation, null handling, and
+// StringBuilderPrinter's conditional trailing newline) follows the Java
+// sources.
+
+fn printer(
+    vm: &mut Engine,
+    class: &str,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let arg = |index: usize| args.get(index).cloned().unwrap_or(Value::Null);
+    if name == "<init>" {
+        match class {
+            LOG_PRINTER => {
+                let priority = match arg(0) {
+                    Value::Int(i) => i,
+                    _ => 0,
+                };
+                put(vm, recv, "mPriority", Value::Int(priority))?;
+                put(vm, recv, "mTag", arg(1))?;
+                // Log.LOG_ID_MAIN == 0 for the two-arg constructor.
+                let buffer = match arg(2) {
+                    Value::Int(i) if sig == "(ILjava/lang/String;I)V" => i,
+                    _ => 0,
+                };
+                put(vm, recv, "mBuffer", Value::Int(buffer))?;
+            }
+            PRINT_STREAM_PRINTER => put(vm, recv, "mPS", arg(0))?,
+            PRINT_WRITER_PRINTER => put(vm, recv, "mPW", arg(0))?,
+            STRING_BUILDER_PRINTER => put(vm, recv, "mBuilder", arg(0))?,
+            _ => return Ok(None),
+        }
+        return Ok(Some(Value::Null));
+    }
+    if name != "println" {
+        return Ok(None);
+    }
+    let message = arg(0);
+    match class {
+        LOG_PRINTER => {
+            let priority = match get(vm, recv, "mPriority") {
+                Value::Int(i) => i,
+                _ => 0,
+            };
+            let tag = get(vm, recv, "mTag");
+            vm.invoke_static(
+                "Landroid/util/Log;",
+                "println",
+                "(ILjava/lang/String;Ljava/lang/String;)I",
+                &[Value::Int(priority), tag, message],
+            )?;
+        }
+        PRINT_STREAM_PRINTER | PRINT_WRITER_PRINTER => {
+            let field = if class == PRINT_STREAM_PRINTER {
+                "mPS"
+            } else {
+                "mPW"
+            };
+            let Value::Obj(target) = get(vm, recv, field) else {
+                return Err(state_npe("printer target == null"));
+            };
+            vm.invoke_instance(target, "println", "(Ljava/lang/String;)V", &[message])?;
+        }
+        STRING_BUILDER_PRINTER => {
+            let Value::Obj(builder) = get(vm, recv, "mBuilder") else {
+                return Err(state_npe("builder == null"));
+            };
+            // AOSP appends first and only then measures the message, so a
+            // null message appends the literal "null" before throwing NPE
+            // from x.length(), without the trailing newline.
+            vm.invoke_instance(
+                builder,
+                "append",
+                "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+                std::slice::from_ref(&message),
+            )?;
+            let Value::Obj(text_obj) = message else {
+                return Err(state_npe("x == null"));
+            };
+            let needs_newline = {
+                let text = vm.heap.as_str(text_obj).unwrap_or_default();
+                !text.ends_with('\n')
+            };
+            if needs_newline {
+                vm.invoke_instance(
+                    builder,
+                    "append",
+                    "(C)Ljava/lang/StringBuilder;",
+                    &[Value::Int(10)],
+                )?;
+            }
+        }
+        _ => return Ok(None),
+    }
+    Ok(Some(Value::Null))
 }
 
 const BASE64: &str = "Landroid/util/Base64;";
@@ -2173,6 +2279,40 @@ pub(crate) fn instance_intrinsic(
     }
     if (mref_class == STATE_SET || recv_class == STATE_SET) && name == "<init>" {
         return Ok(Some(Value::Null));
+    }
+    // Printer wrappers: exact concrete class on either side of the call
+    // (invoke-interface names Printer; the receiver is the concrete class).
+    // A DEX subclass that does not override println inherits the wrapper.
+    let printer_class = if matches!(
+        mref_class,
+        LOG_PRINTER | PRINT_STREAM_PRINTER | PRINT_WRITER_PRINTER | STRING_BUILDER_PRINTER
+    ) {
+        Some(mref_class)
+    } else if matches!(
+        recv_class,
+        LOG_PRINTER | PRINT_STREAM_PRINTER | PRINT_WRITER_PRINTER | STRING_BUILDER_PRINTER
+    ) {
+        Some(recv_class)
+    } else {
+        None
+    };
+    if let Some(class) = printer_class {
+        return printer(vm, class, name, sig, recv, args);
+    }
+    if name == "println" && sig == "(Ljava/lang/String;)V" && vm.cp.find_class(recv_class).is_some()
+    {
+        for class in [
+            LOG_PRINTER,
+            PRINT_STREAM_PRINTER,
+            PRINT_WRITER_PRINTER,
+            STRING_BUILDER_PRINTER,
+        ] {
+            if vm.cp.is_subtype(recv_class, class)
+                && vm.cp.resolve_method(recv_class, name, sig).is_none()
+            {
+                return printer(vm, class, name, sig, recv, args);
+            }
+        }
     }
     // DEX subclasses inherit ArrayMap/ArraySet's host state operations when
     // they do not declare the method themselves. Gate this expensive subtype

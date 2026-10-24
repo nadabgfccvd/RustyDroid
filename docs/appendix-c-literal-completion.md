@@ -332,6 +332,30 @@ that exact prefix:
   its public catalogue, including XML helpers and event/log types,
   remains incomplete.
 
+## Round 13 — `Printer` delegation wrappers
+
+- The `android.util.Printer` family is modelled in `android_util.rs`:
+  `LogPrinter` (both constructors; the native log-buffer selection
+  collapses onto the single host log channel behind `Log.println`),
+  `PrintStreamPrinter`, `PrintWriterPrinter`, and
+  `StringBuilderPrinter`, each storing the AOSP target field and
+  delegating `println(String)` to it, including through the `Printer`
+  interface and through DEX subclasses that do not override `println`.
+  Null targets throw `NullPointerException`, and `StringBuilderPrinter`
+  keeps AOSP's exact ordering: it appends first and only adds the
+  trailing newline when the message does not already end with one, so a
+  null message appends the literal `null` and then throws NPE from the
+  length check, with no newline.
+- Proof: `android_printers.rs` drives `StringBuilderPrinter` through a
+  DEX `invoke-interface` on `Printer` (plain, already-terminated, empty,
+  and null messages), reads back a `PrintWriterPrinter` over a
+  `StringWriter` after flush, a `PrintStreamPrinter` over a
+  `ByteArrayOutputStream`, and captures a `LogPrinter` DEBUG line through
+  the app log buffer.
+- Status after Round 13: `android.util` remains **partial**. The rest of
+  its public catalogue, including XML helpers and event/log types,
+  remains incomplete.
+
 ## Remaining literal blockers by partial surface
 
 | Domain | Surface | Main literal blockers |
