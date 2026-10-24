@@ -25,6 +25,15 @@ const SPARSE: &[&str] = &[
 const ARRAY_MAP: &str = "Landroid/util/ArrayMap;";
 const SIMPLE_ARRAY_MAP: &str = "Landroid/util/SimpleArrayMap;";
 const ARRAY_SET: &str = "Landroid/util/ArraySet;";
+const STATE_SET: &str = "Landroid/util/StateSet;";
+// android.R.attr IDs used by StateSet.dump (public-final.xml).
+const ATTR_STATE_WINDOW_FOCUSED: i32 = 0x0101_009d;
+const ATTR_STATE_PRESSED: i32 = 0x0101_00a7;
+const ATTR_STATE_SELECTED: i32 = 0x0101_00a1;
+const ATTR_STATE_FOCUSED: i32 = 0x0101_009c;
+const ATTR_STATE_ENABLED: i32 = 0x0101_009e;
+const ATTR_STATE_CHECKED: i32 = 0x0101_00a0;
+const ATTR_STATE_ACTIVATED: i32 = 0x0101_02fe;
 
 fn key(v: Option<&Value>) -> i64 {
     match v {
@@ -889,6 +898,206 @@ fn array_set(
     }))
 }
 
+// ── android.util.StateSet ───────────────────────────────────────────────
+// Public state-spec utilities. A state spec uses positive IDs for required
+// states, negative IDs for prohibited states, and 0 as the terminator /
+// wild-card marker exactly as in AOSP. The hidden get(mask) table (built
+// from the internal ViewDrawableStates styleable order) is not part of the
+// public catalogue modelled here.
+
+fn state_npe(message: &str) -> VmExit {
+    VmExit::Exception(Throwable::new("Ljava/lang/NullPointerException;", message))
+}
+
+fn state_int_array(vm: &Engine, value: Option<&Value>) -> Result<Option<Vec<i32>>, VmExit> {
+    let Some(Value::Obj(obj)) = value else {
+        return Ok(None);
+    };
+    let (elems, _, _) = crate::arrays::elems(vm, *obj)?;
+    Ok(Some(
+        elems
+            .iter()
+            .filter_map(|v| match v {
+                Value::Int(i) => Some(*i),
+                _ => None,
+            })
+            .collect(),
+    ))
+}
+
+fn state_require_int_array(vm: &Engine, value: Option<&Value>) -> Result<Vec<i32>, VmExit> {
+    state_int_array(vm, value)?.ok_or_else(|| state_npe("state array == null"))
+}
+
+fn state_new_int_array(vm: &mut Engine, values: &[i32]) -> Result<Value, VmExit> {
+    crate::arrays::new_array(
+        vm,
+        "[I",
+        crate::heap::ElemKind::Int,
+        values.iter().map(|v| Value::Int(*v)).collect(),
+    )
+}
+
+pub(crate) fn state_set_matches(spec: &[i32], set: &[i32]) -> bool {
+    for &raw_spec_state in spec {
+        if raw_spec_state == 0 {
+            // End of the cases to match against.
+            return true;
+        }
+        let (must_match, spec_state) = if raw_spec_state > 0 {
+            (true, raw_spec_state)
+        } else {
+            (false, raw_spec_state.wrapping_neg())
+        };
+        let mut found = false;
+        for &state in set {
+            if state == 0 {
+                // End of states to match: a required state has not been
+                // found, while a prohibited state is satisfied by absence.
+                if must_match {
+                    return false;
+                }
+                break;
+            }
+            if state == spec_state {
+                if must_match {
+                    found = true;
+                    break;
+                }
+                return false;
+            }
+        }
+        if must_match && !found {
+            return false;
+        }
+    }
+    true
+}
+
+fn state_set_matches_one(spec: &[i32], state: i32) -> bool {
+    for &spec_state in spec {
+        if spec_state == 0 {
+            return true;
+        }
+        if spec_state > 0 {
+            if state != spec_state {
+                return false;
+            }
+        } else if state == spec_state.wrapping_neg() {
+            return false;
+        }
+    }
+    true
+}
+
+fn state_set_is_wild_card(states: &[i32]) -> bool {
+    states.is_empty() || states[0] == 0
+}
+
+fn state_set_static(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let arg = |index: usize| args.get(index);
+    Ok(Some(match name {
+        "isWildCard" => {
+            let states = state_require_int_array(vm, arg(0))?;
+            Value::Int(state_set_is_wild_card(&states) as i32)
+        }
+        "stateSetMatches" => match arg(1) {
+            // The one-state overload is the only form whose second argument
+            // arrives as a primitive int.
+            Some(Value::Int(state)) => {
+                let spec = state_require_int_array(vm, arg(0))?;
+                Value::Int(state_set_matches_one(&spec, *state) as i32)
+            }
+            _ => {
+                let set = state_int_array(vm, arg(1))?;
+                match set {
+                    None => {
+                        // AOSP: a null state set matches only a null or
+                        // wild-card spec (and isWildCard(null) is not
+                        // reached when the spec itself is null).
+                        let matched = match state_int_array(vm, arg(0))? {
+                            None => true,
+                            Some(spec) => state_set_is_wild_card(&spec),
+                        };
+                        Value::Int(matched as i32)
+                    }
+                    Some(set) => {
+                        let spec = state_require_int_array(vm, arg(0))?;
+                        Value::Int(state_set_matches(&spec, &set) as i32)
+                    }
+                }
+            }
+        },
+        "trimStateSet" => {
+            let states = state_require_int_array(vm, arg(0))?;
+            let new_size = match arg(1) {
+                Some(Value::Int(i)) => *i,
+                _ => 0,
+            };
+            if usize::try_from(new_size).is_ok_and(|size| size == states.len()) {
+                // AOSP returns the same array when the size is unchanged.
+                return Ok(Some(arg(0).cloned().unwrap_or(Value::Null)));
+            }
+            if new_size < 0 {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NegativeArraySizeException;",
+                    new_size.to_string(),
+                )));
+            }
+            let new_len = new_size as usize;
+            if new_len > states.len() {
+                // The System.arraycopy in AOSP runs past the source.
+                return Err(oob(i64::from(new_size)));
+            }
+            state_new_int_array(vm, &states[..new_len])?
+        }
+        "dump" => {
+            let states = state_require_int_array(vm, arg(0))?;
+            let mut rendered = String::new();
+            for state in states {
+                rendered.push_str(match state {
+                    ATTR_STATE_WINDOW_FOCUSED => "W ",
+                    ATTR_STATE_PRESSED => "P ",
+                    ATTR_STATE_SELECTED => "S ",
+                    ATTR_STATE_FOCUSED => "F ",
+                    ATTR_STATE_ENABLED => "E ",
+                    ATTR_STATE_CHECKED => "C ",
+                    ATTR_STATE_ACTIVATED => "A ",
+                    _ => "",
+                });
+            }
+            Value::Obj(crate::intrinsics::alloc_string(vm, rendered)?)
+        }
+        "containsAttribute" => {
+            // @hide helper: a null spec list yields false, and a null spec
+            // stops the scan rather than being skipped.
+            let attr = match arg(1) {
+                Some(Value::Int(i)) => *i,
+                _ => 0,
+            };
+            let Some(Value::Obj(outer)) = arg(0) else {
+                return Ok(Some(Value::Int(0)));
+            };
+            let (specs, _, _) = crate::arrays::elems(vm, *outer)?;
+            let mut found = false;
+            for spec in &specs {
+                let Some(spec) = state_int_array(vm, Some(spec))? else {
+                    break;
+                };
+                if spec
+                    .iter()
+                    .any(|candidate| *candidate == attr || candidate.wrapping_neg() == attr)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            Value::Int(found as i32)
+        }
+        _ => return Ok(None),
+    }))
+}
+
 const BASE64: &str = "Landroid/util/Base64;";
 const BASE64_NO_PADDING: i32 = 1;
 const BASE64_NO_WRAP: i32 = 2;
@@ -1497,6 +1706,15 @@ pub(crate) fn host_static(
     if let Some(value) = crate::android_json::host_static(vm, class, name)? {
         return Ok(Some(value));
     }
+    if class == STATE_SET {
+        // The caller caches platform statics in vm.statics, preserving the
+        // identity of these shared (mutable) AOSP arrays.
+        return Ok(Some(match name {
+            "WILD_CARD" => state_new_int_array(vm, &[])?,
+            "NOTHING" => state_new_int_array(vm, &[0])?,
+            _ => return Ok(None),
+        }));
+    }
     if class != BASE64 {
         return Ok(None);
     }
@@ -1875,6 +2093,9 @@ pub(crate) fn static_intrinsic(
     if class == BASE64 {
         return base64_static(vm, name, args);
     }
+    if class == STATE_SET {
+        return state_set_static(vm, name, args);
+    }
     match (class, name) {
         ("Landroid/util/Pair;", "create") | ("Landroid/util/Range;", "create") => {
             let r = vm.heap.alloc_instance(class.to_string(), Vec::new())?;
@@ -1949,6 +2170,9 @@ pub(crate) fn instance_intrinsic(
     }
     if mref_class == ARRAY_SET || recv_class == ARRAY_SET {
         return array_set(vm, name, sig, recv, args);
+    }
+    if (mref_class == STATE_SET || recv_class == STATE_SET) && name == "<init>" {
+        return Ok(Some(Value::Null));
     }
     // DEX subclasses inherit ArrayMap/ArraySet's host state operations when
     // they do not declare the method themselves. Gate this expensive subtype
@@ -2949,6 +3173,186 @@ mod tests {
         assert_eq!(
             call(&mut vm, ARRAY_SET, copied, "size", "()I", &[]),
             Value::Int(2)
+        );
+    }
+
+    #[test]
+    fn state_set_utilities_match_aosp() {
+        let mut vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        let ints = |vm: &mut Engine, values: &[i32]| {
+            crate::arrays::new_array(
+                vm,
+                "[I",
+                crate::heap::ElemKind::Int,
+                values.iter().map(|v| Value::Int(*v)).collect(),
+            )
+            .unwrap()
+        };
+        let int_values = |vm: &Engine, value: &Value| match value {
+            Value::Obj(obj) => crate::arrays::elems(vm, *obj)
+                .unwrap()
+                .0
+                .iter()
+                .map(|v| v.as_int().unwrap())
+                .collect::<Vec<_>>(),
+            other => panic!("expected int array, got {other:?}"),
+        };
+        let call = |vm: &mut Engine, name: &str, args: &[Value]| {
+            static_intrinsic(vm, STATE_SET, name, args)
+                .unwrap()
+                .unwrap()
+        };
+        let pressed = ATTR_STATE_PRESSED;
+        let focused = ATTR_STATE_FOCUSED;
+        let enabled = ATTR_STATE_ENABLED;
+
+        let wild = host_static(&mut vm, STATE_SET, "WILD_CARD")
+            .unwrap()
+            .unwrap();
+        assert_eq!(int_values(&vm, &wild), Vec::<i32>::new());
+        let nothing = host_static(&mut vm, STATE_SET, "NOTHING").unwrap().unwrap();
+        assert_eq!(int_values(&vm, &nothing), vec![0]);
+
+        let empty = ints(&mut vm, &[]);
+        assert_eq!(
+            call(&mut vm, "isWildCard", std::slice::from_ref(&empty)),
+            Value::Int(1)
+        );
+        let zero_first = ints(&mut vm, &[0, pressed]);
+        assert_eq!(
+            call(&mut vm, "isWildCard", std::slice::from_ref(&zero_first)),
+            Value::Int(1)
+        );
+        let pressed_only = ints(&mut vm, &[pressed]);
+        assert_eq!(
+            call(&mut vm, "isWildCard", std::slice::from_ref(&pressed_only)),
+            Value::Int(0)
+        );
+        assert!(static_intrinsic(&mut vm, STATE_SET, "isWildCard", &[Value::Null]).is_err());
+
+        let spec = ints(&mut vm, &[pressed, -focused]);
+        let matching = ints(&mut vm, &[pressed, enabled]);
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[spec.clone(), matching]),
+            Value::Int(1)
+        );
+        let prohibited = ints(&mut vm, &[pressed, focused]);
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[spec.clone(), prohibited]),
+            Value::Int(0)
+        );
+        // A zero spec element terminates matching immediately.
+        let terminated = ints(&mut vm, &[pressed, 0, focused]);
+        let pressed_set = ints(&mut vm, &[pressed]);
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[terminated, pressed_set]),
+            Value::Int(1)
+        );
+        // Null-set and one-state overloads follow the AOSP branches.
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[empty.clone(), Value::Null]),
+            Value::Int(1)
+        );
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[spec.clone(), Value::Null]),
+            Value::Int(0)
+        );
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[Value::Null, Value::Null]),
+            Value::Int(1)
+        );
+        let pressed_set = ints(&mut vm, &[pressed]);
+        assert!(static_intrinsic(
+            &mut vm,
+            STATE_SET,
+            "stateSetMatches",
+            &[Value::Null, pressed_set]
+        )
+        .is_err());
+        let required = ints(&mut vm, &[pressed]);
+        assert_eq!(
+            call(&mut vm, "stateSetMatches", &[required, Value::Int(pressed)]),
+            Value::Int(1)
+        );
+        let forbidden = ints(&mut vm, &[-pressed]);
+        assert_eq!(
+            call(
+                &mut vm,
+                "stateSetMatches",
+                &[forbidden, Value::Int(pressed)]
+            ),
+            Value::Int(0)
+        );
+
+        // trimStateSet returns the identical array at the same size, a copy
+        // when shrinking, and the AOSP arraycopy failures otherwise.
+        let states = ints(&mut vm, &[pressed, focused, enabled]);
+        let same = call(&mut vm, "trimStateSet", &[states.clone(), Value::Int(3)]);
+        assert_eq!(same, states);
+        let trimmed = call(&mut vm, "trimStateSet", &[states.clone(), Value::Int(2)]);
+        assert_ne!(trimmed, states);
+        assert_eq!(int_values(&vm, &trimmed), vec![pressed, focused]);
+        assert!(static_intrinsic(
+            &mut vm,
+            STATE_SET,
+            "trimStateSet",
+            &[states.clone(), Value::Int(4)]
+        )
+        .is_err());
+        assert!(static_intrinsic(
+            &mut vm,
+            STATE_SET,
+            "trimStateSet",
+            &[states, Value::Int(-1)]
+        )
+        .is_err());
+
+        let dumped = ints(
+            &mut vm,
+            &[
+                ATTR_STATE_WINDOW_FOCUSED,
+                pressed,
+                999,
+                ATTR_STATE_CHECKED,
+                ATTR_STATE_ACTIVATED,
+            ],
+        );
+        let rendered = call(&mut vm, "dump", std::slice::from_ref(&dumped));
+        let Value::Obj(rendered) = rendered else {
+            panic!("dump did not return a String");
+        };
+        assert_eq!(vm.heap.as_str(rendered).unwrap(), "W P C A ");
+
+        // containsAttribute (hidden helper): negative specs count, and a
+        // null spec stops the scan.
+        let negative = ints(&mut vm, &[-pressed]);
+        let positive = ints(&mut vm, &[focused]);
+        let specs = crate::arrays::new_array(
+            &mut vm,
+            "[[I",
+            crate::heap::ElemKind::Obj,
+            vec![negative, positive],
+        )
+        .unwrap();
+        assert_eq!(
+            call(&mut vm, "containsAttribute", &[specs, Value::Int(pressed)]),
+            Value::Int(1)
+        );
+        let pressed_spec = ints(&mut vm, &[pressed]);
+        let stopped = crate::arrays::new_array(
+            &mut vm,
+            "[[I",
+            crate::heap::ElemKind::Obj,
+            vec![Value::Null, pressed_spec],
+        )
+        .unwrap();
+        assert_eq!(
+            call(
+                &mut vm,
+                "containsAttribute",
+                &[stopped, Value::Int(pressed)]
+            ),
+            Value::Int(0)
         );
     }
 

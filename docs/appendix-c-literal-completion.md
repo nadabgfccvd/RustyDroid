@@ -301,6 +301,37 @@ that exact prefix:
   its public catalogue, including XML helpers and event/log types,
   remains incomplete.
 
+## Round 12 — `StateSet` state-spec utilities
+
+- `android.util.StateSet`'s public static surface is modelled in
+  `android_util.rs`: shared `WILD_CARD` (`int[0]`) and `NOTHING`
+  (`int[] {0}`) arrays through the platform-static cache, `isWildCard`,
+  both `stateSetMatches` overloads, `trimStateSet`, and `dump` (with the
+  framework `android.R.attr` state IDs and AOSP's W/P/S/F/E/C/A letters).
+  Matching preserves AOSP's exact loop semantics: positive spec entries
+  are required, negative entries are prohibited, and a zero spec entry
+  terminates the scan successfully; a null state set matches only a null
+  or wild-card spec, while a null spec against a non-null set throws
+  `NullPointerException`. `trimStateSet` returns the identical array at
+  the same size and reproduces the negative-size / source-overrun
+  failures. The hidden `containsAttribute` scan is handled too (a null
+  spec stops the scan); the hidden `get(mask)` table, which depends on
+  the internal `ViewDrawableStates` styleable ordering, is not modelled.
+- `ColorStateList` matching in `android_drawable.rs` now calls the same
+  exact helper instead of a simplified contains/all approximation, so
+  zero-terminated specs behave the same in both places.
+- Proof: `state_set_utilities_match_aosp` covers wild-card forms, the
+  required/prohibited/terminator branches, null overload behaviour,
+  trim identity/copy/failures, dump letters, and the hidden
+  containsAttribute stop-at-null rule. `android_state_set.rs` proves the
+  guest path: DEX `sget-object` returns one shared `WILD_CARD` array,
+  `NOTHING` is `[0]`, `invoke-static stateSetMatches` reaches the host
+  implementation, and `new StateSet()` constructs through the host
+  `<init>`.
+- Status after Round 12: `android.util` remains **partial**. The rest of
+  its public catalogue, including XML helpers and event/log types,
+  remains incomplete.
+
 ## Remaining literal blockers by partial surface
 
 | Domain | Surface | Main literal blockers |

@@ -1386,6 +1386,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/util/SimpleArrayMap;" => Some(OBJECT),
         "Landroid/util/ArrayMap;" => Some(&["Landroid/util/SimpleArrayMap;", "Ljava/lang/Object;"]),
         "Landroid/util/ArraySet;" => Some(OBJECT),
+        "Landroid/util/StateSet;" => Some(OBJECT),
         // java.util.Random (jrandom.rs)
         "Ljava/util/Random;" => Some(OBJECT),
         "Ljava/util/concurrent/ThreadLocalRandom;" => {
