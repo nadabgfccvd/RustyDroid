@@ -1406,6 +1406,298 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             Some(&["Ljava/lang/ref/Reference;", "Ljava/lang/Object;"])
         }
         "Ljava/lang/ref/ReferenceQueue;" => Some(OBJECT),
+        // Appendix C stub surfaces promoted to bounded partial slices.
+        "Landroid/webkit/WebSettings;"
+        | "Landroid/provider/DocumentsContract;"
+        | "Landroid/provider/DocumentsContract$Path;"
+        | "Landroid/security/NetworkSecurityPolicy;"
+        | "Landroid/security/KeyChain;"
+        | "Landroid/hardware/camera2/CameraManager;"
+        | "Landroid/hardware/camera2/CameraMetadata;"
+        | "Landroid/hardware/camera2/impl/CameraMetadataNative;"
+        | "Landroid/hardware/camera2/impl/CameraMetadataNative$Key;"
+        | "Landroid/hardware/camera2/utils/TypeReference;"
+        | "Landroid/hardware/camera2/utils/HashCodeHelpers;"
+        | "Landroid/hardware/camera2/CameraCharacteristics$Key;"
+        | "Landroid/hardware/camera2/CaptureRequest$Key;"
+        | "Landroid/hardware/camera2/CaptureRequest$Builder;"
+        | "Landroid/hardware/camera2/CaptureResult$Key;"
+        | "Landroid/hardware/camera2/params/StreamConfiguration;"
+        | "Landroid/hardware/camera2/params/StreamConfigurationDuration;"
+        | "Landroid/hardware/camera2/params/StreamConfigurationMap;"
+        | "Landroid/hardware/camera2/params/HighSpeedVideoConfiguration;"
+        | "Landroid/hardware/camera2/params/ReprocessFormatsMap;"
+        | "Landroid/hardware/camera2/params/MeteringRectangle;"
+        | "Landroid/hardware/camera2/params/RggbChannelVector;"
+        | "Landroid/hardware/camera2/params/BlackLevelPattern;"
+        | "Landroid/hardware/camera2/params/ColorSpaceTransform;"
+        | "Landroid/view/textclassifier/TextClassifier;"
+        | "Landroid/view/textclassifier/TextClassifier$EntityConfig;"
+        | "Landroid/view/textclassifier/TextClassifier$EntityConfig$Builder;"
+        | "Landroid/view/textclassifier/TextClassification;"
+        | "Landroid/view/textclassifier/TextClassification$Builder;"
+        | "Landroid/view/textclassifier/TextClassification$Request;"
+        | "Landroid/view/textclassifier/TextClassification$Request$Builder;"
+        | "Landroid/view/textclassifier/TextSelection;"
+        | "Landroid/view/textclassifier/TextSelection$Builder;"
+        | "Landroid/view/textclassifier/TextSelection$Request;"
+        | "Landroid/view/textclassifier/TextSelection$Request$Builder;"
+        | "Landroid/view/textclassifier/TextLanguage;"
+        | "Landroid/view/textclassifier/TextLanguage$Builder;"
+        | "Landroid/view/textclassifier/TextLanguage$Request;"
+        | "Landroid/view/textclassifier/TextLanguage$Request$Builder;"
+        | "Landroid/view/textclassifier/TextLinks;"
+        | "Landroid/view/textclassifier/TextLinks$Builder;"
+        | "Landroid/view/textclassifier/TextLinks$TextLink;"
+        | "Landroid/view/textclassifier/TextLinks$Request;"
+        | "Landroid/view/textclassifier/TextLinks$Request$Builder;"
+        | "Landroid/view/textclassifier/ConversationActions;"
+        | "Landroid/view/textclassifier/ConversationAction;"
+        | "Landroid/view/textclassifier/ConversationAction$Builder;"
+        | "Landroid/view/textclassifier/ConversationActions$Message;"
+        | "Landroid/view/textclassifier/ConversationActions$Message$Builder;"
+        | "Landroid/view/textclassifier/ConversationActions$Request;"
+        | "Landroid/view/textclassifier/ConversationActions$Request$Builder;"
+        | "Landroid/view/textclassifier/TextClassificationManager;"
+        | "Landroid/icu/util/ULocale;"
+        | "Landroid/view/textclassifier/EntityConfidence;" => Some(OBJECT),
+        "Landroid/animation/Animator;"
+        | "Landroid/animation/Animator$AnimatorListener;"
+        | "Landroid/animation/Animator$AnimatorPauseListener;"
+        | "Landroid/animation/ValueAnimator$AnimatorUpdateListener;"
+        | "Landroid/animation/ValueAnimator$DurationScaleChangeListener;"
+        | "Landroid/animation/AnimationHandler;"
+        | "Landroid/animation/AnimationHandler$AnimationFrameCallback;"
+        | "Landroid/animation/PropertyValuesHolder;"
+        | "Landroid/animation/Keyframe;"
+        | "Landroid/animation/TypeEvaluator;"
+        | "Landroid/animation/TypeConverter;"
+        | "Landroid/animation/BidirectionalTypeConverter;"
+        | "Landroid/animation/IntEvaluator;"
+        | "Landroid/animation/FloatEvaluator;"
+        | "Landroid/animation/ArgbEvaluator;"
+        | "Landroid/animation/AnimatorListenerAdapter;"
+        | "Landroid/util/Property;" => Some(OBJECT),
+        "Landroid/util/IntProperty;" | "Landroid/util/FloatProperty;" => {
+            Some(&["Landroid/util/Property;", "Ljava/lang/Object;"])
+        }
+        "Landroid/animation/ValueAnimator;" => {
+            Some(&["Landroid/animation/Animator;", "Ljava/lang/Object;"])
+        }
+        "Landroid/animation/ObjectAnimator;" => Some(&[
+            "Landroid/animation/ValueAnimator;",
+            "Landroid/animation/Animator;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/animation/Keyframe$ObjectKeyframe;"
+        | "Landroid/animation/Keyframe$IntKeyframe;"
+        | "Landroid/animation/Keyframe$FloatKeyframe;" => {
+            Some(&["Landroid/animation/Keyframe;", "Ljava/lang/Object;"])
+        }
+        "Landroid/service/autofill/AutofillService;" => Some(&[
+            "Landroid/app/Service;",
+            "Landroid/content/ContextWrapper;",
+            "Landroid/content/Context;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/service/autofill/RegexValidator;"
+        | "Landroid/service/autofill/RequiredValidators;"
+        | "Landroid/service/autofill/OptionalValidators;"
+        | "Landroid/service/autofill/NegationValidator;" => Some(&[
+            "Landroid/service/autofill/InternalValidator;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/service/autofill/TextValueSanitizer;"
+        | "Landroid/service/autofill/DateValueSanitizer;" => Some(&[
+            "Landroid/service/autofill/InternalSanitizer;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/view/autofill/AutofillId;"
+        | "Landroid/view/autofill/AutofillValue;"
+        | "Landroid/service/autofill/Dataset;"
+        | "Landroid/service/autofill/Dataset$Builder;"
+        | "Landroid/service/autofill/Dataset$DatasetFieldFilter;"
+        | "Landroid/service/autofill/Field;"
+        | "Landroid/service/autofill/Field$Builder;"
+        | "Landroid/service/autofill/Presentations;"
+        | "Landroid/service/autofill/Presentations$Builder;"
+        | "Landroid/service/autofill/InlinePresentation;"
+        | "Landroid/service/autofill/FillResponse;"
+        | "Landroid/service/autofill/FillResponse$Builder;"
+        | "Landroid/service/autofill/SaveInfo;"
+        | "Landroid/service/autofill/SaveInfo$Builder;"
+        | "Landroid/service/autofill/UserData;"
+        | "Landroid/service/autofill/UserData$Builder;"
+        | "Landroid/service/autofill/InternalValidator;"
+        | "Landroid/service/autofill/InternalSanitizer;"
+        | "Landroid/service/autofill/Validator;"
+        | "Landroid/service/autofill/Sanitizer;"
+        | "Landroid/service/autofill/ValueFinder;"
+        | "Landroid/service/autofill/Validators;"
+        | "Landroid/service/autofill/FillRequest;"
+        | "Landroid/service/autofill/SaveRequest;"
+        | "Landroid/service/autofill/FillContext;"
+        | "Landroid/service/autofill/FillCallback;"
+        | "Landroid/service/autofill/SaveCallback;"
+        | "Landroid/service/autofill/IFillCallback;"
+        | "Landroid/service/autofill/ISaveCallback;"
+        | "Landroid/service/autofill/FieldClassification;"
+        | "Landroid/service/autofill/FieldClassification$Match;"
+        | "Landroid/service/autofill/FieldClassificationUserData;"
+        | "Landroid/service/autofill/CustomDescription;"
+        | "Landroid/service/autofill/CustomDescription$Builder;"
+        | "Landroid/service/autofill/SavedDatasetsInfo;"
+        | "Landroid/service/autofill/SavedDatasetsInfoCallback;"
+        | "Landroid/app/assist/AssistStructure;"
+        | "Landroid/app/slice/Slice;"
+        | "Landroid/widget/inline/InlinePresentationSpec;" => Some(OBJECT),
+        "Landroid/hardware/camera2/CameraCharacteristics;"
+        | "Landroid/hardware/camera2/CaptureRequest;"
+        | "Landroid/hardware/camera2/CaptureResult;" => Some(&[
+            "Landroid/hardware/camera2/CameraMetadata;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/hardware/camera2/TotalCaptureResult;" => Some(&[
+            "Landroid/hardware/camera2/CaptureResult;",
+            "Landroid/hardware/camera2/CameraMetadata;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/hardware/camera2/CameraAccessException;" => Some(&[
+            "Landroid/util/AndroidException;",
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/transition/Transition;"
+        | "Landroid/transition/Transition$TransitionListener;"
+        | "Landroid/transition/Transition$EpicenterCallback;"
+        | "Landroid/transition/Transition$AnimationInfo;"
+        | "Landroid/transition/TransitionValues;"
+        | "Landroid/transition/TransitionValuesMaps;"
+        | "Landroid/transition/TransitionManager;"
+        | "Landroid/transition/TransitionManager$MultiListener;"
+        | "Landroid/transition/Scene;"
+        | "Landroid/transition/TransitionPropagation;"
+        | "Landroid/transition/PathMotion;"
+        | "Landroid/transition/TransitionListenerAdapter;" => Some(OBJECT),
+        "Landroid/transition/Visibility;" => {
+            Some(&["Landroid/transition/Transition;", "Ljava/lang/Object;"])
+        }
+        "Landroid/transition/Fade;" => Some(&[
+            "Landroid/transition/Visibility;",
+            "Landroid/transition/Transition;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/transition/ChangeBounds;" => {
+            Some(&["Landroid/transition/Transition;", "Ljava/lang/Object;"])
+        }
+        "Landroid/transition/TransitionSet;" => {
+            Some(&["Landroid/transition/Transition;", "Ljava/lang/Object;"])
+        }
+        "Landroid/transition/AutoTransition;" => Some(&[
+            "Landroid/transition/TransitionSet;",
+            "Landroid/transition/Transition;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/transition/Transition$1;" => {
+            Some(&["Landroid/transition/PathMotion;", "Ljava/lang/Object;"])
+        }
+        "Landroid/transition/Transition$2;" | "Landroid/transition/Transition$3;" => Some(&[
+            "Landroid/animation/AnimatorListenerAdapter;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/transition/Fade$FadeAnimatorListener;" => Some(&[
+            "Landroid/animation/AnimatorListenerAdapter;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/transition/Fade$1;"
+        | "Landroid/transition/TransitionSet$TransitionSetListener;"
+        | "Landroid/transition/TransitionSet$1;"
+        | "Landroid/transition/TransitionManager$1;"
+        | "Landroid/transition/Visibility$DisappearListener;"
+        | "Landroid/transition/Visibility$1;" => Some(&[
+            "Landroid/transition/TransitionListenerAdapter;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroid/transition/ChangeBounds$1;" | "Landroid/transition/ChangeBounds$ViewBounds;" => {
+            Some(OBJECT)
+        }
+        "Landroid/system/Os;"
+        | "Landroid/system/OsConstants;"
+        | "Landroid/system/StructStat;"
+        | "Landroid/system/StructStatVfs;"
+        | "Landroid/system/StructTimespec;"
+        | "Landroid/system/StructUtsname;" => Some(OBJECT),
+        "Landroid/system/ErrnoException;" => Some(&[
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        // Appendix C Batch 57-A bounded partial slices.
+        "Landroid/view/textservice/TextServicesManager;"
+        | "Landroid/view/textservice/SpellCheckerSession;"
+        | "Landroid/view/textservice/SpellCheckerSession$SpellCheckerSessionListener;"
+        | "Landroid/view/textservice/SpellCheckerSession$SpellCheckerSessionParams;"
+        | "Landroid/view/textservice/SpellCheckerSession$SpellCheckerSessionParams$BaseBuilder;"
+        | "Landroid/view/textservice/SpellCheckerSession$SpellCheckerSessionParams$Builder;"
+        | "Landroid/view/textservice/TextInfo;"
+        | "Landroid/view/textservice/SuggestionsInfo;"
+        | "Landroid/view/textservice/SentenceSuggestionsInfo;"
+        | "Landroid/view/textservice/SpellCheckerSubtype;"
+        | "Landroid/view/textservice/SpellCheckerInfo;"
+        | "Landroid/view/translation/TranslationManager;"
+        | "Landroid/view/translation/TranslationSpec;"
+        | "Landroid/view/translation/TranslationRequestValue;"
+        | "Landroid/view/translation/ViewTranslationRequest;"
+        | "Landroid/view/translation/ViewTranslationRequest$Builder;"
+        | "Landroid/view/translation/TranslationContext;"
+        | "Landroid/view/translation/TranslationContext$BaseBuilder;"
+        | "Landroid/view/translation/TranslationCapability;"
+        | "Landroid/view/translation/Translator;"
+        | "Landroid/hardware/usb/UsbManager;"
+        | "Landroid/hardware/usb/UsbConstants;"
+        | "Landroid/hardware/usb/UsbDevice;"
+        | "Landroid/hardware/usb/UsbDevice$Builder;"
+        | "Landroid/hardware/usb/UsbConfiguration;"
+        | "Landroid/hardware/usb/UsbInterface;"
+        | "Landroid/hardware/usb/UsbEndpoint;"
+        | "Landroid/hardware/usb/UsbAccessory;"
+        | "Landroid/hardware/usb/UsbDeviceConnection;"
+        | "Landroid/telephony/euicc/EuiccManager;"
+        | "Landroid/telephony/euicc/EuiccInfo;"
+        | "Landroid/app/usage/UsageStatsManager;"
+        | "Landroid/app/usage/UsageStats;"
+        | "Landroid/app/usage/UsageEvents;"
+        | "Landroid/app/usage/UsageEvents$Event;"
+        | "Landroid/print/PrintManager;"
+        | "Landroid/print/PrintManager$PrintJobStateChangeListener;"
+        | "Landroid/print/PrintManager$PrintServicesChangeListener;"
+        | "Landroid/print/PrintManager$PrintServiceRecommendationsChangeListener;"
+        | "Landroid/print/PrintAttributes;"
+        | "Landroid/print/PrintAttributes$Builder;"
+        | "Landroid/print/PrintAttributes$MediaSize;"
+        | "Landroid/print/PrintAttributes$Resolution;"
+        | "Landroid/print/PrintAttributes$Margins;"
+        | "Landroid/print/PageRange;"
+        | "Landroid/print/PrinterId;"
+        | "Landroid/print/PrintJobId;"
+        | "Landroid/security/keystore/KeyProperties;"
+        | "Landroid/security/keystore/KeyGenParameterSpec;"
+        | "Landroid/security/keystore/KeyGenParameterSpec$Builder;"
+        | "Landroid/security/keystore/KeyProtection;"
+        | "Landroid/security/keystore/KeyProtection$Builder;"
+        | "Landroid/security/keystore/KeyInfo;"
+        | "Landroid/mtp/MtpConstants;"
+        | "Landroid/mtp/MtpDeviceInfo;"
+        | "Landroid/mtp/MtpStorageInfo;"
+        | "Landroid/mtp/MtpObjectInfo;"
+        | "Landroid/mtp/MtpObjectInfo$Builder;"
+        | "Landroid/mtp/MtpDevice;"
+        | "Landroid/mtp/MtpEvent;" => Some(OBJECT),
+        "Landroid/view/translation/TranslationContext$Builder;" => Some(&[
+            "Landroid/view/translation/TranslationContext$BaseBuilder;",
+            "Ljava/lang/Object;",
+        ]),
         _ => None,
     }
 }
@@ -1740,6 +2032,139 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         }
         "Ljava/lang/Enum;" => Some(&["Ljava/lang/Comparable;", "Ljava/io/Serializable;"]),
         "Ljava/lang/Thread;" => Some(&["Ljava/lang/Runnable;"]),
+        "Landroid/animation/Animator;"
+        | "Landroid/animation/PropertyValuesHolder;"
+        | "Landroid/animation/Keyframe;"
+        | "Landroid/animation/Keyframe$ObjectKeyframe;"
+        | "Landroid/animation/Keyframe$IntKeyframe;"
+        | "Landroid/animation/Keyframe$FloatKeyframe;" => Some(&["Ljava/lang/Cloneable;"]),
+        "Landroid/animation/ValueAnimator;" => Some(&[
+            "Ljava/lang/Cloneable;",
+            "Landroid/animation/AnimationHandler$AnimationFrameCallback;",
+        ]),
+        "Landroid/animation/ObjectAnimator;" => Some(&[
+            "Ljava/lang/Cloneable;",
+            "Landroid/animation/AnimationHandler$AnimationFrameCallback;",
+        ]),
+        "Landroid/animation/IntEvaluator;"
+        | "Landroid/animation/FloatEvaluator;"
+        | "Landroid/animation/ArgbEvaluator;" => Some(&["Landroid/animation/TypeEvaluator;"]),
+        "Landroid/animation/BidirectionalTypeConverter;" => {
+            Some(&["Landroid/animation/TypeConverter;"])
+        }
+        "Landroid/animation/AnimatorListenerAdapter;" => Some(&[
+            "Landroid/animation/Animator$AnimatorListener;",
+            "Landroid/animation/Animator$AnimatorPauseListener;",
+        ]),
+        // Parcelable value types in the bounded Camera2/TextClassifier slices.
+        "Landroid/hardware/camera2/impl/CameraMetadataNative;"
+        | "Landroid/hardware/camera2/CaptureRequest;"
+        | "Landroid/view/textclassifier/TextClassifier$EntityConfig;"
+        | "Landroid/view/textclassifier/TextClassification;"
+        | "Landroid/view/textclassifier/TextClassification$Request;"
+        | "Landroid/view/textclassifier/TextSelection;"
+        | "Landroid/view/textclassifier/TextSelection$Request;"
+        | "Landroid/view/textclassifier/TextLanguage;"
+        | "Landroid/view/textclassifier/TextLanguage$Request;"
+        | "Landroid/view/textclassifier/TextLinks;"
+        | "Landroid/view/textclassifier/TextLinks$TextLink;"
+        | "Landroid/view/textclassifier/TextLinks$Request;"
+        | "Landroid/view/textclassifier/ConversationActions;"
+        | "Landroid/view/textclassifier/ConversationAction;"
+        | "Landroid/view/textclassifier/ConversationActions$Message;"
+        | "Landroid/view/textclassifier/ConversationActions$Request;"
+        | "Landroid/view/textclassifier/EntityConfidence;" => Some(&["Landroid/os/Parcelable;"]),
+        "Landroid/icu/util/ULocale;" => Some(&[
+            "Ljava/lang/Cloneable;",
+            "Ljava/io/Serializable;",
+            "Ljava/lang/Comparable;",
+        ]),
+        "Landroid/view/autofill/AutofillId;"
+        | "Landroid/view/autofill/AutofillValue;"
+        | "Landroid/service/autofill/Dataset;"
+        | "Landroid/service/autofill/Dataset$DatasetFieldFilter;"
+        | "Landroid/service/autofill/InlinePresentation;"
+        | "Landroid/service/autofill/FillResponse;"
+        | "Landroid/service/autofill/SaveInfo;"
+        | "Landroid/service/autofill/FillRequest;"
+        | "Landroid/service/autofill/SaveRequest;"
+        | "Landroid/service/autofill/FillContext;"
+        | "Landroid/service/autofill/CustomDescription;"
+        | "Landroid/app/assist/AssistStructure;"
+        | "Landroid/app/slice/Slice;"
+        | "Landroid/widget/inline/InlinePresentationSpec;" => Some(&["Landroid/os/Parcelable;"]),
+        "Landroid/service/autofill/UserData;" => Some(&[
+            "Landroid/os/Parcelable;",
+            "Landroid/service/autofill/FieldClassificationUserData;",
+        ]),
+        "Landroid/service/autofill/InternalValidator;"
+        | "Landroid/service/autofill/RegexValidator;"
+        | "Landroid/service/autofill/RequiredValidators;"
+        | "Landroid/service/autofill/OptionalValidators;"
+        | "Landroid/service/autofill/NegationValidator;" => Some(&[
+            "Landroid/service/autofill/Validator;",
+            "Landroid/os/Parcelable;",
+        ]),
+        "Landroid/service/autofill/InternalSanitizer;"
+        | "Landroid/service/autofill/TextValueSanitizer;"
+        | "Landroid/service/autofill/DateValueSanitizer;" => Some(&[
+            "Landroid/service/autofill/Sanitizer;",
+            "Landroid/os/Parcelable;",
+        ]),
+        "Landroid/transition/Transition;" => Some(&["Ljava/lang/Cloneable;"]),
+        "Landroid/transition/TransitionListenerAdapter;"
+        | "Landroid/transition/Fade$1;"
+        | "Landroid/transition/TransitionSet$TransitionSetListener;"
+        | "Landroid/transition/TransitionSet$1;"
+        | "Landroid/transition/TransitionManager$1;"
+        | "Landroid/transition/Visibility$1;" => {
+            Some(&["Landroid/transition/Transition$TransitionListener;"])
+        }
+        "Landroid/transition/Visibility$DisappearListener;" => Some(&[
+            "Landroid/transition/Transition$TransitionListener;",
+            "Landroid/animation/Animator$AnimatorListener;",
+            "Landroid/animation/Animator$AnimatorPauseListener;",
+        ]),
+        "Landroid/transition/TransitionManager$MultiListener;" => Some(&[
+            "Landroid/view/ViewTreeObserver$OnPreDrawListener;",
+            "Landroid/view/View$OnAttachStateChangeListener;",
+        ]),
+        "Landroid/transition/ChangeBounds$1;" => {
+            Some(&["Landroid/animation/ValueAnimator$AnimatorUpdateListener;"])
+        }
+        "Landroid/system/StructTimespec;" => Some(&["Ljava/lang/Comparable;"]),
+        // Parcelable value types in the Batch 57-A bounded slices.
+        "Landroid/view/textservice/TextInfo;"
+        | "Landroid/view/textservice/SuggestionsInfo;"
+        | "Landroid/view/textservice/SentenceSuggestionsInfo;"
+        | "Landroid/view/textservice/SpellCheckerSubtype;"
+        | "Landroid/view/textservice/SpellCheckerInfo;"
+        | "Landroid/view/translation/TranslationSpec;"
+        | "Landroid/view/translation/TranslationRequestValue;"
+        | "Landroid/view/translation/ViewTranslationRequest;"
+        | "Landroid/view/translation/TranslationContext;"
+        | "Landroid/view/translation/TranslationCapability;"
+        | "Landroid/hardware/usb/UsbDevice;"
+        | "Landroid/hardware/usb/UsbConfiguration;"
+        | "Landroid/hardware/usb/UsbInterface;"
+        | "Landroid/hardware/usb/UsbEndpoint;"
+        | "Landroid/hardware/usb/UsbAccessory;"
+        | "Landroid/telephony/euicc/EuiccInfo;"
+        | "Landroid/app/usage/UsageStats;"
+        | "Landroid/app/usage/UsageEvents;"
+        | "Landroid/print/PrintAttributes;"
+        | "Landroid/print/PageRange;"
+        | "Landroid/print/PrinterId;"
+        | "Landroid/print/PrintJobId;" => Some(&["Landroid/os/Parcelable;"]),
+        "Landroid/security/keystore/KeyGenParameterSpec;" => Some(&[
+            "Ljava/security/spec/AlgorithmParameterSpec;",
+            "Landroid/security/keystore/UserAuthArgs;",
+        ]),
+        "Landroid/security/keystore/KeyProtection;" => Some(&[
+            "Ljava/security/KeyStore$ProtectionParameter;",
+            "Landroid/security/keystore/UserAuthArgs;",
+        ]),
+        "Landroid/security/keystore/KeyInfo;" => Some(&["Ljava/security/spec/KeySpec;"]),
         _ => None,
     }
 }
