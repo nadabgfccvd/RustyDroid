@@ -184,7 +184,7 @@ impl Engine {
         self.fw.resources = resources;
         let _ = write!(
             s,
-            "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
             self.statics,
             self.threads,
             self.pending_permission_results,
@@ -194,7 +194,6 @@ impl Engine {
             self.attached_views,
             self.window_attached,
             self.window_token,
-            self.sparse,
         );
         let _ = write!(
             s,
@@ -279,6 +278,11 @@ impl Engine {
         for k in module_keys {
             if let Some(b) = has_side.get_mut(k as usize) {
                 *b |= 2;
+            }
+        }
+        for k in self.sparse.keys().copied() {
+            if let Some(b) = has_side.get_mut(k as usize) {
+                *b |= 4;
             }
         }
         if minor {
@@ -399,6 +403,15 @@ impl Engine {
                 let _ = write!(scanner, "{g:?}");
                 scanner.finish();
             }
+            if side & 4 != 0 {
+                if let Some(map) = self.sparse.get(&r) {
+                    for v in map.values() {
+                        if let Value::Obj(x) = v {
+                            cand.push(*x);
+                        }
+                    }
+                }
+            }
             for x in cand.drain(..) {
                 m.push(x);
             }
@@ -471,6 +484,7 @@ impl Engine {
         self.gfx.objs.retain(|r, _| alive(r));
         self.bignums.retain(|r, _| alive(r));
         self.break_iters.retain(|r, _| alive(r));
+        self.sparse.retain(|r, _| alive(r));
         let alive_ref = |r: ObjRef| alive(&r);
         crate::jregex::gc_purge(&alive_ref);
         crate::android_spannable::gc_purge(&alive_ref);
