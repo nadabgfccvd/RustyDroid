@@ -794,99 +794,11 @@ pub(crate) fn exec_frame(
                 // (JVMS 5.5: init é disparado no DECLARANTE — via ref da
                 // subclasse NÃO inicializa a subclasse)
                 step!(vm.ensure_initialized(&owner));
-                // issues #43/#48: System.out/.err materializam um PrintStream
-                // embutido na primeira leitura (println/print são intrínsecos;
-                // saída vai para stdout/stderr do host, spec PrintStream: nunca lança)
-                if owner == "Ljava/lang/System;" && (fname == "out" || fname == "err") {
-                    let key = (owner.clone(), fname.clone());
-                    if let std::collections::hash_map::Entry::Vacant(e) = vm.statics.entry(key) {
-                        let fd = if fname == "err" { 2 } else { 1 };
-                        let r = step!(vm
-                            .heap
-                            .alloc_instance(
-                                "Ljava/io/PrintStream;".to_string(),
-                                vec![("fd".to_string(), Value::Int(fd))],
-                            )
-                            .map_err(oom_exception));
-                        e.insert(Value::Obj(r));
-                    }
-                }
-                if owner == "Ljava/util/concurrent/TimeUnit;"
-                    && !vm.statics.contains_key(&(owner.clone(), fname.clone()))
-                    && matches!(
-                        fname.as_str(),
-                        "NANOSECONDS"
-                            | "MICROSECONDS"
-                            | "MILLISECONDS"
-                            | "SECONDS"
-                            | "MINUTES"
-                            | "HOURS"
-                            | "DAYS"
-                    )
-                {
-                    let unit = step!(vm.time_unit_obj(&fname));
-                    vm.statics
-                        .insert((owner.clone(), fname.clone()), Value::Obj(unit));
-                }
-                // JDK constants not backed by any DEX (Boolean.TRUE/FALSE,
-                // MAX_VALUE, NaN, ...) are materialized on first read.
-                // Host-static resolution needs `&mut Engine`; keeping a map Entry
-                // live across those calls would conflict with the mutable borrow.
-                #[allow(clippy::map_entry)]
-                if !vm.statics.contains_key(&(owner.clone(), fname.clone())) {
-                    if let Some(c) = step!(crate::boxes::host_static(vm, &owner, &fname)) {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::jnormalizer::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::jbigdecimal::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::jtext_format::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_colorspace::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_env::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_build::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) = step!(crate::graphics::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) = step!(crate::parcel::host_static(vm, &owner, &fname)) {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_util::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::platform_base::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::collections::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) = step!(crate::jtime::host_static(vm, &owner, &fname)) {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    }
-                    #[cfg(feature = "virtual-devices")]
-                    if !vm.statics.contains_key(&(owner.clone(), fname.clone())) {
-                        if let Some(c) = step!(crate::m10::host_static(vm, &owner, &fname)) {
-                            vm.statics.insert((owner.clone(), fname.clone()), c);
-                        }
-                    }
-                }
+                // issue #330: resolução canônica ÚNICA das constantes de host
+                // (System.out/.err, TimeUnit, wrappers JDK, Locale,
+                // android.jar) — MESMOS providers no bytecode (sget) e na
+                // reflexão; hits cacheados em vm.statics pelo helper.
+                step!(vm.resolve_host_static(&owner, &fname));
                 let v = vm
                     .statics
                     .get(&(owner, fname))

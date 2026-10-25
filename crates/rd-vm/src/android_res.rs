@@ -318,6 +318,72 @@ fn default_locale(vm: &mut Engine) -> Result<ObjRef, VmExit> {
     Ok(r)
 }
 
+/// Constantes estáticas de `java.util.Locale` (issue #330). O JDK predefine
+/// 21 constantes públicas em `Locale.java`; cada uma materializa aqui uma
+/// instância canônica via `new_locale` (antes: `sget-object Locale.US`
+/// devolvia `Value::Null` — NPE em `<clinit>` de APKs reais, ex.
+/// org.primftpd_71.apk com `DateTimeFormatter.ofPattern(p, Locale.US)`).
+///
+/// Aliases do JDK compartilham UMA instância (`CHINA = SIMPLIFIED_CHINESE`,
+/// `PRC = CHINA`, `TAIWAN = TRADITIONAL_CHINESE` — atribuições diretas em
+/// Locale.java): o lookup confere todas as chaves do grupo antes de alocar,
+/// então `Locale.PRC == Locale.CHINA` por identidade, enquanto instâncias
+/// construídas pelo guest (`new Locale("zh","CN")`) seguem objetos
+/// distintos — exatamente como no JVM. O cache por (owner, field) do caller
+/// (`Engine::resolve_host_static`) consolida o grupo no primeiro uso.
+pub(crate) fn host_static(
+    vm: &mut Engine,
+    owner: &str,
+    field: &str,
+) -> Result<Option<Value>, VmExit> {
+    if owner != LOCALE {
+        return Ok(None);
+    }
+    // (nome canônico do grupo, lang, country); aliases repetem o canônico
+    let (canonical, lang, country) = match field {
+        "ROOT" => ("ROOT", "", ""),
+        "ENGLISH" => ("ENGLISH", "en", ""),
+        "FRENCH" => ("FRENCH", "fr", ""),
+        "GERMAN" => ("GERMAN", "de", ""),
+        "ITALIAN" => ("ITALIAN", "it", ""),
+        "JAPANESE" => ("JAPANESE", "ja", ""),
+        "KOREAN" => ("KOREAN", "ko", ""),
+        "CHINESE" => ("CHINESE", "zh", ""),
+        // Locale.java: CHINA = SIMPLIFIED_CHINESE; PRC = CHINA
+        "SIMPLIFIED_CHINESE" | "CHINA" | "PRC" => ("SIMPLIFIED_CHINESE", "zh", "CN"),
+        // Locale.java: TAIWAN = TRADITIONAL_CHINESE
+        "TRADITIONAL_CHINESE" | "TAIWAN" => ("TRADITIONAL_CHINESE", "zh", "TW"),
+        "FRANCE" => ("FRANCE", "fr", "FR"),
+        "GERMANY" => ("GERMANY", "de", "DE"),
+        "ITALY" => ("ITALY", "it", "IT"),
+        "JAPAN" => ("JAPAN", "ja", "JP"),
+        "KOREA" => ("KOREA", "ko", "KR"),
+        "UK" => ("UK", "en", "GB"),
+        "US" => ("US", "en", "US"),
+        "CANADA" => ("CANADA", "en", "CA"),
+        "CANADA_FRENCH" => ("CANADA_FRENCH", "fr", "CA"),
+        _ => return Ok(None),
+    };
+    // identidade dentro do grupo: se qualquer constante do grupo já foi
+    // materializada, reuso o MESMO ObjRef (JDK: aliases são o mesmo campo)
+    let group: &[&str] = match canonical {
+        "SIMPLIFIED_CHINESE" => &["SIMPLIFIED_CHINESE", "CHINA", "PRC"],
+        "TRADITIONAL_CHINESE" => &["TRADITIONAL_CHINESE", "TAIWAN"],
+        _ => &[canonical],
+    };
+    for name in group {
+        if let Some(v) = vm
+            .statics
+            .get(&(LOCALE.to_string(), (*name).to_string()))
+            .cloned()
+        {
+            return Ok(Some(v));
+        }
+    }
+    let r = new_locale(vm, lang, country, "")?;
+    Ok(Some(Value::Obj(r)))
+}
+
 fn locale_parts(vm: &Engine, r: ObjRef) -> (String, String, String) {
     let f = |n: &str| str_of(vm, &get(vm, r, n)).unwrap_or_default();
     (f("rd_lang"), f("rd_country"), f("rd_variant"))
