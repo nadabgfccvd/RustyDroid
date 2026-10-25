@@ -2593,6 +2593,11 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Landroid/util/AttributeSet;",
             "Ljava/lang/AutoCloseable;",
         ]),
+        // camera2 & media AutoCloseable resources (m10/camera.rs, #315)
+        "Landroid/hardware/camera2/CameraDevice;"
+        | "Landroid/hardware/camera2/CameraCaptureSession;"
+        | "Landroid/media/ImageReader;"
+        | "Landroid/media/Image;" => Some(&["Ljava/lang/AutoCloseable;"]),
         // java.util time classes inherit these standard JDK interfaces.
         "Ljava/util/Calendar;" | "Ljava/util/GregorianCalendar;" => Some(CALENDAR_IFACES),
         "Ljava/util/TimeZone;" => Some(TIMEZONE_IFACES),
