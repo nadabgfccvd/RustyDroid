@@ -77,6 +77,27 @@ resids p/ `getIdentifier` e ferramentas de diagnóstico — cobertos por APIs no
   (screenshot frio ~110 ms dominando no app trivial) não é afetada (ARSC
   minúsculo no trivial).
 
+## Mudança de semântica de erro (Lei 1) — explícita
+
+Com o eager, UMA string malformada em qualquer pool reprovava o **parse
+inteiro** do resources.arsc (`PARSE_ERROR` estruturado). Com o lazy, o mesmo
+input: parse **sucede** (header/tabela/estrutura válidos) e a string ruim
+aparece como **`None` no acesso** (`get`/resolve sobre aquele índice — falha
+memoizada por slot). Em resumo:
+
+| Cenário | Eager (antes) | Lazy (agora) |
+|---|---|---|
+| Header/contagens/tabela de offsets fora do documento | erro no parse | erro no parse (inalterado) |
+| String individual truncada/corrompida | erro no parse | `None` no acesso |
+| Entrada individual truncada | entrada pulada (parse ok) | entrada pulada (idêntico) |
+
+Pools/APKs **válidos** têm comportamento idêntico (paridade medida: 0
+divergências em 36.771 checagens). A diferença só existe para input
+malformado — e o novo fuzz target (`arsc.rs` chama `resolve_*` sobre todos os
+resids) garante que esse caminho nunca entra em pânico. Ferramentas que
+precisam distinguir "string ausente" de "string corrompida" devem inspecionar
+o slot via `get` (o `None` é memoizado e determinístico).
+
 ## Consequências
 
 - Inspect/launch na classe flagship/torture param de pagar 410k decodificações
