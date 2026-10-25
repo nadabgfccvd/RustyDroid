@@ -26,6 +26,7 @@ const MAX_METHOD_REGS: usize = 256;
 const MAX_CACHE_ENTRIES: usize = 8192;
 const MAX_ARRAY_ELEMS: usize = 65_536;
 const MAX_STACK_ARGS: usize = 32;
+const MAX_JIT_ARRAY_HANDLES: usize = 16;
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct JitStats {
@@ -41,6 +42,7 @@ pub struct JitStats {
 struct ParamSlot {
     slot_offset: usize,
     kind: ParamKind,
+    arr_desc: Option<&'static str>,
 }
 
 struct CompiledPlan {
@@ -452,11 +454,19 @@ pub(crate) fn try_exec_method(
         }
     }
 
-    // Transactional primitive array marshaling: deduplicates aliased `ObjRef`s
-    // so `f(a, a)` shares one scratch buffer and preserves `a == b` identity,
-    // committing mutations back to `vm.heap` ONLY on normal completion.
-    let mut scratch_i32: Vec<(ObjRef, Vec<i32>)> = Vec::new();
-    let mut scratch_i64: Vec<(ObjRef, Vec<i64>)> = Vec::new();
+    // Transactional primitive array marshaling with unified `ObjRef` identity
+    // across `ArrI32`, `ArrI64`, and `Ref` (#249):
+    // Pass 1 assigns handles `1..=arr_ref_len` (`<= MAX_JIT_ARRAY_HANDLES`) to
+    // array parameters so `slices_i32` / `slices_i64` stay densely indexed by
+    // `handle - 1` without exceeding Cranelift's 16-handle table.
+    // Pass 2 interns `ParamKind::Ref` parameters into the SAME `ref_table`,
+    // reusing `1..=arr_ref_len` when an `Object` aliases an array parameter
+    // (`same(arr, arr) == true`) and assigning `arr_ref_len + 1..` otherwise
+    // (`eq(int[], long[]) == false`).
+    let mut scratch_i32: Vec<Option<(ObjRef, Vec<i32>)>> = Vec::new();
+    let mut scratch_i64: Vec<Option<(ObjRef, Vec<i64>)>> = Vec::new();
+    let mut has_i32_handle = false;
+    let mut has_i64_handle = false;
     let mut ref_table: [ObjRef; MAX_STACK_ARGS] = [0; MAX_STACK_ARGS];
     let mut ref_len = 0usize;
     {
@@ -474,17 +484,19 @@ pub(crate) fn try_exec_method(
                     *l as u64
                 }
                 (ParamKind::ArrI32 | ParamKind::ArrI64 | ParamKind::Ref, Value::Null) => 0,
-                (ParamKind::Ref, Value::Obj(r)) => {
-                    // Offset non-array Ref handles above `MAX_STACK_ARGS` so an
-                    // object ref never collides with 1..=N array handles in `if-eq`.
-                    u64::from(
-                        MAX_STACK_ARGS as u32 + intern_obj_handle(&mut ref_table, &mut ref_len, *r),
-                    )
-                }
+                (ParamKind::Ref, Value::Obj(_)) => 0,
                 (ParamKind::ArrI32, Value::Obj(r)) => {
-                    if let Some(pos) = scratch_i32.iter().position(|(o, _)| *o == *r) {
-                        (pos + 1) as u64
-                    } else {
+                    if ps.arr_desc.is_none() || vm.heap.class_of(*r).ok() != ps.arr_desc {
+                        return Ok(None);
+                    }
+                    let h = intern_obj_handle(&mut ref_table, &mut ref_len, *r) as usize;
+                    if h == 0 || h > MAX_JIT_ARRAY_HANDLES {
+                        return Ok(None);
+                    }
+                    if scratch_i32.len() < h {
+                        scratch_i32.resize_with(h, || None);
+                    }
+                    if scratch_i32[h - 1].is_none() {
                         let Ok((elems, ElemKind::Int)) = vm.heap.as_array_elems(*r) else {
                             return Ok(None);
                         };
@@ -498,14 +510,23 @@ pub(crate) fn try_exec_method(
                             };
                             buf.push(*iv);
                         }
-                        scratch_i32.push((*r, buf));
-                        scratch_i32.len() as u64
+                        scratch_i32[h - 1] = Some((*r, buf));
                     }
+                    has_i32_handle = true;
+                    h as u64
                 }
                 (ParamKind::ArrI64, Value::Obj(r)) => {
-                    if let Some(pos) = scratch_i64.iter().position(|(o, _)| *o == *r) {
-                        (pos + 1) as u64
-                    } else {
+                    if ps.arr_desc != Some("[J") || vm.heap.class_of(*r).ok() != Some("[J") {
+                        return Ok(None);
+                    }
+                    let h = intern_obj_handle(&mut ref_table, &mut ref_len, *r) as usize;
+                    if h == 0 || h > MAX_JIT_ARRAY_HANDLES {
+                        return Ok(None);
+                    }
+                    if scratch_i64.len() < h {
+                        scratch_i64.resize_with(h, || None);
+                    }
+                    if scratch_i64[h - 1].is_none() {
                         let Ok((elems, ElemKind::Long)) = vm.heap.as_array_elems(*r) else {
                             return Ok(None);
                         };
@@ -519,24 +540,46 @@ pub(crate) fn try_exec_method(
                             };
                             buf.push(*lv);
                         }
-                        scratch_i64.push((*r, buf));
-                        scratch_i64.len() as u64
+                        scratch_i64[h - 1] = Some((*r, buf));
                     }
+                    has_i64_handle = true;
+                    h as u64
                 }
                 _ => return Ok(None),
             };
         }
+        for (idx, ps) in plan.params.iter().enumerate() {
+            if ps.kind == ParamKind::Ref {
+                if let Value::Obj(r) = &ins[ps.slot_offset] {
+                    raw_args[idx] = u64::from(intern_obj_handle(&mut ref_table, &mut ref_len, *r));
+                }
+            }
+        }
     }
 
     let exec_res = {
-        let mut slices_i32: Vec<&mut [i32]> = scratch_i32
-            .iter_mut()
-            .map(|(_, v)| v.as_mut_slice())
-            .collect();
-        let mut slices_i64: Vec<&mut [i64]> = scratch_i64
-            .iter_mut()
-            .map(|(_, v)| v.as_mut_slice())
-            .collect();
+        let mut slices_i32: Vec<&mut [i32]> = if has_i32_handle {
+            scratch_i32
+                .iter_mut()
+                .map(|slot| match slot {
+                    Some((_, v)) => v.as_mut_slice(),
+                    None => &mut [][..],
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut slices_i64: Vec<&mut [i64]> = if has_i64_handle {
+            scratch_i64
+                .iter_mut()
+                .map(|slot| match slot {
+                    Some((_, v)) => v.as_mut_slice(),
+                    None => &mut [][..],
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let Some(compiler) = vm.jit.compiler.as_ref() else {
             return Ok(None);
         };
@@ -555,13 +598,13 @@ pub(crate) fn try_exec_method(
             fuel_consumed,
         }) => {
             if has_aput {
-                for (obj_ref, vals) in scratch_i32 {
+                for (obj_ref, vals) in scratch_i32.into_iter().flatten() {
                     let elems = vm.heap.array_elems_mut(obj_ref)?;
                     for (dst, src) in elems.iter_mut().zip(vals) {
                         *dst = Value::Int(src);
                     }
                 }
-                for (obj_ref, vals) in scratch_i64 {
+                for (obj_ref, vals) in scratch_i64.into_iter().flatten() {
                     let elems = vm.heap.array_elems_mut(obj_ref)?;
                     for (dst, src) in elems.iter_mut().zip(vals) {
                         *dst = Value::Long(src);
@@ -635,7 +678,7 @@ enum VmSlot {
     LongLo,
     LongHi,
     Ref,
-    ArrI32,
+    ArrI32(ArrElem32),
     ArrI64,
 }
 
@@ -646,12 +689,14 @@ impl VmSlot {
         }
         match (self, other) {
             (VmSlot::Zero, VmSlot::Int32) | (VmSlot::Int32, VmSlot::Zero) => VmSlot::Int32,
-            (VmSlot::Zero, VmSlot::ArrI32) | (VmSlot::ArrI32, VmSlot::Zero) => VmSlot::ArrI32,
+            (VmSlot::Zero, VmSlot::ArrI32(e)) | (VmSlot::ArrI32(e), VmSlot::Zero) => {
+                VmSlot::ArrI32(e)
+            }
             (VmSlot::Zero, VmSlot::ArrI64) | (VmSlot::ArrI64, VmSlot::Zero) => VmSlot::ArrI64,
             (VmSlot::Zero, VmSlot::Ref) | (VmSlot::Ref, VmSlot::Zero) => VmSlot::Ref,
             (
-                VmSlot::Ref | VmSlot::ArrI32 | VmSlot::ArrI64,
-                VmSlot::Ref | VmSlot::ArrI32 | VmSlot::ArrI64,
+                VmSlot::Ref | VmSlot::ArrI32(_) | VmSlot::ArrI64,
+                VmSlot::Ref | VmSlot::ArrI32(_) | VmSlot::ArrI64,
             ) => VmSlot::Ref,
             _ => VmSlot::Uninit,
         }
@@ -688,12 +733,14 @@ fn vm_write_wide(state: &mut [VmSlot], dst: usize) -> Option<()> {
     Some(())
 }
 
-fn parse_proto(proto: &str, is_static: bool) -> Option<(Vec<ParamKind>, RetKind, usize)> {
+type ProtoParam = (ParamKind, Option<&'static str>);
+
+fn parse_proto(proto: &str, is_static: bool) -> Option<(Vec<ProtoParam>, RetKind, usize)> {
     let (params_str, ret_str) = proto.strip_prefix('(')?.split_once(')')?;
     let mut kinds = Vec::new();
     let mut slots = 0usize;
     if !is_static {
-        kinds.push(ParamKind::Ref);
+        kinds.push((ParamKind::Ref, None));
         slots += 1;
     }
     let bytes = params_str.as_bytes();
@@ -701,19 +748,19 @@ fn parse_proto(proto: &str, is_static: bool) -> Option<(Vec<ParamKind>, RetKind,
     while i < bytes.len() {
         match bytes[i] {
             b'Z' | b'B' | b'S' | b'C' | b'I' => {
-                kinds.push(ParamKind::Int32);
+                kinds.push((ParamKind::Int32, None));
                 slots += 1;
                 i += 1;
             }
             b'J' => {
-                kinds.push(ParamKind::Int64);
+                kinds.push((ParamKind::Int64, None));
                 slots += 2;
                 i += 1;
             }
             b'F' | b'D' => return None,
             b'L' => {
                 let end = params_str[i..].find(';')?;
-                kinds.push(ParamKind::Ref);
+                kinds.push((ParamKind::Ref, None));
                 slots += 1;
                 i += end + 1;
             }
@@ -733,9 +780,13 @@ fn parse_proto(proto: &str, is_static: bool) -> Option<(Vec<ParamKind>, RetKind,
                 }
                 let desc = &params_str[start..i];
                 let pk = match desc {
-                    "[Z" | "[B" | "[S" | "[C" | "[I" => ParamKind::ArrI32,
-                    "[J" => ParamKind::ArrI64,
-                    _ => ParamKind::Ref,
+                    "[Z" => (ParamKind::ArrI32, Some("[Z")),
+                    "[B" => (ParamKind::ArrI32, Some("[B")),
+                    "[S" => (ParamKind::ArrI32, Some("[S")),
+                    "[C" => (ParamKind::ArrI32, Some("[C")),
+                    "[I" => (ParamKind::ArrI32, Some("[I")),
+                    "[J" => (ParamKind::ArrI64, Some("[J")),
+                    _ => (ParamKind::Ref, None),
                 };
                 kinds.push(pk);
                 slots += 1;
@@ -851,12 +902,13 @@ fn lower_method(
     let mut entry_slots = vec![VmSlot::Uninit; nregs];
     let mut has_array_params = false;
     let mut cur_slot = 0usize;
-    for kind in param_kinds {
+    for (kind, arr_desc) in param_kinds {
         let reg = first_param_reg + cur_slot;
         jit_params.push((reg, kind));
         plan_params.push(ParamSlot {
             slot_offset: cur_slot,
             kind,
+            arr_desc,
         });
         match kind {
             ParamKind::Int32 => {
@@ -873,7 +925,15 @@ fn lower_method(
                 cur_slot += 1;
             }
             ParamKind::ArrI32 => {
-                entry_slots[reg] = VmSlot::ArrI32;
+                let elem = match arr_desc? {
+                    "[Z" => ArrElem32::Bool,
+                    "[B" => ArrElem32::Byte,
+                    "[S" => ArrElem32::Short,
+                    "[C" => ArrElem32::Char,
+                    "[I" => ArrElem32::Int,
+                    _ => return None,
+                };
+                entry_slots[reg] = VmSlot::ArrI32(elem);
                 has_array_params = true;
                 cur_slot += 1;
             }
@@ -1185,7 +1245,7 @@ fn lower_method(
                 (Kind::Regs(a, b), 0x01) => {
                     if matches!(
                         st.get(*b as usize),
-                        Some(VmSlot::Ref | VmSlot::ArrI32 | VmSlot::ArrI64)
+                        Some(VmSlot::Ref | VmSlot::ArrI32(_) | VmSlot::ArrI64)
                     ) {
                         insts.push(JitInst::MoveRef {
                             dst: *a as usize,
@@ -1201,7 +1261,7 @@ fn lower_method(
                 (Kind::RegReg16(a, b), 0x02 | 0x03) => {
                     if matches!(
                         st.get(*b as usize),
-                        Some(VmSlot::Ref | VmSlot::ArrI32 | VmSlot::ArrI64)
+                        Some(VmSlot::Ref | VmSlot::ArrI32(_) | VmSlot::ArrI64)
                     ) {
                         insts.push(JitInst::MoveRef {
                             dst: *a as usize,
@@ -1283,7 +1343,7 @@ fn lower_method(
                 (Kind::Regs(a, b), 0x21) => {
                     let is_i64 = match st.get(*b as usize)? {
                         VmSlot::ArrI64 => true,
-                        VmSlot::ArrI32 | VmSlot::Zero => false,
+                        VmSlot::ArrI32(_) | VmSlot::Zero => false,
                         _ => return None,
                     };
                     has_bailout_ops = true;
@@ -1435,6 +1495,9 @@ fn lower_method(
                     });
                 }
                 (Kind::RegRegReg(a, b, c), 0x44 | 0x47 | 0x48 | 0x49 | 0x4a) => {
+                    if !matches!(st.get(*b as usize), Some(VmSlot::ArrI32(_) | VmSlot::Zero)) {
+                        return None;
+                    }
                     has_bailout_ops = true;
                     insts.push(JitInst::ArrayGet32 {
                         dst: *a as usize,
@@ -1443,6 +1506,9 @@ fn lower_method(
                     });
                 }
                 (Kind::RegRegReg(a, b, c), 0x45) => {
+                    if !matches!(st.get(*b as usize), Some(VmSlot::ArrI64 | VmSlot::Zero)) {
+                        return None;
+                    }
                     has_bailout_ops = true;
                     insts.push(JitInst::ArrayGet64 {
                         dst: *a as usize,
@@ -1451,8 +1517,6 @@ fn lower_method(
                     });
                 }
                 (Kind::RegRegReg(a, b, c), 0x4b | 0x4e | 0x4f | 0x50 | 0x51) => {
-                    has_bailout_ops = true;
-                    has_aput = true;
                     let elem = match insn.opcode {
                         0x4b => ArrElem32::Int,
                         0x4e => ArrElem32::Bool,
@@ -1460,6 +1524,13 @@ fn lower_method(
                         0x50 => ArrElem32::Char,
                         _ => ArrElem32::Short,
                     };
+                    match st.get(*b as usize)? {
+                        VmSlot::Zero | VmSlot::ArrI32(ArrElem32::Int) => {}
+                        VmSlot::ArrI32(slot_elem) if *slot_elem == elem => {}
+                        _ => return None,
+                    }
+                    has_bailout_ops = true;
+                    has_aput = true;
                     insts.push(JitInst::ArrayPut32 {
                         src: *a as usize,
                         arr: *b as usize,
@@ -1468,6 +1539,9 @@ fn lower_method(
                     });
                 }
                 (Kind::RegRegReg(a, b, c), 0x4c) => {
+                    if !matches!(st.get(*b as usize), Some(VmSlot::ArrI64 | VmSlot::Zero)) {
+                        return None;
+                    }
                     has_bailout_ops = true;
                     has_aput = true;
                     insts.push(JitInst::ArrayPut64 {

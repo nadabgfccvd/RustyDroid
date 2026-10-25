@@ -874,3 +874,328 @@ fn differential_fuzz_random_array_aliasing_oob_npe_and_rollback_programs() {
         }
     }
 }
+
+#[test]
+fn differential_issue_249_cross_array_and_ref_identity_and_descriptor_guard() {
+    let mut b = DexBuilder::new();
+    let c = b.class("LIssue249;", "Ljava/lang/Object;");
+
+    // 1. `static boolean eqIntLong(int[] a, long[] b) { return (Object) a == (Object) b; }`
+    // Registers: v0 (scratch), v1 = p0 (int[]), v2 = p1 (long[])
+    let eq_int_long = b.code(
+        3,
+        2,
+        0,
+        [
+            op22t(0x32, 1, 2, 4), // if-eq v1, v2, +4 -> true
+            op11n(0x12, 0, 0),    // const/4 v0, 0
+            op11x(0x0f, 0),       // return v0
+            op11n(0x12, 0, 1),    // const/4 v0, 1
+            op11x(0x0f, 0),       // return v0
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "eqIntLong",
+        "Z",
+        vec!["[I", "[J"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(eq_int_long),
+    );
+
+    // 2. `static int eqIntLongAndRead(int[] a, long[] b)`:
+    // Uses BOTH `a[0]` and `b[0]` AND compares `a == b` so both scratch slices
+    // (`slices_i32` and `slices_i64`) are actively indexed by their unified handles!
+    // Registers: v0..v4 (scratch), v5 = p0 (int[]), v6 = p1 (long[])
+    let eq_and_read = b.code(
+        7,
+        2,
+        0,
+        [
+            op11n(0x12, 0, 0),    // v0 = 0 (idx)
+            op23x(0x44, 1, 5, 0), // aget v1, v5, v0 (a[0])
+            op23x(0x45, 2, 6, 0), // aget-wide v2..v3, v6, v0 (b[0])
+            op12x(0x84, 4, 2),    // long-to-int v4, v2
+            op23x(0x90, 1, 1, 4), // add-int v1, v1, v4
+            op22t(0x32, 5, 6, 3), // if-eq v5, v6, +3 -> bogus branch
+            op11x(0x0f, 1),       // return v1
+            op21s(0x13, 1, -999), // const/16 v1, -999
+            op11x(0x0f, 1),       // return v1
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "eqIntLongAndRead",
+        "I",
+        vec!["[I", "[J"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(eq_and_read),
+    );
+
+    // 3. `static boolean sameObjArr(Object o, int[] a) { return o == a; }`
+    let same_obj_arr = b.code(
+        3,
+        2,
+        0,
+        [
+            op22t(0x32, 1, 2, 4), // if-eq v1, v2, +4
+            op11n(0x12, 0, 0),
+            op11x(0x0f, 0),
+            op11n(0x12, 0, 1),
+            op11x(0x0f, 0),
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "sameObjArr",
+        "Z",
+        vec!["Ljava/lang/Object;", "[I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(same_obj_arr),
+    );
+
+    // 4. `static boolean sameArrObj(int[] a, Object o) { return a == o; }`
+    let same_arr_obj = b.code(
+        3,
+        2,
+        0,
+        [
+            op22t(0x32, 1, 2, 4),
+            op11n(0x12, 0, 0),
+            op11x(0x0f, 0),
+            op11n(0x12, 0, 1),
+            op11x(0x0f, 0),
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "sameArrObj",
+        "Z",
+        vec!["[I", "Ljava/lang/Object;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(same_arr_obj),
+    );
+
+    // 5. `static boolean sameObjLong(Object o, long[] b) { return o == b; }`
+    let same_obj_long = b.code(
+        3,
+        2,
+        0,
+        [
+            op22t(0x32, 1, 2, 4),
+            op11n(0x12, 0, 0),
+            op11x(0x0f, 0),
+            op11n(0x12, 0, 1),
+            op11x(0x0f, 0),
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "sameObjLong",
+        "Z",
+        vec!["Ljava/lang/Object;", "[J"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(same_obj_long),
+    );
+
+    // 6. Unverified `aput` (0x4b, 32-bit int store) on `[B` parameter MUST be rejected
+    // by `lower_method` (`VmSlot::ArrI32(Byte)` != `ArrElem32::Int`), and passing a
+    // `[B` runtime object into `([I)I` MUST bail out in `try_execute` via `class_of`!
+    let write_int_arr = b.code(
+        4,
+        1,
+        0,
+        [
+            op11n(0x12, 0, 0),     // v0 = 0
+            op21s(0x13, 1, 0x1ff), // v1 = 511
+            op23x(0x4b, 1, 3, 0),  // aput v1, p0(v3), v0
+            op23x(0x44, 2, 3, 0),  // aget v2, p0(v3), v0
+            op11x(0x0f, 2),        // return v2
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "writeIntArr",
+        "I",
+        vec!["[I"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(write_int_arr),
+    );
+
+    let unverified_aput_on_byte_arr = b.code(
+        4,
+        1,
+        0,
+        [
+            op11n(0x12, 0, 0),
+            op21s(0x13, 1, 0x1ff),
+            op23x(0x4b, 1, 3, 0), // 0x4b `aput` on declared `[B`!
+            op11x(0x0f, 1),
+        ]
+        .concat(),
+    );
+    b.direct(
+        c,
+        "unverifiedAputOnByte",
+        "I",
+        vec!["[B"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(unverified_aput_on_byte_arr),
+    );
+
+    let dex_bytes = b.finish();
+    let cfg = VmConfig {
+        fuel: 500_000,
+        ..VmConfig::default()
+    };
+    let mut interp = Engine::new(
+        vec![rd_dex::Dex::parse_unverified(dex_bytes.clone()).unwrap()],
+        cfg.clone(),
+    );
+    let mut jit = Engine::new(vec![rd_dex::Dex::parse_unverified(dex_bytes).unwrap()], cfg);
+    jit.enable_jit().unwrap();
+
+    let alloc_i32 = |vm: &mut Engine, desc: &str, v: i32| -> u32 {
+        let r = vm.heap.alloc_array(ElemKind::Int, 1, desc).unwrap();
+        vm.heap.array_elems_mut(r).unwrap().push(Value::Int(v));
+        r
+    };
+    let alloc_i64 = |vm: &mut Engine, v: i64| -> u32 {
+        let r = vm.heap.alloc_array(ElemKind::Long, 1, "[J").unwrap();
+        vm.heap.array_elems_mut(r).unwrap().push(Value::Long(v));
+        r
+    };
+
+    let ia = alloc_i32(&mut interp, "[I", 40);
+    let il = alloc_i64(&mut interp, 2);
+    let io = interp.new_instance("Ljava/lang/Object;").unwrap();
+    let ibyte = alloc_i32(&mut interp, "[B", 7);
+
+    let ja = alloc_i32(&mut jit, "[I", 40);
+    let jl = alloc_i64(&mut jit, 2);
+    let jo = jit.new_instance("Ljava/lang/Object;").unwrap();
+    let jbyte = alloc_i32(&mut jit, "[B", 7);
+
+    type CallCase<'a> = (&'a str, &'a str, Vec<Value>, Vec<Value>, i32);
+
+    // Run 40 iterations (> LEAF_WARMUP_CALLS = 32) so every method compiles & runs natively!
+    for iter in 0..40 {
+        let calls: [CallCase<'_>; 9] = [
+            (
+                "eqIntLong",
+                "([I[J)Z",
+                vec![Value::Obj(ia), Value::Obj(il)],
+                vec![Value::Obj(ja), Value::Obj(jl)],
+                0,
+            ),
+            (
+                "eqIntLong",
+                "([I[J)Z",
+                vec![Value::Null, Value::Null],
+                vec![Value::Null, Value::Null],
+                1,
+            ),
+            (
+                "eqIntLongAndRead",
+                "([I[J)I",
+                vec![Value::Obj(ia), Value::Obj(il)],
+                vec![Value::Obj(ja), Value::Obj(jl)],
+                42,
+            ),
+            (
+                "sameObjArr",
+                "(Ljava/lang/Object;[I)Z",
+                vec![Value::Obj(ia), Value::Obj(ia)],
+                vec![Value::Obj(ja), Value::Obj(ja)],
+                1,
+            ),
+            (
+                "sameObjArr",
+                "(Ljava/lang/Object;[I)Z",
+                vec![Value::Obj(io), Value::Obj(ia)],
+                vec![Value::Obj(jo), Value::Obj(ja)],
+                0,
+            ),
+            (
+                "sameArrObj",
+                "([ILjava/lang/Object;)Z",
+                vec![Value::Obj(ia), Value::Obj(ia)],
+                vec![Value::Obj(ja), Value::Obj(ja)],
+                1,
+            ),
+            (
+                "sameArrObj",
+                "([ILjava/lang/Object;)Z",
+                vec![Value::Obj(ia), Value::Obj(il)],
+                vec![Value::Obj(ja), Value::Obj(jl)],
+                0,
+            ),
+            (
+                "sameObjLong",
+                "(Ljava/lang/Object;[J)Z",
+                vec![Value::Obj(il), Value::Obj(il)],
+                vec![Value::Obj(jl), Value::Obj(jl)],
+                1,
+            ),
+            (
+                "sameObjLong",
+                "(Ljava/lang/Object;[J)Z",
+                vec![Value::Obj(ia), Value::Obj(il)],
+                vec![Value::Obj(ja), Value::Obj(jl)],
+                0,
+            ),
+        ];
+
+        for (t_idx, (name, sig, iargs, jargs, expected)) in calls.into_iter().enumerate() {
+            let ires = interp
+                .invoke_static("LIssue249;", name, sig, &iargs)
+                .unwrap();
+            let jres = jit.invoke_static("LIssue249;", name, sig, &jargs).unwrap();
+            assert_eq!(ires, Value::Int(expected), "iter={iter} case={t_idx}");
+            assert_eq!(jres, ires, "iter={iter} case={t_idx} ({name})");
+        }
+    }
+    assert!(
+        jit.jit_stats().native_calls >= 5 * 7,
+        "expected native Cranelift execution after warmup, stats={:?}",
+        jit.jit_stats()
+    );
+
+    // Warm up `writeIntArr` on valid `[I`, then pass `[B` -> `try_execute` must reject
+    // the mismatched runtime array descriptor instead of running compiled `[I` code!
+    for _ in 0..35 {
+        let _ = jit.invoke_static("LIssue249;", "writeIntArr", "([I)I", &[Value::Obj(ja)]);
+        let _ = interp.invoke_static("LIssue249;", "writeIntArr", "([I)I", &[Value::Obj(ia)]);
+    }
+    let before_native = jit.jit_stats().native_calls;
+    let j_mismatch = jit.invoke_static("LIssue249;", "writeIntArr", "([I)I", &[Value::Obj(jbyte)]);
+    let i_mismatch =
+        interp.invoke_static("LIssue249;", "writeIntArr", "([I)I", &[Value::Obj(ibyte)]);
+    assert_eq!(
+        jit.jit_stats().native_calls,
+        before_native,
+        "passing `[B` to `([I)I` must NOT execute compiled `[I` native code!"
+    );
+    assert_eq!(j_mismatch.ok(), i_mismatch.ok());
+
+    // Unverified `0x4b aput` on `[B` must be rejected by `lower_method` (`unsupported += 1`).
+    let before_unsup = jit.jit_stats().unsupported;
+    for _ in 0..35 {
+        let _ = jit.invoke_static(
+            "LIssue249;",
+            "unverifiedAputOnByte",
+            "([B)I",
+            &[Value::Obj(jbyte)],
+        );
+    }
+    assert!(
+        jit.jit_stats().unsupported > before_unsup,
+        "unverified `aput` on `[B` must be rejected as Unsupported by `lower_method`"
+    );
+}
