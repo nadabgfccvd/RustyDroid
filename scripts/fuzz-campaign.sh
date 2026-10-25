@@ -2,12 +2,12 @@
 #
 # scripts/fuzz-campaign.sh — Campanha de fuzz 24h (DoD do M1) — ver docs/FUZZING.md
 #
-# Política (docs/FUZZING.md): os 5 targets (zip, axml, arsc, apk_full, dex)
+# Política (docs/FUZZING.md): os 6 targets (zip, axml, arsc, apk_full, dex, elf)
 # rodam em PARALELO por N segundos (padrão 86400 = 24 h), em modo -fork com
 # -ignore_crashes=1 — o fuzzer CONTINUA após crash/oom/timeout e arquiva cada
 # achado em crates/*/fuzz/artifacts/.
 #
-#   DoD atingido  = ao final, NENHUM arquivo `crash-*` nos artifacts E os 5
+#   DoD atingido  = ao final, NENHUM arquivo `crash-*` nos artifacts E os 6
 #                   targets rodaram os SECS íntegros (veredito honesto: um
 #                   target que morreu no build NÃO conta como "sem crash").
 #   DoD violado   = qualquer `crash-*` é bug P0 (Lei nº 1) → minimizar + issue.
@@ -49,7 +49,7 @@ RustyDroid — campanha de fuzz (DoD do M1, ver docs/FUZZING.md)
 
 Uso: ./scripts/fuzz-campaign.sh [--seeds-only] [SECS] [WORKERS]
 
-  SECS     segundos por target (padrão 86400 = 24 h; os 5 targets rodam em paralelo)
+  SECS     segundos por target (padrão 86400 = 24 h; os 6 targets rodam em paralelo)
   WORKERS  processos libFuzzer por target (padrão 0 = auto por CPU+RAM)
   RD_FUZZ_RSS=<MB>  força o rss_limit por processo (padrão: auto)
 
@@ -94,7 +94,7 @@ fi
 
 # --------------------------------------------------------------- guardas ---
 # O script PRECISA rodar de dentro do clone (usa caminhos de crates/ e do APK).
-for d in "${REPO}/crates/rd-apk/fuzz" "${REPO}/crates/rd-dex/fuzz" "${REPO}/golden-apks"; do
+for d in "${REPO}/crates/rd-apk/fuzz" "${REPO}/crates/rd-dex/fuzz" "${REPO}/crates/rd-ndk/fuzz" "${REPO}/golden-apks"; do
     if [ ! -d "${d}" ]; then
         echo "ERRO: diretório ausente: ${d}" >&2
         echo "      Rode o script DE DENTRO do clone (não copie para fora):" >&2
@@ -170,7 +170,7 @@ fi
 
 TMP="$(mktemp -d)"
 # issue #65: trap de SAÍDA (limpeza) + trap de SINAIS — kill do script NÃO
-# pode órfar os 5 cargo-fuzz (reproduzido no audit: filho sobreviveu ao pai
+# pode órfar os 6 cargo-fuzz (reproduzido no audit: filho sobreviveu ao pai
 # e continuaria 24h). kill 0 alcança o processo-grupo inteiro (script + filhos).
 trap 'rm -rf "${TMP}"' EXIT
 trap 'trap - INT TERM; kill 0 2>/dev/null || true; exit 130' INT TERM
@@ -185,13 +185,30 @@ fi
 
 APK_CORPUS="${REPO}/crates/rd-apk/fuzz/corpus"
 DEX_CORPUS="${REPO}/crates/rd-dex/fuzz/corpus"
+NDK_CORPUS="${REPO}/crates/rd-ndk/fuzz/corpus"
 mkdir -p "${APK_CORPUS}/apk_full" "${APK_CORPUS}/zip" "${APK_CORPUS}/axml" \
-         "${APK_CORPUS}/arsc" "${DEX_CORPUS}/dex"
+         "${APK_CORPUS}/arsc" "${DEX_CORPUS}/dex" "${NDK_CORPUS}/elf"
 cp "${APK}" "${APK_CORPUS}/apk_full/"                 # APK inteiro (ZIP+AXML+ARSC+DEX)
 cp "${APK}" "${APK_CORPUS}/zip/"                      # container ZIP real
 cp "${TMP}/AndroidManifest.xml" "${APK_CORPUS}/axml/manifest.xml"
 cp "${TMP}/resources.arsc" "${APK_CORPUS}/arsc/"
 cp "${TMP}"/classes*.dex "${DEX_CORPUS}/dex/"
+# elf (M9): .so do APK quando houver (< 8 MiB = max_len) + um ELF do host
+# como semente mínima garantida (APKs só-Java não trazem lib/).
+( cd "${TMP}" && unzip -o -q "${APK}" 'lib/*.so' 2>/dev/null ) || true
+if [ -d "${TMP}/lib" ]; then
+    find "${TMP}/lib" -name '*.so' -size -8388608c 2>/dev/null \
+        | head -8 > "${TMP}/elf-seeds.txt" || true
+    n=0
+    while IFS= read -r f; do
+        n=$((n + 1))
+        # shellcheck disable=SC2015  # cp falho em seed individual não aborta
+        [ -n "${f}" ] && cp "${f}" "${NDK_CORPUS}/elf/seed-${n}.so" || true
+    done < "${TMP}/elf-seeds.txt"
+fi
+for host_elf in /bin/true /usr/bin/true; do
+    if [ -f "${host_elf}" ]; then cp "${host_elf}" "${NDK_CORPUS}/elf/host-true"; break; fi
+done
 
 # NÃO usar `find | head | while` direto: com pipefail, o SIGPIPE do find
 # (exit 141) mataria o script no APK real (703 res). Escrever em arquivo e
@@ -207,12 +224,12 @@ if [ -d "${TMP}/res" ]; then
     done < "${TMP}/axml-seeds.txt"
 fi
 
-echo "    seeds ok: apk_full=$(ls "${APK_CORPUS}/apk_full" | wc -l) zip=$(ls "${APK_CORPUS}/zip" | wc -l) axml=$(ls "${APK_CORPUS}/axml" | wc -l) arsc=$(ls "${APK_CORPUS}/arsc" | wc -l) dex=$(ls "${DEX_CORPUS}/dex" | wc -l)"
+echo "    seeds ok: apk_full=$(ls "${APK_CORPUS}/apk_full" | wc -l) zip=$(ls "${APK_CORPUS}/zip" | wc -l) axml=$(ls "${APK_CORPUS}/axml" | wc -l) arsc=$(ls "${APK_CORPUS}/arsc" | wc -l) dex=$(ls "${DEX_CORPUS}/dex" | wc -l) elf=$(ls "${NDK_CORPUS}/elf" | wc -l)"
 
 if [ "${SEEDS_ONLY}" -eq 1 ]; then
     echo
     echo "==> seeds-only: corpus pronto (nenhum fuzzer executado)"
-    du -sh "${APK_CORPUS}"/* "${DEX_CORPUS}"/* 2>/dev/null | sed 's/^/    /' || true
+    du -sh "${APK_CORPUS}"/* "${DEX_CORPUS}"/* "${NDK_CORPUS}"/* 2>/dev/null | sed 's/^/    /' || true
     echo
     echo "    Próximo passo — smoke de 10 min ANTES das 24 h:"
     echo "      ./scripts/fuzz-campaign.sh 600"
@@ -220,33 +237,34 @@ if [ "${SEEDS_ONLY}" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------- plano de memória -----
-# 5 targets em paralelo, cada um com WORKERS filhos libFuzzer. Pior caso de
-# RSS ≈ (WORKERS × 5 × rss_limit) + SO. Calibrar pela RAM REAL disponível
+# NTARGETS targets em paralelo, cada um com WORKERS filhos libFuzzer. Pior caso
+# de RSS ≈ (WORKERS × NTARGETS × rss_limit) + SO. Calibrar pela RAM REAL disponível
 # evita o OOM-killer matar a campanha no meio (notebooks com 16 GB).
+NTARGETS=6   # zip, axml, arsc, apk_full (rd-apk) · dex (rd-dex) · elf (rd-ndk)
 AVAIL_MB="$(awk '/MemAvailable/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo 0)"
 AVAIL_MB=$(( ${AVAIL_MB:-0} / 1024 ))
 if [ "${AVAIL_MB}" -le 0 ]; then AVAIL_MB=8192; fi      # leitura falhou: presumir 8 GB
 
 if [ "${WORKERS}" -eq 0 ]; then
     CORES="$(nproc)"
-    WORKERS=$(( CORES / 5 ))
+    WORKERS=$(( CORES / NTARGETS ))
     if [ "${WORKERS}" -lt 1 ]; then WORKERS=1; fi
 fi
 
 RSS="${RD_FUZZ_RSS:-0}"                                  # 0 = auto
 if [ "${RSS}" = "0" ]; then
-    BUDGET=$(( AVAIL_MB - 2500 ))                        # SO do WSL + 5 pais + margem
-    PER_PROC=$(( BUDGET / (WORKERS * 5) ))
+    BUDGET=$(( AVAIL_MB - 2500 ))                        # SO do WSL + NTARGETS pais + margem
+    PER_PROC=$(( BUDGET / (WORKERS * NTARGETS) ))
     # Pouco RSS por processo gera oom-* falso. Se ficou apertado, trocar
     # throughput por estabilidade: 1 worker por target com RSS maior.
     if [ "${PER_PROC}" -lt 1536 ] && [ "${WORKERS}" -gt 1 ] && [ "${BUDGET}" -ge 7680 ]; then
         echo "    (auto) workers ${WORKERS} → 1 por target: prioriza RSS maior por processo"
         WORKERS=1
-        PER_PROC=$(( BUDGET / 5 ))
+        PER_PROC=$(( BUDGET / NTARGETS ))
     fi
     if [ "${PER_PROC}" -gt 2048 ]; then PER_PROC=2048; fi
     if [ "${PER_PROC}" -lt 512 ]; then
-        echo "ERRO: RAM disponível (${AVAIL_MB} MB) insuficiente para 5 targets × ${WORKERS} workers." >&2
+        echo "ERRO: RAM disponível (${AVAIL_MB} MB) insuficiente para ${NTARGETS} targets × ${WORKERS} workers." >&2
         echo "      → feche aplicativos; ou aumente [wsl2] memory= no .wslconfig;" >&2
         echo "      → ou rode com menos workers: ./scripts/fuzz-campaign.sh ${SECS} 1" >&2
         exit 1
@@ -266,7 +284,7 @@ mkdir -p "${LOGDIR}"
     uname -r
 } > "${LOGDIR}/env.txt" 2>/dev/null || true
 
-echo "==> campanha: 5 targets × ${SECS}s × ${WORKERS} workers/target — logs em ${LOGDIR}"
+echo "==> campanha: ${NTARGETS} targets × ${SECS}s × ${WORKERS} workers/target — logs em ${LOGDIR}"
 echo "    plano de memória: rss/malloc ${RSS} MB por processo · RAM disponível ${AVAIL_MB} MB"
 echo "    (corpus cresce em crates/*/fuzz/corpus; artifacts em crates/*/fuzz/artifacts)"
 echo "    progresso em tempo real: tail -f ${LOGDIR}/done.txt"
@@ -282,7 +300,7 @@ fi
 # Arquivar artifacts de rodadas ANTERIORES: sem isso, um crash-*/oom-* antigo
 # (ex.: do smoke de 10 min) seria contado de novo e contaminaria o veredito.
 # Nada se perde: vai para <LOGDIR>/artifacts-anteriores/.
-for c in rd-apk rd-dex; do
+for c in rd-apk rd-dex rd-ndk; do
     A="${REPO}/crates/${c}/fuzz/artifacts"
     if [ -d "${A}" ] && [ -n "$(ls -A "${A}" 2>/dev/null)" ]; then
         DEST="${LOGDIR}/artifacts-anteriores/${c}"
@@ -294,7 +312,7 @@ done
 
 # ------------------------------------------------------------ execução ----
 # max_len ≥ maior seed (senão o libFuzzer TRUNCA a seed — mata o EOCD do ZIP):
-#   apk_full/zip: 16 MB · dex: 10 MB · arsc: 4 MB · axml: 2 MB
+#   apk_full/zip: 16 MB · dex: 10 MB · elf: 8 MB · arsc: 4 MB · axml: 2 MB
 # (assert APK ≤ max_len no pré-voo, issue #65)
 pids=()
 names=()
@@ -314,7 +332,7 @@ run_target() { # crate target max_len
     echo "[$(date +%H:%M:%S)] concluído: ${crate}/${target}" >> "${LOGDIR}/done.txt"
 }
 for spec in "rd-apk apk_full 16777216" "rd-apk zip 16777216" "rd-apk axml 2097152" \
-            "rd-apk arsc 4194304" "rd-dex dex 10485760"; do
+            "rd-apk arsc 4194304" "rd-dex dex 10485760" "rd-ndk elf 8388608"; do
     # shellcheck disable=SC2086
     set -- ${spec}
     run_target "$1" "$2" "$3" &
@@ -380,7 +398,7 @@ TMO="$(count_artifacts 'timeout-*')"
 echo "crashes: ${CRASH} · leaks: ${LEAK} · oom: ${OOM} · timeouts: ${TMO} · targets com exit≠0: ${#FAILED[@]}"
 echo
 echo "Uso de disco do corpus (cresceu durante a campanha):"
-du -sh "${REPO}/crates/rd-apk/fuzz/corpus"/* "${REPO}/crates/rd-dex/fuzz/corpus"/* 2>/dev/null | sed 's/^/  /' || true
+du -sh "${REPO}/crates/rd-apk/fuzz/corpus"/* "${REPO}/crates/rd-dex/fuzz/corpus"/* "${REPO}/crates/rd-ndk/fuzz/corpus"/* 2>/dev/null | sed 's/^/  /' || true
 
 # ── veredito (issue #58: crash/leak PRIMEIRO — P0 nunca subnotificado) ─────
 if [ "${CRASH}" -gt 0 ] || [ "${LEAK}" -gt 0 ]; then
@@ -407,7 +425,7 @@ for i in "${!names[@]}"; do
 done
 if [ "${#GENUINE_FAILED[@]}" -gt 0 ]; then
     echo; echo "RESULTADO: ❌ ${#GENUINE_FAILED[@]} target(s) NÃO executaram (build/execução): ${GENUINE_FAILED[*]}"
-    echo "    SEM os 5 targets íntegros NÃO há como atestar 'fuzz 24h sem crash'."
+    echo "    SEM os ${NTARGETS} targets íntegros NÃO há como atestar 'fuzz 24h sem crash'."
     for n in "${GENUINE_FAILED[@]}"; do
         f="${LOGDIR}/${n//\//-}.log"
         echo "--- ${f} (últimas 15 linhas)"
@@ -418,7 +436,7 @@ if [ "${#GENUINE_FAILED[@]}" -gt 0 ]; then
 fi
 
 if [ "${CRASH}" -eq 0 ] && [ "${LEAK}" -eq 0 ]; then
-    echo "RESULTADO: ✅ SEM CRASH/LEAK e 5/5 targets rodaram — DoD do M1 ('fuzz 24h sem crash') satisfeito"
+    echo "RESULTADO: ✅ SEM CRASH/LEAK e ${NTARGETS}/${NTARGETS} targets rodaram — DoD do M1 ('fuzz 24h sem crash') satisfeito"
     if [ "${OOM}" -gt 0 ] || [ "${TMO}" -gt 0 ]; then
         echo "           (⚠ ${OOM} oom + ${TMO} timeout arquivados — investigar depois; não são crash)"
     fi

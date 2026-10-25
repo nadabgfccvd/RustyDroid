@@ -1,0 +1,72 @@
+name: 🐢 Performance regression
+description: Startup, frame time, RSS, binary size or benchmark got worse / Inicialização, frame, RSS, tamanho ou benchmark piorou
+labels: ["perf-regression", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Performance claims need **before/after numbers measured the same way** (same machine, same profile, same APK).
+        Afirmações de performance precisam de números **antes/depois medidos do mesmo jeito**.
+        Reference targets: `RustyDroid.md` (M7: cold start ≤ 1500 ms on `moto-e5`, RSS budget, binary size gate).
+  - type: dropdown
+    id: metric
+    attributes:
+      label: Metric / Métrica
+      options:
+        - Cold start (launch_ms / emulated p50)
+        - Warm start
+        - Peak RSS (VmHWM)
+        - Frame time / render
+        - Binary size (release, --all-features)
+        - Parser throughput (zip / dex / arsc / axml / elf)
+        - JIT / interpreter benchmark
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: good
+    attributes:
+      label: Last good commit / Último commit bom
+      placeholder: e.g. 33830bc
+    validations:
+      required: true
+  - type: input
+    id: bad
+    attributes:
+      label: First bad commit (or current main) / Primeiro commit ruim
+    validations:
+      required: true
+  - type: textarea
+    id: numbers
+    attributes:
+      label: Before / after numbers / Números antes e depois
+      description: Raw samples, not only averages (p50/p95, n runs). / Amostras cruas, não só médias.
+      placeholder: |
+        before (good): [512, 548, 488] ms  p50=512
+        after  (bad):  [701, 690, 733] ms  p50=701
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: How it was measured / Como foi medido
+      description: Command, profile (release / profiling), features, device profile, APK (+ sha256), machine.
+      placeholder: |
+        RD_PHASES=1 rd perf org.primftpd_71.apk --device moto-e5 --runs 5
+        profile=profiling, features=--all-features, host=…
+    validations:
+      required: true
+  - type: textarea
+    id: phases
+    attributes:
+      label: Phase breakdown / logs (optional)
+      description: "`RD_PHASES=1` output, Sentinel report link, flamegraph…"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues / Procurei em issues existentes
+          required: true
+        - label: Before and after were measured with the same protocol / Antes e depois com o mesmo protocolo
+          required: true

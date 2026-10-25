@@ -233,6 +233,9 @@ jobs:
       - name: Build fuzz targets rd-dex
         working-directory: crates/rd-dex
         run: cargo fuzz build
+      - name: Build fuzz targets rd-ndk (ELF, M9)
+        working-directory: crates/rd-ndk
+        run: cargo fuzz build
 
   leaf-jit:
     name: Cranelift integer leaf JIT (opt-in)
