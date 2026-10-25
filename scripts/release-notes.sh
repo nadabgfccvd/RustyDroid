@@ -27,6 +27,6 @@ echo
 # `git log -n 200` (not `git log | head -n 200`): under `set -o pipefail`, head
 # closing the pipe early makes git die of SIGPIPE (exit 141) and the whole
 # script fails on repositories with more than 200 commits since the last tag.
-git log -n 200 --no-merges --pretty='- %s (%h)' "$range" 
+git log -n 200 --no-merges --pretty='- %s (%h)' "$range"
 echo
 echo "Generated from git history because CHANGELOG.md has no \`${ver}\` section."
