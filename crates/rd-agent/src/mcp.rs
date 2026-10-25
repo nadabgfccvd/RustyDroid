@@ -5200,6 +5200,17 @@ mod tests {
             _ => panic!("screenshot from snapshot is an image"),
         }
         assert!(s2.engine.is_none(), "screenshot must not materialize");
+        // #259 item 2: observe (text e json) serve o snapshot
+        // ARMAZENADO — o fluxo launch → observe não materializa.
+        let (obs, err) = call(&mut s2, "observe", serde_json::json!({}));
+        assert!(!err, "observe text: {obs}");
+        assert!(s2.engine.is_none(), "observe must not materialize");
+        assert!(s2.pending_snapshot.is_some());
+        let (obsj, err) = call(&mut s2, "observe", serde_json::json!({"format": "json"}));
+        assert!(!err, "observe json: {obsj}");
+        assert_eq!(obsj["snapshot"], true);
+        assert!(obsj["texts"].is_array());
+        assert!(s2.engine.is_none(), "observe json must not materialize");
         {
             let _eng = s2.require_engine().expect("materialize on demand");
         }
