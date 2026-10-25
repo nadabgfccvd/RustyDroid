@@ -2078,7 +2078,7 @@ impl AgentSession {
             "min_sdk": m.min_sdk,
             "target_sdk": m.target_sdk,
             "floor": serde_json::json!(match apk.floor_status() {
-                rd_apk::FloorStatus::Ok => serde_json::json!({"ok": true, "floor": 26}),
+                rd_apk::FloorStatus::Ok => serde_json::json!({"ok": true, "floor": rd_apk::FLOOR_MIN_SDK}),
                 rd_apk::FloorStatus::BelowFloor { min_sdk, floor } =>
                     serde_json::json!({"ok": false, "min_sdk": min_sdk, "floor": floor}),
             }),
@@ -3750,6 +3750,11 @@ mod tests {
         install_ok(&mut s, &apk_path);
         let (v, err) = call(&mut s, "app_info", serde_json::json!({}));
         assert!(!err, "app_info: {v}");
+        // ADR 016: the reported floor follows FLOOR_MIN_SDK (was a stale literal 26).
+        assert_eq!(
+            v["floor"],
+            serde_json::json!({"ok": true, "floor": rd_apk::FLOOR_MIN_SDK})
+        );
         assert_eq!(v["engines"], serde_json::to_value(expected).unwrap());
         assert_eq!(v["engines"]["registered_engines"], 28);
         assert_eq!(v["engines"]["execution_claimed"], false);
