@@ -4322,6 +4322,15 @@ fn instance_intrinsic_dispatch(
     // Stateless platform base defaults are only reached when no DEX override
     // exists. Otherwise an invoke-virtual whose symbolic owner is the base
     // class (e.g. DataSetObserver.onChanged) must dispatch to the guest method.
+    // issue #228: AbsSavedState/BaseSavedState state is consulted BEFORE that
+    // gate — the `super(Parcelable)` ctor is invoke-direct on the platform
+    // base while the receiver class declares its own <init> (the gate would
+    // otherwise hide the superState storage).
+    if let Some(v) = crate::platform_base::saved_state_instance(
+        vm, recv_class, mref_class, name, sig, recv, args,
+    )? {
+        return Ok(Some(v));
+    }
     let dex_virtual_override = vm.cp.resolve_method(recv_class, name, sig).is_some();
     if !dex_virtual_override {
         if let Some(v) = crate::platform_base::instance_intrinsic(mref_class, name, sig) {

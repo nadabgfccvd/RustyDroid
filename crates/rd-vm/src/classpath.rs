@@ -1507,6 +1507,14 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/widget/AbsoluteLayout;" => Some(ABSOLUTE_LAYOUT),
         "Landroid/webkit/WebView;" => Some(WEB_VIEW),
         "Landroid/view/ViewStub;" => Some(VIEW),
+        // issue #228: view state — DEX SavedState subclasses extend the
+        // platform bases; AbsSavedState.getSuperState() and the
+        // `super(Parcelable)` ctor chain need the hierarchy for the
+        // inherited-walk dispatch (BaseSavedState → AbsSavedState).
+        "Landroid/view/View$BaseSavedState;" => {
+            Some(&["Landroid/view/AbsSavedState;", "Ljava/lang/Object;"])
+        }
+        "Landroid/view/AbsSavedState;" => Some(&["Ljava/lang/Object;"]),
         // ── M8: classes host do compat real (cadeia completa de ancestrais) ──
         "Ljava/util/AbstractCollection;" => Some(OBJECT),
         "Ljava/util/AbstractList;" => {

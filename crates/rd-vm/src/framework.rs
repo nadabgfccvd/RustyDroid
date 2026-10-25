@@ -4267,6 +4267,79 @@ fn call_host_instance_rooted(
             Ok(Some(Value::Null))
         }
         (VIEW, "onLayout") if sig == "(ZIIII)V" && is_view(vm) => Ok(Some(Value::Null)),
+        // ── View hierarchy state (issue #228) — invoke-super landing ────────
+        // DEX dispatch/state overrides calling `super.dispatchSave…` /
+        // `super.saveHierarchyState` reach the platform default through the
+        // inherited walk. Host default only: invoke-super semantics mean the
+        // DEX override was deliberately bypassed (the virtual entry with its
+        // DEX-override gate lives in view_layout::instance_intrinsic).
+        (VIEW, "saveHierarchyState") | (VIEWGROUP, "saveHierarchyState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::save_hierarchy_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "saveHierarchyState: container is null",
+                ))),
+            }
+        }
+        (VIEW, "restoreHierarchyState") | (VIEWGROUP, "restoreHierarchyState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::restore_hierarchy_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "restoreHierarchyState: container is null",
+                ))),
+            }
+        }
+        (VIEW, "dispatchSaveInstanceState") | (VIEWGROUP, "dispatchSaveInstanceState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::dispatch_save_instance_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "dispatchSaveInstanceState: container is null",
+                ))),
+            }
+        }
+        (VIEW, "dispatchRestoreInstanceState") | (VIEWGROUP, "dispatchRestoreInstanceState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::dispatch_restore_instance_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "dispatchRestoreInstanceState: container is null",
+                ))),
+            }
+        }
+        // super.onSaveInstanceState() from a DEX state subclass: AOSP View
+        // returns the shared EMPTY_STATE singleton (non-null — the subclass
+        // passes it as BaseSavedState superState, which must not be null).
+        (VIEW, "onSaveInstanceState") if sig == "()Landroid/os/Parcelable;" && is_view(vm) => {
+            Ok(Some(Value::Obj(crate::platform_base::empty_state(vm)?)))
+        }
+        // super.onRestoreInstanceState(state): the View default ignores
+        // EMPTY_STATE (and any default state) headless.
+        (VIEW, "onRestoreInstanceState") if sig == "(Landroid/os/Parcelable;)V" && is_view(vm) => {
+            Ok(Some(Value::Null))
+        }
         // ── ViewGroup/LinearLayout/FrameLayout ─────────────────────────────
         (
             FRAMELAYOUT | "Landroid/widget/HorizontalScrollView;" | "Landroid/widget/ScrollView;",

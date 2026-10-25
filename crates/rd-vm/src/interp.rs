@@ -1825,6 +1825,9 @@ pub(crate) fn inherited_android_host(
     let mut ancestor = start.to_string();
     let mut property_fallback_class = None;
     let mut visited = std::collections::BTreeSet::new();
+    // Receiver concrete class for the per-ancestor DEX-override gates
+    // (issue #228 saved-state handler).
+    let recv_class = vm.heap.class_of(recv)?.to_string();
     for _ in 0..16 {
         if !visited.insert(ancestor.clone()) {
             break;
@@ -1851,6 +1854,20 @@ pub(crate) fn inherited_android_host(
             if let Some(value) =
                 crate::view_attach::instance_intrinsic(vm, &ancestor, name, sig, recv, args)?
             {
+                return Ok(Some(value));
+            }
+            // issue #228: AbsSavedState/BaseSavedState state (superState
+            // storage and the final getSuperState) reached through the
+            // inherited walk when the method ref names a DEX subclass.
+            if let Some(value) = crate::platform_base::saved_state_instance(
+                vm,
+                &recv_class,
+                &ancestor,
+                name,
+                sig,
+                recv,
+                args,
+            )? {
                 return Ok(Some(value));
             }
             if let Some(value) = crate::platform_base::instance_intrinsic(&ancestor, name, sig) {
