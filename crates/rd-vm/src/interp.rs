@@ -872,6 +872,12 @@ pub(crate) fn exec_frame(
                     } else if let Some(c) = step!(crate::jtime::host_static(vm, &owner, &fname)) {
                         vm.statics.insert((owner.clone(), fname.clone()), c);
                     }
+                    #[cfg(feature = "virtual-devices")]
+                    if !vm.statics.contains_key(&(owner.clone(), fname.clone())) {
+                        if let Some(c) = step!(crate::m10::host_static(vm, &owner, &fname)) {
+                            vm.statics.insert((owner.clone(), fname.clone()), c);
+                        }
+                    }
                 }
                 let v = vm
                     .statics
@@ -1548,6 +1554,10 @@ fn do_invoke(
         if let Some(v) = crate::m9::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
             return Ok(v);
         }
+        #[cfg(feature = "virtual-devices")]
+        if let Some(v) = crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
+            return Ok(v);
+        }
         if let Some(v) =
             intrinsics::call_static_intrinsic(vm, &mref.class, &mref.name, &mref.proto, slots)?
         {
@@ -1563,6 +1573,12 @@ fn do_invoke(
         if let Some(v) =
             crate::androidx::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
         {
+            return Ok(v);
+        }
+        // Apêndice E (Google Play Services / Firebase, modo "sem GMS"
+        // honesto): só responde por classes GMS/Firebase/Billing, antes do
+        // host `Landroid` genérico — `None` continua para DEX.
+        if let Some(v) = crate::gms::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
             return Ok(v);
         }
         // M3: classes android/* são HOST (framework.rs) — nunca estão no DEX
@@ -1684,6 +1700,13 @@ fn do_invoke(
         return Ok(v);
     }
 
+    #[cfg(feature = "virtual-devices")]
+    if let Some(v) =
+        crate::m10::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+    {
+        return Ok(v);
+    }
+
     // M8: compat real — host sequestra só os métodos listados em m8.rs;
     // `None` cai para o DEX real da biblioteca (androidx/okhttp no APK).
     if let Some(v) =
@@ -1697,6 +1720,14 @@ fn do_invoke(
     // startup, biometria, futures) — `None` mantém o DEX real da lib.
     if let Some(v) =
         crate::androidx::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+    {
+        return Ok(v);
+    }
+    // Apêndice E: objetos seguidos pelo shim GMS/Firebase e classes
+    // `Lcom/google/android/gms/`, `Lcom/google/firebase/`,
+    // `Lcom/android/billingclient/` — `None` continua para o host/DEX.
+    if let Some(v) =
+        crate::gms::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
         return Ok(v);
     }
@@ -1802,6 +1833,10 @@ pub(crate) fn inherited_android_host(
             property_fallback_class.get_or_insert_with(|| ancestor.clone());
             #[cfg(feature = "advanced-components")]
             if let Some(value) = crate::m9::call_instance(vm, &ancestor, name, sig, recv, args)? {
+                return Ok(Some(value));
+            }
+            #[cfg(feature = "virtual-devices")]
+            if let Some(value) = crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)? {
                 return Ok(Some(value));
             }
             if let Some(value) = crate::m8::call_m8_instance(vm, &ancestor, name, sig, recv, args)?

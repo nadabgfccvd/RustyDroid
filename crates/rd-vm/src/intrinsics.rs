@@ -8,6 +8,11 @@ use crate::heap::HeapObj;
 use crate::repr;
 use crate::value::Value;
 
+pub use crate::android_display::{
+    dispatch_display_event, EVENT_FLAG_DISPLAY_ADDED, EVENT_FLAG_DISPLAY_CHANGED,
+    EVENT_FLAG_DISPLAY_REMOVED,
+};
+
 const STRING: &str = "Ljava/lang/String;";
 const SB: &str = "Ljava/lang/StringBuilder;";
 const OBJECT: &str = "Ljava/lang/Object;";
@@ -392,6 +397,12 @@ fn call_static_intrinsic_rooted(
     }
     if let Some(v) = crate::jtext_format::static_intrinsic(vm, class, name, args)? {
         return Ok(Some(v));
+    }
+    #[cfg(feature = "virtual-devices")]
+    if vm.fw.vdev.virtual_hardware_enabled {
+        if let Some(v) = crate::m10::call_static(vm, class, name, sig, args)? {
+            return Ok(Some(v));
+        }
     }
     if let Some(v) = crate::android_sysservices::static_intrinsic(vm, class, name, sig, args)? {
         return Ok(Some(v));
@@ -1136,15 +1147,35 @@ fn platform_static(vm: &mut Engine, owner: &str, field: &str) -> Result<Option<V
                     Some(v) => Some(v),
                     None => match crate::jnormalizer::host_static(vm, owner, field)? {
                         Some(v) => Some(v),
-                        None => match crate::android_sysservices::host_static(vm, owner, field)? {
-                            Some(v) => Some(v),
-                            None => {
-                                match crate::android_stub_surfaces::host_static(vm, owner, field)? {
-                                    Some(v) => Some(v),
-                                    None => crate::android_util::host_static(vm, owner, field)?,
+                        None => {
+                            #[cfg(feature = "virtual-devices")]
+                            let m10_val = if vm.fw.vdev.virtual_hardware_enabled {
+                                crate::m10::host_static(vm, owner, field)?
+                            } else {
+                                None
+                            };
+                            #[cfg(not(feature = "virtual-devices"))]
+                            let m10_val: Option<Value> = None;
+                            match m10_val {
+                                Some(v) => Some(v),
+                                None => {
+                                    match crate::android_sysservices::host_static(vm, owner, field)?
+                                    {
+                                        Some(v) => Some(v),
+                                        None => {
+                                            match crate::android_stub_surfaces::host_static(
+                                                vm, owner, field,
+                                            )? {
+                                                Some(v) => Some(v),
+                                                None => crate::android_util::host_static(
+                                                    vm, owner, field,
+                                                )?,
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        },
+                        }
                     },
                 },
             },
@@ -4009,13 +4040,18 @@ fn instance_intrinsic_dispatch(
             return Ok(Some(v));
         }
     }
-    // the default Display (android_display.rs)
+    // the default Display, Display.Mode, and DisplayManager (android_display.rs)
     if matches!(name, "getDisplay" | "getDefaultDisplay")
-        || recv_class == crate::android_display::DISPLAY
+        || matches!(
+            recv_class,
+            crate::android_display::DISPLAY
+                | crate::android_display::DISPLAY_MODE
+                | crate::android_display::DISPLAY_MANAGER
+        )
     {
-        if let Some(v) =
-            crate::android_display::instance_intrinsic(vm, recv_class, mref_class, name, sig, args)?
-        {
+        if let Some(v) = crate::android_display::instance_intrinsic(
+            vm, recv_class, mref_class, name, sig, recv, args,
+        )? {
             return Ok(Some(v));
         }
     }
@@ -4116,6 +4152,17 @@ fn instance_intrinsic_dispatch(
     if let Some(v) = crate::jtext_format::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
     {
         return Ok(Some(v));
+    }
+    #[cfg(feature = "virtual-devices")]
+    if vm.fw.vdev.virtual_hardware_enabled {
+        if let Some(v) = crate::m10::call_instance(vm, recv_class, name, sig, recv, args)? {
+            return Ok(Some(v));
+        }
+        if mref_class != recv_class {
+            if let Some(v) = crate::m10::call_instance(vm, mref_class, name, sig, recv, args)? {
+                return Ok(Some(v));
+            }
+        }
     }
     if let Some(v) = crate::android_sysservices::instance_intrinsic(
         vm, recv_class, mref_class, name, sig, recv, args,

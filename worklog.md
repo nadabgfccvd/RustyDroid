@@ -3428,3 +3428,56 @@ Task: Non-phone pendency update — Primftpd M7 continuation (2026-10-21)
 - Perf (moto-e5 estimate, 3 runs): cold emulated p50 2313ms / max 2317ms (was 2505/2781), warm p50 596ms, RSS 99.8MB PASS, heap 3.7MB PASS. Cold estimate for this heavy 11MB app remains above the 2000ms trivial-app DoD; not claimed as a pass. Profiling attempt (gprofng + symbols build) OOM-killed and was timeboxed.
 - No credential is recorded in this file. PR prepared from this tree.
 - PR #164 opened from this tree (branch m7-primftpd-launch-20261021, rebased onto main 5ba1f3e): all 10/10 GitHub CI checks pass. Perf note above stands; PR not merged.
+
+---
+Task ID: B-1 (tempchat coordenação 8873)
+Agent: B-Agent
+Task: fix(vm) — Activity.getAssets() não resolvido (derrubava 12/12 APKs do APK-Tester sdk-ladder; LadderActivity.readRungsAsset() chama getAssets().open("ladder/rungs.json"))
+
+Work Log:
+- Li RustyDroid.md (spec), CONTRIBUTING.md, docs/compat-matrix.md; sincronizei o clone na main adb6eaf (#202 LazyArsc já mergeada) e criei branch fix/context-get-assets.
+- Diagnostic: nenhuma ocorrência de AssetManager/getAssets em crates/ — a Context family de android_res.rs cobria getResources/getTheme/… mas NÃO getAssets; a surface android.content.res prometia "AssetManager.open" como key_api sem host atrás.
+- Implementei em crates/rd-vm/src/android_res.rs: constante ASSET_MANAGER + FILE_NOT_FOUND; singleton asset_manager (padrão `singleton()`); helpers asset_path_is_hostile (recusa absoluto/'..'/'.'/vazio/backslash ANTES do zip — sem pivô para fora de assets/), open_asset (bytes REAIS de assets/<file> do zip injetado → jio_chars::new_byte_input_stream; ausente → FileNotFoundException tipada) e list_assets (primeiro nível sob assets/<path>/, diretório como nome simples, subdiretório inexistente → array vazio, null → NPE — paridade AOSP).
+- Braço ASSET_MANAGER no instance_intrinsic (dispatch alcançado via intrinsics.rs:4086): <init>()V no-op; open(String) e open(String,int) (todos os ACCESS_* streamam os mesmos bytes; BAIS já suporta mark/reset p/ ACCESS_BUFFER); openFd/openNonAssetFd → FileNotFoundException "…probably compressed" (mensagem AOSP); list(String); close()V.
+- Context family: "getAssets" adicionado à lista de nomes + ("getAssets", _) => singleton (responde p/ Activity/Application/Service/ContextWrapper DEX — is_subtype Context). Resources.getAssets() → mesmo singleton (delegação AOSP).
+- classpath.rs: hierarquia Landroid/content/res/AssetManager; → AutoCloseable → Object (instanceof/checkcast).
+- Regressões (crates/rd-vm/tests/android_assets.rs, 10 testes): identidade canônica do manager; cadeia DEX REAL invoke-virtual Activity.getAssets() → AssetManager.open(String) → InputStream.read() lendo o primeiro byte exato do asset (mesma forma do teste class_loader_reads_resource_entries_from_attached_apk); open byte-a-byte + available(); FileNotFoundException para ausente E para 7 paths hostis (incl. "../AndroidManifest.xml" e "a/../../classes.dex"); NPE p/ name null; list primeiro nível + subdiretório + NPE; openFd com mensagem fiel; cobertura de receivers Context + não-Context que deve retornar None (sem fingimento); close no-op + ctor legado bare new() também lê asset real.
+- data/api-coverage.toml: surface android.content.res ganhou Resources.getAssets e AssetManager.list em key_apis + notes descrevendo streaming real/list/openFd tipado; surface android.content ganhou Context.getAssets (validador fd-api-coverage rejeita key_api fora do prefixo — aprendido na 1ª tentativa do xtask). Apêndice C regenerado (cargo xtask api-coverage-report) e compat-matrix re-sincronizado (cargo xtask compat-report).
+- Gates (rustc/cargo 1.99.1 via rustup neste sandbox; CARGO_INCREMENTAL=0 após disco): cargo fmt --all -- --check OK; cargo clippy --workspace --all-targets -- -D warnings OK; cargo test --workspace 890 passed / 0 failed (incl. 10/10 novos); cargo check --workspace --all-features --locked OK.
+
+Stage Summary:
+- Commit "fix(vm): resolve Activity.getAssets() with a real AssetManager host" sobre 8e15e67 (main pós-#203; rebase limpo de adb6eaf — #203 só tocou README/ROADMAP/appendix-c-literal, zero conflito), 6 arquivos, +668/−5: android_res.rs (host completo), classpath.rs (hierarquia), tests/android_assets.rs (10 regressões), api-coverage.toml + api-coverage.md (Apêndice C).
+- Patch format-patch (42176 bytes) publicado em paste.rs e entregue ao PR-Agent no tempchat 8873 com sha256/tree/base conferidos por download de verificação — push + PR por conta dele (token do dono).
+- Sem unsafe; sem mudança em Sentinel/CI/baselines; nenhuma API enfraquecida (Lei nº 1 preservada: erros tipados, nunca silêncio). Expectativa: 12/12 APKs do sdk-ladder passam do readRungsAsset() — validação real pendente no runner do APK-Tester (não executada aqui; APKs do ladder não estão neste sandbox).
+
+---
+Task ID: B-3 (tempchat coordenação 8873)
+Agent: B-Agent
+Task: follow-up da cascata do ladder (PR #205): Context.getApplicationInfo() — LadderActivity linha 96 chama a rota CURTA direto no Context (NOT_FOUND era o próximo gap após o getAssets curado em 12/12)
+
+Work Log:
+- Validação real confirmada pelo PR-Agent na página do #205: com o patch getAssets, os 12/12 ladder APKs passam do readRungsAsset e logam I/LADDER/minsdkNN; morrem em LadderActivity->getApplicationInfo() (NOT_FOUND). getFilesDir (jfile.rs:207) e getPackageManager().getPackageInfo (android_pm.rs) já existiam — só faltava a rota curta.
+- android_pm.rs: app_info exposto como pub(crate) context_app_info (o AOSP devolve a MESMA ApplicationInfo do próprio pacote pelas duas rotas).
+- android_res.rs: "getApplicationInfo" adicionado à Context family (lista + match com sig exato ()Landroid/content/pm/ApplicationInfo;) delegando para android_pm; doc do módulo atualizado.
+- +2 regressões em tests/android_assets.rs: context_get_application_info_serves_manifest_facts (classe/packageName/campos int minSdk-target-uid-enabled; rota curta ≡ rota longa PM com minSdkVersion igual; não-Context retorna None) e application_info_serves_every_context_receiver (Activity/Application/Service/ContextWrapper).
+- Gates (base = head do PR #205 f326093): fmt ✅; clippy -D warnings ✅; test --workspace 892/0 (+2) ✅; check --all-features --locked ✅.
+
+Stage Summary:
+- Commit na branch followup/context-get-application-info (empilha no PR #205 — mesmos arquivos); patch incremental publicado para o PR-Agent pushar na branch do PR (2º commit), fechando o follow-up anunciado no corpo do #205.
+Task ID: B-2 (tempchat coordenação 8873)
+Agent: B-Agent
+Task: fix(registry) — 3 gaps do detector documentados pelo APK-Tester (engines 16/22/32): tauri não dispara na build real; Defold emite libdmengine.so mas o registro esperava libdefold.so; twa-pwa sem asset_statements
+
+Work Log:
+- Diagnostic (fonte: suites/engines/*/expected-engines.json do APK-Tester): engine-16 tauri real = lib/x86_64/libtauri_android.so + libwry.so via cargo-ndk, SEM tauri.conf.json/assets/www; engine-22 Defold real = lib/arm64-v8a/libdmengine.so (bob.jar 1.9.8) + game.arcd/arci; engine-32 TWA fixture mínimo tem dex-strings asset_statements/androidx.browser.trusted mas o manifest não declara metadata — e um TWA REAL declara asset_statements no <application>.
+- Achado estrutural: rd-apk modelava meta_data apenas em Component — Application não tinha o campo (violação da Lei nº 2: manifest é a verdade; TWA/GMS/serviços declaram chaves globais no application). Detector de engines só inventariava metadata de componentes.
+- Implementação: manifest.rs ganhou Application.meta_data (Vec<MetaData> via collect_meta_data(app), #[serde(skip_serializing_if = "Vec::is_empty")] — golden JSON intacto); detect.rs passa a somar application-level + component-level no Inventory.metadata; engines.toml: tauri +regra signature any=[native:libtauri_android.so, native:libwry.so]; lua-engines signature any=[native:libcorona.so, native:libdmengine.so] (libdefold.so removido — nunca existiu na build oficial); twa-pwa signature ganhou metadata:asset_statements.
+- docs/engine-registry.md regenerado via `cargo xtask engine-report` (golden do xtask doc↔catalog em sincronia).
+- Regressões: registry.rs +4 testes (tauri cargo-ndk real com cada lib isolada + .so aleatório que não dispara; dmengine real + libcorona preservada + .so aleatório; asset_statements no application + DEFAULT_URL em componente + ausência = NotDetected; merge application+component no inventário com checagem do predicate da evidence); manifest.rs +1 teste (parse application-level name/resource/value, sem vazar para componente, omissão serde quando vazio).
+- Follow-ups documentados (fora do escopo, precisam decisão/ADR do dono): (1) ids finos scala/clojure/groovy/b4x exigem pattern dex-string: novo no detector e possivelmente novos ids no registro (contrato ENGINE_COUNT=28/CANONICAL_IDS); (2) patch irmão no APK-Tester — answer keys de engine-16/22/32 (tauri/defold ganham signature) + fixture twa ganhando a metadata asset_statements real.
+- Gates (rustc 1.99.1, CARGO_INCREMENTAL=0 — target limpo após disco 100%): fmt --check ✅; clippy --workspace --all-targets -D warnings ✅; cargo test --workspace 895/0 (5 novos) ✅; check --workspace --all-features --locked ✅.
+
+Stage Summary:
+- Commit 358bb02 (cherry-pick limpo sobre 8e15e67; branch fix/engine-detector-real-builds-20261025), 5 arquivos, +229/−8: manifest.rs, detect.rs, registry.rs (testes), engines.toml, docs/engine-registry.md.
+- Patch publicado: https://paste.rs/7JMju (18416 bytes, sha256 4fc43691b1f62cbcf85ccd98e1696a3ca85e335d837f23df3593d055db02e8a2, tree e1e63d29004410ed82d8a3040823ab77a192b178, base 8e15e67) — entregue ao PR-Agent.
+- Sem unsafe; Sentinel/CI intocados; mudança puramente aditiva de regras + modelagem de manifest (Lei nº 2 atendida); golden signatures.json 28/28 preservado.

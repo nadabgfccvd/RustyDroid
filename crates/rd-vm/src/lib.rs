@@ -40,6 +40,7 @@ pub mod engine;
 pub mod err;
 pub mod framework;
 pub mod gc;
+pub mod gms;
 pub mod graphics;
 pub(crate) mod handler_msg;
 pub mod heap;
@@ -73,6 +74,8 @@ pub(crate) mod jtext_format;
 pub(crate) mod jtime;
 pub(crate) mod juuid;
 pub(crate) mod jxml;
+#[cfg(feature = "virtual-devices")]
+pub mod m10;
 pub mod m8;
 #[cfg(feature = "advanced-components")]
 pub mod m9;
