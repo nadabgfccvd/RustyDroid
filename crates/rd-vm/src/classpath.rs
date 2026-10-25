@@ -1234,6 +1234,25 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroidx/work/WorkRequest;" => Some(OBJECT),
         "Landroidx/room/RoomDatabase;" => Some(OBJECT),
         "Landroidx/room/RoomDatabase$Builder;" => Some(OBJECT),
+        "Landroidx/lifecycle/ViewModel;" => Some(OBJECT),
+        "Landroidx/lifecycle/AndroidViewModel;" => {
+            Some(&["Landroidx/lifecycle/ViewModel;", "Ljava/lang/Object;"])
+        }
+        "Landroidx/lifecycle/LiveData;" => Some(OBJECT),
+        "Landroidx/lifecycle/MutableLiveData;" => {
+            Some(&["Landroidx/lifecycle/LiveData;", "Ljava/lang/Object;"])
+        }
+        "Landroidx/lifecycle/MediatorLiveData;" => Some(&[
+            "Landroidx/lifecycle/MutableLiveData;",
+            "Landroidx/lifecycle/LiveData;",
+            "Ljava/lang/Object;",
+        ]),
+        "Landroidx/collection/SimpleArrayMap;" => Some(OBJECT),
+        "Landroidx/collection/ArrayMap;" => {
+            Some(&["Landroidx/collection/SimpleArrayMap;", "Ljava/lang/Object;"])
+        }
+        "Lcom/google/android/gms/location/LocationCallback;" => Some(OBJECT),
+        "Landroidx/biometric/BiometricPrompt$AuthenticationCallback;" => Some(OBJECT),
         // ── S7 (Apêndice D): hierarquias AndroidX/Material conhecidas ────
         // Cadeias FIXAS upstream (não dependem do app): permitem que o
         // LayoutInflater e os casts/check-cast resolvam widgets AndroidX

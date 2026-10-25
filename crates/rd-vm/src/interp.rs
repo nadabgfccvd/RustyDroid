@@ -1555,8 +1555,12 @@ fn do_invoke(
             return Ok(v);
         }
         #[cfg(feature = "virtual-devices")]
-        if let Some(v) = crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
-            return Ok(v);
+        if vm.fw.vdev.virtual_hardware_enabled {
+            if let Some(v) =
+                crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
+            {
+                return Ok(v);
+            }
         }
         if let Some(v) =
             intrinsics::call_static_intrinsic(vm, &mref.class, &mref.name, &mref.proto, slots)?
@@ -1701,10 +1705,12 @@ fn do_invoke(
     }
 
     #[cfg(feature = "virtual-devices")]
-    if let Some(v) =
-        crate::m10::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
-    {
-        return Ok(v);
+    if vm.fw.vdev.virtual_hardware_enabled {
+        if let Some(v) =
+            crate::m10::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+        {
+            return Ok(v);
+        }
     }
 
     // M8: compat real — host sequestra só os métodos listados em m8.rs;
@@ -1720,6 +1726,11 @@ fn do_invoke(
     // startup, biometria, futures) — `None` mantém o DEX real da lib.
     if let Some(v) =
         crate::androidx::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+    {
+        return Ok(v);
+    }
+    if let Some(v) =
+        viewmodel_host_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
         return Ok(v);
     }
@@ -1793,8 +1804,13 @@ fn do_invoke(
 
     let Some((d2, def, m)) = vm.cp.resolve_method(&start_class, &mref.name, &mref.proto) else {
         // D8 may use an app subclass as the inherited Android method owner.
-        // DEX overrides above always win; direct app constructors stay direct.
-        if !is_direct || is_super {
+        // DEX overrides above always win; direct app constructors stay direct,
+        // while `super.<init>(...)` targeting a host-backed non-DEX superclass
+        // (`AppCompatActivity`, `MaterialButton`, `ViewModel`, etc.) resolves
+        // through the host ancestor chain.
+        let non_dex_super_ctor =
+            is_direct && mref.name == "<init>" && vm.cp.find_class(&start_class).is_none();
+        if !is_direct || is_super || non_dex_super_ctor {
             if let Some(value) = inherited_android_host(
                 vm,
                 &start_class,
@@ -1813,7 +1829,199 @@ fn do_invoke(
     vm.call(d2, def, &m, raw.to_vec())
 }
 
-/// Resolve only real inherited Android hosts; never invent an app method.
+/// Host implementation for `androidx.lifecycle.ViewModel` and
+/// `androidx.lifecycle.AndroidViewModel` when the APK omits or R8-strips the
+/// base class DEX (`#232`). State is stored directly in heap fields on `recv`
+/// (`rd_vm_tags`, `rd_vm_closeables`, `rd_vm_app`, `rd_vm_cleared`) so no
+/// global or `HostState` table retains collected `ViewModel` instances.
+pub(crate) fn viewmodel_host_instance(
+    vm: &mut Engine,
+    mref_class: &str,
+    name: &str,
+    sig: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    const VIEW_MODEL: &str = "Landroidx/lifecycle/ViewModel;";
+    const ANDROID_VIEW_MODEL: &str = "Landroidx/lifecycle/AndroidViewModel;";
+    if mref_class != VIEW_MODEL && mref_class != ANDROID_VIEW_MODEL {
+        return Ok(None);
+    }
+    if vm.cp.resolve_method(mref_class, name, sig).is_some() {
+        return Ok(None);
+    }
+    if mref_class == ANDROID_VIEW_MODEL {
+        match (name, sig) {
+            ("<init>", "(Landroid/app/Application;)V") => {
+                let app = args.first().cloned().unwrap_or(Value::Null);
+                crate::err::put_field_result(vm.heap.put_field(recv, "rd_vm_app", app))?;
+                return Ok(Some(Value::Null));
+            }
+            ("getApplication", _) => {
+                if let Ok(v @ Value::Obj(_)) = vm.heap.get_field(recv, "rd_vm_app") {
+                    return Ok(Some(v));
+                }
+                return Ok(Some(Value::Obj(vm.application_obj()?)));
+            }
+            _ => {}
+        }
+    }
+    fn ensure_tag_map(
+        vm: &mut Engine,
+        recv: crate::heap::ObjRef,
+    ) -> Result<crate::heap::ObjRef, VmExit> {
+        if let Ok(Value::Obj(m)) = vm.heap.get_field(recv, "rd_vm_tags") {
+            return Ok(m);
+        }
+        let m = vm
+            .heap
+            .alloc_instance("Ljava/util/LinkedHashMap;".to_string(), Vec::new())?;
+        vm.fw.objects.insert(
+            m,
+            crate::framework::HostObj::Map {
+                entries: Vec::new(),
+            },
+        );
+        crate::err::put_field_result(vm.heap.put_field(recv, "rd_vm_tags", Value::Obj(m)))?;
+        Ok(m)
+    }
+    fn ensure_closeables(
+        vm: &mut Engine,
+        recv: crate::heap::ObjRef,
+    ) -> Result<crate::heap::ObjRef, VmExit> {
+        if let Ok(Value::Obj(l)) = vm.heap.get_field(recv, "rd_vm_closeables") {
+            return Ok(l);
+        }
+        let l = vm
+            .heap
+            .alloc_instance("Ljava/util/ArrayList;".to_string(), Vec::new())?;
+        vm.fw
+            .objects
+            .insert(l, crate::framework::HostObj::List { elems: Vec::new() });
+        crate::err::put_field_result(vm.heap.put_field(recv, "rd_vm_closeables", Value::Obj(l)))?;
+        Ok(l)
+    }
+    match (name, sig) {
+        ("<init>", "()V") | ("onCleared", "()V") => Ok(Some(Value::Null)),
+        ("<init>", "([Ljava/io/Closeable;)V") | ("<init>", "([Ljava/lang/AutoCloseable;)V") => {
+            if let Some(Value::Obj(arr)) = args.first() {
+                let items = vm.heap.as_array_elems(*arr)?.0.to_vec();
+                let list_ref = ensure_closeables(vm, recv)?;
+                if let Some(crate::framework::HostObj::List { elems }) =
+                    vm.fw.objects.get_mut(&list_ref)
+                {
+                    elems.extend(items);
+                }
+            }
+            Ok(Some(Value::Null))
+        }
+        ("setTagIfAbsent", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;") => {
+            let Some(Value::Obj(k_ref)) = args.first() else {
+                return Err(VmExit::Exception(
+                    vm.vm_exception(NPE, "ViewModel.setTagIfAbsent(null key)")?,
+                ));
+            };
+            let key = vm.heap.as_str(*k_ref)?.to_string();
+            let new_val = args.get(1).cloned().unwrap_or(Value::Null);
+            let map_ref = ensure_tag_map(vm, recv)?;
+            let existing = match vm.fw.objects.get(&map_ref) {
+                Some(crate::framework::HostObj::Map { entries }) => {
+                    entries.iter().find_map(|(k, v)| match k {
+                        Value::Obj(kr) if vm.heap.as_str(*kr).ok() == Some(key.as_str()) => {
+                            Some(v.clone())
+                        }
+                        _ => None,
+                    })
+                }
+                _ => None,
+            };
+            if let Some(prev) = existing {
+                return Ok(Some(prev));
+            }
+            if let Some(crate::framework::HostObj::Map { entries }) =
+                vm.fw.objects.get_mut(&map_ref)
+            {
+                entries.push((Value::Obj(*k_ref), new_val.clone()));
+            }
+            Ok(Some(new_val))
+        }
+        ("getTag", "(Ljava/lang/String;)Ljava/lang/Object;")
+        | ("getCloseable", "(Ljava/lang/String;)Ljava/lang/AutoCloseable;") => {
+            let Some(Value::Obj(k_ref)) = args.first() else {
+                return Ok(Some(Value::Null));
+            };
+            let Ok(key) = vm.heap.as_str(*k_ref).map(str::to_string) else {
+                return Ok(Some(Value::Null));
+            };
+            let Ok(Value::Obj(map_ref)) = vm.heap.get_field(recv, "rd_vm_tags") else {
+                return Ok(Some(Value::Null));
+            };
+            let found = match vm.fw.objects.get(&map_ref) {
+                Some(crate::framework::HostObj::Map { entries }) => {
+                    entries.iter().find_map(|(k, v)| match k {
+                        Value::Obj(kr) if vm.heap.as_str(*kr).ok() == Some(key.as_str()) => {
+                            Some(v.clone())
+                        }
+                        _ => None,
+                    })
+                }
+                _ => None,
+            };
+            Ok(Some(found.unwrap_or(Value::Null)))
+        }
+        ("addCloseable", "(Ljava/lang/String;Ljava/lang/AutoCloseable;)V") => {
+            if let Some(Value::Obj(k_ref)) = args.first() {
+                let closeable = args.get(1).cloned().unwrap_or(Value::Null);
+                let map_ref = ensure_tag_map(vm, recv)?;
+                let key = vm.heap.as_str(*k_ref)?.to_string();
+                if let Some(crate::framework::HostObj::Map { entries }) =
+                    vm.fw.objects.get_mut(&map_ref)
+                {
+                    if let Some(slot) = entries.iter_mut().find(|(k, _)| match k {
+                        Value::Obj(kr) => vm.heap.as_str(*kr).ok() == Some(key.as_str()),
+                        _ => false,
+                    }) {
+                        slot.1 = closeable;
+                    } else {
+                        entries.push((Value::Obj(*k_ref), closeable));
+                    }
+                }
+            }
+            Ok(Some(Value::Null))
+        }
+        ("addCloseable", "(Ljava/io/Closeable;)V")
+        | ("addCloseable", "(Ljava/lang/AutoCloseable;)V") => {
+            if let Some(v) = args.first().cloned() {
+                let list_ref = ensure_closeables(vm, recv)?;
+                if let Some(crate::framework::HostObj::List { elems }) =
+                    vm.fw.objects.get_mut(&list_ref)
+                {
+                    elems.push(v);
+                }
+            }
+            Ok(Some(Value::Null))
+        }
+        ("clear", "()V") | ("clear$lifecycle_viewmodel_release", "()V") => {
+            crate::err::put_field_result(vm.heap.put_field(recv, "rd_vm_cleared", Value::Int(1)))?;
+            if let Ok(Value::Obj(list_ref)) = vm.heap.get_field(recv, "rd_vm_closeables") {
+                let items = match vm.fw.objects.get_mut(&list_ref) {
+                    Some(crate::framework::HostObj::List { elems }) => std::mem::take(elems),
+                    _ => Vec::new(),
+                };
+                for item in items {
+                    if let Value::Obj(c_ref) = item {
+                        let _ = crate::m8::call_dex(vm, c_ref, "close", "()V", Vec::new())?;
+                    }
+                }
+            }
+            let _ = crate::m8::call_dex(vm, recv, "onCleared", "()V", Vec::new())?;
+            Ok(Some(Value::Null))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Resolve only real inherited Android/AndroidX/Material/GMS hosts; never invent an app method.
 pub(crate) fn inherited_android_host(
     vm: &mut Engine,
     start: &str,
@@ -1836,8 +2044,12 @@ pub(crate) fn inherited_android_host(
                 return Ok(Some(value));
             }
             #[cfg(feature = "virtual-devices")]
-            if let Some(value) = crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)? {
-                return Ok(Some(value));
+            if vm.fw.vdev.virtual_hardware_enabled {
+                if let Some(value) =
+                    crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)?
+                {
+                    return Ok(Some(value));
+                }
             }
             if let Some(value) = crate::m8::call_m8_instance(vm, &ancestor, name, sig, recv, args)?
             {
@@ -1854,6 +2066,39 @@ pub(crate) fn inherited_android_host(
                 return Ok(Some(value));
             }
             if let Some(value) = crate::platform_base::instance_intrinsic(&ancestor, name, sig) {
+                return Ok(Some(value));
+            }
+        } else if ancestor.starts_with("Landroidx/")
+            || ancestor.starts_with("Lcom/google/android/material/")
+            || ancestor.starts_with("Lcom/google/common/util/concurrent/")
+        {
+            #[cfg(feature = "virtual-devices")]
+            if vm.fw.vdev.virtual_hardware_enabled {
+                if let Some(value) =
+                    crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)?
+                {
+                    return Ok(Some(value));
+                }
+            }
+            if let Some(value) = crate::m8::call_m8_instance(vm, &ancestor, name, sig, recv, args)?
+            {
+                return Ok(Some(value));
+            }
+            if let Some(value) =
+                crate::androidx::call_instance(vm, &ancestor, name, sig, recv, args)?
+            {
+                return Ok(Some(value));
+            }
+            if let Some(value) = viewmodel_host_instance(vm, &ancestor, name, sig, recv, args)? {
+                return Ok(Some(value));
+            }
+        } else if ancestor.starts_with("Lcom/google/android/gms/")
+            || ancestor.starts_with("Lcom/google/firebase/")
+            || ancestor.starts_with("Lcom/android/billingclient/")
+            || ancestor.starts_with("Lcom/google/android/play/")
+            || ancestor.starts_with("Lcom/google/mlkit/")
+        {
+            if let Some(value) = crate::gms::call_instance(vm, &ancestor, name, sig, recv, args)? {
                 return Ok(Some(value));
             }
         }
