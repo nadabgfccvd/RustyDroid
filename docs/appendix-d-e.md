@@ -81,3 +81,20 @@ mínimas documentadas no PR.
   testados descritos em `data/gms.toml`); ML Kit permanece
   `not_implemented` e sem dispatch — o teste
   `unknown_gms_surface_returns_none` fixa essa fronteira.
+- **S7 (2026-10-25, branch `appendix-de-s7-classpath-inflate-20261025`)**:
+  cadeias AndroidX/Material em `builtin_hierarchy`/`builtin_interfaces`
+  (classpath.rs) + `LayoutParams` AndroidX no inflate — tags FQCN
+  AndroidX em AXML inflam como views host sem o DEX das bibliotecas
+  (attach e LayoutInflater são subtype-driven). Sem solver de
+  constraints, gestos de drawer nem temas Material (gaps mantidos).
+- **S8 (2026-10-25)**: (a) MCP expõe os dois registros executáveis —
+  `get_api_usage` ganha `jetpack_coverage`/`gms_coverage` e
+  `compat_gaps` os sumários D/E + `app_library_gaps` (issues #234/#238,
+  sem tools novas). (b) **Ponte Location (issue #229)**: o GPS virtual
+  do M10 (`vm.fw.vdev.location`) é a fonte única do fix — o shim GMS lê
+  dele (`getLastLocation`, disponibilidade), `gms_set_location_fix`
+  escreve via `Engine::m10_set_location` (entrega aos listeners dos
+  dois lados), `gms_clear_location_fix` desliga os providers (fix =
+  null) e as `Location` cunhadas carregam os dois conjuntos de campos
+  (host `m*` + M10 `rd_*`). A superficie GMS (Fused/Tasks) tem um só
+  dono, `crates/rd-vm/src/gms.rs` — nunca duas máquinas de Tasks.
