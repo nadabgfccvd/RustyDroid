@@ -272,9 +272,7 @@ impl AgentSession {
         match r {
             Ok(r) => r,
             Err(p) => {
-                let msg = p.downcast_ref::<String>().cloned()
-                    .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
-                    .unwrap_or_else(|| "panic".into());
+                let msg = Self::panic_message(&*p);
                 // Capture context before dropping the failed process. Never
                 // inspect guest frames/heap or acquire the log lock here.
                 let result = self.tool_error_result(name, &agent_error(
@@ -282,17 +280,49 @@ impl AgentSession {
                     format!("runtime panic durante '{name}': {msg} — o app foi encerrado; a sessão continua"),
                     Some("relance com `launch` e reporte o bug (logs tem a mensagem)"),
                 ));
-                self.engine = None;
-                self.engine_package = None;
-                self.native_engine = None;
-                self.activity = None;
-                self.screen.snap = None;
-                self.screen.dirty = true;
-                self.logs.lock()
-                    .map(|mut l| l.extend_from_slice(format!("E/RustyDroid: runtime panic in '{name}': {msg}\n").as_bytes()))
-                    .ok();
+                self.teardown_after_panic(name, &msg);
                 result
             }
+        }
+    }
+
+    fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
+        p.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_else(|| "panic".into())
+    }
+
+    /// Estado pós-panic de runtime: o app morreu; a sessão continua.
+    fn teardown_after_panic(&mut self, name: &str, msg: &str) {
+        self.engine = None;
+        self.engine_package = None;
+        self.native_engine = None;
+        self.activity = None;
+        self.screen.snap = None;
+        self.screen.dirty = true;
+        self.logs
+            .lock()
+            .map(|mut l| {
+                l.extend_from_slice(
+                    format!("E/RustyDroid: runtime panic in '{name}': {msg}\n").as_bytes(),
+                )
+            })
+            .ok();
+    }
+
+    /// Issue #317: `screen_after_call` roda FORA do `catch_unwind` da
+    /// chamada (em `tools/call`), mas executa `screen_refresh` →
+    /// desenho de frame, que roda código guest. Um panic ali escapava
+    /// do isolamento e derrubava o servidor MCP. Mesmo teardown do
+    /// caminho da tool: o app é encerrado, a sessão vive.
+    pub fn screen_after_call_isolated(&mut self, tool: &str, ms: f64) {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.screen_after_call(tool, ms)
+        }));
+        if let Err(p) = r {
+            let msg = Self::panic_message(&*p);
+            self.teardown_after_panic(tool, &msg);
         }
     }
 
@@ -594,7 +624,15 @@ impl AgentSession {
         let content = match uri {
             RES_SCREEN => {
                 self.screen_refresh().map_err(err)?;
-                let snap = self.screen.snap.as_ref().expect("snap");
+                // Issue #317: nada de `expect` em caminho de servidor —
+                // se o refresh não produziu frame, o read falha tipado.
+                let Some(snap) = self.screen.snap.as_ref() else {
+                    return Err(err(agent_error(
+                        "NOT_RUNNING",
+                        "sem frame de tela disponível — lance um app primeiro",
+                        None,
+                    )));
+                };
                 serde_json::json!({"uri": uri, "mimeType": "application/json",
                     "text": snap.to_json(self.screen.version, true).to_string()})
             }

@@ -2545,7 +2545,9 @@ impl AgentSession {
             // issue #80: o formato já foi validado para o lote inteiro acima
             let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let args = c.get("arguments").cloned().unwrap_or(serde_json::json!({}));
-            let r = self.call_tool(name, &args);
+            // Issue #317: cada passo é isolado — um panic vira
+            // INTERNAL_PANIC no próprio passo, nunca mata lote/processo.
+            let r = self.call_tool_isolated(name, &args);
             let content_json: serde_json::Value = match &r.content[0] {
                 ToolContent::Text(t) => serde_json::from_str(t).unwrap_or(serde_json::json!(t)),
                 ToolContent::Image { mime, .. } => serde_json::json!({"image": mime}),
@@ -3123,7 +3125,9 @@ fn handle_single(
             let args = msg.pointer("/params/arguments").unwrap_or(&empty);
             let t0 = std::time::Instant::now();
             let result = session.call_tool_isolated(&name, args);
-            session.screen_after_call(&name, t0.elapsed().as_secs_f64() * 1000.0);
+            // Issue #317: o pós-chamada redesenha (código guest) — também
+            // isolado, senão um panic ali derrubava o servidor.
+            session.screen_after_call_isolated(&name, t0.elapsed().as_secs_f64() * 1000.0);
             let content: Vec<serde_json::Value> = result
                 .content
                 .iter()
