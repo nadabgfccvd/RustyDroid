@@ -3991,6 +3991,7 @@ const ANDROID_OS_CONSTANTS: &str = "Landroid/system/OsConstants;";
 const ANDROID_ERRNO: &str = "Landroid/system/ErrnoException;";
 const ANDROID_STRUCT_STAT: &str = "Landroid/system/StructStat;";
 const ANDROID_STRUCT_TIMESPEC: &str = "Landroid/system/StructTimespec;";
+const ANDROID_STRUCT_UTSNAME: &str = "Landroid/system/StructUtsname;";
 
 fn byte_array(engine: &mut Engine, values: &[u8]) -> Value {
     let array = engine
@@ -4214,6 +4215,55 @@ fn android_system_constants_structs_and_errno_values_are_guest_visible() {
     assert_eq!(field(&engine, stat, "st_size"), Value::Long(123));
     let mtim = object(field(&engine, stat, "st_mtim"));
     assert_eq!(field(&engine, mtim, "tv_sec"), Value::Long(12));
+
+    // Deep audit: libcore.util.Objects.toString renders the structs as
+    // Name[f=v,f=v] (square brackets, no spaces) with String fields
+    // double-quoted, in declared field order.
+    assert_eq!(
+        call_text(&mut engine, stat, "toString", "()Ljava/lang/String;", &[]),
+        "StructStat[st_dev=7,st_ino=42,st_mode=33188,st_nlink=1,st_uid=10000,st_gid=10000,\
+         st_rdev=0,st_size=123,st_atime=11,st_atim=StructTimespec[tv_sec=11,tv_nsec=0],\
+         st_mtime=12,st_mtim=StructTimespec[tv_sec=12,tv_nsec=0],st_ctime=13,\
+         st_ctim=StructTimespec[tv_sec=13,tv_nsec=0],st_blksize=4096,st_blocks=8]"
+    );
+    let linux = text(&mut engine, "Linux");
+    let phone = text(&mut engine, "phone");
+    let release = text(&mut engine, "6.1");
+    let version = text(&mut engine, "#1");
+    let machine = text(&mut engine, "aarch64");
+    let utsname = transition_new(
+        &mut engine,
+        ANDROID_STRUCT_UTSNAME,
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        &[linux, phone, release, version, machine],
+    );
+    assert_eq!(
+        call_text(
+            &mut engine,
+            utsname,
+            "toString",
+            "()Ljava/lang/String;",
+            &[]
+        ),
+        "StructUtsname[sysname=\"Linux\",nodename=\"phone\",release=\"6.1\",\
+         version=\"#1\",machine=\"aarch64\"]"
+    );
+    // The reflective renderer dereferences each field value, so a null
+    // field makes toString itself throw NullPointerException on AOSP.
+    let phone = text(&mut engine, "phone");
+    let release = text(&mut engine, "6.1");
+    let version = text(&mut engine, "#1");
+    let machine = text(&mut engine, "aarch64");
+    let bad_utsname = transition_new(
+        &mut engine,
+        ANDROID_STRUCT_UTSNAME,
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        &[Value::Null, phone, release, version, machine],
+    );
+    assert_throws(
+        engine.invoke_instance(bad_utsname, "toString", "()Ljava/lang/String;", &[]),
+        "Ljava/lang/NullPointerException;",
+    );
 
     assert!(engine.cp.is_subtype(ANDROID_ERRNO, "Ljava/lang/Exception;"));
     assert!(engine

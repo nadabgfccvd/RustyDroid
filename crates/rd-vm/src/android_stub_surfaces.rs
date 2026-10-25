@@ -19548,6 +19548,9 @@ fn sysos_struct_string(
     recv: ObjRef,
     fields: &[&str],
 ) -> Result<Value, VmExit> {
+    // libcore.util.Objects.toString renders StructName[f=v,f=v]:
+    // square brackets, comma separators without spaces, String values
+    // double-quoted, and it NPEs on a null field via value.getClass().
     let simple = class
         .trim_start_matches('L')
         .trim_end_matches(';')
@@ -19556,12 +19559,18 @@ fn sysos_struct_string(
         .unwrap_or("Object");
     let mut rendered = Vec::new();
     for field in fields {
-        rendered.push(format!(
-            "{field}={}",
-            value_string(vm, &get(vm, recv, field))?
-        ));
+        let value = get(vm, recv, field);
+        let text = match &value {
+            Value::Null => return Err(npe("")),
+            Value::Obj(_) => match opt_str(vm, Some(&value)) {
+                Some(text) => format!("\"{text}\""),
+                None => value_string(vm, &value)?,
+            },
+            _ => value_string(vm, &value)?,
+        };
+        rendered.push(format!("{field}={text}"));
     }
-    jstr(vm, format!("{simple}{{{}}}", rendered.join(", ")))
+    jstr(vm, format!("{simple}[{}]", rendered.join(",")))
 }
 
 fn android_system_instance(
@@ -19763,9 +19772,12 @@ fn android_system_instance(
                 vm,
                 class,
                 recv,
+                // Declared field order in libcore StructStat, including
+                // the seconds-only compatibility fields.
                 &[
                     "st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_gid", "st_rdev",
-                    "st_size", "st_atim", "st_mtim", "st_ctim", "st_blksize", "st_blocks",
+                    "st_size", "st_atime", "st_atim", "st_mtime", "st_mtim", "st_ctime", "st_ctim",
+                    "st_blksize", "st_blocks",
                 ],
             )?,
             _ => return Ok(None),
