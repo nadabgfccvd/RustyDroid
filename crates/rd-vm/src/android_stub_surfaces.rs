@@ -29567,15 +29567,51 @@ fn p49_tv_rating_from_values(
     rating: Value,
     sub_ratings: Value,
 ) -> Result<Value, VmExit> {
-    let domain_text = opt_str(vm, Some(&domain)).unwrap_or_default();
-    let system_text = opt_str(vm, Some(&rating_system)).unwrap_or_default();
-    let rating_text = opt_str(vm, Some(&rating)).unwrap_or_default();
-    let mut subs: Vec<String> = array_elems(vm, Some(&sub_ratings))
-        .iter()
-        .filter_map(|v| opt_str(vm, Some(v)))
-        .collect();
-    subs.sort();
-    p49_tv_rating_value(vm, &domain_text, &system_text, &rating_text, subs)
+    // The private constructor keeps the caller's Strings and varargs
+    // array: it sorts the array in place and retains the reference
+    // (null/empty becomes a null field).
+    let subs_value = match &sub_ratings {
+        Value::Obj(array_ref) => {
+            let values = array_elems(vm, Some(&sub_ratings));
+            if values.is_empty() {
+                Value::Null
+            } else {
+                // Arrays.sort on a String[] NPEs on null elements once
+                // a comparison happens (arrays of two or more).
+                let mut texts = Vec::with_capacity(values.len());
+                for value in &values {
+                    match opt_str(vm, Some(value)) {
+                        Some(text) => texts.push(text),
+                        None if values.len() >= 2 => return Err(npe("")),
+                        None => texts.push(String::new()),
+                    }
+                }
+                let mut order: Vec<usize> = (0..values.len()).collect();
+                order.sort_by(|&a, &b| texts[a].cmp(&texts[b]));
+                let sorted: Vec<Value> = order.iter().map(|&i| values[i].clone()).collect();
+                if let Ok(elems) = vm.heap.array_elems_mut(*array_ref) {
+                    *elems = sorted;
+                }
+                Value::Obj(*array_ref)
+            }
+        }
+        _ => Value::Null,
+    };
+    let base = p49_objects_hash(vm, &[domain.clone(), rating.clone()]);
+    let hash = base
+        .wrapping_mul(31)
+        .wrapping_add(p49_array_hash(vm, &subs_value));
+    p49_alloc_value(
+        vm,
+        P49_TV_RATING,
+        vec![
+            ("mDomain".to_string(), domain),
+            ("mRatingSystem".to_string(), rating_system),
+            ("mRating".to_string(), rating),
+            ("mSubRatings".to_string(), subs_value),
+            ("mHashCode".to_string(), Value::Int(hash)),
+        ],
+    )
 }
 
 fn p49_tv_rating_unflatten(vm: &mut Engine, text: &str) -> Result<Value, VmExit> {
@@ -29925,8 +29961,15 @@ fn p49_tv_instance(
             ("getMainRating", "()Ljava/lang/String;") => get(vm, recv, "mRating"),
             ("getSubRatings", "()Ljava/util/List;") => match get(vm, recv, "mSubRatings") {
                 Value::Obj(_) => {
+                    // AOSP: Collections.unmodifiableList(Arrays.asList(...))
                     let subs = array_elems(vm, Some(&get(vm, recv, "mSubRatings")));
-                    p49_list_value(vm, subs)?
+                    let list = p49_list_value(vm, subs)?;
+                    vm.invoke_static(
+                        "Ljava/util/Collections;",
+                        "unmodifiableList",
+                        "(Ljava/util/List;)Ljava/util/List;",
+                        &[list],
+                    )?
                 }
                 _ => Value::Null,
             },
@@ -32114,22 +32157,6 @@ pub(crate) fn partial49_static(
             let rating = opt_str_arg(vm, args, 2);
             if rating.as_deref().unwrap_or("").is_empty() {
                 return Err(iae("rating cannot be empty"));
-            }
-            // TvContentRating's private constructor sorts the caller's
-            // varargs array in place and retains that same array.
-            if let Some(array_ref) = oarg(args, 3) {
-                let mut values = array_elems(vm, args.get(3));
-                let mut keys: Vec<String> = values
-                    .iter()
-                    .map(|value| opt_str(vm, Some(value)).unwrap_or_default())
-                    .collect();
-                let mut paired: Vec<(String, Value)> =
-                    keys.drain(..).zip(values.drain(..)).collect();
-                paired.sort_by(|a, b| a.0.cmp(&b.0));
-                let sorted: Vec<Value> = paired.into_iter().map(|(_, value)| value).collect();
-                if let Ok(elems) = vm.heap.array_elems_mut(array_ref) {
-                    *elems = sorted;
-                }
             }
             p49_tv_rating_from_values(
                 vm,

@@ -9626,6 +9626,47 @@ fn tv_no_input_profile_ratings_and_tracks_are_guest_visible() {
         call(&mut engine, video, "getVideoPixelAspectRatio", "()F", &[]),
         Value::Float(1.0)
     );
+
+    // Deep audit: createRating keeps the caller's sub-ratings array
+    // (the constructor sorts it in place and retains the reference),
+    // so later caller-side mutation is visible through the rating.
+    let dom = text(&mut engine, "example.dom");
+    let sys = text(&mut engine, "SYS");
+    let main = text(&mut engine, "TV-PG");
+    let subs_array = p57_string_array(&mut engine, &["S", "D"]);
+    let subs_ref = object(subs_array.clone());
+    let candidate = object(call_static(
+        &mut engine,
+        rating_class,
+        "createRating",
+        create_sig,
+        &[dom, sys, main, subs_array],
+    ));
+    let mutated = text(&mut engine, "L");
+    engine.heap.array_elems_mut(subs_ref).unwrap()[0] = mutated;
+    assert_eq!(
+        call_text(
+            &mut engine,
+            candidate,
+            "flattenToString",
+            "()Ljava/lang/String;",
+            &[]
+        ),
+        "example.dom/SYS/TV-PG/L/S"
+    );
+    // getSubRatings exposes an unmodifiable list, not a mutable copy.
+    let subs_list_ref = object(call(
+        &mut engine,
+        candidate,
+        "getSubRatings",
+        "()Ljava/util/List;",
+        &[],
+    ));
+    let extra = text(&mut engine, "X");
+    assert_throws(
+        engine.invoke_instance(subs_list_ref, "add", "(Ljava/lang/Object;)Z", &[extra]),
+        "Ljava/lang/UnsupportedOperationException;",
+    );
 }
 
 #[test]
