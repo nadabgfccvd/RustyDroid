@@ -16,7 +16,6 @@ use crate::axml::ComplexUnit;
 use crate::error::{RdError, RdResult};
 use crate::pool::StringPool;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 
 pub const RES_TABLE_TYPE: u16 = 0x0002;
@@ -136,8 +135,11 @@ pub struct Package {
     /// Buffer do ARSC inteiro compartilhado (Arc) — Leis 2 e clones baratos.
     raw: Arc<Vec<u8>>,
     /// Cache de entradas materializadas por resid (cap `ENTRY_CACHE_CAP`;
-    /// reset ao estourar). `OnceLock` para inicialização preguiçosa e segura.
-    cache: OnceLock<Mutex<BTreeMap<u32, Arc<Vec<ResEntry>>>>>,
+    /// reset ao estourar). Estado POR INSTÂNCIA (nunca global): `Mutex` direto,
+    /// sem `OnceLock` — `Mutex::new(BTreeMap::new())` não aloca, então a
+    /// inicialização preguiçosa não comprava nada. Lock envenenado = cache
+    /// ignorado (re-decodifica), nunca panic.
+    cache: Mutex<BTreeMap<u32, Arc<Vec<ResEntry>>>>,
 }
 
 impl Clone for Package {
@@ -154,7 +156,7 @@ impl Clone for Package {
             chunks: Arc::clone(&self.chunks),
             pairs: Arc::clone(&self.pairs),
             raw: Arc::clone(&self.raw),
-            cache: OnceLock::new(),
+            cache: Mutex::new(BTreeMap::new()),
         }
     }
 }
@@ -190,7 +192,7 @@ impl Package {
             chunks: Arc::new(Vec::new()),
             pairs: Arc::new(Vec::new()),
             raw: Arc::new(Vec::new()),
-            cache: OnceLock::from(cache),
+            cache,
         }
     }
 
@@ -201,7 +203,7 @@ impl Package {
     /// diagnóstico e testes inspecionam aqui; caminho quente usa os
     /// `resolve_*` (que chamam isto internamente).
     pub fn entries_for(&self, res_id: u32) -> Option<Arc<Vec<ResEntry>>> {
-        let cache = self.cache.get_or_init(|| Mutex::new(BTreeMap::new()));
+        let cache = &self.cache;
         if let Ok(guard) = cache.lock() {
             if let Some(hit) = guard.get(&res_id) {
                 return Some(Arc::clone(hit));
@@ -254,10 +256,8 @@ impl Package {
                 ids.push(r);
             }
         }
-        if let Some(cache) = self.cache.get() {
-            if let Ok(guard) = cache.lock() {
-                ids.extend(guard.keys().copied());
-            }
+        if let Ok(guard) = self.cache.lock() {
+            ids.extend(guard.keys().copied());
         }
         ids.sort_unstable();
         ids.dedup();
@@ -670,7 +670,7 @@ fn parse_package(
         chunks: Arc::new(chunks),
         pairs: Arc::new(pairs),
         raw: Arc::clone(raw),
-        cache: OnceLock::new(),
+        cache: Mutex::new(BTreeMap::new()),
     })
 }
 
