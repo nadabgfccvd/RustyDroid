@@ -67,6 +67,9 @@ pub(crate) struct LaunchTrace {
     clinit_calls: std::cell::Cell<u64>,
     string_ns: std::cell::Cell<u64>,
     string_calls: std::cell::Cell<u64>,
+    /// v2: tempo de intrinsic por classe declarante (descritor) — o
+    /// balde agregado sozinho não diz QUAIS stubs custam ~5,7 µs.
+    intrinsic_by_class: std::cell::RefCell<std::collections::HashMap<String, (u64, u64)>>,
 }
 
 impl LaunchTrace {
@@ -302,13 +305,20 @@ impl Engine {
     }
 
     #[inline]
-    pub(crate) fn trace_intrinsic(&self, t0: Option<std::time::Instant>) {
+    pub(crate) fn trace_intrinsic(&self, t0: Option<std::time::Instant>, class: &str) {
         if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
-            LaunchTrace::add(
-                &tr.intrinsic_ns,
-                &tr.intrinsic_calls,
-                t0.elapsed().as_nanos() as u64,
-            );
+            let ns = t0.elapsed().as_nanos() as u64;
+            LaunchTrace::add(&tr.intrinsic_ns, &tr.intrinsic_calls, ns);
+            let mut by = tr.intrinsic_by_class.borrow_mut();
+            match by.get_mut(class) {
+                Some(e) => {
+                    e.0 = e.0.saturating_add(ns);
+                    e.1 = e.1.saturating_add(1);
+                }
+                None => {
+                    by.insert(class.to_string(), (ns, 1));
+                }
+            }
         }
     }
 
@@ -339,8 +349,20 @@ impl Engine {
     pub fn launch_trace_report(&self) -> Option<String> {
         let tr = self.launch_trace.as_ref()?;
         let ms = |ns: u64| ns as f64 / 1.0e6;
+        let mut top: Vec<(String, (u64, u64))> = tr
+            .intrinsic_by_class
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        top.sort_by_key(|t| std::cmp::Reverse(t.1 .0));
+        let top: Vec<String> = top
+            .iter()
+            .take(10)
+            .map(|(k, (ns, n))| format!("{k}={:.1}ms/{n}", ms(*ns)))
+            .collect();
         Some(format!(
-            "[launch-trace] fuel={} resolve={:.1}ms/{} intrinsic={:.1}ms/{} clinit={:.1}ms/{} string={:.1}ms/{}",
+            "[launch-trace] fuel={} resolve={:.1}ms/{} intrinsic={:.1}ms/{} clinit={:.1}ms/{} string={:.1}ms/{} top=[{}]",
             self.fuel_used,
             ms(tr.resolve_ns.get()),
             tr.resolve_calls.get(),
@@ -350,6 +372,7 @@ impl Engine {
             tr.clinit_calls.get(),
             ms(tr.string_ns.get()),
             tr.string_calls.get(),
+            top.join(" "),
         ))
     }
 

@@ -1572,7 +1572,7 @@ fn do_invoke(
             let _t0 = vm.trace_start();
             let r =
                 intrinsics::call_static_intrinsic(vm, &mref.class, &mref.name, &mref.proto, slots);
-            vm.trace_intrinsic(_t0);
+            vm.trace_intrinsic(_t0, &mref.class);
             r
         }? {
             return Ok(v);
@@ -1686,7 +1686,7 @@ fn do_invoke(
             recv,
             &slots[1..],
         );
-        vm.trace_intrinsic(_t0);
+        vm.trace_intrinsic(_t0, &mref.class);
         r
     }? {
         return Ok(v);
@@ -1712,7 +1712,7 @@ fn do_invoke(
                     recv,
                     &slots[1..],
                 );
-                vm.trace_intrinsic(_t0);
+                vm.trace_intrinsic(_t0, &recv_class);
                 r
             }? {
                 return Ok(v);
