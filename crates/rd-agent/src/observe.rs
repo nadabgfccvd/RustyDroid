@@ -306,6 +306,9 @@ impl AgentSession {
         let eng = self.require_engine()?;
         let finished = eng.activity_is_finished();
         let mut draw_error = None;
+        // Só é mutado no bloco de acessibilidade virtual (feature
+        // advanced-components); sem ela, o `mut` é desnecessário.
+        #[allow(unused_mut)]
         let mut model = if finished {
             // no window any more: never serve the last frame as if it were live
             ScreenModel {
