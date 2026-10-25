@@ -21,8 +21,8 @@
 //! listeners rodam na hora (o `Executor` dos overloads é ignorado),
 //! `getResult()`/`Tasks.await` nunca bloqueiam (Task incompleta lança
 //! `IllegalStateException`, como a API real não-bloqueante),
-//! `requestLocationUpdates` entrega uma vez no registro (e a cada
-//! `Engine::gms_push_location`), o fluxo de billing entrega a compra
+//! `requestLocationUpdates` entrega a cada fix novo
+//! (`Engine::m10_set_location`/`gms_push_location`), o fluxo de billing entrega a compra
 //! ao listener antes de retornar, `FirebaseApp.getInstance()` cria o
 //! app default com opções fake quando ausente (simula o
 //! `FirebaseInitProvider`; `Engine::gms_set_strict_firebase_init`
@@ -3601,6 +3601,70 @@ fn storage_instance(
 }
 
 // ── Location (fused) ────────────────────────────────────────────────────
+// ── S8: ponte com o GPS virtual do M10 ──────────────────────────────────
+// A ÚNICA fonte do fix corrente é `vm.fw.vdev.location` (LocationState do
+// dispositivo virtual, com rotas GPX e programação MCP). O GMS lê e
+// escreve aí: LocationManager (M10), as tools MCP e o
+// FusedLocationProviderClient (GMS) observam sempre a mesma posição.
+// `GmsState.location_fix` fica como espelho legado sincronizado.
+#[cfg(feature = "virtual-devices")]
+fn current_fix(vm: &Engine) -> Option<FixCfg> {
+    let state = &vm.fw.vdev.location;
+    if !state.gps_enabled && !state.network_enabled {
+        return None;
+    }
+    let fix = &state.current;
+    Some(FixCfg {
+        lat: fix.latitude,
+        lng: fix.longitude,
+        accuracy_m: fix.accuracy,
+        altitude_m: fix.altitude,
+        bearing_deg: fix.bearing,
+        speed_mps: fix.speed,
+        time_ms: fix.time_ms,
+        provider: if fix.provider.is_empty() {
+            "fused".to_string()
+        } else {
+            fix.provider.clone()
+        },
+    })
+}
+
+/// Sem `virtual-devices` não há GPS virtual: o espelho É o armazenamento
+/// (comportamento S6 original).
+#[cfg(not(feature = "virtual-devices"))]
+fn current_fix(vm: &Engine) -> Option<FixCfg> {
+    vm.fw.gms.location_fix.clone()
+}
+
+/// Sincroniza o espelho legado `GmsState.location_fix` com o vdev.
+#[cfg(feature = "virtual-devices")]
+fn sync_fix_mirror(vm: &mut Engine) {
+    vm.fw.gms.location_fix = current_fix(vm);
+}
+
+#[cfg(not(feature = "virtual-devices"))]
+fn sync_fix_mirror(_vm: &mut Engine) {}
+
+/// Chamado pelo M10 sempre que o fix muda por essa via
+/// (`m10_set_location`/rotas, via `m10_deliver_location_fix`): entrega o
+/// fix novo aos `LocationCallback`s GMS registados neste shim.
+pub(crate) fn notify_fix_changed(vm: &mut Engine) {
+    sync_fix_mirror(vm);
+    if let Some(fix) = current_fix(vm) {
+        let callbacks: Vec<ObjRef> = vm
+            .fw
+            .gms
+            .location_requests
+            .iter()
+            .map(|(r, _)| *r)
+            .collect();
+        for cb in callbacks {
+            let _ = deliver_location(vm, cb, &fix);
+        }
+    }
+}
+
 fn mint_location(vm: &mut Engine, fix: &FixCfg) -> Result<ObjRef, VmExit> {
     let r = alloc(vm, LOCATION)?;
     let provider = intrinsics::alloc_string(
@@ -3634,10 +3698,25 @@ fn mint_location(vm: &mut Engine, fix: &FixCfg) -> Result<ObjRef, VmExit> {
     );
     // HAS_ALTITUDE|HAS_SPEED|HAS_BEARING|HAS_HORIZONTAL_ACCURACY
     put(vm, r, "mFieldsMask", Value::Int(0b1111));
+    // S8: os mesmos dados nos campos rd_* do M10 — qualquer leitor
+    // (dispatch GMS ou M10) encontra valores coerentes.
+    put(vm, r, "rd_provider", Value::Obj(provider));
+    put(vm, r, "rd_lat", Value::Double(fix.lat));
+    put(vm, r, "rd_lon", Value::Double(fix.lng));
+    put(vm, r, "rd_alt", Value::Double(fix.altitude_m));
+    put(vm, r, "rd_has_alt", Value::Int(1));
+    put(vm, r, "rd_acc", Value::Float(fix.accuracy_m));
+    put(vm, r, "rd_has_acc", Value::Int(1));
+    put(vm, r, "rd_speed", Value::Float(fix.speed_mps));
+    put(vm, r, "rd_has_speed", Value::Int(1));
+    put(vm, r, "rd_bearing", Value::Float(fix.bearing_deg));
+    put(vm, r, "rd_has_bearing", Value::Int(1));
+    put(vm, r, "rd_time", Value::Long(fix.time_ms));
+    put(vm, r, "rd_elapsed", Value::Long(fix.time_ms * 1_000_000));
     Ok(r)
 }
 fn location_task(vm: &mut Engine) -> Result<Value, VmExit> {
-    match vm.fw.gms.location_fix.clone() {
+    match current_fix(vm) {
         Some(fix) => {
             let loc = mint_location(vm, &fix)?;
             Ok(Value::Obj(completed_task(vm, Value::Obj(loc))?))
@@ -3731,7 +3810,7 @@ fn location_instance(
             "<init>" => Value::Null,
             "getLastLocation" | "getCurrentLocation" => location_task(vm)?,
             "getLocationAvailability" => {
-                let avail = vm.fw.gms.location_fix.is_some();
+                let avail = current_fix(vm).is_some();
                 let r = alloc(vm, LOCATION_AVAILABILITY)?;
                 vm.fw.gms.loc_availability.insert(r, avail);
                 Value::Obj(completed_task(vm, Value::Obj(r))?)
@@ -3745,10 +3824,11 @@ fn location_instance(
                     _ => None,
                 });
                 if let Some(cb) = callback {
+                    // Sem entrega inicial: como na API real, o callback só
+                    // dispara com fixes NOVOS (m10_set_location/push). A
+                    // entrega-no-registo do S6 tornou-se incorreta com a
+                    // ponte S8: o dispositivo virtual tem sempre um fix.
                     vm.fw.gms.location_requests.push((cb, req));
-                    if let Some(fix) = vm.fw.gms.location_fix.clone() {
-                        deliver_location(vm, cb, &fix)?;
-                    }
                 }
                 Value::Obj(void_task(vm)?)
             }
@@ -5812,37 +5892,48 @@ impl Engine {
         self.fw.gms.availability_code = code;
     }
 
-    /// Define o fix de GPS vendido pelo FusedLocationClient.
+    /// Define o fix de GPS vendido pelo FusedLocationClient. Desde o S8
+    /// escreve no GPS virtual do M10 (`Engine::m10_set_location`), que é a
+    /// fonte única: o mesmo fix fica visível no LocationManager e nas
+    /// tools MCP, e os listeners dos dois lados são entregues.
     pub fn gms_set_location_fix(&mut self, lat: f64, lon: f64, accuracy_m: f32) {
-        self.fw.gms.location_fix = Some(FixCfg {
-            lat,
-            lng: lon,
-            accuracy_m,
-            ..FixCfg::default()
-        });
+        #[cfg(feature = "virtual-devices")]
+        {
+            // Programar um fix implica GPS ligado no dispositivo virtual.
+            self.fw.vdev.location.gps_enabled = true;
+            let _ = self.m10_set_location(lat, lon, None, Some(accuracy_m), None, None);
+            sync_fix_mirror(self);
+        }
+        #[cfg(not(feature = "virtual-devices"))]
+        {
+            self.fw.gms.location_fix = Some(FixCfg {
+                lat,
+                lng: lon,
+                accuracy_m,
+                ..FixCfg::default()
+            });
+        }
     }
 
-    /// Remove o fix (getLastLocation volta a concluir com null).
+    /// Desliga os providers do dispositivo virtual: getLastLocation volta
+    /// a concluir com null (e o LocationManager fica sem fix também).
     pub fn gms_clear_location_fix(&mut self) {
+        #[cfg(feature = "virtual-devices")]
+        {
+            self.fw.vdev.location.gps_enabled = false;
+            self.fw.vdev.location.network_enabled = false;
+        }
         self.fw.gms.location_fix = None;
     }
 
     /// Define um novo fix e entrega-o já a todos os callbacks registados
-    /// com `requestLocationUpdates`.
+    /// com `requestLocationUpdates` (com `virtual-devices`, a entrega
+    /// corre por `m10_set_location` → `notify_fix_changed`; sem ela, a
+    /// entrega é direta aqui).
     pub fn gms_push_location(&mut self, lat: f64, lon: f64, accuracy_m: f32) {
         self.gms_set_location_fix(lat, lon, accuracy_m);
-        if let Some(fix) = self.fw.gms.location_fix.clone() {
-            let callbacks: Vec<ObjRef> = self
-                .fw
-                .gms
-                .location_requests
-                .iter()
-                .map(|(r, _)| *r)
-                .collect();
-            for cb in callbacks {
-                let _ = deliver_location(self, cb, &fix);
-            }
-        }
+        #[cfg(not(feature = "virtual-devices"))]
+        notify_fix_changed(self);
     }
 
     /// Nº de callbacks de localização registados.

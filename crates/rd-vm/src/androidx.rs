@@ -381,7 +381,31 @@ impl Engine {
     /// returns and how the next `authenticate()` calls end.
     pub fn androidx_set_biometric(&mut self, can_authenticate: i32, outcome: BiometricOutcome) {
         self.fw.androidx.biometric_can_authenticate = can_authenticate;
-        self.fw.androidx.biometric_outcome = outcome;
+        self.fw.androidx.biometric_outcome = outcome.clone();
+        #[cfg(feature = "virtual-devices")]
+        {
+            match can_authenticate {
+                0 => {
+                    self.fw.vdev.biometrics.hardware_present = true;
+                    self.fw.vdev.biometrics.enrolled = true;
+                }
+                11 => {
+                    self.fw.vdev.biometrics.hardware_present = true;
+                    self.fw.vdev.biometrics.enrolled = false;
+                }
+                _ => {
+                    self.fw.vdev.biometrics.hardware_present = false;
+                    self.fw.vdev.biometrics.enrolled = false;
+                }
+            }
+            self.fw.vdev.biometrics.auto_outcome = match outcome {
+                BiometricOutcome::Success => crate::m10::BiometricOutcome::Success,
+                BiometricOutcome::Failed => crate::m10::BiometricOutcome::Failed,
+                BiometricOutcome::Error(code, message) => {
+                    crate::m10::BiometricOutcome::Error { code, message }
+                }
+            };
+        }
     }
     pub fn androidx_biometric_requests(&self) -> &[String] {
         &self.fw.androidx.biometric_requests

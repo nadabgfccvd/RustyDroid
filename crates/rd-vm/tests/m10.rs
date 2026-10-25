@@ -497,33 +497,36 @@ fn location_manager_fused_client_haversine_and_route_playback() {
     );
 
     let act = e.fw.current_activity.expect("activity");
-    let Value::Obj(fused) = scall(
-        &mut e,
-        "Lcom/google/android/gms/location/LocationServices;",
-        "getFusedLocationProviderClient",
-        "(Landroid/app/Activity;)Lcom/google/android/gms/location/FusedLocationProviderClient;",
-        &[Value::Obj(act)],
-    ) else {
+    let Value::Obj(fused) = e
+        .invoke_static(
+            "Lcom/google/android/gms/location/LocationServices;",
+            "getFusedLocationProviderClient",
+            "(Landroid/app/Activity;)Lcom/google/android/gms/location/FusedLocationProviderClient;",
+            &[Value::Obj(act)],
+        )
+        .expect("getFusedLocationProviderClient")
+    else {
         panic!("expected FusedLocationProviderClient");
     };
-    let Value::Obj(req) = scall(
-        &mut e,
-        "Lcom/google/android/gms/location/LocationRequest;",
-        "create",
-        "()Lcom/google/android/gms/location/LocationRequest;",
-        &[],
-    ) else {
+    let Value::Obj(req) = e
+        .invoke_static(
+            "Lcom/google/android/gms/location/LocationRequest;",
+            "create",
+            "()Lcom/google/android/gms/location/LocationRequest;",
+            &[],
+        )
+        .expect("LocationRequest.create")
+    else {
         panic!("expected LocationRequest");
     };
     let fcb = dex_obj(&mut e, FUSED_CB);
-    icall(
-        &mut e,
-        "Lcom/google/android/gms/location/FusedLocationProviderClient;",
+    e.invoke_instance(
+        fused,
         "requestLocationUpdates",
         "(Lcom/google/android/gms/location/LocationRequest;Lcom/google/android/gms/location/LocationCallback;Landroid/os/Looper;)Lcom/google/android/gms/tasks/Task;",
-        fused,
         &[Value::Obj(req), Value::Obj(fcb), Value::Null],
-    );
+    )
+    .expect("FusedLocationProviderClient.requestLocationUpdates");
 
     // Load 2-waypoint route (-18.2444, -43.6003 Diamantina -> -19.9167, -43.9345 BH)
     let d1 = e

@@ -3,23 +3,17 @@
 //! and deterministic GPX / waypoint route playback.
 
 use super::{
-    alloc, alloc_with, array_len, array_list, bool_arg, call_dex, check_any_perm, double_arg,
-    float_arg, get_double_field, get_field, get_float_field, get_int_field, get_long_field,
-    get_str_field, illegal, long_arg, obj_arg, opt_str_arg, put_field, str_val,
+    alloc_with, array_len, array_list, bool_arg, call_dex, check_any_perm, double_arg, float_arg,
+    get_double_field, get_field, get_float_field, get_int_field, get_long_field, get_str_field,
+    illegal, long_arg, obj_arg, opt_str_arg, put_field, str_val,
 };
 use crate::{Engine, ObjRef, Value, VmExit};
 
 const LOCATION_MANAGER: &str = "Landroid/location/LocationManager;";
 const LOCATION: &str = "Landroid/location/Location;";
 const CRITERIA: &str = "Landroid/location/Criteria;";
-const LOCATION_SERVICES: &str = "Lcom/google/android/gms/location/LocationServices;";
-const FUSED_CLIENT: &str = "Lcom/google/android/gms/location/FusedLocationProviderClient;";
 const LOCATION_REQUEST: &str = "Lcom/google/android/gms/location/LocationRequest;";
-const LOCATION_REQUEST_BUILDER: &str = "Lcom/google/android/gms/location/LocationRequest$Builder;";
-const LOCATION_CALLBACK: &str = "Lcom/google/android/gms/location/LocationCallback;";
 const LOCATION_RESULT: &str = "Lcom/google/android/gms/location/LocationResult;";
-const GMS_TASK: &str = "Lcom/google/android/gms/tasks/Task;";
-const GMS_TASKS: &str = "Lcom/google/android/gms/tasks/Tasks;";
 
 const LOCATION_PERMS: &[&str] = &[
     "android.permission.ACCESS_FINE_LOCATION",
@@ -92,33 +86,58 @@ fn build_location_obj(vm: &mut Engine, fix: &LocationFix) -> Result<ObjRef, VmEx
         vm,
         LOCATION,
         vec![
-            ("rd_provider".into(), prov),
+            ("rd_provider".into(), prov.clone()),
+            ("mProvider".into(), prov),
             ("rd_lat".into(), Value::Double(fix.latitude)),
+            ("mLatitudeDegrees".into(), Value::Double(fix.latitude)),
             ("rd_lon".into(), Value::Double(fix.longitude)),
+            ("mLongitudeDegrees".into(), Value::Double(fix.longitude)),
             ("rd_alt".into(), Value::Double(fix.altitude)),
+            ("mAltitudeMeters".into(), Value::Double(fix.altitude)),
             ("rd_has_alt".into(), Value::Int(1)),
             ("rd_acc".into(), Value::Float(fix.accuracy)),
+            (
+                "mHorizontalAccuracyMeters".into(),
+                Value::Float(fix.accuracy),
+            ),
             ("rd_has_acc".into(), Value::Int(1)),
             ("rd_speed".into(), Value::Float(fix.speed)),
+            ("mSpeedMetersPerSecond".into(), Value::Float(fix.speed)),
             ("rd_has_speed".into(), Value::Int(1)),
             ("rd_bearing".into(), Value::Float(fix.bearing)),
+            ("mBearingDegrees".into(), Value::Float(fix.bearing)),
             ("rd_has_bearing".into(), Value::Int(1)),
             ("rd_time".into(), Value::Long(fix.time_ms)),
+            ("mTimeMs".into(), Value::Long(fix.time_ms)),
             ("rd_elapsed".into(), Value::Long(fix.elapsed_ns)),
+            ("mElapsedRealtimeNs".into(), Value::Long(fix.elapsed_ns)),
+            ("mFieldsMask".into(), Value::Int(0b1111)),
         ],
     )
 }
 
-fn completed_task(vm: &mut Engine, result: Value) -> Result<ObjRef, VmExit> {
-    alloc_with(
-        vm,
-        GMS_TASK,
-        vec![
-            ("rd_complete".into(), Value::Int(1)),
-            ("rd_success".into(), Value::Int(1)),
-            ("rd_result".into(), result),
-        ],
-    )
+fn loc_double(vm: &Engine, recv: ObjRef, primary: &str, fallback: &str) -> f64 {
+    if get_field(vm, recv, primary).is_some() {
+        get_double_field(vm, recv, primary, 0.0)
+    } else {
+        get_double_field(vm, recv, fallback, 0.0)
+    }
+}
+
+fn loc_float(vm: &Engine, recv: ObjRef, primary: &str, fallback: &str) -> f32 {
+    if get_field(vm, recv, primary).is_some() {
+        get_float_field(vm, recv, primary, 0.0)
+    } else {
+        get_float_field(vm, recv, fallback, 0.0)
+    }
+}
+
+fn loc_long(vm: &Engine, recv: ObjRef, primary: &str, fallback: &str) -> i64 {
+    if get_field(vm, recv, primary).is_some() {
+        get_long_field(vm, recv, primary, 0)
+    } else {
+        get_long_field(vm, recv, fallback, 0)
+    }
 }
 
 fn haversine_distance_and_bearing(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> (f32, f32, f32) {
@@ -192,19 +211,6 @@ pub(super) fn static_call(
                 elems[2] = Value::Float(b2);
             }
             Ok(Some(Value::Null))
-        }
-        (LOCATION_SERVICES, "getFusedLocationProviderClient") => {
-            Ok(Some(Value::Obj(alloc(vm, FUSED_CLIENT)?)))
-        }
-        (LOCATION_REQUEST, "create") => Ok(Some(Value::Obj(alloc(vm, LOCATION_REQUEST)?))),
-        (LOCATION_RESULT, "create") => {
-            let list_val = args.first().cloned().unwrap_or(Value::Null);
-            let r = alloc_with(vm, LOCATION_RESULT, vec![("rd_locations".into(), list_val)])?;
-            Ok(Some(Value::Obj(r)))
-        }
-        (GMS_TASKS, "forResult") => {
-            let res = args.first().cloned().unwrap_or(Value::Null);
-            Ok(Some(Value::Obj(completed_task(vm, res)?)))
         }
         _ => Ok(None),
     }
@@ -345,18 +351,28 @@ pub(super) fn instance_call(
                     if let Some(src) = obj_arg(args, 0) {
                         for k in [
                             "rd_provider",
+                            "mProvider",
                             "rd_lat",
+                            "mLatitudeDegrees",
                             "rd_lon",
+                            "mLongitudeDegrees",
                             "rd_alt",
+                            "mAltitudeMeters",
                             "rd_has_alt",
                             "rd_acc",
+                            "mHorizontalAccuracyMeters",
                             "rd_has_acc",
                             "rd_speed",
+                            "mSpeedMetersPerSecond",
                             "rd_has_speed",
                             "rd_bearing",
+                            "mBearingDegrees",
                             "rd_has_bearing",
                             "rd_time",
+                            "mTimeMs",
                             "rd_elapsed",
+                            "mElapsedRealtimeNs",
+                            "mFieldsMask",
                         ] {
                             if let Some(v) = get_field(vm, src, k) {
                                 put_field(vm, recv, k, v)?;
@@ -366,84 +382,151 @@ pub(super) fn instance_call(
                 } else {
                     let p = opt_str_arg(vm, args, 0)?.unwrap_or_default();
                     let pv = str_val(vm, p)?;
-                    put_field(vm, recv, "rd_provider", pv)?;
+                    put_field(vm, recv, "rd_provider", pv.clone())?;
+                    put_field(vm, recv, "mProvider", pv)?;
                 }
                 Ok(Some(Value::Null))
             }
             "getProvider" => Ok(Some(
-                get_field(vm, recv, "rd_provider").unwrap_or(Value::Null),
+                get_field(vm, recv, "rd_provider")
+                    .or_else(|| get_field(vm, recv, "mProvider"))
+                    .unwrap_or(Value::Null),
             )),
             "setProvider" => {
                 let p = args.first().cloned().unwrap_or(Value::Null);
-                put_field(vm, recv, "rd_provider", p)?;
+                put_field(vm, recv, "rd_provider", p.clone())?;
+                put_field(vm, recv, "mProvider", p)?;
                 Ok(Some(Value::Null))
             }
-            "getLatitude" => Ok(Some(Value::Double(get_double_field(
-                vm, recv, "rd_lat", 0.0,
+            "getLatitude" => Ok(Some(Value::Double(loc_double(
+                vm,
+                recv,
+                "rd_lat",
+                "mLatitudeDegrees",
             )))),
             "setLatitude" => {
-                put_field(vm, recv, "rd_lat", Value::Double(double_arg(args, 0)))?;
+                let v = Value::Double(double_arg(args, 0));
+                put_field(vm, recv, "rd_lat", v.clone())?;
+                put_field(vm, recv, "mLatitudeDegrees", v)?;
                 Ok(Some(Value::Null))
             }
-            "getLongitude" => Ok(Some(Value::Double(get_double_field(
-                vm, recv, "rd_lon", 0.0,
+            "getLongitude" => Ok(Some(Value::Double(loc_double(
+                vm,
+                recv,
+                "rd_lon",
+                "mLongitudeDegrees",
             )))),
             "setLongitude" => {
-                put_field(vm, recv, "rd_lon", Value::Double(double_arg(args, 0)))?;
+                let v = Value::Double(double_arg(args, 0));
+                put_field(vm, recv, "rd_lon", v.clone())?;
+                put_field(vm, recv, "mLongitudeDegrees", v)?;
                 Ok(Some(Value::Null))
             }
-            "getAltitude" => Ok(Some(Value::Double(get_double_field(
-                vm, recv, "rd_alt", 0.0,
+            "getAltitude" => Ok(Some(Value::Double(loc_double(
+                vm,
+                recv,
+                "rd_alt",
+                "mAltitudeMeters",
             )))),
             "setAltitude" => {
-                put_field(vm, recv, "rd_alt", Value::Double(double_arg(args, 0)))?;
+                let v = Value::Double(double_arg(args, 0));
+                put_field(vm, recv, "rd_alt", v.clone())?;
+                put_field(vm, recv, "mAltitudeMeters", v)?;
                 put_field(vm, recv, "rd_has_alt", Value::Int(1))?;
                 Ok(Some(Value::Null))
             }
-            "hasAltitude" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_has_alt", 0)))),
-            "getAccuracy" => Ok(Some(Value::Float(get_float_field(vm, recv, "rd_acc", 0.0)))),
+            "hasAltitude" => Ok(Some(Value::Int(
+                if get_int_field(vm, recv, "rd_has_alt", 0) != 0
+                    || (get_int_field(vm, recv, "mFieldsMask", 0) & 1) != 0
+                {
+                    1
+                } else {
+                    0
+                },
+            ))),
+            "getAccuracy" => Ok(Some(Value::Float(loc_float(
+                vm,
+                recv,
+                "rd_acc",
+                "mHorizontalAccuracyMeters",
+            )))),
             "setAccuracy" => {
-                put_field(vm, recv, "rd_acc", Value::Float(float_arg(args, 0)))?;
+                let v = Value::Float(float_arg(args, 0));
+                put_field(vm, recv, "rd_acc", v.clone())?;
+                put_field(vm, recv, "mHorizontalAccuracyMeters", v)?;
                 put_field(vm, recv, "rd_has_acc", Value::Int(1))?;
                 Ok(Some(Value::Null))
             }
-            "hasAccuracy" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_has_acc", 0)))),
-            "getSpeed" => Ok(Some(Value::Float(get_float_field(
-                vm, recv, "rd_speed", 0.0,
+            "hasAccuracy" => Ok(Some(Value::Int(
+                if get_int_field(vm, recv, "rd_has_acc", 0) != 0
+                    || (get_int_field(vm, recv, "mFieldsMask", 0) & 8) != 0
+                {
+                    1
+                } else {
+                    0
+                },
+            ))),
+            "getSpeed" => Ok(Some(Value::Float(loc_float(
+                vm,
+                recv,
+                "rd_speed",
+                "mSpeedMetersPerSecond",
             )))),
             "setSpeed" => {
-                put_field(vm, recv, "rd_speed", Value::Float(float_arg(args, 0)))?;
+                let v = Value::Float(float_arg(args, 0));
+                put_field(vm, recv, "rd_speed", v.clone())?;
+                put_field(vm, recv, "mSpeedMetersPerSecond", v)?;
                 put_field(vm, recv, "rd_has_speed", Value::Int(1))?;
                 Ok(Some(Value::Null))
             }
-            "hasSpeed" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_has_speed", 0)))),
-            "getBearing" => Ok(Some(Value::Float(get_float_field(
+            "hasSpeed" => Ok(Some(Value::Int(
+                if get_int_field(vm, recv, "rd_has_speed", 0) != 0
+                    || (get_int_field(vm, recv, "mFieldsMask", 0) & 2) != 0
+                {
+                    1
+                } else {
+                    0
+                },
+            ))),
+            "getBearing" => Ok(Some(Value::Float(loc_float(
                 vm,
                 recv,
                 "rd_bearing",
-                0.0,
+                "mBearingDegrees",
             )))),
             "setBearing" => {
-                put_field(vm, recv, "rd_bearing", Value::Float(float_arg(args, 0)))?;
+                let v = Value::Float(float_arg(args, 0));
+                put_field(vm, recv, "rd_bearing", v.clone())?;
+                put_field(vm, recv, "mBearingDegrees", v)?;
                 put_field(vm, recv, "rd_has_bearing", Value::Int(1))?;
                 Ok(Some(Value::Null))
             }
-            "hasBearing" => Ok(Some(Value::Int(get_int_field(
-                vm,
-                recv,
-                "rd_has_bearing",
-                0,
-            )))),
-            "getTime" => Ok(Some(Value::Long(get_long_field(vm, recv, "rd_time", 0)))),
+            "hasBearing" => Ok(Some(Value::Int(
+                if get_int_field(vm, recv, "rd_has_bearing", 0) != 0
+                    || (get_int_field(vm, recv, "mFieldsMask", 0) & 4) != 0
+                {
+                    1
+                } else {
+                    0
+                },
+            ))),
+            "getTime" => Ok(Some(Value::Long(loc_long(vm, recv, "rd_time", "mTimeMs")))),
             "setTime" => {
-                put_field(vm, recv, "rd_time", Value::Long(long_arg(args, 0)))?;
+                let v = Value::Long(long_arg(args, 0));
+                put_field(vm, recv, "rd_time", v.clone())?;
+                put_field(vm, recv, "mTimeMs", v)?;
                 Ok(Some(Value::Null))
             }
-            "getElapsedRealtimeNanos" => {
-                Ok(Some(Value::Long(get_long_field(vm, recv, "rd_elapsed", 0))))
-            }
+            "getElapsedRealtimeNanos" => Ok(Some(Value::Long(loc_long(
+                vm,
+                recv,
+                "rd_elapsed",
+                "mElapsedRealtimeNs",
+            )))),
             "setElapsedRealtimeNanos" => {
-                put_field(vm, recv, "rd_elapsed", Value::Long(long_arg(args, 0)))?;
+                let v = Value::Long(long_arg(args, 0));
+                put_field(vm, recv, "rd_elapsed", v.clone())?;
+                put_field(vm, recv, "mElapsedRealtimeNs", v)?;
                 Ok(Some(Value::Null))
             }
             "isFromMockProvider" | "isMock" => Ok(Some(Value::Int(0))),
@@ -452,10 +535,10 @@ pub(super) fn instance_call(
                     return Err(illegal("other Location is null"));
                 };
                 let (d, _, _) = haversine_distance_and_bearing(
-                    get_double_field(vm, recv, "rd_lat", 0.0),
-                    get_double_field(vm, recv, "rd_lon", 0.0),
-                    get_double_field(vm, other, "rd_lat", 0.0),
-                    get_double_field(vm, other, "rd_lon", 0.0),
+                    loc_double(vm, recv, "rd_lat", "mLatitudeDegrees"),
+                    loc_double(vm, recv, "rd_lon", "mLongitudeDegrees"),
+                    loc_double(vm, other, "rd_lat", "mLatitudeDegrees"),
+                    loc_double(vm, other, "rd_lon", "mLongitudeDegrees"),
                 );
                 Ok(Some(Value::Float(d)))
             }
@@ -464,17 +547,19 @@ pub(super) fn instance_call(
                     return Err(illegal("other Location is null"));
                 };
                 let (_, b, _) = haversine_distance_and_bearing(
-                    get_double_field(vm, recv, "rd_lat", 0.0),
-                    get_double_field(vm, recv, "rd_lon", 0.0),
-                    get_double_field(vm, other, "rd_lat", 0.0),
-                    get_double_field(vm, other, "rd_lon", 0.0),
+                    loc_double(vm, recv, "rd_lat", "mLatitudeDegrees"),
+                    loc_double(vm, recv, "rd_lon", "mLongitudeDegrees"),
+                    loc_double(vm, other, "rd_lat", "mLatitudeDegrees"),
+                    loc_double(vm, other, "rd_lon", "mLongitudeDegrees"),
                 );
                 Ok(Some(Value::Float(b)))
             }
             "toString" => {
-                let p = get_str_field(vm, recv, "rd_provider").unwrap_or_else(|| "gps".into());
-                let lat = get_double_field(vm, recv, "rd_lat", 0.0);
-                let lon = get_double_field(vm, recv, "rd_lon", 0.0);
+                let p = get_str_field(vm, recv, "rd_provider")
+                    .or_else(|| get_str_field(vm, recv, "mProvider"))
+                    .unwrap_or_else(|| "gps".into());
+                let lat = loc_double(vm, recv, "rd_lat", "mLatitudeDegrees");
+                let lon = loc_double(vm, recv, "rd_lon", "mLongitudeDegrees");
                 Ok(Some(str_val(
                     vm,
                     format!("Location[{p} {lat:.5},{lon:.5}]"),
@@ -492,139 +577,8 @@ pub(super) fn instance_call(
             | "setCostAllowed" => Ok(Some(Value::Null)),
             _ => Ok(None),
         },
-        LOCATION_CALLBACK => match name {
-            "<init>" => Ok(Some(Value::Null)),
-            _ => Ok(None),
-        },
-        LOCATION_REQUEST | LOCATION_REQUEST_BUILDER => match name {
-            "<init>" => Ok(Some(Value::Null)),
-            "build" => Ok(Some(Value::Obj(alloc(vm, LOCATION_REQUEST)?))),
-            "setInterval"
-            | "setFastestInterval"
-            | "setPriority"
-            | "setMinUpdateIntervalMillis"
-            | "setMinUpdateDistanceMeters"
-            | "setMaxUpdates"
-            | "setGranularity"
-            | "setWaitForAccurateLocation" => Ok(Some(Value::Obj(recv))),
-            _ => Ok(None),
-        },
-        LOCATION_RESULT => match name {
-            "getLastLocation" => {
-                if let Some(Value::Obj(list_ref)) = get_field(vm, recv, "rd_locations") {
-                    if let Some(crate::framework::HostObj::List { elems }) =
-                        vm.fw.objects.get(&list_ref)
-                    {
-                        return Ok(Some(elems.last().cloned().unwrap_or(Value::Null)));
-                    }
-                }
-                Ok(Some(Value::Null))
-            }
-            "getLocations" => Ok(Some(
-                get_field(vm, recv, "rd_locations").unwrap_or(Value::Null),
-            )),
-            _ => Ok(None),
-        },
-        FUSED_CLIENT => match name {
-            "getLastLocation" | "getCurrentLocation" => {
-                check_any_perm(vm, LOCATION_PERMS)?;
-                let mut fix = vm.fw.vdev.location.current.clone();
-                fix.provider = "fused".into();
-                let loc = build_location_obj(vm, &fix)?;
-                Ok(Some(Value::Obj(completed_task(vm, Value::Obj(loc))?)))
-            }
-            "requestLocationUpdates" => {
-                check_any_perm(vm, LOCATION_PERMS)?;
-                // (LocationRequest, LocationCallback, Looper) or (LocationRequest, Executor, LocationCallback)
-                let cb = args.iter().skip(1).find_map(|v| match v {
-                    Value::Obj(r) => {
-                        let c = vm.heap.class_of(*r).ok().unwrap_or("");
-                        if c != "Landroid/os/Looper;" {
-                            Some(*r)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                });
-                if let Some(cb_ref) = cb {
-                    let exists = vm
-                        .fw
-                        .vdev
-                        .location
-                        .listeners
-                        .iter()
-                        .any(|r| r.listener == cb_ref && r.fused_callback);
-                    if !exists {
-                        vm.fw.vdev.location.listeners.push(LocationListenerReg {
-                            listener: cb_ref,
-                            provider: "fused".into(),
-                            fused_callback: true,
-                            single_shot: false,
-                        });
-                    }
-                }
-                Ok(Some(Value::Obj(completed_task(vm, Value::Null)?)))
-            }
-            "removeLocationUpdates" => {
-                if let Some(cb_ref) = obj_arg(args, 0) {
-                    vm.fw
-                        .vdev
-                        .location
-                        .listeners
-                        .retain(|r| r.listener != cb_ref);
-                }
-                Ok(Some(Value::Obj(completed_task(vm, Value::Null)?)))
-            }
-            "flushLocations" => Ok(Some(Value::Obj(completed_task(vm, Value::Null)?))),
-            _ => Ok(None),
-        },
-        GMS_TASK => match name {
-            "isComplete" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_complete", 1)))),
-            "isSuccessful" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_success", 1)))),
-            "isCanceled" => Ok(Some(Value::Int(0))),
-            "getResult" => Ok(Some(
-                get_field(vm, recv, "rd_result").unwrap_or(Value::Null),
-            )),
-            "getException" => Ok(Some(Value::Null)),
-            "addOnSuccessListener" => {
-                if get_int_field(vm, recv, "rd_success", 1) != 0 {
-                    if let Some(listener) = args.last().and_then(|v| match v {
-                        Value::Obj(r) => Some(*r),
-                        _ => None,
-                    }) {
-                        let res = get_field(vm, recv, "rd_result").unwrap_or(Value::Null);
-                        let _ = call_dex(
-                            vm,
-                            listener,
-                            "onSuccess",
-                            "(Ljava/lang/Object;)V",
-                            vec![res],
-                        )?;
-                    }
-                }
-                Ok(Some(Value::Obj(recv)))
-            }
-            "addOnCompleteListener" => {
-                if get_int_field(vm, recv, "rd_complete", 1) != 0 {
-                    if let Some(listener) = args.last().and_then(|v| match v {
-                        Value::Obj(r) => Some(*r),
-                        _ => None,
-                    }) {
-                        let _ = call_dex(
-                            vm,
-                            listener,
-                            "onComplete",
-                            "(Lcom/google/android/gms/tasks/Task;)V",
-                            vec![Value::Obj(recv)],
-                        )?;
-                    }
-                }
-                Ok(Some(Value::Obj(recv)))
-            }
-            "addOnFailureListener" | "addOnCanceledListener" => Ok(Some(Value::Obj(recv))),
-            _ => Ok(None),
-        },
+        // GMS Location & Tasks (`FusedLocationProviderClient`, `LocationRequest`,
+        // `LocationResult`, `LocationCallback`, `Task`) defer to `crate::gms` (`#229`).
         _ => Ok(None),
     }
 }
@@ -709,12 +663,18 @@ impl Engine {
     }
 
     fn m10_deliver_location_fix(&mut self, fix: &LocationFix) -> Result<usize, VmExit> {
+        let gms_count = self.gms_location_callback_count();
+        // S8 (#229, lado GMS): o shim do Apêndice E lê o fix deste estado
+        // e entrega aos seus LocationCallbacks. NÃO chamar
+        // gms_push_location aqui: ele delega em m10_set_location e
+        // recursionaria nesta entrega.
+        crate::gms::notify_fix_changed(self);
         let regs = self.fw.vdev.location.listeners.clone();
         if regs.is_empty() {
-            return Ok(0);
+            return Ok(gms_count);
         }
         self.fw.vdev.location.listeners.retain(|r| !r.single_shot);
-        self.with_host_roots(|vm| {
+        let fw_count = self.with_host_roots(|vm| {
             let mut count = 0usize;
             for reg in regs {
                 let mut reg_fix = fix.clone();
@@ -746,7 +706,8 @@ impl Engine {
                     count += 1;
                 }
             }
-            Ok(count)
-        })
+            Ok::<usize, VmExit>(count)
+        })?;
+        Ok(gms_count + fw_count)
     }
 }

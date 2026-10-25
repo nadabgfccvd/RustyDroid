@@ -1,7 +1,9 @@
 //! `MEDIA-08`: Virtual Biometrics (`android.hardware.biometrics`, `androidx.biometric`,
 //! and `android.hardware.fingerprint.FingerprintManager`).
 
-use super::{alloc, alloc_with, call_dex, get_field, illegal, obj_arg, put_field, str_val};
+use super::{
+    alloc, alloc_with, call_dex, get_field, get_str_field, illegal, obj_arg, put_field, str_val,
+};
 use crate::{Engine, ObjRef, Value, VmExit};
 
 const FW_BM_MANAGER: &str = "Landroid/hardware/biometrics/BiometricManager;";
@@ -240,14 +242,73 @@ pub(super) fn instance_call(
         },
         AX_BM_INFO_BUILDER => match name {
             "<init>" => Ok(Some(Value::Null)),
-            "setTitle"
-            | "setSubtitle"
-            | "setDescription"
-            | "setNegativeButtonText"
-            | "setConfirmationRequired"
+            "setTitle" => {
+                put_field(
+                    vm,
+                    recv,
+                    "rd_title",
+                    args.first().cloned().unwrap_or(Value::Null),
+                )?;
+                Ok(Some(Value::Obj(recv)))
+            }
+            "setSubtitle" => {
+                put_field(
+                    vm,
+                    recv,
+                    "rd_subtitle",
+                    args.first().cloned().unwrap_or(Value::Null),
+                )?;
+                Ok(Some(Value::Obj(recv)))
+            }
+            "setDescription" => {
+                put_field(
+                    vm,
+                    recv,
+                    "rd_description",
+                    args.first().cloned().unwrap_or(Value::Null),
+                )?;
+                Ok(Some(Value::Obj(recv)))
+            }
+            "setNegativeButtonText" => {
+                put_field(
+                    vm,
+                    recv,
+                    "rd_negative",
+                    args.first().cloned().unwrap_or(Value::Null),
+                )?;
+                Ok(Some(Value::Obj(recv)))
+            }
+            "setConfirmationRequired"
             | "setDeviceCredentialAllowed"
             | "setAllowedAuthenticators" => Ok(Some(Value::Obj(recv))),
-            "build" => Ok(Some(Value::Obj(alloc(vm, AX_BM_INFO)?))),
+            "build" => {
+                let title = get_str_field(vm, recv, "rd_title").unwrap_or_default();
+                if title.is_empty() {
+                    return Err(illegal(
+                        "Title must be set and non-empty (BiometricPrompt.PromptInfo)",
+                    ));
+                }
+                let mut fields = Vec::new();
+                for k in ["rd_title", "rd_subtitle", "rd_description", "rd_negative"] {
+                    if let Some(v) = get_field(vm, recv, k) {
+                        fields.push((k.into(), v));
+                    }
+                }
+                Ok(Some(Value::Obj(alloc_with(vm, AX_BM_INFO, fields)?)))
+            }
+            _ => Ok(None),
+        },
+        AX_BM_INFO => match name {
+            "getTitle" => Ok(Some(get_field(vm, recv, "rd_title").unwrap_or(Value::Null))),
+            "getSubtitle" => Ok(Some(
+                get_field(vm, recv, "rd_subtitle").unwrap_or(Value::Null),
+            )),
+            "getDescription" => Ok(Some(
+                get_field(vm, recv, "rd_description").unwrap_or(Value::Null),
+            )),
+            "getNegativeButtonText" => Ok(Some(
+                get_field(vm, recv, "rd_negative").unwrap_or(Value::Null),
+            )),
             _ => Ok(None),
         },
         FW_BM_PROMPT => match name {
@@ -279,6 +340,10 @@ pub(super) fn instance_call(
                 Ok(Some(Value::Null))
             }
             "authenticate" => {
+                let title = obj_arg(args, 0)
+                    .and_then(|r| get_str_field(vm, r, "rd_title"))
+                    .unwrap_or_default();
+                vm.fw.androidx.biometric_requests.push(title);
                 let crypto = if args.len() >= 2 {
                     obj_arg(args, 1)
                 } else {
@@ -393,6 +458,19 @@ impl Engine {
     ) -> Result<bool, VmExit> {
         if persist_auto {
             self.fw.vdev.biometrics.auto_outcome = outcome.clone();
+            match &outcome {
+                BiometricOutcome::Success => {
+                    self.fw.androidx.biometric_outcome = crate::androidx::BiometricOutcome::Success;
+                }
+                BiometricOutcome::Failed => {
+                    self.fw.androidx.biometric_outcome = crate::androidx::BiometricOutcome::Failed;
+                }
+                BiometricOutcome::Error { code, message } => {
+                    self.fw.androidx.biometric_outcome =
+                        crate::androidx::BiometricOutcome::Error(*code, message.clone());
+                }
+                BiometricOutcome::Pending => {}
+            }
         }
         let active = match &outcome {
             BiometricOutcome::Failed => self.fw.vdev.biometrics.active_prompt.clone(),
@@ -408,5 +486,7 @@ impl Engine {
     pub fn m10_set_biometric_hardware(&mut self, present: bool, enrolled: bool) {
         self.fw.vdev.biometrics.hardware_present = present;
         self.fw.vdev.biometrics.enrolled = enrolled;
+        self.fw.androidx.biometric_can_authenticate =
+            self.fw.vdev.biometrics.can_authenticate_code();
     }
 }

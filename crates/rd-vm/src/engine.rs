@@ -298,10 +298,22 @@ impl Engine {
         if let Some(v) = crate::m9::call_static(self, class, method, sig, &args)? {
             return Ok(v);
         }
+        #[cfg(feature = "virtual-devices")]
+        if self.fw.vdev.virtual_hardware_enabled {
+            if let Some(v) = crate::m10::call_static(self, class, method, sig, &args)? {
+                return Ok(v);
+            }
+        }
         if let Some(v) = intrinsics::call_static_intrinsic(self, class, method, sig, &args)? {
             return Ok(v);
         }
         if let Some(v) = crate::m8::call_m8_static(self, class, method, sig, &args)? {
+            return Ok(v);
+        }
+        if let Some(v) = crate::androidx::call_static(self, class, method, sig, &args)? {
+            return Ok(v);
+        }
+        if let Some(v) = crate::gms::call_static(self, class, method, sig, &args)? {
             return Ok(v);
         }
         if class.starts_with("Landroid/") {
@@ -368,24 +380,54 @@ impl Engine {
             })
             .collect::<Result<Vec<_>, VmExit>>()?;
         let class = self.heap.class_of(recv)?.to_string();
+        if class == "Ljava/lang/Object;" && method == "<init>" {
+            return Ok(Value::Null);
+        }
+        // Host-first dispatch chain aligned with `interp::do_invoke` (`#232`):
+        // host shims return `None` when a real DEX body should run.
+        if let Some(v) = intrinsics::call_instance_intrinsic_mref(
+            self, &class, &class, method, sig, recv, &args,
+        )? {
+            return Ok(v);
+        }
+        #[cfg(feature = "advanced-components")]
+        if let Some(v) = crate::m9::call_instance(self, &class, method, sig, recv, &args)? {
+            return Ok(v);
+        }
+        #[cfg(feature = "virtual-devices")]
+        if self.fw.vdev.virtual_hardware_enabled {
+            if let Some(v) = crate::m10::call_instance(self, &class, method, sig, recv, &args)? {
+                return Ok(v);
+            }
+        }
+        if let Some(v) = crate::m8::call_m8_instance(self, &class, method, sig, recv, &args)? {
+            return Ok(v);
+        }
+        if let Some(v) = crate::androidx::call_instance(self, &class, method, sig, recv, &args)? {
+            return Ok(v);
+        }
+        if let Some(v) =
+            crate::interp::viewmodel_host_instance(self, &class, method, sig, recv, &args)?
+        {
+            return Ok(v);
+        }
+        if let Some(v) = crate::gms::call_instance(self, &class, method, sig, recv, &args)? {
+            return Ok(v);
+        }
         let Some((dex_idx, def, m)) = self.cp.resolve_method(&class, method, sig) else {
-            // Host receiver (String, collections, java.io, android.*): the
-            // same host chains the interpreter's invoke uses.
-            if let Some(v) = intrinsics::call_instance_intrinsic_mref(
-                self, &class, &class, method, sig, recv, &args,
-            )? {
-                return Ok(v);
+            if method != "<init>" || self.cp.find_class(&class).is_none() {
+                if let Some(v) =
+                    crate::interp::inherited_android_host(self, &class, method, sig, recv, &args)?
+                {
+                    return Ok(v);
+                }
             }
-            if let Some(v) = crate::m8::call_m8_instance(self, &class, method, sig, recv, &args)? {
-                return Ok(v);
-            }
-            if let Some(v) =
-                crate::interp::inherited_android_host(self, &class, method, sig, recv, &args)?
-            {
-                return Ok(v);
-            }
-            if let Some(v) = crate::view_props::fallback(self, &class, method, sig, recv, &args)? {
-                return Ok(v);
+            if class.starts_with("Landroid/") {
+                if let Some(v) =
+                    crate::view_props::fallback(self, &class, method, sig, recv, &args)?
+                {
+                    return Ok(v);
+                }
             }
             return Err(crate::classpath::unresolved_method(&class, method, sig).into());
         };

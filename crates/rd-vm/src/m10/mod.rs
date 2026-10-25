@@ -226,6 +226,12 @@ impl Engine {
     /// absent-hardware / no-service default profile in `intrinsics.rs`.
     pub fn m10_enable_virtual_devices(&mut self) {
         self.fw.vdev.virtual_hardware_enabled = true;
+        let fix = self.fw.vdev.location.current.clone();
+        if self.fw.vdev.location.gps_enabled || self.fw.vdev.location.network_enabled {
+            self.gms_set_location_fix(fix.latitude, fix.longitude, fix.accuracy);
+        }
+        self.fw.androidx.biometric_can_authenticate =
+            self.fw.vdev.biometrics.can_authenticate_code();
     }
 }
 
