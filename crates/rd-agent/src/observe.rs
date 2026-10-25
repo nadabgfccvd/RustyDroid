@@ -307,8 +307,9 @@ impl AgentSession {
         let finished = eng.activity_is_finished();
         let mut draw_error = None;
         // Só é mutado no bloco de acessibilidade virtual (feature
-        // advanced-components); sem ela, o `mut` é desnecessário.
-        #[allow(unused_mut)]
+        // advanced-components); sem ela, o `mut` é desnecessário. O allow
+        // vale apenas nesse combo, para o lint continuar ativo no default.
+        #[cfg_attr(not(feature = "advanced-components"), allow(unused_mut))]
         let mut model = if finished {
             // no window any more: never serve the last frame as if it were live
             ScreenModel {
