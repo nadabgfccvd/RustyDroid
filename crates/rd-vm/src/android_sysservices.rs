@@ -2112,7 +2112,8 @@ fn compute_gesture_obb(vm: &mut Engine, original: &[f32]) -> Result<Value, VmExi
     }
     Ok(Value::Obj(gesture_obb_object(
         vm,
-        (f64::from(angle) * 180.0 / core::f64::consts::PI) as f32,
+        // AOSP evaluates `angle * 180` in float before dividing by PI.
+        (f64::from(angle * 180.0) / core::f64::consts::PI) as f32,
         centroid[0],
         centroid[1],
         max_x - min_x,
