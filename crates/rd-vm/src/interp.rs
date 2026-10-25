@@ -299,7 +299,12 @@ pub(crate) fn exec_frame(
                 let Kind::RegIndex(a, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let s = vm.cp.string(dex_idx, *i as u32);
+                let s = {
+                    let _t0 = vm.trace_start();
+                    let s = vm.cp.string(dex_idx, *i as u32);
+                    vm.trace_string(_t0);
+                    s
+                };
                 let r = intrinsics::alloc_string(vm, s)?;
                 regs[*a as usize] = Value::Obj(r);
             }
@@ -307,7 +312,12 @@ pub(crate) fn exec_frame(
                 let Kind::RegIndex32(a, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let s = vm.cp.string(dex_idx, *i);
+                let s = {
+                    let _t0 = vm.trace_start();
+                    let s = vm.cp.string(dex_idx, *i);
+                    vm.trace_string(_t0);
+                    s
+                };
                 let r = intrinsics::alloc_string(vm, s)?;
                 regs[*a as usize] = Value::Obj(r);
             }
@@ -1558,9 +1568,13 @@ fn do_invoke(
         if let Some(v) = crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
             return Ok(v);
         }
-        if let Some(v) =
-            intrinsics::call_static_intrinsic(vm, &mref.class, &mref.name, &mref.proto, slots)?
-        {
+        if let Some(v) = {
+            let _t0 = vm.trace_start();
+            let r =
+                intrinsics::call_static_intrinsic(vm, &mref.class, &mref.name, &mref.proto, slots);
+            vm.trace_intrinsic(_t0);
+            r
+        }? {
             return Ok(v);
         }
         // M8: subsistemas de compat real (OkHttp/WorkManager/Room/Uri…)
@@ -1600,7 +1614,10 @@ fn do_invoke(
             };
         }
         vm.ensure_initialized(&mref.class)?;
-        let Some((d2, def, m)) = vm.cp.resolve_method(&mref.class, &mref.name, &mref.proto) else {
+        let _t0 = vm.trace_start();
+        let resolved = vm.cp.resolve_method(&mref.class, &mref.name, &mref.proto);
+        vm.trace_resolve(_t0);
+        let Some((d2, def, m)) = resolved else {
             return Err(
                 crate::classpath::unresolved_method(&mref.class, &mref.name, &mref.proto).into(),
             );
@@ -1658,15 +1675,20 @@ fn do_invoke(
     }
 
     // intrínseco de instância (String/StringBuilder/Throwable/Object)
-    if let Some(v) = intrinsics::call_instance_intrinsic_mref(
-        vm,
-        &recv_class,
-        &mref.class,
-        &mref.name,
-        &mref.proto,
-        recv,
-        &slots[1..],
-    )? {
+    if let Some(v) = {
+        let _t0 = vm.trace_start();
+        let r = intrinsics::call_instance_intrinsic_mref(
+            vm,
+            &recv_class,
+            &mref.class,
+            &mref.name,
+            &mref.proto,
+            recv,
+            &slots[1..],
+        );
+        vm.trace_intrinsic(_t0);
+        r
+    }? {
         return Ok(v);
     }
     // Covariant bridge: `Appendable.append(..)Appendable` on a host
@@ -1679,15 +1701,20 @@ fn do_invoke(
             && vm.cp.is_subtype(&recv_class, ret)
         {
             let bridged = format!("{params}){recv_class}");
-            if let Some(v) = intrinsics::call_instance_intrinsic_mref(
-                vm,
-                &recv_class,
-                &recv_class,
-                &mref.name,
-                &bridged,
-                recv,
-                &slots[1..],
-            )? {
+            if let Some(v) = {
+                let _t0 = vm.trace_start();
+                let r = intrinsics::call_instance_intrinsic_mref(
+                    vm,
+                    &recv_class,
+                    &recv_class,
+                    &mref.name,
+                    &bridged,
+                    recv,
+                    &slots[1..],
+                );
+                vm.trace_intrinsic(_t0);
+                r
+            }? {
                 return Ok(v);
             }
         }
@@ -1736,7 +1763,12 @@ fn do_invoke(
     // Handler/Intent/Bundle) — a classe DECLARANTE do method ref é android/*
     if mref.class.starts_with("Landroid/") {
         if !is_direct && !is_super {
-            if let Some((d2, def, m)) = vm.cp.resolve_method(&recv_class, &mref.name, &mref.proto) {
+            if let Some((d2, def, m)) = {
+                let _t0 = vm.trace_start();
+                let r = vm.cp.resolve_method(&recv_class, &mref.name, &mref.proto);
+                vm.trace_resolve(_t0);
+                r
+            } {
                 return vm.call(d2, def, &m, raw.to_vec());
             }
         }
@@ -1791,7 +1823,10 @@ fn do_invoke(
         recv_class.clone()
     };
 
-    let Some((d2, def, m)) = vm.cp.resolve_method(&start_class, &mref.name, &mref.proto) else {
+    let _t0 = vm.trace_start();
+    let resolved = vm.cp.resolve_method(&start_class, &mref.name, &mref.proto);
+    vm.trace_resolve(_t0);
+    let Some((d2, def, m)) = resolved else {
         // D8 may use an app subclass as the inherited Android method owner.
         // DEX overrides above always win; direct app constructors stay direct.
         if !is_direct || is_super {
