@@ -22,9 +22,9 @@ fn op31i_local(op: u8, reg: u8, lit: i32) -> Vec<u16> {
 
 /// APK com Main.onCreate: System.out.println("hi do app") + setContentView.
 /// Layout: LinearLayout(vertical) { TextView @string/hello }.
-/// minSdk=26: a execução CLI recusa abaixo do piso (BELOW_FLOOR) — a
-/// fixture anterior (build_apk, min_sdk=1) só rodava porque o `rd app`
-/// ignorava o piso que o MCP já aplicava.
+/// minSdk=26 (valor realista, acima do piso 9 do ADR 016): a fixture
+/// anterior (build_apk, min_sdk=1) só rodava porque o `rd app`
+/// ignorava o piso que o MCP já aplicava — e 1 segue abaixo do piso.
 fn build_app_apk() -> Vec<u8> {
     build_app_apk_sdk(26)
 }
@@ -297,15 +297,16 @@ fn app_run_fuel_exhaustion_is_a_structured_vm_error() {
     assert_eq!(error["module_id"], "rd-vm");
 }
 
-/// APK-Tester (PR-Agent, item 5b): `rd app run` EXECUTAVA minSdk<26
+/// APK-Tester (PR-Agent, item 5b): `rd app run` EXECUTAVA abaixo do piso
 /// silenciosamente, enquanto o MCP `install` recusava com BELOW_FLOOR. O
-/// piso API 26 é contrato de execução em todas as bordas: o CLI recusa com
-/// o mesmo código ANTES de qualquer código do app rodar.
+/// piso de API é contrato de execução em todas as bordas: o CLI recusa com
+/// o mesmo código ANTES de qualquer código do app rodar. (O piso é 9
+/// desde o ADR 016 — a fixture usa 8, o degrau imediatamente abaixo.)
 #[test]
 fn app_run_refuses_below_floor() {
     let tmp = tempfile_dir();
     let path = tmp.join("below-floor.apk");
-    std::fs::write(&path, build_app_apk_sdk(24)).expect("apk fixture minSdk=24");
+    std::fs::write(&path, build_app_apk_sdk(8)).expect("apk fixture minSdk=8");
     let out = Command::new(env!("CARGO_BIN_EXE_rd"))
         .args(["app", "run", path.to_string_lossy().as_ref(), "--json"])
         .stdout(Stdio::piped())
@@ -317,7 +318,7 @@ fn app_run_refuses_below_floor() {
     assert_eq!(
         out.status.code(),
         Some(1),
-        "minSdk=24 recusa com exit 1. stdout: {stdout} stderr: {stderr}"
+        "minSdk=8 recusa com exit 1. stdout: {stdout} stderr: {stderr}"
     );
     assert!(
         !stderr.contains("hi do app"),

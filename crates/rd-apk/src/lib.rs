@@ -20,8 +20,9 @@ pub use zip::Zip;
 use serde::Serialize;
 use std::path::Path;
 
-/// Piso de API do RustyDroid (spec: minSdk 26 — Android 8.0 Oreo).
-pub const FLOOR_MIN_SDK: u32 = 26;
+/// Piso de API do RustyDroid (spec/ADR 016: minSdk 9 — Android 2.3
+/// Gingerbread; APIs 9–25 executam em modo best-effort, tier T0).
+pub const FLOOR_MIN_SDK: u32 = 9;
 
 pub const MODULE_ID: &str = "rd-apk";
 
@@ -175,7 +176,7 @@ impl Apk {
 
     /// Verificação do piso de API (spec Apêndice A).
     /// Parse/inspect funcionam para qualquer minSdk; **execução** é que responde
-    /// `BELOW_FLOOR` quando minSdk < 26.
+    /// `BELOW_FLOOR` quando minSdk < 9 (ADR 016).
     pub fn floor_status(&self) -> FloorStatus {
         if self.manifest.min_sdk < FLOOR_MIN_SDK {
             FloorStatus::BelowFloor {

@@ -1276,10 +1276,13 @@ fn cmd_behavior(
     dd.require("behavior-switches.toml")?;
     let table = SwitchTable::load(dd.path.as_deref())?;
     let target = target.unwrap_or(36);
-    if !(26..=36).contains(&target) {
+    if !(rd_apk::FLOOR_MIN_SDK..=36).contains(&target) {
         return Err(RdError::new(
             "OUT_OF_RANGE",
-            format!("target {target} fora do piso/teto (26–36)"),
+            format!(
+                "target {target} fora do piso/teto ({}–36)",
+                rd_apk::FLOOR_MIN_SDK
+            ),
             "fd-behavior",
         ));
     }
@@ -1415,11 +1418,11 @@ fn boot_app(
     fuel: Option<u64>,
 ) -> Result<(rd_vm::Engine, String, String), RdError> {
     let apk = open_apk(path).ok();
-    // Piso API 26 é contrato de EXECUÇÃO em todas as superfícies: o MCP
+    // O piso de API é contrato de EXECUÇÃO em todas as superfícies: o MCP
     // `install` já recusava com BELOW_FLOOR, mas o caminho CLI executava
-    // minSdk<26 silenciosamente (rodada end-to-end APK-Tester do PR-Agent).
-    // Mesmo código/causa/sugestão da borda MCP. Sem APK (arquivo .dex
-    // solto) não há manifest nem piso a aplicar.
+    // abaixo do piso silenciosamente (rodada end-to-end APK-Tester do
+    // PR-Agent). Mesmo código/causa/sugestão da borda MCP. Sem APK
+    // (arquivo .dex solto) não há manifest nem piso a aplicar.
     if let Some(a) = &apk {
         if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } = a.floor_status() {
             return Err(RdError::new(
@@ -1429,7 +1432,7 @@ fn boot_app(
                 ),
                 "rd-cli",
             )
-            .with_suggestion("use um APK com minSdkVersion ≥ 26"));
+            .with_suggestion(format!("use um APK com minSdkVersion ≥ {floor}")));
         }
     }
     let files = match &apk {

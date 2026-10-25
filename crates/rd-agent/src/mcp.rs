@@ -667,7 +667,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "install",
             description:
-                "Instala um APK na sessão (abre, valida o piso API 26 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.",
+                "Instala um APK na sessão (abre, valida o piso API 9 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.",
             schema: obj(
                 serde_json::json!({ "apk": { "type": "string", "description": "caminho do arquivo .apk dentro do sandbox" } }),
                 &["apk"],
@@ -1339,14 +1339,15 @@ impl AgentSession {
         let apk =
             Apk::from_bytes(bytes).map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
         phase("install_apk_from_bytes", t_open);
-        // piso API 26 é contrato: instalação recusa com erro tipado
+        // piso de API é contrato (ADR 016: 9): instalação recusa com erro tipado
         if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } = apk.floor_status() {
+            let suggestion = format!("use um APK com minSdkVersion ≥ {floor}");
             return Err(agent_error(
                 "BELOW_FLOOR",
                 format!(
                     "minSdkVersion={min_sdk} abaixo do piso {floor} — o app não roda neste runtime"
                 ),
-                Some("use um APK com minSdkVersion ≥ 26"),
+                Some(&suggestion),
             ));
         }
         // Tudo validado — SÓ AGORA muta o estado (instalação transacional:
