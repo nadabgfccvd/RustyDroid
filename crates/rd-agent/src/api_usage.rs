@@ -22,6 +22,21 @@ use rd_framework::fd_gms::{GmsSummary, GmsTable};
 use rd_framework::fd_jetpack::{JetpackSummary, JetpackTable};
 use serde::Serialize;
 
+/// Uma superfície de biblioteca/serviço referenciada pelo APK cujo status
+/// honesto é `stub` ou `not_implemented` — o detalhe por superfície que
+/// `compat_gaps` expõe em `app_library_gaps` (issue #234, item 2).
+#[derive(Debug, Clone, Serialize)]
+pub struct LibraryGapSurface {
+    /// `library_id` (Apêndice D) ou `service_id` (Apêndice E).
+    pub id: String,
+    /// `stub | not_implemented`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap_id: Option<String>,
+    /// Tipos referenciados pelo APK que caem nesta superfície.
+    pub types: Vec<String>,
+}
+
 /// Resultado do scan de uso de APIs android.*.
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiUsage {
@@ -51,6 +66,10 @@ pub struct ApiUsage {
     /// referenciados, classificados contra `data/gms.toml` (modo
     /// no-gms-honest: registro ≠ backend; nada de rede).
     pub gms: GmsSummary,
+    /// Superfícies D stub/not_implemented referenciadas (com tipos).
+    pub jetpack_gap_surfaces: Vec<LibraryGapSurface>,
+    /// Superfícies E stub/not_implemented referenciadas (com tipos).
+    pub gms_gap_surfaces: Vec<LibraryGapSurface>,
     /// Fontes das classificações D/E.
     pub registry_sources: [&'static str; 2],
     /// Escopo da análise (contrato de honestidade — ver docs do módulo).
@@ -109,6 +128,31 @@ fn domain(fqcn: &str) -> String {
 }
 
 /// Scan estático dos DEX de um APK.
+/// Agrupa classificações stub/not_implemented por superfície (ordenado
+/// por id; tipos na ordem de entrada — os conjuntos são BTreeSet).
+fn gap_surfaces(
+    rows: impl Iterator<Item = (String, Option<String>, String, Option<String>)>,
+) -> Vec<LibraryGapSurface> {
+    let mut by_id: BTreeMap<String, LibraryGapSurface> = BTreeMap::new();
+    for (fqcn, id, status, gap_id) in rows {
+        if status != "stub" && status != "not_implemented" {
+            continue;
+        }
+        let Some(id) = id else { continue };
+        by_id
+            .entry(id.clone())
+            .or_insert_with(|| LibraryGapSurface {
+                id,
+                status,
+                gap_id,
+                types: Vec::new(),
+            })
+            .types
+            .push(fqcn);
+    }
+    by_id.into_values().collect()
+}
+
 pub fn scan(package: &str, dexes: &[rd_dex::Dex]) -> ApiUsage {
     let mut types: BTreeSet<String> = BTreeSet::new();
     let mut methods: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -181,8 +225,15 @@ pub fn scan(package: &str, dexes: &[rd_dex::Dex]) -> ApiUsage {
     };
     // Apêndices D/E: mesma regra do C — registro embutido inválido vira
     // registry_error explícito, nunca panic nem classificação silenciosa.
+    let mut jetpack_gap_surfaces: Vec<LibraryGapSurface> = Vec::new();
     let jetpack = match JetpackTable::embedded() {
-        Ok(table) => table.summarize_types(extra.jetpack.iter().map(String::as_str)),
+        Ok(table) => {
+            jetpack_gap_surfaces = gap_surfaces(extra.jetpack.iter().map(|t| {
+                let c = table.classify(t);
+                (c.fqcn, c.library_id, c.status, c.gap_id)
+            }));
+            table.summarize_types(extra.jetpack.iter().map(String::as_str))
+        }
         Err(_) => JetpackSummary {
             total_types: extra.jetpack.len(),
             by_status: [(String::from("registry_error"), extra.jetpack.len())]
@@ -193,8 +244,15 @@ pub fn scan(package: &str, dexes: &[rd_dex::Dex]) -> ApiUsage {
             gap_ids: vec!["gap-jetpack-registry".to_string()],
         },
     };
+    let mut gms_gap_surfaces: Vec<LibraryGapSurface> = Vec::new();
     let gms = match GmsTable::embedded() {
-        Ok(table) => table.summarize_types(extra.gms.iter().map(String::as_str)),
+        Ok(table) => {
+            gms_gap_surfaces = gap_surfaces(extra.gms.iter().map(|t| {
+                let c = table.classify(t);
+                (c.fqcn, c.service_id, c.status, c.gap_id)
+            }));
+            table.summarize_types(extra.gms.iter().map(String::as_str))
+        }
         Err(_) => GmsSummary {
             total_types: extra.gms.len(),
             by_status: [(String::from("registry_error"), extra.gms.len())]
@@ -219,6 +277,8 @@ pub fn scan(package: &str, dexes: &[rd_dex::Dex]) -> ApiUsage {
         coverage_source: "data/api-coverage.toml (Appendix C)",
         jetpack,
         gms,
+        jetpack_gap_surfaces,
+        gms_gap_surfaces,
         registry_sources: [
             "data/jetpack.toml (Appendix D)",
             "data/gms.toml (Appendix E, no-gms-honest)",
@@ -401,6 +461,35 @@ mod tests {
             Some(&vec!["onCreate".to_string()]),
             "{:?}",
             u.android_methods
+        );
+    }
+
+    /// S8 (#234 item 2): superfícies gap referenciadas trazem id/status/tipos.
+    #[test]
+    fn scan_exposes_gap_surfaces_with_types() {
+        let mut b = DexBuilder::new();
+        b.class("Lcom/x/Main;", "Ljava/lang/Object;");
+        let p_img = b.proto_idx("Lcom/google/mlkit/vision/common/InputImage;", vec![]);
+        b.method_idx(
+            "Lcom/google/mlkit/vision/common/InputImage;",
+            p_img,
+            "fromMediaImage",
+        );
+        let dex = rd_dex::Dex::parse(b.finish()).expect("dex válido");
+        let u = scan("com.x", std::slice::from_ref(&dex));
+        let mlkit = u
+            .gms_gap_surfaces
+            .iter()
+            .find(|g| g.id == "mlkit")
+            .expect("ML Kit como gap surface");
+        assert_eq!(mlkit.status, "not_implemented");
+        assert!(mlkit
+            .types
+            .contains(&"com.google.mlkit.vision.common.InputImage".to_string()));
+        assert!(
+            u.jetpack_gap_surfaces.is_empty(),
+            "{:?}",
+            u.jetpack_gap_surfaces
         );
     }
 }

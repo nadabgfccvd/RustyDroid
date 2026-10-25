@@ -184,7 +184,7 @@ Saúde do runtime: sessão, app em execução, activity, finished, clock virtual
 
 ### `compat_gaps`
 
-Catálogo HONESTO das lacunas de compatibilidade do runtime v1 (notificações M9, args String/array na sonda, foco, teclas, gestures, intent implícito, transporte HTTP) + sumário executável do Apêndice C (data/api-coverage.toml: domínios/status das superfícies android.*) — o agente consulta antes de planejar.
+Catálogo HONESTO das lacunas de compatibilidade do runtime v1 (notificações M9, args String/array na sonda, foco, teclas, gestures, intent implícito, transporte HTTP) + sumários executáveis dos Apêndices C (data/api-coverage.toml), D (data/jetpack.toml: AndroidX/Jetpack) e E (data/gms.toml: GMS/Firebase sem rede) + superfícies stub/not_implemented referenciadas pelo app activo (app_library_gaps) — o agente consulta antes de planejar.
 
 - Parâmetros: nenhum
 
