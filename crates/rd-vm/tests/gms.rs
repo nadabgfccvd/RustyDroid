@@ -1080,7 +1080,10 @@ fn location_fix_and_callback_delivery() {
         [ctx(&mut e)])
         .unwrap());
 
-    // Sem fix: a Task conclui com null (como um aparelho sem última posição).
+    // Providers desligados: a Task conclui com null (aparelho sem posição).
+    // (S8: o dispositivo virtual do M10 tem sempre um fix por defeito;
+    // gms_clear_location_fix desliga os providers dos dois lados.)
+    e.gms_clear_location_fix();
     let t = ov(ci!(
         e,
         FUSED_CLIENT,
@@ -2471,4 +2474,176 @@ fn dex_bytecode_calls_gms_through_full_dispatch() {
     e.invoke_static("LProbe;", "run", "()V", &[])
         .expect("Probe.run outra vez");
     assert_eq!(get(&e, "code"), 1);
+}
+
+// ── S8 (#229): ponte GMS Location ↔ GPS virtual do M10 ──────────────────
+/// Regressão da bifurcação pós-merge #201+#213: pelo dispatch REAL do
+/// interpretador, (1) uma Task GMS falhada tem de ler isSuccessful=false
+/// (o braço rd_* do M10 respondia o default 1) e (2) o fix programado via
+/// `gms_set_location_fix` é o mesmo que o fused vende e que vive no
+/// estado do dispositivo virtual (`vdev.location`).
+#[cfg(feature = "virtual-devices")]
+#[test]
+fn dex_location_bridge_and_task_precedence() {
+    let mut b = DexBuilder::new();
+    let probe = b.class("LProbe2;", "Ljava/lang/Object;");
+    b.static_field(probe, "silentOk", "I", common::SVal::Int(-1));
+    b.static_field(probe, "latBits", "J", common::SVal::Int(0));
+    let f_ok = b.field_idx("LProbe2;", "I", "silentOk");
+    let f_lat = b.field_idx("LProbe2;", "J", "latBits");
+
+    let p_gsi_client = b.proto_idx(
+        "Lcom/google/android/gms/auth/api/signin/GoogleSignInClient;",
+        vec![
+            "Landroid/content/Context;".into(),
+            "Lcom/google/android/gms/auth/api/signin/GoogleSignInOptions;".into(),
+        ],
+    );
+    let p_task = b.proto_idx("Lcom/google/android/gms/tasks/Task;", vec![]);
+    let p_bool = b.proto_idx("Z", vec![]);
+    let p_fused = b.proto_idx(
+        "Lcom/google/android/gms/location/FusedLocationProviderClient;",
+        vec!["Landroid/content/Context;".into()],
+    );
+    let p_obj = b.proto_idx("Ljava/lang/Object;", vec![]);
+    let p_double = b.proto_idx("D", vec![]);
+    let p_bits = b.proto_idx("J", vec!["D".into()]);
+
+    let m_get_client = b.method_idx(
+        "Lcom/google/android/gms/auth/api/signin/GoogleSignIn;",
+        p_gsi_client,
+        "getClient",
+    );
+    let m_silent = b.method_idx(
+        "Lcom/google/android/gms/auth/api/signin/GoogleSignInClient;",
+        p_task,
+        "silentSignIn",
+    );
+    let m_ok = b.method_idx(
+        "Lcom/google/android/gms/tasks/Task;",
+        p_bool,
+        "isSuccessful",
+    );
+    let m_fused = b.method_idx(
+        "Lcom/google/android/gms/location/LocationServices;",
+        p_fused,
+        "getFusedLocationProviderClient",
+    );
+    let m_last = b.method_idx(
+        "Lcom/google/android/gms/location/FusedLocationProviderClient;",
+        p_task,
+        "getLastLocation",
+    );
+    let m_result = b.method_idx("Lcom/google/android/gms/tasks/Task;", p_obj, "getResult");
+    let m_lat = b.method_idx("Landroid/location/Location;", p_double, "getLatitude");
+    let m_bits = b.method_idx("Ljava/lang/Double;", p_bits, "doubleToRawLongBits");
+
+    b.direct(
+        probe,
+        "run",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(6, 0, 2, {
+            let mut u = op11n(0x12, 0, 0);
+            u.extend(op11n(0x12, 1, 0));
+            u.extend(op35c(0x71, 2, m_get_client, [0, 1, 0, 0, 0]));
+            u.extend(op11x(0x0C, 2));
+            u.extend(op35c(0x6E, 1, m_silent, [2, 0, 0, 0, 0]));
+            u.extend(op11x(0x0C, 3));
+            u.extend(op35c(0x6E, 1, m_ok, [3, 0, 0, 0, 0]));
+            u.extend(op11x(0x0A, 4));
+            u.extend(op21c(0x67, 4, f_ok));
+            u.extend(op35c(0x71, 1, m_fused, [0, 0, 0, 0, 0]));
+            u.extend(op11x(0x0C, 2));
+            u.extend(op35c(0x6E, 1, m_last, [2, 0, 0, 0, 0]));
+            u.extend(op11x(0x0C, 3));
+            u.extend(op35c(0x6E, 1, m_result, [3, 0, 0, 0, 0]));
+            u.extend(op11x(0x0C, 4));
+            u.extend(op35c(0x6E, 1, m_lat, [4, 0, 0, 0, 0]));
+            u.extend(op11x(0x0B, 4));
+            u.extend(op35c(0x71, 2, m_bits, [4, 5, 0, 0, 0]));
+            u.extend(op11x(0x0B, 4));
+            u.extend(op21c(0x68, 4, f_lat));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let mut e = engine_of(&b);
+    e.gms_set_location_fix(38.7223, -9.1393, 5.0); // Lisboa
+                                                   // Fonte única: o estado do dispositivo virtual já tem o fix.
+    assert!((e.fw.vdev.location.current.latitude - 38.7223).abs() < 1e-9);
+
+    e.invoke_static("LProbe2;", "run", "()V", &[])
+        .expect("probe");
+    let ok = match e.statics.get(&("LProbe2;".into(), "silentOk".into())) {
+        Some(&Value::Int(n)) => n,
+        o => panic!("silentOk: {o:?}"),
+    };
+    let bits = match e.statics.get(&("LProbe2;".into(), "latBits".into())) {
+        Some(&Value::Long(n)) => n,
+        o => panic!("latBits: {o:?}"),
+    };
+    assert_eq!(ok, 0, "silentSignIn sem login NÃO pode ler sucesso");
+    assert!(
+        (f64::from_bits(bits as u64) - 38.7223).abs() < 1e-9,
+        "fused vende o fix do dispositivo virtual"
+    );
+
+    // E ao contrário: programar pelo M10 muda o que o GMS vende, e os
+    // callbacks GMS registados recebem a entrega (hook de notificação).
+    let mut b2 = DexBuilder::new();
+    counter_observer_class(
+        &mut b2,
+        "LLocCb2;",
+        "onLocationResult",
+        vec!["Lcom/google/android/gms/location/LocationResult;"],
+    );
+    let mut e2 = engine_of(&b2);
+    let fused =
+        ov(cs!(e2, LOCATION_SERVICES, "getFusedLocationProviderClient",
+        "(Landroid/content/Context;)Lcom/google/android/gms/location/FusedLocationProviderClient;",
+        [ctx(&mut e2)])
+        .unwrap());
+    let req = ov(cs!(
+        e2,
+        LOCATION_REQUEST,
+        "create",
+        "()Lcom/google/android/gms/location/LocationRequest;",
+        []
+    )
+    .unwrap());
+    let cb = obj(&mut e2, "LLocCb2;");
+    let t = ov(ci!(e2, FUSED_CLIENT, "requestLocationUpdates",
+        "(Lcom/google/android/gms/location/LocationRequest;Lcom/google/android/gms/location/LocationCallback;Landroid/os/Looper;)Lcom/google/android/gms/tasks/Task;",
+        fused, [Value::Obj(req), Value::Obj(cb), Value::Null]).unwrap());
+    assert_eq!(task_flag(&mut e2, t, "isSuccessful"), 1);
+    let before = called(&e2, "LLocCb2;");
+    e2.m10_set_location(41.1579, -8.6291, None, None, None, None)
+        .expect("m10_set_location Porto");
+    assert_eq!(
+        called(&e2, "LLocCb2;"),
+        before + 1,
+        "fix via M10 chega ao LocationCallback GMS"
+    );
+    let t = ov(ci!(
+        e2,
+        FUSED_CLIENT,
+        "getLastLocation",
+        "()Lcom/google/android/gms/tasks/Task;",
+        fused,
+        []
+    )
+    .unwrap());
+    let loc = ov(task_result(&mut e2, t));
+    match e2.heap.get_field(loc, "mLatitudeDegrees").unwrap() {
+        Value::Double(d) => assert!((d - 41.1579).abs() < 1e-9),
+        o => panic!("lat: {o:?}"),
+    }
+    // A mesma Location também carrega os campos rd_* do M10.
+    match e2.heap.get_field(loc, "rd_lat").unwrap() {
+        Value::Double(d) => assert!((d - 41.1579).abs() < 1e-9),
+        o => panic!("rd_lat: {o:?}"),
+    }
 }
