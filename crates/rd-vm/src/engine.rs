@@ -37,15 +37,77 @@ pub struct VmConfig {
     pub exception_trace: bool,
 }
 
-/// Orçamento de pilha nativa por entrada de thread (1,25 MiB dentro dos
-/// 2 MiB padrão de `std::thread::spawn` / `cargo test`, preservando ~768 KiB
-/// de margem antes da guard page nativa mesmo em builds não otimizados).
-const MAX_NATIVE_STACK_BYTES: usize = 1_280 * 1024;
+/// Reserva mínima preservada acima da guard page nativa (512 KiB) e orçamento
+/// conservador de fallback quando `/proc` não está disponível (1,25 MiB).
+const NATIVE_STACK_GUARD_RESERVE: usize = 512 * 1024;
+const FALLBACK_NATIVE_STACK_BYTES: usize = 1_280 * 1024;
+const MAX_MAIN_NATIVE_STACK_BYTES: usize = 6 * 1024 * 1024;
 
 #[inline(never)]
 fn current_stack_addr() -> usize {
     let marker = 0u8;
     std::ptr::addr_of!(marker) as usize
+}
+
+/// Calcula o orçamento seguro de pilha nativa disponível abaixo de `sp_now`
+/// na entrada externa da thread atual (executado apenas 1× quando `entry_sp == 0`).
+fn detect_native_stack_budget(sp_now: usize) -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(maps) = std::fs::read_to_string("/proc/thread-self/maps") {
+            for line in maps.lines() {
+                let Some((range, rest)) = line.split_once(' ') else {
+                    continue;
+                };
+                if !rest.starts_with("rw") {
+                    continue;
+                }
+                let Some((lo_hex, hi_hex)) = range.split_once('-') else {
+                    continue;
+                };
+                let (Ok(lo), Ok(hi)) = (
+                    usize::from_str_radix(lo_hex, 16),
+                    usize::from_str_radix(hi_hex, 16),
+                ) else {
+                    continue;
+                };
+                if sp_now >= lo && sp_now <= hi {
+                    // A VMA `[stack]` da thread principal cresce sob demanda até `RLIMIT_STACK`.
+                    if line.trim_end().ends_with("[stack]") {
+                        return main_thread_stack_budget();
+                    }
+                    return sp_now
+                        .saturating_sub(lo)
+                        .saturating_sub(NATIVE_STACK_GUARD_RESERVE)
+                        .max(256 * 1024);
+                }
+            }
+        }
+    }
+    let _ = sp_now;
+    if std::thread::current().name() == Some("main") {
+        MAX_MAIN_NATIVE_STACK_BYTES
+    } else {
+        FALLBACK_NATIVE_STACK_BYTES
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn main_thread_stack_budget() -> usize {
+    if let Ok(limits) = std::fs::read_to_string("/proc/self/limits") {
+        for line in limits.lines() {
+            if let Some(rest) = line.strip_prefix("Max stack size") {
+                if let Some(tok) = rest.split_whitespace().next() {
+                    if let Ok(bytes) = tok.parse::<usize>() {
+                        return bytes
+                            .saturating_sub(4 * NATIVE_STACK_GUARD_RESERVE)
+                            .clamp(FALLBACK_NATIVE_STACK_BYTES, MAX_MAIN_NATIVE_STACK_BYTES);
+                    }
+                }
+            }
+        }
+    }
+    MAX_MAIN_NATIVE_STACK_BYTES
 }
 
 impl Default for VmConfig {
@@ -139,6 +201,7 @@ pub struct Engine {
     pub(crate) gc_frames: Vec<Vec<crate::heap::ObjRef>>,
     host_depth: usize,
     entry_sp: usize,
+    entry_stack_budget: usize,
 }
 
 /// Cobertura por classe (AG-09, nível de método).
@@ -216,6 +279,7 @@ impl Engine {
             gc_frames: Vec::new(),
             host_depth: 0,
             entry_sp: 0,
+            entry_stack_budget: FALLBACK_NATIVE_STACK_BYTES,
             #[cfg(feature = "jit")]
             jit: {
                 let mut j = crate::jit::JitState::default();
@@ -437,7 +501,7 @@ impl Engine {
         let sp_now = current_stack_addr();
         let combined = self.depth.saturating_add(self.host_depth);
         let stack_exceeded =
-            self.entry_sp != 0 && self.entry_sp.abs_diff(sp_now) >= MAX_NATIVE_STACK_BYTES;
+            self.entry_sp != 0 && self.entry_sp.abs_diff(sp_now) >= self.entry_stack_budget;
         if combined >= self.config.max_depth || stack_exceeded {
             return Err(VmExit::Exception(Throwable::new(
                 "Ljava/lang/StackOverflowError;",
@@ -449,6 +513,7 @@ impl Engine {
         }
         let anchored = if self.entry_sp == 0 {
             self.entry_sp = sp_now;
+            self.entry_stack_budget = detect_native_stack_budget(sp_now);
             true
         } else {
             false
@@ -469,6 +534,7 @@ impl Engine {
         }
         if token.0 {
             self.entry_sp = 0;
+            self.entry_stack_budget = FALLBACK_NATIVE_STACK_BYTES;
         }
     }
 
@@ -483,7 +549,7 @@ impl Engine {
         let sp_check = current_stack_addr();
         let combined = self.depth.saturating_add(self.host_depth);
         if combined >= self.config.max_depth
-            || (self.entry_sp != 0 && self.entry_sp.abs_diff(sp_check) >= MAX_NATIVE_STACK_BYTES)
+            || (self.entry_sp != 0 && self.entry_sp.abs_diff(sp_check) >= self.entry_stack_budget)
         {
             return Err(VmExit::Exception(Throwable::new(
                 "Ljava/lang/StackOverflowError;",
