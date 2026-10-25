@@ -241,7 +241,7 @@ Dado um APK real, o RustyDroid deve:
 - App trivial: instalar+iniciar < 5 s; UI ≥ 20 FPS telas simples
 - **Piso de API:** executa APKs com minSdk 26–36; APK com minSdk < 26 é parseado e
   inspecionado, mas a execução responde `BELOW_FLOOR(minSdk=xx)` estruturado
-- **Modo piso E5 (PRF-06):** processo ≤ 512 MB (heap do app ≤ 256 MB, equiv.
+- **Modo piso E5 (PRF-06):** processo ≤ 1024 MB ([ADR 015](docs/adr/015-moto-e5-process-rss-1gb.md); heap do app ≤ 256 MB, equiv.
   dalvik.vm.heapgrowthlimit de um device de 2 GB); telas simples ≥ 60 FPS / médias
   ≥ 30 FPS sob budget de fill-rate equivalente ao Adreno 308; **gate de release**
 
@@ -366,14 +366,14 @@ Pergunte SOMENTE se um bloqueio físico impedir o progresso.
 |---|---|---|
 | CPU | Snapdragon 425 — 4× Cortex-A53 @ 1,4 GHz | orçamento de CPU: app executa com ≤ 1 core do host; single-thread calibrada ≈ 1/4 core (agendador + quota) |
 | GPU | Adreno 308 (GLES 3.1) | renderer software com **budget de fill-rate ≈ Adreno 308** validado por overdraw sintético (sem GPU real no pipeline) |
-| RAM | 2 GB (SO consome ~1 GB) | processo RustyDroid ≤ **512 MB** no modo piso; heap do app ≤ **256 MB** (equiv. `dalvik.vm.heapgrowthlimit` de um device de 2 GB) |
+| RAM | 2 GB (SO consome ~1 GB) | processo RustyDroid ≤ **1024 MB** no modo piso (ADR 015); heap do app ≤ **256 MB** (equiv. `dalvik.vm.heapgrowthlimit` de um device de 2 GB) |
 | Storage | 16–32 GB | VFS com quota configurável (8/16 GB) e taxas de I/O simuladas (eMMC lento) |
 | Tela | 5,7" 1440×720, 18:9, ~282 ppi | device profile 720×1440, density `280dpi`/tvdpi-ish, sem cutout, sem notch |
 | SO de fábrica | Android 8.0 (API 26) | comportamentos de sistema do profile fixados no nível 26, exceto o que o targetSdk do APK comutar (PRF-07) |
 
 > **Gate de release (PRF-06):** toda release roda a suíte golden no profile `moto-e5`.
 > Budgets: startup cold/warm por classe de app · FPS ≥ 60 (telas simples) / ≥ 30
-> (médias) · RSS ≤ 512 MB · jank ≤ 1% em telas simples · sem OOM em heap 256 MB.
+> (médias) · RSS ≤ 1024 MB · jank ≤ 1% em telas simples · sem OOM em heap 256 MB.
 > **Estourou budget = release travada** (workflow de CI bloqueia a tag).
 
 ## Apêndice B — PERMISSÕES COMPLETAS (motor de permissões = dado versionado)

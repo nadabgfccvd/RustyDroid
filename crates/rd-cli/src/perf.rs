@@ -14,7 +14,7 @@
 //!
 //! Orçamentos avaliados:
 //! - startup cold emulado (pior das execuções) `< 2000 ms` (ROADMAP M7 DoD);
-//! - RSS de pico do processo `≤ ram_process_cap_mb` (512 MB, moto-e5);
+//! - RSS de pico do processo `≤ ram_process_cap_mb` (1024 MB, moto-e5 — ADR 015);
 //! - heap do app `≤ ram_app_heap_mb` (256 MB): marca d'água da arena da VM
 //!   (`runtime_health.heap_peak_bytes`), lida fora do cronômetro.
 //!
