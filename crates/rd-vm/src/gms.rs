@@ -21,8 +21,8 @@
 //! listeners rodam na hora (o `Executor` dos overloads é ignorado),
 //! `getResult()`/`Tasks.await` nunca bloqueiam (Task incompleta lança
 //! `IllegalStateException`, como a API real não-bloqueante),
-//! `requestLocationUpdates` entrega uma vez no registro (e a cada
-//! `Engine::gms_push_location`), o fluxo de billing entrega a compra
+//! `requestLocationUpdates` entrega a cada fix novo
+//! (`Engine::m10_set_location`/`gms_push_location`), o fluxo de billing entrega a compra
 //! ao listener antes de retornar, `FirebaseApp.getInstance()` cria o
 //! app default com opções fake quando ausente (simula o
 //! `FirebaseInitProvider`; `Engine::gms_set_strict_firebase_init`
@@ -3824,10 +3824,11 @@ fn location_instance(
                     _ => None,
                 });
                 if let Some(cb) = callback {
+                    // Sem entrega inicial: como na API real, o callback só
+                    // dispara com fixes NOVOS (m10_set_location/push). A
+                    // entrega-no-registo do S6 tornou-se incorreta com a
+                    // ponte S8: o dispositivo virtual tem sempre um fix.
                     vm.fw.gms.location_requests.push((cb, req));
-                    if let Some(fix) = current_fix(vm) {
-                        deliver_location(vm, cb, &fix)?;
-                    }
                 }
                 Value::Obj(void_task(vm)?)
             }

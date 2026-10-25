@@ -1112,7 +1112,8 @@ fn location_fix_and_callback_delivery() {
         other => panic!("latitude: {other:?}"),
     }
 
-    // requestLocationUpdates entrega já ao registar; push entrega outra vez.
+    // requestLocationUpdates NÃO entrega ao registar (API real); o push
+    // seguinte entrega ao callback.
     let req = ov(cs!(
         e,
         LOCATION_REQUEST,
@@ -1126,10 +1127,10 @@ fn location_fix_and_callback_delivery() {
         "(Lcom/google/android/gms/location/LocationRequest;Lcom/google/android/gms/location/LocationCallback;Landroid/os/Looper;)Lcom/google/android/gms/tasks/Task;",
         fused, [Value::Obj(req), Value::Obj(cb), Value::Null]).unwrap());
     assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1);
-    assert_eq!(called(&e, "LLocCb;"), 1);
+    assert_eq!(called(&e, "LLocCb;"), 0);
     assert_eq!(e.gms_location_callback_count(), 1);
     e.gms_push_location(-23.56, -46.64, 5.0);
-    assert_eq!(called(&e, "LLocCb;"), 2);
+    assert_eq!(called(&e, "LLocCb;"), 1);
 
     let t =
         ov(ci!(e, FUSED_CLIENT, "removeLocationUpdates",
