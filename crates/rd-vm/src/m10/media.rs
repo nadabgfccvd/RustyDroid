@@ -1059,8 +1059,15 @@ fn audio_track_call(
                 if let Some(Value::Obj(arr)) = get_field(vm, src, "rd_buf") {
                     let bytes = read_byte_array(vm, arr)?;
                     let limit_raw = get_int_field(vm, src, "rd_limit", bytes.len() as i32);
-                    let pos = (pos_raw.max(0) as usize).min(bytes.len());
-                    let lim = (limit_raw.max(0) as usize).min(bytes.len()).max(pos);
+                    if pos_raw < 0
+                        || limit_raw < pos_raw
+                        || (pos_raw as usize) > bytes.len()
+                        || (limit_raw as usize) > bytes.len()
+                    {
+                        return Ok(Some(Value::Int(-2)));
+                    }
+                    let pos = pos_raw as usize;
+                    let lim = limit_raw as usize;
                     let end = pos.saturating_add(req).min(lim);
                     actual = end.saturating_sub(pos);
                     let prev_end = end.min(pos.saturating_add(64));
