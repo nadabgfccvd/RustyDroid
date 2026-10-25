@@ -4,15 +4,16 @@ name: Release
 #
 # Why a separate workflow and not more steps in ci.yml:
 #   * ci.yml is the pull-request gate and must stay read-only and fast;
-#     publishing needs `contents: write`, which must not exist on a PR run.
+#     publishing needs write access to repository contents, which must not
+#     exist on a PR run.
 #   * the release payload is the *evidence* the project promises (binary +
 #     official scoreboard + spec), so the scoreboard is regenerated and
 #     proven in sync here instead of being trusted from the tag.
 #
 # Safety properties this file is written to satisfy (RD Sentinel
 # `_workflow_findings`, see tools/rd-sentinel/sentinel/audit.py):
-#   * every action is pinned to a full commit SHA — this workflow requests
-#     `contents: write`, and an unpinned ref there is a P1 finding;
+#   * every action is pinned to a full commit SHA — the publish job holds a
+#     contents write grant, and an unpinned ref there is a P1 finding;
 #   * no `${{ }}` expression is interpolated into a `run:` script — untrusted
 #     inputs are bound to `env:` first (`workflow-template-injection`);
 #   * top-level `permissions: contents: read`, write only on the publish job;
@@ -156,6 +157,11 @@ jobs:
         run: |
           set -euo pipefail
           git checkout --detach "refs/tags/$TAG"
+
+      # The notes generator runs below with the write token in scope: prove the
+      # helper scripts at this exact tag behave before trusting their output.
+      - name: Self-test release scripts
+        run: bash tests/scripts/release_scripts_test.sh
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
