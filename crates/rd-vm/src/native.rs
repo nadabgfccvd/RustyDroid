@@ -37,7 +37,7 @@ struct TrackedRefs {
     strong_globals: BTreeSet<u64>,
     weak_globals: BTreeMap<u64, Option<ObjRef>>,
     obj_by_handle: BTreeMap<u64, ObjRef>,
-    pending: Option<(String, String)>,
+    pending: Option<Throwable>,
 }
 
 impl Default for TrackedRefs {
@@ -206,6 +206,13 @@ impl TrackedRefs {
 
     fn collect_roots(&self, out: &mut Vec<ObjRef>) {
         out.extend(self.obj_by_handle.values().copied());
+        if let Some(t) = &self.pending {
+            if let Some(r) = t.obj {
+                if r != 0 {
+                    out.push(r);
+                }
+            }
+        }
     }
 
     fn purge_dead_weak<F: Fn(&ObjRef) -> bool>(&mut self, alive: &F) -> usize {
@@ -607,10 +614,112 @@ fn invoke_rooted(
     })();
     let pending = vm.native.as_mut().and_then(|s| s.refs.pending.take());
     vm.native_active = false;
-    if let Some((exc_class, msg)) = pending {
-        return Err(Throwable::new(&exc_class, msg).into());
+    if let Some(exc) = pending {
+        if let Some(r) = exc.obj {
+            vm.heap.gc_pin_return(r);
+        }
+        return Err(VmExit::Exception(exc));
     }
     result.map_err(vmerr)
+}
+
+fn jni_default_for_desc(desc: &str) -> Value {
+    match desc {
+        "Z" | "B" | "C" | "S" | "I" => Value::Int(0),
+        "J" => Value::Long(0),
+        "F" => Value::Float(0.0),
+        "D" => Value::Double(0.0),
+        _ => Value::Null,
+    }
+}
+
+fn jni_default_instance_fields(vm: &mut Engine, class: &str) -> Vec<(String, Value)> {
+    let mut lineage = Vec::new();
+    let mut cur = class.to_string();
+    let mut seen = BTreeSet::new();
+    for _ in 0..32 {
+        if !seen.insert(cur.clone()) {
+            break;
+        }
+        lineage.push(cur.clone());
+        match vm.cp.superclass_of(&cur) {
+            Some(sup) if sup != cur && sup != "Ljava/lang/Object;" => cur = sup,
+            _ => break,
+        }
+    }
+    let mut fields_map: BTreeMap<String, Value> = BTreeMap::new();
+    for cls in lineage.into_iter().rev() {
+        for (_owner, fname, ftype, _flags, is_static) in vm.cp.declared_fields_info(&cls) {
+            if !is_static {
+                fields_map.insert(fname, jni_default_for_desc(&ftype));
+            }
+        }
+    }
+    fields_map.into_iter().collect()
+}
+
+fn set_jni_pending(vm: &mut Engine, class: &str, msg: Option<String>) -> Result<()> {
+    let fields = jni_default_instance_fields(vm, class);
+    let obj = match vm.heap.alloc_instance(class.to_string(), fields) {
+        Ok(r) => {
+            if let Some(m) = &msg {
+                if let Ok(ms) = vm.heap.alloc_string(m.clone()) {
+                    let _ = vm.heap.put_field(r, "message", Value::Obj(ms));
+                    let _ = vm.heap.put_field(r, "detailMessage", Value::Obj(ms));
+                }
+            }
+            Some(r)
+        }
+        Err(_) => None,
+    };
+    state_mut(vm)?.refs.pending = Some(Throwable {
+        class: class.to_string(),
+        message: msg,
+        obj,
+    });
+    Ok(())
+}
+
+fn record_vm_exception(vm: &mut Engine, mut exc: Throwable) -> Result<()> {
+    if exc.obj.is_none() {
+        if let Ok(r) = vm.materialize_throwable(&exc) {
+            if let Some(m) = &exc.message {
+                if let Ok(ms) = vm.heap.alloc_string(m.clone()) {
+                    let _ = vm.heap.put_field(r, "detailMessage", Value::Obj(ms));
+                }
+            }
+            exc.obj = Some(r);
+        }
+    }
+    state_mut(vm)?.refs.pending = Some(exc);
+    Ok(())
+}
+
+fn require_object_array_component(vm: &Engine, r: ObjRef) -> Result<(usize, String)> {
+    let (elems, kind) = vm.heap.as_array_elems(r).map_err(ndk)?;
+    let desc = vm.heap.class_of(r).map_err(ndk)?;
+    if kind != ElemKind::Obj {
+        return Err(ndk(format!("expected object array, got {desc}")));
+    }
+    let comp = desc
+        .strip_prefix('[')
+        .filter(|c| c.starts_with('L') || c.starts_with('['))
+        .ok_or_else(|| ndk(format!("expected object array descriptor, got {desc}")))?;
+    Ok((elems.len(), comp.to_string()))
+}
+
+fn require_primitive_array_len(vm: &Engine, r: ObjRef, k: char) -> Result<usize> {
+    let (elems, kind) = vm.heap.as_array_elems(r).map_err(ndk)?;
+    let desc = vm.heap.class_of(r).map_err(ndk)?;
+    let want_desc = format!("[{k}");
+    let want_kind = ElemKind::from_array_desc(&want_desc)
+        .ok_or_else(|| ndk("invalid primitive array descriptor"))?;
+    if kind != want_kind || desc != want_desc {
+        return Err(ndk(format!(
+            "primitive array type mismatch: expected {want_desc}, got {desc}"
+        )));
+    }
+    Ok(elems.len())
 }
 
 fn run(vm: &mut Engine, address: u64, args: &[Argument]) -> Result<Return> {
@@ -857,29 +966,78 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             vm.cp.is_subtype(&c, &d) as u64
         }
         13 => {
-            let r = hobj(&state_ref(vm)?.refs, a(1))?;
-            let c = vm.heap.class_of(r).map_err(ndk)?.to_string();
-            let msg = match vm.heap.get_field(r, "detailMessage") {
-                Ok(Value::Obj(s)) if s != 0 => vm.heap.as_str(s).unwrap_or_default().to_string(),
-                _ => String::new(),
-            };
-            state_mut(vm)?.refs.pending = Some((c, msg));
-            0
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("Throw: null jthrowable".into()),
+                )?;
+                (-1i64) as u64
+            } else {
+                let r = hobj(&state_ref(vm)?.refs, a(1))?;
+                if r == 0 {
+                    set_jni_pending(
+                        vm,
+                        "Ljava/lang/NullPointerException;",
+                        Some("Throw: null jthrowable".into()),
+                    )?;
+                    (-1i64) as u64
+                } else {
+                    let c = vm.heap.class_of(r).map_err(ndk)?.to_string();
+                    if !crate::intrinsics::is_throwable_class(vm, &c) {
+                        return Err(ndk(format!("Throw: {c} is not a Throwable")));
+                    }
+                    let mut msg = None;
+                    for fname in ["message", "detailMessage"] {
+                        if let Ok(Value::Obj(s)) = vm.heap.get_field(r, fname) {
+                            if s != 0 {
+                                if let Ok(txt) = vm.heap.as_str(s) {
+                                    msg = Some(txt.to_string());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    state_mut(vm)?.refs.pending = Some(Throwable {
+                        class: c,
+                        message: msg,
+                        obj: Some(r),
+                    });
+                    0
+                }
+            }
         }
         14 => {
             let c = hclass(vm, &state_ref(vm)?.refs, a(1))?;
-            let msg = text(rt, a(2))?;
-            state_mut(vm)?.refs.pending = Some((c, msg));
+            let msg = if a(2) == 0 {
+                None
+            } else {
+                Some(text(rt, a(2))?)
+            };
+            set_jni_pending(vm, &c, msg)?;
             0
         }
         15 => {
             let pending = state_ref(vm)?.refs.pending.clone();
-            if let Some((c, msg)) = pending {
-                let m = vm.heap.alloc_string(msg).map_err(ndk)?;
-                let r = vm
-                    .heap
-                    .alloc_instance(c, vec![("detailMessage".into(), Value::Obj(m))])
-                    .map_err(ndk)?;
+            if let Some(mut t) = pending {
+                let r = match t.obj {
+                    Some(existing) if existing != 0 => existing,
+                    _ => {
+                        let fields = jni_default_instance_fields(vm, &t.class);
+                        let created = vm
+                            .heap
+                            .alloc_instance(t.class.clone(), fields)
+                            .map_err(ndk)?;
+                        if let Some(m) = &t.message {
+                            let ms = vm.heap.alloc_string(m.clone()).map_err(ndk)?;
+                            let _ = vm.heap.put_field(created, "message", Value::Obj(ms));
+                            let _ = vm.heap.put_field(created, "detailMessage", Value::Obj(ms));
+                        }
+                        t.obj = Some(created);
+                        state_mut(vm)?.refs.pending = Some(t);
+                        created
+                    }
+                };
                 object(&mut state_mut(vm)?.refs, r)?
             } else {
                 0
@@ -907,7 +1065,13 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
         24 => state_ref(vm)?.refs.same(a(1), a(2)).map_err(jerr)? as u64,
         25 => state_mut(vm)?.refs.duplicate(a(1), false).map_err(jerr)?,
         26 => {
-            if a(1) as usize > References::MAX {
+            let cap = a(1) as i32;
+            if cap < 0 || (cap as usize) > References::MAX {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/OutOfMemoryError;",
+                    Some(format!("EnsureLocalCapacity({cap})")),
+                )?;
                 (-1i64) as u64
             } else {
                 0
@@ -918,16 +1082,17 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             match vm.ensure_initialized(&c) {
                 Ok(()) => {}
                 Err(VmExit::Exception(e)) => {
-                    state_mut(vm)?.refs.pending = Some((e.class, e.message.unwrap_or_default()));
+                    record_vm_exception(vm, e)?;
                     return Ok(Return::default());
                 }
                 Err(e) => return Err(ndk(format!("AllocObject init failed: {e:?}"))),
             }
-            let r = vm.heap.alloc_instance(c.clone(), Vec::new()).map_err(ndk)?;
+            let defaults = jni_default_instance_fields(vm, &c);
+            let r = vm.heap.alloc_instance(c.clone(), defaults).map_err(ndk)?;
             match vm.attach_host_state(&c, r) {
                 Ok(()) => {}
                 Err(VmExit::Exception(e)) => {
-                    state_mut(vm)?.refs.pending = Some((e.class, e.message.unwrap_or_default()));
+                    record_vm_exception(vm, e)?;
                     return Ok(Return::default());
                 }
                 Err(e) => return Err(ndk(format!("AllocObject host init failed: {e:?}"))),
@@ -968,10 +1133,11 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             let ok =
                 dex_ok || can_resolve_host_jni_method(&vm.cp, &class, &name, &sig, want_static);
             if !ok {
-                state_mut(vm)?.refs.pending = Some((
-                    "Ljava/lang/NoSuchMethodError;".into(),
-                    format!("{class}->{name}{sig}"),
-                ));
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NoSuchMethodError;",
+                    Some(format!("{class}->{name}{sig}")),
+                )?;
                 0
             } else {
                 state_mut(vm)?
@@ -994,8 +1160,7 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
                 match vm.ensure_initialized(&class) {
                     Ok(()) => {}
                     Err(VmExit::Exception(e)) => {
-                        state_mut(vm)?.refs.pending =
-                            Some((e.class, e.message.unwrap_or_default()));
+                        record_vm_exception(vm, e)?;
                         return Ok(Return::default());
                     }
                     Err(e) => return Err(ndk(format!("GetStaticFieldID init failed: {e:?}"))),
@@ -1025,15 +1190,33 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
                 match jni_read_static_field(vm, &class, &name, &sig) {
                     Ok(v) => v,
                     Err(VmExit::Exception(e)) => {
-                        state_mut(vm)?.refs.pending =
-                            Some((e.class, e.message.unwrap_or_default()));
+                        record_vm_exception(vm, e)?;
                         return Ok(Return::default());
                     }
                     Err(e) => return Err(ndk(format!("GetStaticField failed: {e:?}"))),
                 }
             } else {
+                if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                    set_jni_pending(
+                        vm,
+                        "Ljava/lang/NullPointerException;",
+                        Some(format!("GetField '{name}' on null object")),
+                    )?;
+                    return Ok(Return::default());
+                }
                 let r = hobj(&state_ref(vm)?.refs, a(1))?;
-                vm.heap.get_field(r, &name).map_err(ndk)?
+                if r == 0 {
+                    set_jni_pending(
+                        vm,
+                        "Ljava/lang/NullPointerException;",
+                        Some(format!("GetField '{name}' on null object")),
+                    )?;
+                    return Ok(Return::default());
+                }
+                let _ = vm.heap.class_of(r).map_err(ndk)?;
+                vm.heap
+                    .get_field(r, &name)
+                    .unwrap_or_else(|_| jni_default_for_desc(&sig))
             };
             let bits = to_native(&mut state_mut(vm)?.refs, &v)?;
             return Ok(Return {
@@ -1076,16 +1259,17 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             0
         }
         163 => {
-            let n = a(2) as usize;
-            if n > 1024 * 1024 {
+            let n_i32 = a(2) as i32;
+            if !(0..=1024 * 1024).contains(&n_i32) {
                 return Err(ndk("NewString size exceeds budget"));
             }
+            let n = n_i32 as usize;
             let b = rt.read(a(1), n * 2)?;
             let u: Vec<u16> = b
                 .chunks_exact(2)
                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                 .collect();
-            let s = String::from_utf16(&u).map_err(ndk)?;
+            let s = String::from_utf16_lossy(&u);
             let r = vm.heap.alloc_string(s).map_err(ndk)?;
             object(&mut state_mut(vm)?.refs, r)?
         }
@@ -1133,14 +1317,36 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
         }
         172 => {
             let n = a(1) as i32;
-            if !(0..=1_000_000).contains(&n) {
+            if n < 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/OutOfMemoryError;",
+                    Some(format!("NewObjectArray negative size {n}")),
+                )?;
+                return Ok(Return::default());
+            }
+            if n > 1_000_000 {
                 return Err(ndk("object array length exceeds budget"));
             }
             let c = hclass(vm, &state_ref(vm)?.refs, a(2))?;
             let init = from_native(vm, a(3), &c, rt.abi == Abi::Arm)?;
+            if let Value::Obj(ir) = init {
+                if ir != 0 {
+                    let icls = vm.heap.class_of(ir).map_err(ndk)?;
+                    if !vm.cp.is_subtype(icls, &c) {
+                        set_jni_pending(
+                            vm,
+                            "Ljava/lang/ArrayStoreException;",
+                            Some(format!("{icls} cannot be stored in [{c}")),
+                        )?;
+                        return Ok(Return::default());
+                    }
+                }
+            }
+            let arr_desc = format!("[{c}");
             let r = vm
                 .heap
-                .alloc_array(ElemKind::Obj, n as usize, &c)
+                .alloc_array(ElemKind::Obj, n as usize, &arr_desc)
                 .map_err(ndk)?;
             vm.heap
                 .array_elems_mut(r)
@@ -1149,18 +1355,45 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             object(&mut state_mut(vm)?.refs, r)?
         }
         173 => {
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("GetObjectArrayElement on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let r = hobj(&state_ref(vm)?.refs, a(1))?;
-            let v = vm
-                .heap
-                .as_array_elems(r)
-                .map_err(ndk)?
-                .0
-                .get(a(2) as usize)
-                .ok_or_else(|| ndk("object array index out of bounds"))?
-                .clone();
+            if r == 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("GetObjectArrayElement on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
+            let (len, _) = require_object_array_component(vm, r)?;
+            let idx = a(2) as i32;
+            if idx < 0 || (idx as usize) >= len {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    Some(format!("index={idx} length={len}")),
+                )?;
+                return Ok(Return::default());
+            }
+            let v = vm.heap.as_array_elems(r).map_err(ndk)?.0[idx as usize].clone();
             to_native(&mut state_mut(vm)?.refs, &v)?
         }
         174 => {
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("SetObjectArrayElement on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let (r, v) = {
                 let s = state_ref(vm)?;
                 let r = hobj(&s.refs, a(1))?;
@@ -1176,16 +1409,51 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
                 };
                 (r, v)
             };
+            if r == 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("SetObjectArrayElement on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
+            let (len, comp) = require_object_array_component(vm, r)?;
+            let idx = a(2) as i32;
+            if idx < 0 || (idx as usize) >= len {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    Some(format!("index={idx} length={len}")),
+                )?;
+                return Ok(Return::default());
+            }
+            if let Value::Obj(val_r) = v {
+                let val_cls = vm.heap.class_of(val_r).map_err(ndk)?.to_string();
+                if !vm.cp.is_subtype(&val_cls, &comp) {
+                    set_jni_pending(
+                        vm,
+                        "Ljava/lang/ArrayStoreException;",
+                        Some(format!("{val_cls} cannot be stored in [{comp}")),
+                    )?;
+                    return Ok(Return::default());
+                }
+            }
             let elems = vm.heap.array_elems_mut(r).map_err(ndk)?;
-            *elems
-                .get_mut(a(2) as usize)
-                .ok_or_else(|| ndk("object array index out of bounds"))? = v;
+            elems[idx as usize] = v;
             0
         }
         175..=182 => {
             let k = primitive(t.slot - 175);
             let n = a(1) as i32;
-            if !(0..=1_000_000).contains(&n) {
+            if n < 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/OutOfMemoryError;",
+                    Some(format!("New{k}Array negative size {n}")),
+                )?;
+                return Ok(Return::default());
+            }
+            if n > 1_000_000 {
                 return Err(ndk("primitive array length exceeds budget"));
             }
             let desc = format!("[{k}");
@@ -1242,26 +1510,94 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             0
         }
         199..=206 => {
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("Get<Type>ArrayRegion on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let k = primitive(t.slot - 199);
             let r = hobj(&state_ref(vm)?.refs, a(1))?;
-            let b = array_bytes(vm, r, k, a(2) as usize, a(3) as usize)?;
-            let p = rt.raw_argument(t, 4)?;
-            rt.write(p, &b)?;
+            if r == 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("Get<Type>ArrayRegion on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
+            let arr_len = require_primitive_array_len(vm, r, k)?;
+            let start = a(2) as i32;
+            let len = a(3) as i32;
+            let valid = start >= 0
+                && len >= 0
+                && (start as usize)
+                    .checked_add(len as usize)
+                    .is_some_and(|end| end <= arr_len);
+            if !valid {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    Some(format!("start={start} len={len} arrayLen={arr_len}")),
+                )?;
+                return Ok(Return::default());
+            }
+            if len > 0 {
+                let b = array_bytes(vm, r, k, start as usize, len as usize)?;
+                let p = rt.raw_argument(t, 4)?;
+                rt.write(p, &b)?;
+            }
             0
         }
         207..=214 => {
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("Set<Type>ArrayRegion on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let k = primitive(t.slot - 207);
-            let n = a(3) as usize;
+            let r = hobj(&state_ref(vm)?.refs, a(1))?;
+            if r == 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("Set<Type>ArrayRegion on null array".into()),
+                )?;
+                return Ok(Return::default());
+            }
+            let arr_len = require_primitive_array_len(vm, r, k)?;
+            let start = a(2) as i32;
+            let len = a(3) as i32;
+            let valid = start >= 0
+                && len >= 0
+                && (start as usize)
+                    .checked_add(len as usize)
+                    .is_some_and(|end| end <= arr_len);
+            if !valid {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    Some(format!("start={start} len={len} arrayLen={arr_len}")),
+                )?;
+                return Ok(Return::default());
+            }
+            let n = len as usize;
             if n > 1_000_000 {
                 return Err(ndk("array region exceeds budget"));
             }
-            let p = rt.raw_argument(t, 4)?;
-            let byte_len = n
-                .checked_mul(width(k))
-                .ok_or_else(|| mem_err("array region byte length overflow"))?;
-            let b = rt.read(p, byte_len)?;
-            let r = hobj(&state_ref(vm)?.refs, a(1))?;
-            write_array(vm, r, k, a(2) as usize, &b)?;
+            if n > 0 {
+                let p = rt.raw_argument(t, 4)?;
+                let byte_len = n
+                    .checked_mul(width(k))
+                    .ok_or_else(|| mem_err("array region byte length overflow"))?;
+                let b = rt.read(p, byte_len)?;
+                write_array(vm, r, k, start as usize, &b)?;
+            }
             0
         }
         215 => {
@@ -1321,29 +1657,90 @@ fn bridge(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
         }
         // GetStringRegion(env, str, start, len, jchar* buf)
         220 => {
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("GetStringRegion on null string".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let r = hobj(&state_ref(vm)?.refs, a(1))?;
+            if r == 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("GetStringRegion on null string".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let u: Vec<u16> = vm.heap.as_str(r).map_err(ndk)?.encode_utf16().collect();
-            let (start, n) = (a(2) as usize, a(3) as usize);
-            let end = start
-                .checked_add(n)
-                .filter(|e| *e <= u.len())
-                .ok_or_else(|| ndk("StringIndexOutOfBoundsException: string region"))?;
-            let b: Vec<u8> = u[start..end].iter().flat_map(|c| c.to_le_bytes()).collect();
-            let p = rt.raw_argument(t, 4)?;
-            rt.write(p, &b)?;
+            let start = a(2) as i32;
+            let len = a(3) as i32;
+            let end = if start >= 0 && len >= 0 {
+                (start as usize)
+                    .checked_add(len as usize)
+                    .filter(|e| *e <= u.len())
+            } else {
+                None
+            };
+            let Some(end) = end else {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/StringIndexOutOfBoundsException;",
+                    Some(format!("start={start} len={len} length={}", u.len())),
+                )?;
+                return Ok(Return::default());
+            };
+            if len > 0 {
+                let b: Vec<u8> = u[start as usize..end]
+                    .iter()
+                    .flat_map(|c| c.to_le_bytes())
+                    .collect();
+                let p = rt.raw_argument(t, 4)?;
+                rt.write(p, &b)?;
+            }
             0
         }
         // GetStringUTFRegion(env, str, start, len, char* buf): `start`/`len`
         // count UTF-16 units; the output is modified UTF-8, NUL-terminated.
         221 => {
+            if a(1) == 0 || state_ref(vm)?.refs.is_cleared_weak(a(1)) {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("GetStringUTFRegion on null string".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let r = hobj(&state_ref(vm)?.refs, a(1))?;
+            if r == 0 {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/NullPointerException;",
+                    Some("GetStringUTFRegion on null string".into()),
+                )?;
+                return Ok(Return::default());
+            }
             let u: Vec<u16> = vm.heap.as_str(r).map_err(ndk)?.encode_utf16().collect();
-            let (start, n) = (a(2) as usize, a(3) as usize);
-            let end = start
-                .checked_add(n)
-                .filter(|e| *e <= u.len())
-                .ok_or_else(|| ndk("StringIndexOutOfBoundsException: string UTF region"))?;
-            let sub = String::from_utf16_lossy(&u[start..end]);
+            let start = a(2) as i32;
+            let len = a(3) as i32;
+            let end = if start >= 0 && len >= 0 {
+                (start as usize)
+                    .checked_add(len as usize)
+                    .filter(|e| *e <= u.len())
+            } else {
+                None
+            };
+            let Some(end) = end else {
+                set_jni_pending(
+                    vm,
+                    "Ljava/lang/StringIndexOutOfBoundsException;",
+                    Some(format!("start={start} len={len} length={}", u.len())),
+                )?;
+                return Ok(Return::default());
+            };
+            let sub = String::from_utf16_lossy(&u[start as usize..end]);
             let mut b = rd_jni::encode_modified_utf8(&sub);
             b.push(0);
             let p = rt.raw_argument(t, 4)?;
@@ -1442,9 +1839,10 @@ fn width(k: char) -> usize {
     }
 }
 fn array_bytes(vm: &Engine, r: ObjRef, k: char, start: usize, n: usize) -> Result<Vec<u8>> {
+    let arr_len = require_primitive_array_len(vm, r, k)?;
     let (elems, _) = vm.heap.as_array_elems(r).map_err(ndk)?;
     let end = if n == usize::MAX {
-        elems.len()
+        arr_len
     } else {
         start
             .checked_add(n)
@@ -1453,7 +1851,7 @@ fn array_bytes(vm: &Engine, r: ObjRef, k: char, start: usize, n: usize) -> Resul
     let slice = elems
         .get(start..end)
         .ok_or_else(|| ndk("array range out of bounds"))?;
-    let mut b = Vec::new();
+    let mut b = Vec::with_capacity(slice.len() * width(k));
     for v in slice {
         let raw = match v {
             Value::Int(v) => *v as u64,
@@ -1467,6 +1865,7 @@ fn array_bytes(vm: &Engine, r: ObjRef, k: char, start: usize, n: usize) -> Resul
     Ok(b)
 }
 fn write_array(vm: &mut Engine, r: ObjRef, k: char, start: usize, b: &[u8]) -> Result<()> {
+    let _ = require_primitive_array_len(vm, r, k)?;
     let elems = vm.heap.array_elems_mut(r).map_err(ndk)?;
     let n = b.len() / width(k);
     let end = start
@@ -1791,9 +2190,10 @@ fn call_java(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
     } else if ctor {
         match vm.ensure_initialized(&class) {
             Ok(()) => {
+                let defaults = jni_default_instance_fields(vm, &class);
                 let recv = vm
                     .heap
-                    .alloc_instance(class.clone(), Vec::new())
+                    .alloc_instance(class.clone(), defaults)
                     .map_err(ndk)?;
                 match vm.attach_host_state(&class, recv) {
                     Ok(()) => {
@@ -1852,7 +2252,7 @@ fn call_java(vm: &mut Engine, rt: &mut Runtime, t: &Trap) -> Result<Return> {
             })
         }
         Err(VmExit::Exception(e)) => {
-            state_mut(vm)?.refs.pending = Some((e.class, e.message.unwrap_or_default()));
+            record_vm_exception(vm, e)?;
             Ok(Return::default())
         }
         Err(e) => Err(ndk(format!("Java callback failed: {e:?}"))),
