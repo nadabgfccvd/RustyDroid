@@ -202,6 +202,8 @@ pub struct Engine {
     host_depth: usize,
     entry_sp: usize,
     entry_stack_budget: usize,
+    /// Active host->host reentrant call depth (`object_to_string`, `obj_equals`, `obj_hash`, etc.).
+    pub(crate) host_reentrant_depth: usize,
 }
 
 /// Cobertura por classe (AG-09, nível de método).
@@ -280,6 +282,7 @@ impl Engine {
             host_depth: 0,
             entry_sp: 0,
             entry_stack_budget: FALLBACK_NATIVE_STACK_BYTES,
+            host_reentrant_depth: 0,
             #[cfg(feature = "jit")]
             jit: {
                 let mut j = crate::jit::JitState::default();
