@@ -3,16 +3,20 @@
 //! Formato: `source.android.com` → "String Pool Resource" / ResStringPool_header.
 //! Suporta UTF-16 e UTF-8 (flag `UTF8_FLAG`), com comprimentos prefixados e
 //! terminador nulo — decodificação total com bounds-checks (parsers nunca confiam).
+//!
+//! **Lazy (ADR 014):** o parse valida o header/limites e retém os bytes crus do
+//! chunk; strings individuais são decodificadas NA PRIMEIRA leitura (`get`) e
+//! memoizadas por slot (`OnceLock`). O cold path do ADR 008 toca <2–5% das
+//! strings; pior caso de memória = eager de hoje (todas tocadas), estritamente
+//! menor quando um subconjunto é tocado. Strings malformadas individuais
+//! retornam `None` no acesso (o parse eager as rejeitava antecipadamente);
+//! erros estruturais do pool continuam `RdError` no parse — Lei 1 preservada.
 
 use crate::error::{RdError, RdResult};
+use std::sync::{Arc, OnceLock};
 
 pub const RES_STRING_POOL_TYPE: u16 = 0x0001;
 pub const UTF8_FLAG: u32 = 1 << 8;
-
-#[derive(Debug, Clone, Default)]
-pub struct StringPool {
-    strings: Vec<String>,
-}
 
 #[inline]
 fn u16_at(d: &[u8], off: usize) -> RdResult<u16> {
@@ -28,10 +32,58 @@ fn u32_at(d: &[u8], off: usize) -> RdResult<u32> {
         .ok_or_else(|| RdError::parse(format!("string pool: truncated read u32 @ {off}")))
 }
 
+/// Pool lazy (ADR 014): bytes crus compartilhados + cache por slot.
+///
+/// `raw` é o documento INTEIRO (ARSC ou AXML) atrás de um `Arc` — o pool é uma
+/// REGIÃO lógica `[chunk_off..chunk_off+chunk_size]` dele (Lei 2: bytes/offsets
+/// crus preservados; clones compartilham o buffer). `offsets_base`/`strings_base`
+/// são relativos ao início do pool.
+#[derive(Debug, Default)]
+pub struct StringPool {
+    raw: Arc<Vec<u8>>,
+    chunk_off: usize,
+    chunk_size: usize,
+    count: usize,
+    offsets_base: usize,
+    strings_base: usize,
+    utf8: bool,
+    /// Cache por slot (ALOCAÇÃO PREGUIÇOSA — ADR 014): `Vec<OnceLock<..>>`
+    /// só existe após o primeiro `get`; pools nunca tocadas não pagam os
+    /// 410k slots do torture-huge-arsc. Decodifica 1x, memoiza; `None`
+    /// interno = string malformada (falha memoizada).
+    cache: OnceLock<Vec<OnceLock<Option<String>>>>,
+}
+
+impl Clone for StringPool {
+    /// Clone = mesma região (Arc compartilhado), cache renasce vazio
+    /// (decodifica de novo por instância — determinístico; nunca compartilha
+    /// `OnceLock` inicializados).
+    fn clone(&self) -> Self {
+        Self {
+            raw: Arc::clone(&self.raw),
+            chunk_off: self.chunk_off,
+            chunk_size: self.chunk_size,
+            count: self.count,
+            offsets_base: self.offsets_base,
+            strings_base: self.strings_base,
+            utf8: self.utf8,
+            cache: OnceLock::new(), // renasce vazio (decodifica de novo)
+        }
+    }
+}
 impl StringPool {
-    /// Parse de um chunk de string pool em `data[chunk_off..]`.
+    /// Parse de um chunk de string pool em `data[chunk_off..]` (caminho
+    /// standalone — AXML): retém UMA cópia do documento via `Arc`.
     /// Retorna `(pool, tamanho total do chunk)` — o caller continua nos bytes seguintes.
     pub fn parse(data: &[u8], chunk_off: usize) -> RdResult<(Self, u32)> {
+        let raw = Arc::new(data.to_vec());
+        Self::parse_shared(&raw, chunk_off)
+    }
+
+    /// Parse compartilhado (caminho ARSC): o documento inteiro já vive num
+    /// `Arc` — o pool é só uma região lógica dele, ZERO cópias extras.
+    pub fn parse_shared(raw: &Arc<Vec<u8>>, chunk_off: usize) -> RdResult<(Self, u32)> {
+        let data: &[u8] = raw;
         let base = chunk_off;
         if data.len() < base + 28 {
             return Err(RdError::parse(
@@ -63,24 +115,38 @@ impl StringPool {
                 "string pool: implausible string count {string_count}"
             )));
         }
-
-        let offsets_base = base + header_size;
-        let strings_base = base + strings_start;
-        let utf8 = flags & UTF8_FLAG != 0;
-
-        let mut strings = Vec::with_capacity(string_count.min(65_536));
-        for i in 0..string_count {
-            let rel = u32_at(data, offsets_base + i * 4)? as usize;
-            let abs = strings_base + rel;
-            let s = if utf8 {
-                Self::read_utf8(data, abs)?
-            } else {
-                Self::read_utf16(data, abs)?
-            };
-            strings.push(s);
+        if header_size < 28 {
+            return Err(RdError::parse(format!(
+                "string pool: header size {header_size} < 28"
+            )));
+        }
+        // Validação O(1) (ADR 014): a tabela de offsets precisa caber no
+        // documento. Offsets individuais fora do documento/truncados são
+        // rejeitados NO ACESSO (`get` → None): o eager falhava o parse
+        // inteiro na primeira string ruim; o lazy isola a string ruim
+        // (Lei 1 mantida no nível estrutural do header/tabela).
+        if string_count > 0 {
+            let offsets_end = base + header_size + string_count * 4;
+            if offsets_end > data.len() {
+                return Err(RdError::parse(format!(
+                    "string pool: offsets table ({string_count} entries) exceeds document"
+                )));
+            }
         }
 
-        Ok((StringPool { strings }, chunk_size as u32))
+        Ok((
+            StringPool {
+                raw: Arc::clone(raw),
+                chunk_off: base,
+                chunk_size,
+                count: string_count,
+                offsets_base: header_size,
+                strings_base: strings_start,
+                utf8: flags & UTF8_FLAG != 0,
+                cache: OnceLock::new(),
+            },
+            chunk_size as u32,
+        ))
     }
 
     /// UTF-16: [len:u16 (ou 2×u16 se bit alto)] [len × u16 units] [0x0000].
@@ -136,20 +202,54 @@ impl StringPool {
         Ok((((b0 & 0x7F) as usize) << 8) | b1 as usize)
     }
 
+    /// String por índice, decodificando NA PRIMEIRA leitura e memoizando.
+    /// `None` = índice fora da pool OU string individual malformada (o eager
+    /// rejeitava essa string no parse; o lazy reporta no acesso — ADR 014).
+    /// Strings vazias legítimas permanecem `Some("")`.
     pub fn get(&self, idx: u32) -> Option<&str> {
-        self.strings.get(idx as usize).map(String::as_str)
+        let idx = idx as usize;
+        if idx >= self.count {
+            return None;
+        }
+        let slots = self
+            .cache
+            .get_or_init(|| (0..self.count).map(|_| OnceLock::new()).collect::<Vec<_>>());
+        let slot = slots.get(idx)?;
+        // get_or_init é &self: primeira leitura decodifica; demais retornam o cache.
+        slot.get_or_init(|| self.decode(idx)).as_deref()
+    }
+
+    /// Decodifica a string `idx` dos bytes crus (Lei 2). Erro → `None`
+    /// (memoizado): string malformada individual não derruba o pool inteiro.
+    /// Bounds contra o documento INTEIRO — idêntico ao eager (que decodificava
+    /// com `data.len()` do buffer completo).
+    fn decode(&self, idx: usize) -> Option<String> {
+        let data: &[u8] = &self.raw;
+        let rel = match u32_at(data, self.chunk_off + self.offsets_base + idx * 4) {
+            Ok(r) => r as usize,
+            Err(_) => return None,
+        };
+        let abs = self.chunk_off + self.strings_base + rel;
+        if self.utf8 {
+            Self::read_utf8(data, abs).ok()
+        } else {
+            Self::read_utf16(data, abs).ok()
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.strings.len()
+        self.count
     }
 
     pub fn is_empty(&self) -> bool {
-        self.strings.is_empty()
+        self.count == 0
     }
 
+    /// Itera decodificando sob demanda (mesma ordem/valores do eager quando
+    /// todas as strings são sãs; malformadas são puladas — sem consumidores
+    /// externos hoje, mantido por compatibilidade de API).
     pub fn iter(&self) -> impl Iterator<Item = &str> {
-        self.strings.iter().map(String::as_str)
+        (0..self.count).filter_map(move |i| self.get(i as u32))
     }
 }
 
@@ -208,5 +308,82 @@ mod tests {
     fn rejects_out_of_bounds_chunk() {
         let bytes = handcrafted_utf8_pool();
         assert!(StringPool::parse(&bytes, usize::MAX / 2).is_err());
+    }
+
+    #[test]
+    fn lazy_decodes_once_and_memoizes() {
+        let bytes = handcrafted_utf8_pool();
+        let (pool, _) = StringPool::parse(&bytes, 0).unwrap();
+        let a = pool.get(0);
+        let b = pool.get(0);
+        // Mesmo endereço → memoizado (OnceLock devolve a mesma String).
+        assert!(std::ptr::eq(a.unwrap(), b.unwrap()));
+        assert_eq!(a, Some("hello"));
+    }
+
+    #[test]
+    fn clone_resets_cache_but_keeps_content() {
+        let bytes = handcrafted_utf8_pool();
+        let (pool, _) = StringPool::parse(&bytes, 0).unwrap();
+        let _ = pool.get(0); // aquece o cache
+        let cloned = pool.clone();
+        // Clone decodifica de novo (cache fresco) com o MESMO resultado.
+        assert_eq!(cloned.get(0), Some("hello"));
+        assert_eq!(cloned.get(1), Some("world"));
+        // E os ponteiros são independentes (caches distintos).
+        assert!(!std::ptr::eq(pool.get(0).unwrap(), cloned.get(0).unwrap()));
+    }
+
+    #[test]
+    fn empty_string_is_legitimate() {
+        // Pool com uma string vazia UTF-8: [0][0][\0]
+        let mut v = Vec::new();
+        v.extend(RES_STRING_POOL_TYPE.to_le_bytes());
+        v.extend(28u16.to_le_bytes());
+        v.extend(0u32.to_le_bytes());
+        v.extend(1u32.to_le_bytes());
+        v.extend(0u32.to_le_bytes());
+        v.extend(UTF8_FLAG.to_le_bytes());
+        v.extend(32u32.to_le_bytes()); // stringsStart = 28 + 1*4 (1 offset)
+        v.extend(0u32.to_le_bytes()); // stylesStart
+        v.extend(0u32.to_le_bytes()); // offset da string 0 (rel 0)
+        v.push(0); // decl chars
+        v.push(0); // byte len
+        v.push(0); // terminador
+        let size = v.len() as u32;
+        v[4..8].copy_from_slice(&size.to_le_bytes());
+        let (pool, _) = StringPool::parse(&v, 0).unwrap();
+        assert_eq!(pool.get(0), Some(""));
+        assert_eq!(pool.len(), 1);
+    }
+
+    #[test]
+    fn malformed_string_yields_none_not_panic() {
+        // ADR 014: offsets individuais ruins são rejeitados NO ACESSO —
+        // o parse aceita a estrutura (Lei 1 segue no nível do pool/header).
+        // string 0 → offset gigante (fora do documento): get → None.
+        let mut v = handcrafted_utf8_pool();
+        v[28..32].copy_from_slice(&0xFFFFu32.to_le_bytes());
+        let (pool, _) = StringPool::parse(&v, 0).unwrap();
+        assert_eq!(pool.get(0), None);
+        assert_eq!(pool.get(1), Some("world"));
+
+        // offset DENTRO do documento, mas em bytes que não formam string
+        // válida: get → None (falha memoizada, não pânico, não "").
+        let mut w = handcrafted_utf8_pool();
+        // string 1 → rel 11 → abs 47 = byte 'd': decl varint 100, depois
+        // byte_len varint fora do documento → Err → None.
+        w[32..36].copy_from_slice(&11u32.to_le_bytes());
+        let (pool, _) = StringPool::parse(&w, 0).unwrap();
+        assert_eq!(pool.get(1), None);
+        assert_eq!(pool.get(0), Some("hello"));
+    }
+
+    #[test]
+    fn iter_decodes_on_demand() {
+        let bytes = handcrafted_utf8_pool();
+        let (pool, _) = StringPool::parse(&bytes, 0).unwrap();
+        let collected: Vec<&str> = pool.iter().collect();
+        assert_eq!(collected, vec!["hello", "world"]);
     }
 }
