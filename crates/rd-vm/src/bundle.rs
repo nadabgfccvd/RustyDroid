@@ -200,7 +200,13 @@ fn dump_stats(
             // AOSP (size/entry access goes through `unparcel`).
             crate::parcel::unparcel_bundle(vm, bundle)?;
             for (key, value) in map_of(vm, bundle).unwrap_or_default() {
-                let size = crate::parcel::value_size(vm, &value)?;
+                // A value whose serialization trips the parcel write cap (a
+                // cyclic self-inclusive Bundle, or nesting past the cap)
+                // cannot be measured: the walk must survive any guest graph
+                // shape, so the size line is skipped and the recursion below
+                // prints the cycle/cap marker instead. Host-only path: the
+                // error comes from the write guards, not guest code.
+                let size = crate::parcel::value_size(vm, &value).ok();
                 let nested = match &value {
                     Value::Obj(o)
                         if matches!(vm.fw.get(*o), Some(HostObj::Bundle { .. }))
@@ -210,7 +216,7 @@ fn dump_stats(
                     }
                     _ => None,
                 };
-                if size > 1024 {
+                if let Some(size) = size.filter(|&s| s > 1024) {
                     let key = if key == NULL_KEY { "null" } else { &key };
                     let line = crate::intrinsics::alloc_string(vm, format!("{key} [size={size}]"))?;
                     vm.invoke_instance(

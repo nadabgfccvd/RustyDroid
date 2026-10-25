@@ -4,7 +4,9 @@
 //!     honors the default on null/mismatch — AOSP's ClassCastException
 //!     warning renders as the default);
 //! (2) `BaseBundle.dumpStats` survives self-referential Bundles and depth
-//!     past the cap with a `<recursion>` marker (no host stack overflow);
+//!     past the cap with a `<recursion>` marker (no host stack overflow):
+//!     the write cap (#261) makes deep values unmeasurable, the walk skips
+//!     the size line and keeps indent parity;
 //! (3) `Intent.setComponent` and `Intent.setClassName` agree — a class set
 //!     by either is observable through `getComponent`;
 //! (4) `hasExtra`/`removeExtra(null)` use the same NULL_KEY slot as
@@ -291,6 +293,9 @@ fn dump_stats_survives_self_referential_bundle() {
     let mut e = engine_of(&b);
     let bundle = e.new_instance(BUNDLE).unwrap();
     // A Bundle that contains itself: AOSP's recursion would abort the host.
+    // Lazy reference storage (#261) lets the put succeed; serialization of
+    // the cycle trips the write cap, so dumpStats must walk it without
+    // measuring the unmeasurable value.
     put_bundle(&mut e, bundle, "self", bundle);
 
     let w = e.new_instance(WRITER).unwrap();
@@ -304,8 +309,7 @@ fn dump_stats_survives_self_referential_bundle() {
 
     let (inc, dec, _, last) = writer_fields(&e, w);
     assert_eq!(inc, dec, "indent calls must stay balanced");
-    // The walk prints the guarded-size line for the huge cyclic value and
-    // ends on the recursion marker instead of aborting the host.
+    // The walk ends on the recursion marker instead of aborting the host.
     assert_eq!(text_of(&e, last), "<recursion>");
 }
 
@@ -313,8 +317,10 @@ fn dump_stats_survives_self_referential_bundle() {
 fn dump_stats_caps_deep_nesting() {
     let b = build();
     let mut e = engine_of(&b);
-    // A 40-level chain: past MAX_DUMP_DEPTH the walk prints the marker and
-    // unwinds instead of exhausting the host stack.
+    // A 40-level chain: puts are lazy so the chain builds; dumpStats' size
+    // measurement of the deep value trips the write cap and is skipped,
+    // the walk prints the marker and unwinds instead of exhausting the
+    // host stack.
     let mut cur = e.new_instance(BUNDLE).unwrap();
     put_int(&mut e, cur, "leaf", 1);
     for _ in 0..40 {
@@ -330,7 +336,8 @@ fn dump_stats_caps_deep_nesting() {
         &[Value::Obj(w), Value::Obj(cur)],
     )
     .expect("dumpStats must survive deep nesting");
-    let (_, _, _, last) = writer_fields(&e, w);
+    let (inc, dec, _, last) = writer_fields(&e, w);
+    assert_eq!(inc, dec, "indent calls must stay balanced");
     assert_eq!(text_of(&e, last), "<recursion>");
 }
 
