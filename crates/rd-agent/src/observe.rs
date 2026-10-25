@@ -326,6 +326,31 @@ impl AgentSession {
         }
     }
 
+    /// Issue #317: `resources/read` executa `screen_refresh` /
+    /// `screen_png` (código guest) — isolado como as tools: panic
+    /// vira erro JSON-RPC tipado + teardown do app, nunca crash
+    /// do servidor MCP.
+    pub fn resource_read_isolated(
+        &mut self,
+        uri: &str,
+    ) -> Result<serde_json::Value, (i64, String)> {
+        let r =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.resource_read(uri)));
+        match r {
+            Ok(r) => r,
+            Err(p) => {
+                let msg = Self::panic_message(&*p);
+                self.teardown_after_panic("resources/read", &msg);
+                Err((
+                    -32002,
+                    format!(
+                        "INTERNAL_PANIC: runtime panic em resources/read '{uri}': {msg} — o app foi encerrado; a sessão continua"
+                    ),
+                ))
+            }
+        }
+    }
+
     /// Re-records one frame when the screen is dirty and rebuilds the model.
     fn screen_refresh(&mut self) -> Result<(), RdError> {
         if !self.screen.dirty && self.screen.snap.is_some() {
@@ -403,10 +428,16 @@ impl AgentSession {
         };
         if let Some(msg) = &draw_error {
             if self.screen.draw_error.as_deref() != Some(msg) {
+                // Issue #317: log é best-effort — buffer envenenado não
+                // pode transformar um erro de desenho em panic.
                 self.logs
                     .lock()
-                    .expect("logs")
-                    .extend_from_slice(format!("W/RustyDroid: draw pass failed: {msg}\n").as_bytes());
+                    .map(|mut l| {
+                        l.extend_from_slice(
+                            format!("W/RustyDroid: draw pass failed: {msg}\n").as_bytes(),
+                        )
+                    })
+                    .ok();
             }
         }
         self.screen.draw_error = draw_error;
@@ -517,7 +548,10 @@ impl AgentSession {
             "json" => {
                 let boxes = args.get("boxes").and_then(|v| v.as_bool()).unwrap_or(false);
                 let v = self.screen.version;
-                let snap = self.screen.snap.as_ref().expect("snap");
+                // Issue #317: invariante quebrada vira erro tipado.
+                let snap = self.screen.snap.as_ref().ok_or_else(|| {
+                    agent_error("NOT_RUNNING", "sem frame de tela disponível", None)
+                })?;
                 let mut j = snap.to_json(v, boxes);
                 let cur: Vec<String> = snap.texts().iter().map(|t| t.text.clone()).collect();
                 if diff {
@@ -556,7 +590,10 @@ impl AgentSession {
         let exact = args.get("exact").and_then(|v| v.as_bool()).unwrap_or(false);
         let nth = args.get("nth").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         self.screen_refresh()?;
-        let snap = self.screen.snap.as_ref().expect("snap");
+        // Issue #317: invariante quebrada vira erro tipado.
+        let snap = self.screen.snap.as_ref().ok_or_else(|| {
+            agent_error("NOT_RUNNING", "sem frame de tela disponível", None)
+        })?;
         let w = norm(want);
         let hit = |label: &str| {
             let l = norm(label);
@@ -638,7 +675,14 @@ impl AgentSession {
             }
             RES_SCREEN_TXT => {
                 self.screen_refresh().map_err(err)?;
-                let snap = self.screen.snap.as_ref().expect("snap");
+                // Issue #317: sem `expect` em caminho de servidor.
+                let Some(snap) = self.screen.snap.as_ref() else {
+                    return Err(err(agent_error(
+                        "NOT_RUNNING",
+                        "sem frame de tela disponível — lance um app primeiro",
+                        None,
+                    )));
+                };
                 serde_json::json!({"uri": uri, "mimeType": "text/plain", "text": snap.to_text(self.screen.version)})
             }
             RES_SCREEN_PNG => {
@@ -646,7 +690,14 @@ impl AgentSession {
                 serde_json::json!({"uri": uri, "mimeType": "image/png", "blob": base64_encode(&png)})
             }
             RES_LOGS => {
-                let buf = self.logs.lock().expect("logs");
+                // Issue #317: buffer envenenado degrada tipado, sem panic.
+                let buf = self.logs.lock().map_err(|_| {
+                    err(agent_error(
+                        "LOG_BUFFER_UNAVAILABLE",
+                        "buffer de logs indisponível (mutex envenenado por panic anterior)",
+                        None,
+                    ))
+                })?;
                 serde_json::json!({"uri": uri, "mimeType": "text/plain", "text": String::from_utf8_lossy(&buf).to_string()})
             }
             other => return Err((-32002, format!("resource '{other}' não existe (veja resources/list)"))),

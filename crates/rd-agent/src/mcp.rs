@@ -1286,10 +1286,12 @@ impl AgentSession {
                     st.last_used_before / 1024,
                     st.last_used_after / 1024
                 );
+                // Issue #317: log é best-effort (buffer pode estar
+                // envenenado por um panic anterior já isolado).
                 self.logs
                     .lock()
-                    .expect("logs")
-                    .extend_from_slice(line.as_bytes());
+                    .map(|mut l| l.extend_from_slice(line.as_bytes()))
+                    .ok();
             }
         }
         out
@@ -2305,13 +2307,20 @@ impl AgentSession {
     /// Saúde do runtime (M5): reporta o estado SEM exigir app — nunca
     /// falha por falta de app (é a tool de diagnóstico).
     fn tool_runtime_health(&mut self) -> Result<ToolResult, RdError> {
+        // Issue #317: a tool de diagnóstico sobrevive a buffer
+        // envenenado reportando disponibilidade, nunca por panic.
+        let (logs_bytes, logs_available) = match self.logs.lock() {
+            Ok(l) => (l.len(), true),
+            Err(_) => (0, false),
+        };
         let mut v = serde_json::json!({
             "session_id": self.session_id,
             "installed_count": self.installed.len(),
             "active_package": self.active,
             "running": self.engine.is_some(),
             "running_package": self.engine_package,
-            "logs_bytes": self.logs.lock().expect("logs").len(),
+            "logs_bytes": logs_bytes,
+            "logs_available": logs_available,
         });
         match self.engine.as_ref() {
             Some(eng) => {
@@ -3169,7 +3178,9 @@ fn handle_single(
                 )));
             };
             let r = match method {
-                "resources/read" => session.resource_read(uri),
+                // Issue #317: read executa código guest (refresh/draw) —
+                // isolado como as tools, nunca crash do servidor.
+                "resources/read" => session.resource_read_isolated(uri),
                 m => session
                     .resource_subscribe(uri, m == "resources/subscribe")
                     .map(|()| serde_json::json!({})),
