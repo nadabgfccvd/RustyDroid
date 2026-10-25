@@ -43,19 +43,19 @@ jobs:
       matrix:
         include:
           - package: rd-apk-fuzz
-            crate_dir: crates/rd-apk/fuzz
+            crate_dir: crates/rd-apk
             target: zip
           - package: rd-apk-fuzz
-            crate_dir: crates/rd-apk/fuzz
+            crate_dir: crates/rd-apk
             target: axml
           - package: rd-apk-fuzz
-            crate_dir: crates/rd-apk/fuzz
+            crate_dir: crates/rd-apk
             target: arsc
           - package: rd-apk-fuzz
-            crate_dir: crates/rd-apk/fuzz
+            crate_dir: crates/rd-apk
             target: apk_full
           - package: rd-dex-fuzz
-            crate_dir: crates/rd-dex/fuzz
+            crate_dir: crates/rd-dex
             target: dex
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -66,16 +66,16 @@ jobs:
         with:
           toolchain: nightly
 
-      - uses: Swatinem/rust-cache@2201cc584a476d1b508be977bbe4b7d1c7a52e9c # v2.9.3
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: ${{ matrix.crate_dir }} -> target
+          workspaces: ${{ matrix.crate_dir }}/fuzz -> target
 
       # The corpus is the point of "corpus persistido": without it every night
       # restarts from the same seeds and finds the same edges.
       - name: Restore corpus
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: ${{ matrix.crate_dir }}/corpus/${{ matrix.target }}
+          path: ${{ matrix.crate_dir }}/fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: |
             fuzz-corpus-${{ matrix.target }}-
@@ -83,10 +83,13 @@ jobs:
       - name: Install cargo-fuzz (pinned)
         run: cargo install cargo-fuzz --locked --version 0.13.2
 
+      # cargo-fuzz runs from the crate that owns `fuzz/` (same as ci.yml
+      # fuzz-build and scripts/fuzz-campaign.sh), not from the workspace root.
       - name: Build target
+        working-directory: ${{ matrix.crate_dir }}
         env:
-          PKG: ${{ matrix.package }}
-        run: cargo +nightly fuzz build -p "$PKG"
+          TARGET: ${{ matrix.target }}
+        run: cargo +nightly fuzz build "$TARGET"
 
       - name: Smoke run
         timeout-minutes: 15
