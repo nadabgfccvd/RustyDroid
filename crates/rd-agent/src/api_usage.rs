@@ -68,14 +68,15 @@ fn is_android(desc: &str) -> bool {
     desc.starts_with("Landroid/")
 }
 
-/// Apêndice D: bibliotecas Jetpack.
+/// Apêndice D: as raízes vêm do próprio registro (fd_jetpack), nunca de uma
+/// cópia local que pode divergir (androidx, Material, OkHttp, coroutines, …).
 fn is_jetpack(desc: &str) -> bool {
-    desc.starts_with("Landroidx/")
+    rd_framework::fd_jetpack::is_jetpack_ecosystem(desc)
 }
 
-/// Apêndice E: Google Play services + Firebase.
+/// Apêndice E: idem (fd_gms: gms, Firebase, Play Billing/Core, ML Kit).
 fn is_gms(desc: &str) -> bool {
-    desc.starts_with("Lcom/google/android/gms/") || desc.starts_with("Lcom/google/firebase/")
+    rd_framework::fd_gms::is_gms_ecosystem(desc)
 }
 
 /// Tipos referenciados por família (Apêndices D/E), além do android.* (C).
@@ -127,7 +128,7 @@ pub fn scan(package: &str, dexes: &[rd_dex::Dex]) -> ApiUsage {
             methods
                 .entry(cls)
                 .or_default()
-                .insert(dex.strings.get_or_empty(m.name_idx).to_string());
+                .insert(dex.string(m.name_idx).to_string());
         }
         // referências de campo implicam o tipo (ex.: android.os.Build.VERSION)
         for f in &dex.field_ids {
@@ -354,6 +355,15 @@ mod tests {
             "getInstance",
         );
         b.field_idx("Lcom/google/android/gms/future/NewApi;", "I", "X");
+        // raízes além de androidx./gms./firebase. (#234): OkHttp e Material
+        // são ecossistema D; Play Billing é ecossistema E
+        b.method_idx("Lokhttp3/OkHttpClient;", p_v, "newCall");
+        b.field_idx(
+            "Lcom/google/android/material/button/MaterialButton;",
+            "I",
+            "Y",
+        );
+        b.field_idx("Lcom/android/billingclient/api/BillingClient;", "I", "Z");
         let dex = rd_dex::Dex::parse(b.finish()).expect("dex válido");
         let u = scan("com.x", std::slice::from_ref(&dex));
 
@@ -362,19 +372,35 @@ mod tests {
             "D/E não poluem o C: {:?}",
             u.android_types
         );
-        assert_eq!(u.jetpack.total_types, 1, "{:?}", u.jetpack);
+        assert_eq!(u.jetpack.total_types, 3, "{:?}", u.jetpack);
+        assert_eq!(u.gms.total_types, 3, "{:?}", u.gms);
         assert!(
-            !u.jetpack.by_status.contains_key("unknown"),
+            u.gms
+                .unknown_types
+                .contains(&"com.google.android.gms.future.NewApi".to_string()),
             "{:?}",
-            u.jetpack
-        );
-        assert_eq!(u.gms.total_types, 2, "{:?}", u.gms);
-        assert_eq!(u.gms.by_status.get("unknown"), Some(&1), "{:?}", u.gms);
-        assert_eq!(
-            u.gms.unknown_types,
-            vec!["com.google.android.gms.future.NewApi".to_string()]
+            u.gms
         );
         assert!(u.gms.gap_ids.iter().any(|g| g == "gap-gms-unknown"));
         assert_eq!(u.registry_sources[0], "data/jetpack.toml (Appendix D)");
+    }
+
+    /// Nomes de método vêm do acessor sob demanda (`Dex::string`), não do
+    /// cache já materializado: com o parse lazy (ADR 008 Stage 1b, usado pelo
+    /// MCP via `parse_unverified`) o cache começa vazio.
+    #[test]
+    fn scan_reads_method_names_on_unverified_parse() {
+        let mut b = DexBuilder::new();
+        b.class("Lcom/x/Main;", "Ljava/lang/Object;");
+        let p_v = b.proto_idx("V", vec![]);
+        b.method_idx("Landroid/app/Activity;", p_v, "onCreate");
+        let dex = rd_dex::Dex::parse_unverified(b.finish()).expect("dex válido");
+        let u = scan("com.x", std::slice::from_ref(&dex));
+        assert_eq!(
+            u.android_methods.get("android.app.Activity"),
+            Some(&vec!["onCreate".to_string()]),
+            "{:?}",
+            u.android_methods
+        );
     }
 }

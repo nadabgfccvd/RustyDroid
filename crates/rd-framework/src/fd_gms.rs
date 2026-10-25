@@ -185,6 +185,27 @@ fn is_gms_root(fqcn: &str) -> bool {
     GMS_ROOTS.iter().any(|r| fqcn.starts_with(r))
 }
 
+/// Single source of truth for "is this type in the Appendix E ecosystem?"
+/// (all `GMS_ROOTS`: gms, Firebase, Play Billing, Play Core, ML Kit).
+/// Accepts an FQCN or a DEX descriptor and never allocates.
+pub fn is_gms_ecosystem(raw: &str) -> bool {
+    GMS_ROOTS.iter().any(|r| under_root(raw, r))
+}
+
+/// `raw` (FQCN `a.b.C` or descriptor `La/b/C;`) starts with the dotted
+/// ecosystem `root`, without allocating (descriptor `/` matches root `.`).
+fn under_root(raw: &str, root: &str) -> bool {
+    let raw = raw.trim();
+    let s = match raw.strip_prefix('L') {
+        Some(inner) if inner.contains('/') => inner,
+        _ => raw,
+    };
+    s.len() >= root.len()
+        && s.bytes()
+            .zip(root.bytes())
+            .all(|(a, b)| a == b || (a == b'/' && b == b'.'))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GmsClassification {
     pub fqcn: String,
@@ -836,5 +857,43 @@ mod tests {
         table.service.retain(|s| s.id != "gms-tasks");
         let err = table.validate().unwrap_err();
         assert!(err.cause.contains("gms-tasks"), "{}", err.cause);
+    }
+
+    /// Fonte única das raízes para scanners estáticos (#234): FQCN e
+    /// descritor DEX, todas as raízes, sem falsos positivos de prefixo.
+    #[test]
+    fn is_gms_ecosystem_covers_all_roots_in_fqcn_and_descriptor_form() {
+        assert!(
+            is_gms_ecosystem("com.google.android.gms.tasks.Task"),
+            "com.google.android.gms.tasks.Task"
+        );
+        assert!(
+            is_gms_ecosystem("Lcom/google/firebase/FirebaseApp;"),
+            "Lcom/google/firebase/FirebaseApp;"
+        );
+        assert!(
+            is_gms_ecosystem("Lcom/android/billingclient/api/BillingClient;"),
+            "Lcom/android/billingclient/api/BillingClient;"
+        );
+        assert!(
+            is_gms_ecosystem("Lcom/google/android/play/core/review/ReviewManager;"),
+            "Lcom/google/android/play/core/review/ReviewManager;"
+        );
+        assert!(
+            is_gms_ecosystem("Lcom/google/mlkit/vision/Face;"),
+            "Lcom/google/mlkit/vision/Face;"
+        );
+        assert!(
+            !is_gms_ecosystem("androidx.room.Room"),
+            "androidx.room.Room"
+        );
+        assert!(
+            !is_gms_ecosystem("Lcom/google/android/material/Foo;"),
+            "Lcom/google/android/material/Foo;"
+        );
+        assert!(
+            !is_gms_ecosystem("Lcom/google/android/gmsx/Foo;"),
+            "Lcom/google/android/gmsx/Foo;"
+        );
     }
 }
