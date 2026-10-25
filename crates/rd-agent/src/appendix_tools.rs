@@ -144,9 +144,7 @@ impl AgentSession {
                 .and_then(|v| v.as_object())
                 .map(|o| {
                     o.iter()
-                        .map(|(k, v)| {
-                            (k.clone(), v.as_str().unwrap_or_default().to_string())
-                        })
+                        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -174,10 +172,20 @@ impl AgentSession {
             }
             e.gms_billing_add_sku(
                 id,
-                if s("type").is_empty() { "inapp" } else { s("type") },
+                if s("type").is_empty() {
+                    "inapp"
+                } else {
+                    s("type")
+                },
                 s("price"),
-                sku.get("price_micros").and_then(|v| v.as_i64()).unwrap_or(0),
-                if s("currency").is_empty() { "BRL" } else { s("currency") },
+                sku.get("price_micros")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+                if s("currency").is_empty() {
+                    "BRL"
+                } else {
+                    s("currency")
+                },
                 s("title"),
             );
             applied.push("billing_sku");
@@ -187,15 +195,11 @@ impl AgentSession {
             let o = match outcome {
                 "purchase" => BillingOutcome::Purchase,
                 "canceled" => BillingOutcome::Canceled,
-                "error" => BillingOutcome::Error(
-                    get_i64("billing_error_code").unwrap_or(6) as i32,
-                ),
+                "error" => BillingOutcome::Error(get_i64("billing_error_code").unwrap_or(6) as i32),
                 other => {
                     return Err(agent_error(
                         "INVALID_FORMAT",
-                        format!(
-                            "billing_outcome {other:?} inválido (purchase|canceled|error)"
-                        ),
+                        format!("billing_outcome {other:?} inválido (purchase|canceled|error)"),
                         None,
                     ))
                 }
@@ -273,16 +277,12 @@ impl AgentSession {
         let cameras: Vec<serde_json::Value> = e
             .gms_maps_cameras()
             .iter()
-            .map(|(lat, lng, zoom)| {
-                serde_json::json!({ "lat": lat, "lng": lng, "zoom": zoom })
-            })
+            .map(|(lat, lng, zoom)| serde_json::json!({ "lat": lat, "lng": lng, "zoom": zoom }))
             .collect();
         let markers: Vec<serde_json::Value> = e
             .gms_maps_markers()
             .iter()
-            .map(|(lat, lng, title)| {
-                serde_json::json!({ "lat": lat, "lng": lng, "title": title })
-            })
+            .map(|(lat, lng, title)| serde_json::json!({ "lat": lat, "lng": lng, "title": title }))
             .collect();
         Ok(ToolResult::json(&serde_json::json!({
             "mode": "no-gms-honest",
