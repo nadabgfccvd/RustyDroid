@@ -22,7 +22,7 @@ fn write_temp_apk(tag: &str, bytes: Vec<u8>) -> String {
 }
 
 #[test]
-fn m10_catalog_preserves_47_tools_and_exposes_all_actions() {
+fn m10_catalog_preserves_47_tools_and_exposes_all_18_actions() {
     let defs = tool_defs();
     assert_eq!(defs.len(), 47, "MCP tool count contract is locked at 47");
 
