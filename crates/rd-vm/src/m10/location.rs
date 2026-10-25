@@ -664,7 +664,11 @@ impl Engine {
 
     fn m10_deliver_location_fix(&mut self, fix: &LocationFix) -> Result<usize, VmExit> {
         let gms_count = self.gms_location_callback_count();
-        self.gms_push_location(fix.latitude, fix.longitude, fix.accuracy);
+        // S8 (#229, lado GMS): o shim do Apêndice E lê o fix deste estado
+        // e entrega aos seus LocationCallbacks. NÃO chamar
+        // gms_push_location aqui: ele delega em m10_set_location e
+        // recursionaria nesta entrega.
+        crate::gms::notify_fix_changed(self);
         let regs = self.fw.vdev.location.listeners.clone();
         if regs.is_empty() {
             return Ok(gms_count);

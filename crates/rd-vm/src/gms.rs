@@ -3649,7 +3649,6 @@ fn sync_fix_mirror(_vm: &mut Engine) {}
 /// Chamado pelo M10 sempre que o fix muda por essa via
 /// (`m10_set_location`/rotas, via `m10_deliver_location_fix`): entrega o
 /// fix novo aos `LocationCallback`s GMS registados neste shim.
-#[allow(dead_code)] // chamado pelo hook do M10 (issue #229)
 pub(crate) fn notify_fix_changed(vm: &mut Engine) {
     sync_fix_mirror(vm);
     if let Some(fix) = current_fix(vm) {
