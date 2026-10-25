@@ -18368,6 +18368,40 @@ fn bluetooth_without_a_service_and_device_values_are_guest_visible() {
         ),
         "Ljava/lang/IllegalArgumentException;",
     );
+    // Deep audit: the device constructor rejects a lowercase address
+    // (checkBluetoothAddress is uppercase-hex only) and a non
+    // PUBLIC/RANDOM address type; the byte[] factory rejects arrays
+    // that do not hold exactly 6 bytes.
+    let lowercase_address = text(&mut engine, "c0:11:22:33:aa:bb");
+    assert_throws(
+        engine.invoke_instance(
+            adapter,
+            "getRemoteDevice",
+            "(Ljava/lang/String;)Landroid/bluetooth/BluetoothDevice;",
+            &[lowercase_address],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
+    let typed_address = text(&mut engine, "C0:11:22:33:AA:BB");
+    assert_throws(
+        engine.invoke_instance(
+            adapter,
+            "getRemoteLeDevice",
+            "(Ljava/lang/String;I)Landroid/bluetooth/BluetoothDevice;",
+            &[typed_address, Value::Int(2)],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
+    let short_bytes = byte_array(&mut engine, &[0, 0x11, 0x22, 0x33, 0xaa]);
+    assert_throws(
+        engine.invoke_instance(
+            adapter,
+            "getRemoteDevice",
+            "([B)Landroid/bluetooth/BluetoothDevice;",
+            &[short_bytes],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
     assert!(engine
         .cp
         .is_subtype(P36D_BT_DEVICE, "Landroid/os/Parcelable;"));
