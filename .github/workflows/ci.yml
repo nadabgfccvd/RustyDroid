@@ -24,7 +24,7 @@ jobs:
         run: |
           test -f RustyDroid.md || { echo "::error::RustyDroid.md missing"; exit 1; }
           grep -q "Especificação Mestra v2.1" RustyDroid.md || { echo "::error::spec version mismatch"; exit 1; }
-          grep -q "minSdkVersion 26" RustyDroid.md || { echo "::error::API floor 26 contract missing"; exit 1; }
+          grep -q "minSdkVersion 9" RustyDroid.md || { echo "::error::API floor 9 contract missing (ADR 016)"; exit 1; }
           grep -q "moto-e5" RustyDroid.md || { echo "::error::Moto E5 floor contract missing"; exit 1; }
           echo "✅ Spec contracts OK"
 
