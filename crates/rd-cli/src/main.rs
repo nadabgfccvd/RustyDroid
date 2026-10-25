@@ -1415,6 +1415,23 @@ fn boot_app(
     fuel: Option<u64>,
 ) -> Result<(rd_vm::Engine, String, String), RdError> {
     let apk = open_apk(path).ok();
+    // Piso API 26 é contrato de EXECUÇÃO em todas as superfícies: o MCP
+    // `install` já recusava com BELOW_FLOOR, mas o caminho CLI executava
+    // minSdk<26 silenciosamente (rodada end-to-end APK-Tester do PR-Agent).
+    // Mesmo código/causa/sugestão da borda MCP. Sem APK (arquivo .dex
+    // solto) não há manifest nem piso a aplicar.
+    if let Some(a) = &apk {
+        if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } = a.floor_status() {
+            return Err(RdError::new(
+                "BELOW_FLOOR",
+                format!(
+                    "minSdkVersion={min_sdk} abaixo do piso {floor} — o app não roda neste runtime"
+                ),
+                "rd-cli",
+            )
+            .with_suggestion("use um APK com minSdkVersion ≥ 26"));
+        }
+    }
     let files = match &apk {
         Some(a) => dexes_of_apk(a)?,
         None => load_dex_files(path)?,
