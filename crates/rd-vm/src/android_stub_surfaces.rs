@@ -51126,17 +51126,22 @@ fn p36h_hex_encode(bytes: &[u8]) -> String {
 fn p36h_hex_decode(text: &str) -> Result<Vec<u8>, VmExit> {
     let chars: Vec<char> = text.chars().collect();
     if chars.len() % 2 != 0 {
-        return Err(iae("Odd number of hex characters".to_string()));
+        return Err(iae(format!("Invalid input length: {}", chars.len())));
     }
     let mut out = Vec::with_capacity(chars.len() / 2);
     let mut i = 0;
     while i < chars.len() {
-        let hi = chars[i].to_digit(16);
-        let lo = chars[i + 1].to_digit(16);
-        match (hi, lo) {
-            (Some(h), Some(l)) => out.push((h * 16 + l) as u8),
-            _ => return Err(iae("Invalid hex character".to_string())),
-        }
+        let hi = chars[i]
+            .to_digit(16)
+            .ok_or_else(|| iae(format!("Illegal char: {} at offset {}", chars[i], i)))?;
+        let lo = chars[i + 1].to_digit(16).ok_or_else(|| {
+            iae(format!(
+                "Illegal char: {} at offset {}",
+                chars[i + 1],
+                i + 1
+            ))
+        })?;
+        out.push((hi * 16 + lo) as u8);
         i += 2;
     }
     Ok(out)
@@ -51221,18 +51226,19 @@ fn partial36h_wifi_static(
         // WifiManager pure statics.
         (P36H_WIFI_MANAGER, "calculateSignalLevel", "(II)I") => {
             let rssi = iarg(args, 0);
-            let levels = iarg(args, 1);
-            // MIN_RSSI=-100, MAX_RSSI=-55 (AOSP WifiManager).
+            let output_range = iarg(args, 1).wrapping_sub(1);
+            // MIN_RSSI=-100, MAX_RSSI=-55 (AOSP WifiManager); the AOSP
+            // computation is done in float, not integer arithmetic.
             Value::Int(if rssi <= -100 {
                 0
             } else if rssi >= -55 {
-                levels - 1
+                output_range
             } else {
-                (rssi + 100) * (levels - 1) / 45
+                ((rssi + 100) as f32 * output_range as f32 / 45.0) as i32
             })
         }
         (P36H_WIFI_MANAGER, "compareSignalLevel", "(II)I") => {
-            Value::Int(iarg(args, 0) - iarg(args, 1))
+            Value::Int(iarg(args, 0).wrapping_sub(iarg(args, 1)))
         }
         (P36H_WIFI_MANAGER, "getMaxNumberOfNetworkSuggestionsPerApp", "(Z)I") => {
             Value::Int(if iarg(args, 0) != 0 { 256 } else { 1024 })
@@ -51459,15 +51465,25 @@ fn partial36h_wifi_instance(
             Value::Int(1024)
         }
         (P36H_WIFI_MANAGER, "calculateSignalLevel", "(I)I") => {
-            // Deprecated instance form uses RSSI_LEVELS=5.
+            // The instance form delegates to the Wi-Fi service, which
+            // compares against R.array.config_wifiRssiLevelThresholds
+            // (AOSP defaults -88/-77/-66/-55) via RssiUtil.
             let rssi = iarg(args, 0);
-            Value::Int(if rssi <= -100 {
+            Value::Int(if rssi < -88 {
                 0
-            } else if rssi >= -55 {
-                4
+            } else if rssi < -77 {
+                1
+            } else if rssi < -66 {
+                2
+            } else if rssi < -55 {
+                3
             } else {
-                (rssi + 100) * 4 / 45
+                4
             })
+        }
+        (P36H_WIFI_MANAGER, "getMaxSignalLevel", "()I") => {
+            // AOSP: calculateSignalLevel(Integer.MAX_VALUE).
+            Value::Int(4)
         }
         // WifiInfo default construction + getters.
         (P36H_WIFI_INFO, "<init>", "()V") => {
@@ -51484,12 +51500,19 @@ fn partial36h_wifi_instance(
             Value::Null
         }
         (P36H_WIFI_INFO, "getSSID", "()Ljava/lang/String;") => {
+            // AOSP returns mWifiSsid.toString() when non-empty: the
+            // quoted UTF-8 text, or lowercase hex for non-UTF-8 bytes.
             let text = match field_obj(vm, recv, "mWifiSsid") {
                 Some(ssid) => {
                     let bytes = p36h_bytes(vm, Some(&get(vm, ssid, "mBytes")));
-                    match p36h_ssid_utf8_text(&bytes) {
+                    let rendered = match p36h_ssid_utf8_text(&bytes) {
                         Some(t) if !t.is_empty() => format!("\"{t}\""),
-                        _ => "<unknown ssid>".to_string(),
+                        _ => p36h_hex_encode(&bytes),
+                    };
+                    if rendered.is_empty() {
+                        "<unknown ssid>".to_string()
+                    } else {
+                        rendered
                     }
                 }
                 None => "<unknown ssid>".to_string(),

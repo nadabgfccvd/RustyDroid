@@ -22454,6 +22454,68 @@ fn wifi_disabled_profile_and_value_classes_are_guest_visible() {
         ),
         Value::Int(8)
     );
+
+    // Deep audit: the static calculateSignalLevel is computed in float
+    // on AOSP. With numLevels=50_000_000 the float result for rssi=-90
+    // is 11111111, one more than integer arithmetic would give.
+    assert_eq!(
+        call_static(
+            &mut engine,
+            P36H_WIFI_MANAGER,
+            "calculateSignalLevel",
+            P36H_INTS2,
+            &[Value::Int(-90), Value::Int(50_000_000)]
+        ),
+        Value::Int(11_111_111)
+    );
+    // The instance form rates against the service thresholds
+    // [-88, -77, -66, -55]; pin every band edge.
+    for (rssi, level) in [
+        (-89, 0),
+        (-88, 1),
+        (-78, 1),
+        (-77, 2),
+        (-67, 2),
+        (-66, 3),
+        (-56, 3),
+        (-55, 4),
+    ] {
+        assert_eq!(
+            call(
+                &mut engine,
+                manager,
+                "calculateSignalLevel",
+                "(I)I",
+                &[Value::Int(rssi)]
+            ),
+            Value::Int(level),
+            "rssi {rssi}"
+        );
+    }
+    assert_eq!(
+        call(&mut engine, manager, "getMaxSignalLevel", "()I", &[]),
+        Value::Int(4)
+    );
+
+    // A WifiSsid whose bytes are not valid UTF-8 renders as lowercase
+    // hex through WifiInfo.getSSID (via WifiSsid.toString), never as
+    // WifiManager.UNKNOWN_SSID.
+    let raw = byte_array(&mut engine, &[0xff, 0x41]);
+    let ssid = object(call_static(
+        &mut engine,
+        P36H_WIFI_SSID,
+        "fromBytes",
+        "([B)Landroid/net/wifi/WifiSsid;",
+        &[raw],
+    ));
+    engine
+        .heap
+        .put_field(info, "mWifiSsid", Value::Obj(ssid))
+        .unwrap();
+    assert_eq!(
+        call_text(&mut engine, info, "getSSID", "()Ljava/lang/String;", &[]),
+        "ff41"
+    );
 }
 
 fn p36h_ike_builder(engine: &mut Engine) -> ObjRef {
