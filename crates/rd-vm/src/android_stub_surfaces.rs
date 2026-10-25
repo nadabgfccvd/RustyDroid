@@ -41431,9 +41431,31 @@ fn p36a_matrix_static(
         ("transposeM", "([FI[FI)V") => {
             let result = p36a_value(args, 0);
             let source = p36a_value(args, 2);
-            let input = p36a_read_matrix(vm, &source, iarg(args, 3), "", "", "", false)?;
-            let output = p36a_transpose(&input);
-            p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
+            if matches!(&result, Value::Obj(_)) && obj(Some(&result)) == obj(Some(&source)) {
+                // AOSP's transposeM loop reads and writes through the
+                // arrays directly, so an in-place transposition
+                // partially overwrites its own input while running.
+                let trans_offset = iarg(args, 1);
+                let m_offset = iarg(args, 3);
+                p36a_array_bounds(vm, &source, m_offset, 16, "", "", "", false)?;
+                p36a_array_bounds(vm, &result, trans_offset, 16, "", "", "", false)?;
+                let mut values = float_values(vm, Some(&source));
+                let dst = trans_offset as usize;
+                for i in 0..4usize {
+                    let base = m_offset as usize + i * 4;
+                    values[dst + i] = values[base];
+                    values[dst + 4 + i] = values[base + 1];
+                    values[dst + 8 + i] = values[base + 2];
+                    values[dst + 12 + i] = values[base + 3];
+                }
+                let mut output = [0.0f32; 16];
+                output.copy_from_slice(&values[dst..dst + 16]);
+                p36a_write_matrix_implicit(vm, &result, trans_offset, &output)?
+            } else {
+                let input = p36a_read_matrix(vm, &source, iarg(args, 3), "", "", "", false)?;
+                let output = p36a_transpose(&input);
+                p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
+            }
         }
         ("invertM", "([FI[FI)Z") => {
             let result = p36a_value(args, 0);
@@ -41520,7 +41542,7 @@ fn p36a_matrix_static(
             let aspect = farg(args, 3);
             let z_near = farg(args, 4);
             let z_far = farg(args, 5);
-            let f = (1.0f64 / (fovy as f64 * (std::f64::consts::PI / 360.0)).tan()) as f32;
+            let f = 1.0f32 / ((fovy as f64 * (std::f64::consts::PI / 360.0)).tan() as f32);
             let range_reciprocal = 1.0 / (z_near - z_far);
             let mut output = [0.0f32; 16];
             output[0] = f / aspect;

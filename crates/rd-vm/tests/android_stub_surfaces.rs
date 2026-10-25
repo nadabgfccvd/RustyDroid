@@ -17046,6 +17046,32 @@ fn opengl_matrix_math_is_guest_visible() {
         ),
         "Ljava/lang/IllegalArgumentException;",
     );
+
+    // Deep audit: AOSP's transposeM loop writes into the destination
+    // as it reads the source, so transposing a matrix in place yields
+    // the symmetrized lower triangle, not the true transpose.
+    let in_place = float_value_array(
+        &mut engine,
+        &[
+            0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+        ],
+    );
+    call_static(
+        &mut engine,
+        P36A_MATRIX,
+        "transposeM",
+        "([FI[FI)V",
+        &[
+            in_place.clone(),
+            Value::Int(0),
+            in_place.clone(),
+            Value::Int(0),
+        ],
+    );
+    assert_eq!(
+        p36a_float_values(&engine, &in_place),
+        vec![0.0, 1.0, 2.0, 3.0, 1.0, 5.0, 6.0, 7.0, 2.0, 6.0, 10.0, 11.0, 3.0, 7.0, 11.0, 15.0,]
+    );
 }
 
 #[test]
