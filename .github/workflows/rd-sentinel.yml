@@ -290,8 +290,20 @@ jobs:
       # golden/native three-ABI fixtures. Build them from source in the
       # candidate tree (gitignored) so even the trusted-base bot sees
       # them; campaigns.py also ensures this fail-closed at runtime.
-      - name: Build golden/native three-ABI fixtures for native tests
+      # O build dos fixtures custa ~20 min por execucao (apt-get dos dois
+      # cross-gcc + gcc x3) enquanto o audit em si roda em <1 s. Como o
+      # resultado e deterministico a partir de fixture.c/build.sh, ele e
+      # cacheado: cache hit pula apt-get e compilacao inteiros.
+      - name: Restore native three-ABI fixtures (deterministic, keyed by source)
+        id: fixtures-cache
         if: steps.plan.outputs.needs_native == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: candidate/golden/native/artifacts
+          key: native-fixtures-${{ hashFiles('candidate/golden/native/fixture.c', 'candidate/golden/native/build.sh') }}-v1
+
+      - name: Build golden/native three-ABI fixtures for native tests
+        if: steps.plan.outputs.needs_native == 'true' && steps.fixtures-cache.outputs.cache-hit != 'true'
         working-directory: candidate
         run: |
           sudo apt-get update -qq
