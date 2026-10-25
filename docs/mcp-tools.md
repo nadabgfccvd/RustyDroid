@@ -196,7 +196,7 @@ Executa uma lista de chamadas [{name, arguments}] EM ORDEM, uma vez cada, com re
 
 ### `get_api_usage`
 
-AG-09 (metade estática): quais APIs android.* o app instalado REFERENCIA nos DEX — tipos (method_ids/field_ids/superclass/interfaces), métodos por classe, contagem por pacote e classificação Apêndice C (`api_coverage`: domínio funcional/status/gaps via data/api-coverage.toml). É análise ESTÁTICA do DEX; para coverage de EXECUÇÃO use get_coverage. Com `package` consulta outro app instalado; sem, o app ativo.
+AG-09 (metade estática): quais APIs android.* o app instalado REFERENCIA nos DEX — tipos (method_ids/field_ids/superclass/interfaces), métodos por classe, contagem por pacote e classificação Apêndice C (`api_coverage`: domínio funcional/status/gaps via data/api-coverage.toml), mais os tipos androidx.* contra o Apêndice D (`jetpack`, data/jetpack.toml) e com.google.android.gms.*/com.google.firebase.* contra o Apêndice E (`gms`, data/gms.toml, modo no-gms-honest: registro ≠ backend). É análise ESTÁTICA do DEX; para coverage de EXECUÇÃO use get_coverage. Com `package` consulta outro app instalado; sem, o app ativo.
 
 - Parâmetros: `package`
 
