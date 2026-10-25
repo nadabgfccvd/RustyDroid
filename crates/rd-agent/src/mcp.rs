@@ -891,8 +891,8 @@ pub fn tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "device_profile",
-            description: "Perfil de device corrente (piso contratual moto-e5, budgets e snapshot de periféricos virtuais M10) e controle determinístico AG-10 via `action` opcional (`get`, `location`, `sensor`, `battery`, `network`, `telephony`, `sms_receive`, `ble_advertisement`, `nfc_tag`, `camera_frame`, `biometric`, `audio_input`, `media_action`, `dark_mode`, `locale`, `font_scale`, `orientation`, `clipboard`).",
-            schema: obj(device_profile_schema_props(), &[]),
+            description: "Perfil de device corrente (piso contratual moto-e5, budgets e snapshot de periféricos virtuais M10) e controle determinístico AG-10 via `action` opcional (`get`, `location`, `sensor`, `battery`, `network`, `telephony`, `sms_receive`, `ble_advertisement`, `nfc_tag`, `camera_frame`, `biometric`, `audio_input`, `media_action`, `dark_mode`, `locale`, `font_scale`, `orientation`, `clipboard`) + Apêndice E programável (`gms`: availability, conta/Sign-In fake, token/mensagem FCM, catálogo/resultado Billing, falha Ads, Integrity/SafetyNet, Fit, Cast; `gms_state`: snapshot capturado — analytics, compras, ads, crashes, maps). Sem rede: modo no-gms-honest.",
+            schema: obj(device_profile_all_props(), &[]),
         },
         ToolDef {
             name: "behavior_switches",
@@ -1211,7 +1211,7 @@ impl AgentSession {
                 false,
             ),
             "permissions_audit" => self.tool_permissions_audit(),
-            "device_profile" => self.tool_device_profile_m10(&args),
+            "device_profile" => self.tool_device_profile(&args),
             "behavior_switches" => self.tool_behavior_switches(),
             "runtime_health" => {
                 if args.get("gc").and_then(|v| v.as_bool()) == Some(true) {
@@ -3278,6 +3278,7 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
 
 include!("m9_tools.rs");
 include!("m10_tools.rs");
+include!("appendix_tools.rs");
 include!("observe.rs");
 include!("snapshot.rs");
 include!("ui_tools.rs");
@@ -3926,6 +3927,102 @@ mod tests {
             !clock_note.contains("seguem fora"),
             "currentTimeMillis/nanoTime existem: {clock_note}"
         );
+    }
+
+    /// S8 (Apêndice E programável): device_profile action=gms programa o
+    /// estado mock e action=gms_state o devolve — sem tools novas.
+    #[test]
+    fn device_profile_gms_program_and_state() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        // O esquema anuncia as duas acções (catálogo = tools/list = docs).
+        let defs = tool_defs();
+        let dp = defs
+            .iter()
+            .find(|d| d.name == "device_profile")
+            .expect("device_profile");
+        let actions = dp.schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("enum de acções")
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        assert!(actions.contains(&"gms".to_string()), "{actions:?}");
+        assert!(actions.contains(&"gms_state".to_string()), "{actions:?}");
+        assert!(actions.contains(&"location".to_string()), "AG-10 intacto");
+
+        let mut s = AgentSession::new();
+        // Sem app em execução: erro tipado, nunca sucesso fingido.
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms_state"}),
+        );
+        assert!(err, "gms_state sem engine deve falhar: {v}");
+
+        let apk_path = fixture_apk_path();
+        let (v, err) = call(&mut s, "install", serde_json::json!({"apk": apk_path}));
+        assert!(!err, "install: {v}");
+        let (v, err) = call(&mut s, "launch", serde_json::json!({}));
+        assert!(!err, "launch: {v}");
+
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({
+                "action": "gms",
+                "gms_availability": 2,
+                "gms_account_email": "jogador@example.com",
+                "gms_account_name": "Jogador Um",
+                "gms_signin": true,
+                "fcm_token": "tok-mcp-1",
+                "billing_sku": {"id": "coins_100", "price": "R$ 4,90", "price_micros": 4900000},
+                "billing_outcome": "canceled",
+                "ads_failure_code": 3,
+                "integrity_token": "tok-integrity-mcp",
+                "fit_steps": 1234
+            }),
+        );
+        assert!(!err, "programar: {v}");
+        assert_eq!(v["mode"], "no-gms-honest");
+        assert_eq!(v["network"], "none");
+        let applied = v["applied"].as_array().expect("applied");
+        for want in [
+            "gms_availability",
+            "gms_account",
+            "gms_signin",
+            "fcm_token",
+            "billing_sku",
+            "billing_outcome",
+            "ads_failure",
+            "integrity_token",
+            "fit_steps",
+        ] {
+            assert!(
+                applied.iter().any(|a| a == want),
+                "applied deve conter {want}: {v}"
+            );
+        }
+
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms_state"}),
+        );
+        assert!(!err, "gms_state: {v}");
+        assert_eq!(v["availability_code"], 2);
+        assert_eq!(v["network"], "none");
+        assert!(v["billing_purchases"]
+            .as_array()
+            .expect("purchases")
+            .is_empty());
+
+        // billing_outcome inválido: INVALID_FORMAT tipado.
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms", "billing_outcome": "grátis"}),
+        );
+        assert!(err, "outcome inválido deve falhar: {v}");
     }
 
     /// AG-09 (metade estática): get_api_usage reporta as APIs android.* que o

@@ -22,7 +22,7 @@ fn write_temp_apk(tag: &str, bytes: Vec<u8>) -> String {
 }
 
 #[test]
-fn m10_catalog_preserves_47_tools_and_exposes_all_18_actions() {
+fn m10_catalog_preserves_47_tools_and_exposes_all_actions() {
     let defs = tool_defs();
     assert_eq!(defs.len(), 47, "MCP tool count contract is locked at 47");
 
@@ -52,6 +52,10 @@ fn m10_catalog_preserves_47_tools_and_exposes_all_18_actions() {
         "font_scale",
         "orientation",
         "clipboard",
+        // Apêndice E programável (S8): acções do shim GMS no mesmo
+        // multiplex — o contrato M10 (as 18 acima, 47 tools) não muda.
+        "gms",
+        "gms_state",
     ];
     assert_eq!(actions.len(), expected.len());
     for name in expected {
