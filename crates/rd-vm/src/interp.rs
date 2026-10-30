@@ -979,88 +979,13 @@ fn finish_new_instance(vm: &mut Engine, class: &str) -> Result<Value, VmExit> {
 
 #[inline(never)]
 fn finish_sget(vm: &mut Engine, owner: &str, fname: &str, ftype: &str) -> Result<Value, VmExit> {
-    if owner == "Ljava/lang/System;" && (fname == "out" || fname == "err") {
-        let key = (owner.to_string(), fname.to_string());
-        if let std::collections::hash_map::Entry::Vacant(e) = vm.statics.entry(key) {
-            let fd = if fname == "err" { 2 } else { 1 };
-            let r = vm
-                .heap
-                .alloc_instance(
-                    "Ljava/io/PrintStream;".to_string(),
-                    vec![("fd".to_string(), Value::Int(fd))],
-                )
-                .map_err(oom_exception)?;
-            e.insert(Value::Obj(r));
-        }
-    }
-    if owner == "Ljava/util/concurrent/TimeUnit;"
-        && !vm
-            .statics
-            .contains_key(&(owner.to_string(), fname.to_string()))
-        && matches!(
-            fname,
-            "NANOSECONDS"
-                | "MICROSECONDS"
-                | "MILLISECONDS"
-                | "SECONDS"
-                | "MINUTES"
-                | "HOURS"
-                | "DAYS"
-        )
-    {
-        let unit = vm.time_unit_obj(fname)?;
-        vm.statics
-            .insert((owner.to_string(), fname.to_string()), Value::Obj(unit));
-    }
-    #[allow(clippy::map_entry)]
-    if !vm
-        .statics
-        .contains_key(&(owner.to_string(), fname.to_string()))
-    {
-        let host_val = if let Some(c) = crate::boxes::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::jnormalizer::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::jbigdecimal::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::jtext_format::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::android_colorspace::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::android_env::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::android_build::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::graphics::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::parcel::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::android_util::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::platform_base::host_static(vm, owner, fname)? {
-            Some(c)
-        } else if let Some(c) = crate::collections::host_static(vm, owner, fname)? {
-            Some(c)
-        } else {
-            crate::jtime::host_static(vm, owner, fname)?
-        };
-        if let Some(c) = host_val {
-            vm.statics.insert((owner.to_string(), fname.to_string()), c);
-        }
-        #[cfg(feature = "virtual-devices")]
-        if !vm
-            .statics
-            .contains_key(&(owner.to_string(), fname.to_string()))
-        {
-            if let Some(c) = crate::m10::host_static(vm, owner, fname)? {
-                vm.statics.insert((owner.to_string(), fname.to_string()), c);
-            }
-        }
-    }
+    // #330: fonte ÚNICA de host statics, compartilhada com a reflexão
+    // (`Class.getField` / `Field.get(null)` em intrinsics.rs). Antes este
+    // caminho tinha uma cadeia de providers própria; as duas divergiam e o
+    // bytecode lia 0/Null em campos que a reflexão enxergava (Locale.US,
+    // WebSettings.LOAD_DEFAULT, Byte.MAX_VALUE, …).
     Ok(vm
-        .statics
-        .get(&(owner.to_string(), fname.to_string()))
-        .cloned()
+        .resolve_host_static(owner, fname)?
         .unwrap_or_else(|| default_for(ftype)))
 }
 
