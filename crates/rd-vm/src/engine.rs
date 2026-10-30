@@ -49,13 +49,35 @@ fn current_stack_addr() -> usize {
     std::ptr::addr_of!(marker) as usize
 }
 
+/// `true` quando a VMA que começa em `lo` tem, imediatamente abaixo, a página
+/// guarda `PROT_NONE` que a glibc mapeia para pilhas de thread. É o único caso
+/// em que o tamanho da VMA descreve a pilha inteira: sem a página guarda o
+/// kernel pode ter fundido a pilha com mapeamentos anônimos vizinhos e
+/// `hi - lo` passa a não significar nada (#313, #394).
+#[cfg(target_os = "linux")]
+fn guard_page_below(lines: &[&str], lo: usize) -> bool {
+    lines.iter().any(|prev| {
+        let Some((range, rest)) = prev.split_once(' ') else {
+            return false;
+        };
+        let Some((_, hi_hex)) = range.split_once('-') else {
+            return false;
+        };
+        let Ok(prev_hi) = usize::from_str_radix(hi_hex, 16) else {
+            return false;
+        };
+        prev_hi == lo && !rest.starts_with('r')
+    })
+}
+
 /// Calcula o orçamento seguro de pilha nativa disponível abaixo de `sp_now`
 /// na entrada externa da thread atual (executado apenas 1× quando `entry_sp == 0`).
 fn detect_native_stack_budget(sp_now: usize) -> usize {
     #[cfg(target_os = "linux")]
     {
         if let Ok(maps) = std::fs::read_to_string("/proc/thread-self/maps") {
-            for line in maps.lines() {
+            let lines: Vec<&str> = maps.lines().collect();
+            for line in lines.iter().copied() {
                 let Some((range, rest)) = line.split_once(' ') else {
                     continue;
                 };
@@ -76,18 +98,31 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
                     if line.trim_end().ends_with("[stack]") {
                         return main_thread_stack_budget();
                     }
-                    return sp_now
+                    // Regressão #313 no CI: com só `livre - 512 KiB` uma
+                    // thread de 2 MiB abortava. O guard roda na entrada de
+                    // cada frame, então precisa de folga para o frame mais
+                    // profundo que ainda será empilhado depois da última
+                    // checagem — e esse frame cresce com a versão do rustc em
+                    // build debug. Nunca confiamos em mais de METADE da VMA.
+                    let free = sp_now
                         .saturating_sub(lo)
-                        .saturating_sub(NATIVE_STACK_GUARD_RESERVE)
-                        // Regressão #313 no CI: com só `livre - 512 KiB` uma
-                        // thread de 2 MiB abortava. O guard roda na entrada de
-                        // cada frame, então precisa de folga para o frame mais
-                        // profundo que ainda será empilhado depois da última
-                        // checagem — e esse frame cresce com a versão do rustc
-                        // em build debug. Nunca confiamos em mais de METADE da
-                        // VMA: a outra metade fica de folga dura.
-                        .min(hi.saturating_sub(lo) / 2)
-                        .max(256 * 1024);
+                        .saturating_sub(NATIVE_STACK_GUARD_RESERVE);
+                    let half_vma = hi.saturating_sub(lo) / 2;
+                    // O tamanho da VMA só é confiável quando ela é *uma pilha
+                    // de thread de verdade*: a glibc mapeia uma página guarda
+                    // `PROT_NONE` imediatamente abaixo. Sem essa âncora o
+                    // kernel pode ter fundido a pilha com mapeamentos anônimos
+                    // vizinhos, e então `hi - lo` (e portanto `free`) descreve
+                    // uma região muito maior que a pilha real — o orçamento
+                    // fica grande demais, o guard nunca dispara e o processo
+                    // aborta com SIGABRT no runner do CI (#313/#394).
+                    let anchored_by_guard_page = guard_page_below(&lines, lo);
+                    let ceiling = if anchored_by_guard_page {
+                        half_vma
+                    } else {
+                        half_vma.min(FALLBACK_NATIVE_STACK_BYTES)
+                    };
+                    return free.min(ceiling).max(256 * 1024);
                 }
             }
         }
@@ -1139,4 +1174,56 @@ fn trace_method_pattern() -> Option<&'static str> {
             .filter(|s| !s.is_empty())
     })
     .as_deref()
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod stack_budget_tests {
+    use super::guard_page_below;
+
+    /// Linha real de `/proc/thread-self/maps` para uma pilha de thread da glibc:
+    /// a página guarda `PROT_NONE` vem imediatamente abaixo.
+    #[test]
+    fn thread_stack_with_guard_page_is_trusted() {
+        let lo = 0x7f30_5233_e000usize;
+        let lines = [
+            "7f305233d000-7f305233e000 ---p 00000000 00:00 0",
+            "7f305233e000-7f3052540000 rw-p 00000000 00:00 0",
+        ];
+        assert!(guard_page_below(&lines, lo));
+    }
+
+    /// O caso que quebrava o CI (#313/#394): o kernel funde a pilha com
+    /// mapeamentos anônimos vizinhos, então a VMA que contém o SP é muito maior
+    /// que a pilha real e não há página guarda para ancorar `hi - lo`.
+    #[test]
+    fn merged_anonymous_vma_is_not_trusted() {
+        let lo = 0x7f30_5233_e000usize;
+        let lines = [
+            "7f3052000000-7f305233e000 rw-p 00000000 00:00 0",
+            "7f305233e000-7f3052540000 rw-p 00000000 00:00 0",
+        ];
+        assert!(!guard_page_below(&lines, lo));
+    }
+
+    /// Região isolada (sem vizinho adjacente): também não é confiável.
+    #[test]
+    fn isolated_vma_without_adjacent_guard_is_not_trusted() {
+        let lo = 0x7f30_5233_e000usize;
+        let lines = [
+            "7f3051b3c000-7f3051b3d000 r--p 00000000 08:01 1234 /usr/lib/libc.so.6",
+            "7f305233e000-7f3052540000 rw-p 00000000 00:00 0",
+        ];
+        assert!(!guard_page_below(&lines, lo));
+    }
+
+    /// A guarda só vale se for *imediatamente* anterior.
+    #[test]
+    fn non_adjacent_guard_page_is_not_trusted() {
+        let lo = 0x7f30_5233_e000usize;
+        let lines = [
+            "7f305233c000-7f305233d000 ---p 00000000 00:00 0",
+            "7f305233e000-7f3052540000 rw-p 00000000 00:00 0",
+        ];
+        assert!(!guard_page_below(&lines, lo));
+    }
 }
