@@ -906,8 +906,8 @@ pub fn tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "device_profile",
-            description: "Perfil de device corrente (piso contratual moto-e5, budgets e snapshot de periféricos virtuais M10) e controle determinístico AG-10 via `action` opcional (`get`, `location`, `sensor`, `battery`, `network`, `telephony`, `sms_receive`, `ble_advertisement`, `nfc_tag`, `camera_frame`, `biometric`, `audio_input`, `media_action`, `dark_mode`, `locale`, `font_scale`, `orientation`, `clipboard`).",
-            schema: obj(device_profile_schema_props(), &[]),
+            description: "Perfil de device corrente (piso contratual moto-e5, budgets e snapshot de periféricos virtuais M10) e controle determinístico AG-10 via `action` opcional (`get`, `location`, `sensor`, `battery`, `network`, `telephony`, `sms_receive`, `ble_advertisement`, `nfc_tag`, `camera_frame`, `biometric`, `audio_input`, `media_action`, `dark_mode`, `locale`, `font_scale`, `orientation`, `clipboard`) + Apêndice E programável (`gms`: availability, conta/Sign-In fake, token/mensagem FCM, catálogo/resultado Billing, falha Ads, Integrity/SafetyNet, Fit, Cast; `gms_state`: snapshot capturado — analytics, compras, ads, crashes, maps). Sem rede: modo no-gms-honest.",
+            schema: obj(device_profile_all_props(), &[]),
         },
         ToolDef {
             name: "behavior_switches",
@@ -923,7 +923,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "compat_gaps",
             description:
-                "Catálogo HONESTO das lacunas de compatibilidade do runtime v1 (notificações M9, args String/array na sonda, foco, teclas, gestures, intent implícito, transporte HTTP) + sumário executável do Apêndice C (data/api-coverage.toml: domínios/status das superfícies android.*) — o agente consulta antes de planejar.",
+                "Catálogo HONESTO das lacunas de compatibilidade do runtime v1 (notificações M9, args String/array na sonda, foco, teclas, gestures, intent implícito, transporte HTTP) + sumários executáveis dos Apêndices C (data/api-coverage.toml), D (data/jetpack.toml: AndroidX/Jetpack) e E (data/gms.toml: GMS/Firebase sem rede) + superfícies stub/not_implemented referenciadas pelo app activo (app_library_gaps) — o agente consulta antes de planejar.",
             schema: obj(serde_json::json!({}), &[]),
         },
         ToolDef {
@@ -942,7 +942,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "get_api_usage",
             description:
-                "AG-09 (metade estática): quais APIs android.* o app instalado REFERENCIA nos DEX — tipos (method_ids/field_ids/superclass/interfaces), métodos por classe, contagem por pacote e classificação Apêndice C (`api_coverage`: domínio funcional/status/gaps via data/api-coverage.toml). É análise ESTÁTICA do DEX; para coverage de EXECUÇÃO use get_coverage. Com `package` consulta outro app instalado; sem, o app ativo.",
+                "AG-09 (metade estática): quais APIs android.* o app instalado REFERENCIA nos DEX — tipos (method_ids/field_ids/superclass/interfaces), métodos por classe, contagem por pacote e classificação Apêndice C (`api_coverage`: domínio funcional/status/gaps via data/api-coverage.toml), mais os tipos androidx.* contra o Apêndice D (`jetpack`, data/jetpack.toml) e com.google.android.gms.*/com.google.firebase.* contra o Apêndice E (`gms`, data/gms.toml, modo no-gms-honest: registro ≠ backend). É análise ESTÁTICA do DEX; para coverage de EXECUÇÃO use get_coverage. Com `package` consulta outro app instalado; sem, o app ativo.",
             schema: obj(
                 serde_json::json!({
                     "package": { "type": "string", "description": "package instalado a analisar. Default: o app ativo" },
@@ -1226,7 +1226,7 @@ impl AgentSession {
                 false,
             ),
             "permissions_audit" => self.tool_permissions_audit(),
-            "device_profile" => self.tool_device_profile_m10(&args),
+            "device_profile" => self.tool_device_profile(&args),
             "behavior_switches" => self.tool_behavior_switches(),
             "runtime_health" => {
                 if args.get("gc").and_then(|v| v.as_bool()) == Some(true) {
@@ -2404,13 +2404,13 @@ impl AgentSession {
                 "android-framework-clock",
                 "vm",
                 "partial",
-                "SystemClock host (uptimeMillis/elapsedRealtime(+Nanos)/currentThreadTimeMillis/sleep) sobre o relógio VIRTUAL determinístico da VM (mesmo clock do postDelayed/advance_clock; sleep avança e drena o Looper — sem tempo de parede). Looper getMainLooper/loop/getThread host. Thread host single-threaded: currentThread/getName (fixo main)/getId/isDaemon/isAlive + sleep avança o relógio virtual (yield no-op); start/interrupt fora. System.currentTimeMillis/nanoTime seguem fora",
+                "SystemClock host (uptimeMillis/elapsedRealtime(+Nanos)/currentThreadTimeMillis/sleep) sobre o relógio VIRTUAL determinístico da VM (mesmo clock do postDelayed/advance_clock; sleep avança e drena o Looper — sem tempo de parede). Looper getMainLooper/loop/getThread host. Thread host single-threaded: currentThread/getName (fixo main)/getId/isDaemon/isAlive + sleep avança o relógio virtual (yield no-op); start/interrupt fora. System.currentTimeMillis/nanoTime SÃO host sobre o mesmo relógio virtual (jlsystem: currentTimeMillis = epoch base determinística + clock virtual; nanoTime deriva do clock)",
             ),
             (
                 "notifications",
                 "ui",
-                "not-implemented",
-                "M9: channels, notification builders, PendingIntents, actions, listener callbacks, timeout/cancel and agent controls; platform visual notification shade not modeled",
+                "partial",
+                "M9: channels, notification builders, PendingIntents, actions, listener callbacks, timeout/cancel and agent controls (tool notifications); platform visual notification shade not modeled",
             ),
             (
                 "invoke-string-args",
@@ -2440,13 +2440,13 @@ impl AgentSession {
                 "swipe-gestures",
                 "input",
                 "partial",
-                "swipe vira clique quando down/up caem na mesma view; scroll/fling só relatório (sem efeito)",
+                "swipe do agente vira clique quando down/up caem na mesma view; scroll/fling do GESTO seguem só-relatório (Engine::swipe_app v1). android.view.VelocityTracker é host para código DEX: velocidade determinística estilo AOSP (#210)",
             ),
             (
                 "start-activity-implicit",
                 "intent",
-                "not-implemented",
-                "startActivity com intent implícito/action — navegação v1 é por componente",
+                "partial",
+                "startActivity implícito VIEW/deep link navega quando há handler registado (Engine::m8_register_deep_link, M8) e é registado em m8_deep_links; resolução geral de intent-filters do sistema, choosers e verificação de App Links seguem fora",
             ),
             (
                 "http-transport",
@@ -2457,8 +2457,8 @@ impl AgentSession {
             (
                 "ime-widgets",
                 "ui",
-                "not-implemented",
-                "M9 IME InputConnection and RemoteViews widget rendering; unsupported methods fail typed (docs/m9.md)",
+                "partial",
+                "M9 IME InputConnection (tool ime) and RemoteViews widget rendering (tools widgets/widget_screenshot); unsupported methods fail typed (docs/m9.md)",
             ),
         ];
         let gaps: Vec<serde_json::Value> = GAPS
@@ -2476,6 +2476,29 @@ impl AgentSession {
         // relatório gerado consomem. Isto não substitui os gaps narrativos
         // acima; dá ao agente a contagem auditável por domínio/status.
         let api_table = rd_framework::fd_api_coverage::ApiCoverageTable::embedded()?;
+        // Apêndices D/E executáveis (S8, issue #234): os mesmos registros
+        // que `rd jetpack`/`rd gms` e `get_api_usage` consomem.
+        let jetpack_table = rd_framework::fd_jetpack::JetpackTable::embedded()?;
+        let gms_table = rd_framework::fd_gms::GmsTable::embedded()?;
+        // Superfícies stub/not_implemented que o app ACTIVO referencia
+        // (análise estática — sem app instalado/activo, null honesto).
+        let app_library_gaps = match self.active.clone() {
+            Some(pkg) => match self.find_installed_mut(&pkg) {
+                Some(installed) => {
+                    let apk = installed.apk()?;
+                    let dexes = dexes_of_apk(&apk)?;
+                    let usage = crate::api_usage::scan(&apk.manifest.package, &dexes);
+                    serde_json::json!({
+                        "package": usage.package,
+                        "analysis": "static-dex-references",
+                        "jetpack": usage.jetpack_gap_surfaces,
+                        "gms": usage.gms_gap_surfaces,
+                    })
+                }
+                None => serde_json::Value::Null,
+            },
+            None => serde_json::Value::Null,
+        };
         Ok(ToolResult::json(&serde_json::json!({
             "gaps": gaps,
             "api_coverage": {
@@ -2489,6 +2512,25 @@ impl AgentSession {
                 "by_domain": api_table.domain_summaries(),
                 "hint": "get_api_usage classifica as referências DEX de um app contra este registro; get_coverage continua sendo a cobertura de execução",
             },
+            "jetpack": {
+                "source": jetpack_table.source,
+                "data": "data/jetpack.toml",
+                "categories": jetpack_table.category.len(),
+                "libraries": jetpack_table.library.len(),
+                "by_status": jetpack_table.status_counts(),
+                "hint": "get_api_usage classifica as referências DEX androidx.*/Material/bibliotecas comuns contra este registro (campo jetpack); rd jetpack check <classe> no CLI",
+            },
+            "gms": {
+                "source": gms_table.source,
+                "data": "data/gms.toml",
+                "categories": gms_table.category.len(),
+                "services": gms_table.service.len(),
+                "by_status": gms_table.status_counts(),
+                "mode": "no-gms-honest",
+                "network": "none",
+                "hint": "get_api_usage classifica as referências DEX GMS/Firebase/Billing contra este registro (campo gms); respostas são mocks programáveis via Engine::gms_* — nunca Play Services real",
+            },
+            "app_library_gaps": app_library_gaps,
             "hint": "behavior_switches lista os comutadores targetSdk ativos (PRF-07)",
         })))
     }
@@ -3291,6 +3333,7 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
 
 include!("m9_tools.rs");
 include!("m10_tools.rs");
+include!("appendix_tools.rs");
 include!("observe.rs");
 include!("snapshot.rs");
 include!("ui_tools.rs");
@@ -3899,6 +3942,147 @@ mod tests {
             partial > supported && supported <= Some(8),
             "registro não pode fingir Android completo: {v}"
         );
+    }
+
+    /// S8 (#234): compat_gaps expõe também os sumários executáveis dos
+    /// Apêndices D/E (mesmos registros de `rd jetpack`/`rd gms`), e a
+    /// tabela narrativa não pode voltar a defasar (#238).
+    #[test]
+    fn compat_gaps_includes_appendix_d_e_summaries() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        let mut s = AgentSession::new();
+        let (v, err) = call(&mut s, "compat_gaps", serde_json::json!({}));
+        assert!(!err, "{v}");
+        assert_eq!(v["jetpack"]["data"], "data/jetpack.toml");
+        assert_eq!(v["jetpack"]["libraries"].as_u64(), Some(46), "{v}");
+        let js = &v["jetpack"]["by_status"];
+        assert!(
+            js["partial"].as_u64() > js["supported"].as_u64(),
+            "D honesto: miolo partial: {v}"
+        );
+        assert_eq!(v["gms"]["data"], "data/gms.toml");
+        assert_eq!(v["gms"]["services"], 21, "{v}");
+        assert_eq!(v["gms"]["by_status"]["partial"], 20, "{v}");
+        assert_eq!(v["gms"]["by_status"]["not_implemented"], 1, "{v}");
+        assert_eq!(v["gms"]["network"], "none");
+        assert!(v["app_library_gaps"].is_null(), "{v}");
+        let gaps = v["gaps"].as_array().expect("gaps");
+        let status = |id: &str| {
+            gaps.iter()
+                .find(|g| g["id"] == id)
+                .map(|g| g["status"].as_str().unwrap_or("?").to_string())
+        };
+        assert_eq!(status("notifications").as_deref(), Some("partial"));
+        assert_eq!(status("ime-widgets").as_deref(), Some("partial"));
+        assert_eq!(
+            status("start-activity-implicit").as_deref(),
+            Some("partial")
+        );
+        let clock_note = gaps
+            .iter()
+            .find(|g| g["id"] == "android-framework-clock")
+            .map(|g| g["note"].as_str().unwrap_or("").to_string())
+            .unwrap_or_default();
+        assert!(
+            !clock_note.contains("seguem fora"),
+            "currentTimeMillis/nanoTime existem: {clock_note}"
+        );
+    }
+
+    /// S8 (Apêndice E programável): device_profile action=gms programa o
+    /// estado mock e action=gms_state o devolve — sem tools novas.
+    #[test]
+    fn device_profile_gms_program_and_state() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        // O esquema anuncia as duas acções (catálogo = tools/list = docs).
+        let defs = tool_defs();
+        let dp = defs
+            .iter()
+            .find(|d| d.name == "device_profile")
+            .expect("device_profile");
+        let actions = dp.schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("enum de acções")
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        assert!(actions.contains(&"gms".to_string()), "{actions:?}");
+        assert!(actions.contains(&"gms_state".to_string()), "{actions:?}");
+        assert!(actions.contains(&"location".to_string()), "AG-10 intacto");
+
+        let mut s = AgentSession::new();
+        // Sem app em execução: erro tipado, nunca sucesso fingido.
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms_state"}),
+        );
+        assert!(err, "gms_state sem engine deve falhar: {v}");
+
+        let apk_path = fixture_apk_path();
+        let (v, err) = call(&mut s, "install", serde_json::json!({"apk": apk_path}));
+        assert!(!err, "install: {v}");
+        let (v, err) = call(&mut s, "launch", serde_json::json!({}));
+        assert!(!err, "launch: {v}");
+
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({
+                "action": "gms",
+                "gms_availability": 2,
+                "gms_account_email": "jogador@example.com",
+                "gms_account_name": "Jogador Um",
+                "gms_signin": true,
+                "fcm_token": "tok-mcp-1",
+                "billing_sku": {"id": "coins_100", "price": "R$ 4,90", "price_micros": 4900000},
+                "billing_outcome": "canceled",
+                "ads_failure_code": 3,
+                "integrity_token": "tok-integrity-mcp",
+                "fit_steps": 1234
+            }),
+        );
+        assert!(!err, "programar: {v}");
+        assert_eq!(v["mode"], "no-gms-honest");
+        assert_eq!(v["network"], "none");
+        let applied = v["applied"].as_array().expect("applied");
+        for want in [
+            "gms_availability",
+            "gms_account",
+            "gms_signin",
+            "fcm_token",
+            "billing_sku",
+            "billing_outcome",
+            "ads_failure",
+            "integrity_token",
+            "fit_steps",
+        ] {
+            assert!(
+                applied.iter().any(|a| a == want),
+                "applied deve conter {want}: {v}"
+            );
+        }
+
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms_state"}),
+        );
+        assert!(!err, "gms_state: {v}");
+        assert_eq!(v["availability_code"], 2);
+        assert_eq!(v["network"], "none");
+        assert!(v["billing_purchases"]
+            .as_array()
+            .expect("purchases")
+            .is_empty());
+
+        // billing_outcome inválido: INVALID_FORMAT tipado.
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms", "billing_outcome": "grátis"}),
+        );
+        assert!(err, "outcome inválido deve falhar: {v}");
     }
 
     /// AG-09 (metade estática): get_api_usage reporta as APIs android.* que o
