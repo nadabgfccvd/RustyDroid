@@ -77,7 +77,7 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
     {
         if let Ok(maps) = std::fs::read_to_string("/proc/thread-self/maps") {
             let lines: Vec<&str> = maps.lines().collect();
-            for line in lines.iter().copied() {
+            for &line in &lines {
                 let Some((range, rest)) = line.split_once(' ') else {
                     continue;
                 };
