@@ -196,6 +196,17 @@ The publisher applies only result/risk labels such as `sentinel:pass`,
 result/risk labels
 when publishing a newer report.
 
+A live PR that moved on while the audit ran is not an integrity failure
+(issue #233). If the artifact's head is no longer the PR head, the publisher
+treats it as **superseded** and does not write anything to the PR: the live
+head's own run owns the comment, labels and gate. If only the base branch
+advanced and the report claims `pass`, the verdict becomes **stale**. In that
+case the gate is `pending`, no result label is set (a previous `sentinel:pass`
+is removed), and the comment asks for `/rd-sentinel rerun`. A stale report is
+never a pass. Real findings in a non-pass report are published unchanged, and
+any other verification mismatch (changed files, artifact head vs
+`workflow_run`, unapproved protected paths) is still a P0.
+
 ## Dependabot PR vetting
 
 Dependabot groups Cargo minor/patch updates, separates majors, checks the two

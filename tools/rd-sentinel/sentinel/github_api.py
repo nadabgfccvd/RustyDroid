@@ -298,6 +298,10 @@ def _labels_for_report(report: Mapping[str, Any], policy: Mapping[str, Any], *, 
     labels: list[str] = []
     if verdict == "pass":
         labels.append(name("pass", "sentinel:pass"))
+    elif verdict == "stale":
+        # Neither pass nor blocked: no result label, so a previous
+        # sentinel:pass is removed until fresh evidence exists (#233).
+        pass
     elif verdict == "blocked":
         labels.append(name("blocked", "sentinel:blocked"))
     else:
@@ -538,6 +542,13 @@ def _remove_stale_result_labels(
         client.remove_label(issue_number, stale)
 
 
+# Prefixes of the two "live PR moved on" verification errors. They are not
+# integrity failures: the artifact is genuine but describes an older
+# head/base pair (issue #233). Every other verification error stays P0.
+LIVE_HEAD_MISMATCH = "report head "
+LIVE_BASE_MISMATCH = "report base "
+
+
 def verify_pr_report(
     client: GitHubClient, report: Mapping[str, Any], policy: Mapping[str, Any]
 ) -> tuple[list[str], Mapping[str, Any] | None]:
@@ -554,9 +565,13 @@ def verify_pr_report(
     head = pr.get("head", {}) if isinstance(pr.get("head"), Mapping) else {}
     base = pr.get("base", {}) if isinstance(pr.get("base"), Mapping) else {}
     if report.get("head_sha") != head.get("sha"):
-        errors.append(f"report head {report.get('head_sha')} does not match live PR head {head.get('sha')}")
+        errors.append(
+            f"{LIVE_HEAD_MISMATCH}{report.get('head_sha')} does not match live PR head {head.get('sha')}"
+        )
     if report.get("base_sha") != base.get("sha"):
-        errors.append(f"report base {report.get('base_sha')} does not match live PR base {base.get('sha')}")
+        errors.append(
+            f"{LIVE_BASE_MISMATCH}{report.get('base_sha')} does not match live PR base {base.get('sha')}"
+        )
     files = client.pr_files(pr_number)
     report_files = {
         str(item.get("path"))
@@ -618,12 +633,30 @@ def publish_report(
         override_reasons.append(
             f"upstream workflow concluded {workflow_conclusion}, but the report claims pass"
         )
+    stale_head = False
+    stale_base = False
     if isinstance(pr_number, int):
         verify_errors, _pr = verify_pr_report(client, report, policy)
         material = [e for e in verify_errors if "fingerprint" not in e]
-        if material:
+        integrity = [e for e in material if not e.startswith((LIVE_HEAD_MISMATCH, LIVE_BASE_MISMATCH))]
+        if integrity:
             override_blocked = True
             override_reasons.extend(material)
+        else:
+            stale_head = any(e.startswith(LIVE_HEAD_MISMATCH) for e in material)
+            stale_base = any(e.startswith(LIVE_BASE_MISMATCH) for e in material)
+
+    if stale_head and not override_blocked:
+        # Superseded (issue #233): a newer commit was pushed while this
+        # artifact was being published. The live head's own run owns the PR
+        # comment, labels and gate status; never overwrite them with
+        # evidence about an older commit, and never claim anything here.
+        return {
+            "labels": [],
+            "override_blocked": False,
+            "superseded": True,
+            "reasons": [e for e in material if e.startswith(LIVE_HEAD_MISMATCH)],
+        }
 
     body_report = dict(report)
     if workflow_run_url:
@@ -648,8 +681,15 @@ def publish_report(
             }
         )
         body_report["findings"] = findings
+    elif stale_base and report.get("verdict") == "pass":
+        # Issue #233: the base branch advanced while the audit ran. The
+        # evidence is genuine but no longer proves the PR against the live
+        # base, so it is NOT a pass. It is not a regression either, so no
+        # P0/blocked: publish "stale" (pending gate) and ask for a rerun.
+        # Non-pass verdicts keep their real findings unchanged.
+        body_report["verdict"] = "stale"
     body = render_markdown(body_report)
-    labels = _labels_for_report(report, policy, override_blocked=override_blocked)
+    labels = _labels_for_report(body_report, policy, override_blocked=override_blocked)
     _ensure_policy_labels(client, policy, labels)
 
     result: dict[str, Any] = {"labels": labels, "override_blocked": override_blocked}
@@ -657,9 +697,11 @@ def publish_report(
         result["comment"] = client.upsert_issue_comment(pr_number, body)
         result["label_update"] = client.add_labels(pr_number, labels)
         _remove_stale_result_labels(client, pr_number, policy, labels)
-        verdict = "blocked" if override_blocked else str(report.get("verdict"))
+        verdict = "blocked" if override_blocked else str(body_report.get("verdict"))
         if commit_status and report.get("head_sha"):
-            state = {"pass": "success", "blocked": "failure", "incomplete": "error"}.get(verdict, "error")
+            state = {"pass": "success", "blocked": "failure", "incomplete": "error", "stale": "pending"}.get(
+                verdict, "error"
+            )
             bot_cfg = policy.get("bot", {}) if isinstance(policy.get("bot"), Mapping) else {}
             context = str(bot_cfg.get("commit_status_context", "rd-sentinel/gate"))
             try:
@@ -756,7 +798,7 @@ def _latest_report_status(client: GitHubClient, issue_number: int) -> tuple[str,
             (
                 line.strip()
                 for line in body.splitlines()
-                if "**PASS**" in line or "**BLOCKED**" in line or "**INCOMPLETE**" in line
+                if "**PASS**" in line or "**BLOCKED**" in line or "**INCOMPLETE**" in line or "**STALE**" in line
             ),
             "Latest RD Sentinel report found.",
         )
