@@ -1687,6 +1687,25 @@ impl Engine {
             )
             .into());
         }
+        // APK-Tester (rodada end-to-end do PR-Agent): a classe EXISTE no DEX
+        // mas não estende android.app.Activity (41 APKs de engines declaram
+        // MainActivity extends java.lang.Object). Sem esta checagem a VM
+        // alocava a instância, não executava onCreate algum e devolvia
+        // sucesso com tela vazia — falha silenciosa (Lei 1). No Android o
+        // launch morre com ClassCastException na instrumentação; aqui o
+        // contrato de borda é o erro estruturado (mesmo padrão do #82).
+        if !self.cp.is_subtype(activity_desc, "Landroid/app/Activity;") {
+            return Err(crate::err::with_suggestion(
+                crate::err::vm_error(
+                    "VM_TYPE_ERROR",
+                    format!(
+                        "classe {activity_desc} não estende android.app.Activity — não é uma activity lançável (no Android o launch falha com ClassCastException)"
+                    ),
+                ),
+                "declare a componente como subclasse de android.app.Activity ou lance a LAUNCHER do AndroidManifest.xml",
+            )
+            .into());
+        }
         self.fw.package_name = package_name.to_string();
         // M8 (38º gap real): Android cria a Application do processo ANTES
         // da activity e roda Application.onCreate — o DEX do app depende
@@ -4279,6 +4298,79 @@ fn call_host_instance_rooted(
             Ok(Some(Value::Null))
         }
         (VIEW, "onLayout") if sig == "(ZIIII)V" && is_view(vm) => Ok(Some(Value::Null)),
+        // ── View hierarchy state (issue #228) — invoke-super landing ────────
+        // DEX dispatch/state overrides calling `super.dispatchSave…` /
+        // `super.saveHierarchyState` reach the platform default through the
+        // inherited walk. Host default only: invoke-super semantics mean the
+        // DEX override was deliberately bypassed (the virtual entry with its
+        // DEX-override gate lives in view_layout::instance_intrinsic).
+        (VIEW, "saveHierarchyState") | (VIEWGROUP, "saveHierarchyState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::save_hierarchy_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "saveHierarchyState: container is null",
+                ))),
+            }
+        }
+        (VIEW, "restoreHierarchyState") | (VIEWGROUP, "restoreHierarchyState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::restore_hierarchy_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "restoreHierarchyState: container is null",
+                ))),
+            }
+        }
+        (VIEW, "dispatchSaveInstanceState") | (VIEWGROUP, "dispatchSaveInstanceState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::dispatch_save_instance_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "dispatchSaveInstanceState: container is null",
+                ))),
+            }
+        }
+        (VIEW, "dispatchRestoreInstanceState") | (VIEWGROUP, "dispatchRestoreInstanceState")
+            if sig == "(Landroid/util/SparseArray;)V" && is_view(vm) =>
+        {
+            match args.first() {
+                Some(Value::Obj(container)) => {
+                    crate::view_layout::dispatch_restore_instance_state(vm, recv, *container)?;
+                    Ok(Some(Value::Null))
+                }
+                _ => Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "dispatchRestoreInstanceState: container is null",
+                ))),
+            }
+        }
+        // super.onSaveInstanceState() from a DEX state subclass: AOSP View
+        // returns the shared EMPTY_STATE singleton (non-null — the subclass
+        // passes it as BaseSavedState superState, which must not be null).
+        (VIEW, "onSaveInstanceState") if sig == "()Landroid/os/Parcelable;" && is_view(vm) => {
+            Ok(Some(Value::Obj(crate::platform_base::empty_state(vm)?)))
+        }
+        // super.onRestoreInstanceState(state): the View default ignores
+        // EMPTY_STATE (and any default state) headless.
+        (VIEW, "onRestoreInstanceState") if sig == "(Landroid/os/Parcelable;)V" && is_view(vm) => {
+            Ok(Some(Value::Null))
+        }
         // ── ViewGroup/LinearLayout/FrameLayout ─────────────────────────────
         (
             FRAMELAYOUT | "Landroid/widget/HorizontalScrollView;" | "Landroid/widget/ScrollView;",
