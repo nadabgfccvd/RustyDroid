@@ -121,6 +121,38 @@ impl Default for VmConfig {
     }
 }
 
+/// M7 — telemetria de launch (opt-in via `RD_LAUNCH_TRACE`): decompõe o
+/// custo do caminho frio (`launch_app_cold` ~330 ms no primftpd para só
+/// ~236k instruções guest) em resolução de método/classe, resolução de
+/// strings, intrinsics host e `<clinit>`. Contadores em `Cell` para os
+/// pontos quentes poderem acumular via `&self` sem tocar as assinaturas
+/// de resolução; desligada (`None` no `Engine`), cada ponto custa um
+/// branch. O resíduo (total − Σcategorias, contra `fuel_used`) estima o
+/// loop de despacho. Campos por inclusão, não partição: um intrinsic
+/// que chama guest conta o tempo aninhado no próprio balde.
+#[derive(Default)]
+pub(crate) struct LaunchTrace {
+    resolve_ns: std::cell::Cell<u64>,
+    resolve_calls: std::cell::Cell<u64>,
+    intrinsic_ns: std::cell::Cell<u64>,
+    intrinsic_calls: std::cell::Cell<u64>,
+    clinit_ns: std::cell::Cell<u64>,
+    clinit_calls: std::cell::Cell<u64>,
+    string_ns: std::cell::Cell<u64>,
+    string_calls: std::cell::Cell<u64>,
+    /// v2: tempo de intrinsic por classe declarante (descritor) — o
+    /// balde agregado sozinho não diz QUAIS stubs custam ~5,7 µs.
+    intrinsic_by_class: std::cell::RefCell<std::collections::HashMap<String, (u64, u64)>>,
+}
+
+impl LaunchTrace {
+    #[inline]
+    fn add(ns: &std::cell::Cell<u64>, calls: &std::cell::Cell<u64>, v: u64) {
+        ns.set(ns.get().saturating_add(v));
+        calls.set(calls.get().saturating_add(1));
+    }
+}
+
 /// Motor interpretador. O heap é coletado por mark-sweep em safe points
 /// (`Engine::gc` / `maybe_gc`, ver `gc.rs`) e descartado quando o Engine cai.
 pub struct Engine {
@@ -145,6 +177,9 @@ pub struct Engine {
     pub(crate) depth: usize,
     pub(crate) fuel_used: u64,
     pub(crate) fuel_window_start: u64,
+    /// M7: telemetria de launch — `Some` só com `RD_LAUNCH_TRACE` no
+    /// ambiente; desligada, custa um branch por resolução.
+    pub(crate) launch_trace: Option<LaunchTrace>,
     /// AG-09: cobertura de métodos — chave `(dex_idx << 32) | method_idx`
     /// de cada corpo DEX que chegou a executar neste Engine.
     pub(crate) coverage: HashSet<u64>,
@@ -249,6 +284,9 @@ impl Engine {
             depth: 0,
             fuel_used: 0,
             fuel_window_start: 0,
+            launch_trace: std::env::var_os("RD_LAUNCH_TRACE")
+                .is_some()
+                .then(LaunchTrace::default),
             coverage: HashSet::new(),
             frame_labels: Vec::new(),
             threads: Default::default(),
@@ -330,6 +368,97 @@ impl Engine {
     /// Start a new bounded host/tool operation without losing lifetime counters.
     pub fn reset_fuel_window(&mut self) {
         self.fuel_window_start = self.fuel_used;
+    }
+
+    /// M7 (`RD_LAUNCH_TRACE`): marco inicial de uma categoria cronometrada.
+    #[inline]
+    pub(crate) fn trace_start(&self) -> Option<std::time::Instant> {
+        self.launch_trace
+            .as_ref()
+            .map(|_| std::time::Instant::now())
+    }
+
+    #[inline]
+    pub(crate) fn trace_resolve(&self, t0: Option<std::time::Instant>) {
+        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+            LaunchTrace::add(
+                &tr.resolve_ns,
+                &tr.resolve_calls,
+                t0.elapsed().as_nanos() as u64,
+            );
+        }
+    }
+
+    #[inline]
+    pub(crate) fn trace_intrinsic(&self, t0: Option<std::time::Instant>, class: &str) {
+        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+            let ns = t0.elapsed().as_nanos() as u64;
+            LaunchTrace::add(&tr.intrinsic_ns, &tr.intrinsic_calls, ns);
+            let mut by = tr.intrinsic_by_class.borrow_mut();
+            match by.get_mut(class) {
+                Some(e) => {
+                    e.0 = e.0.saturating_add(ns);
+                    e.1 = e.1.saturating_add(1);
+                }
+                None => {
+                    by.insert(class.to_string(), (ns, 1));
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn trace_string(&self, t0: Option<std::time::Instant>) {
+        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+            LaunchTrace::add(
+                &tr.string_ns,
+                &tr.string_calls,
+                t0.elapsed().as_nanos() as u64,
+            );
+        }
+    }
+
+    #[inline]
+    fn trace_clinit(&self, t0: Option<std::time::Instant>) {
+        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+            LaunchTrace::add(
+                &tr.clinit_ns,
+                &tr.clinit_calls,
+                t0.elapsed().as_nanos() as u64,
+            );
+        }
+    }
+
+    /// M7: linha única de decomposição do launch (`None` sem a flag).
+    /// Formato estável o bastante para grep em scripts de medição.
+    pub fn launch_trace_report(&self) -> Option<String> {
+        let tr = self.launch_trace.as_ref()?;
+        let ms = |ns: u64| ns as f64 / 1.0e6;
+        let mut top: Vec<(String, (u64, u64))> = tr
+            .intrinsic_by_class
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        top.sort_by_key(|t| std::cmp::Reverse(t.1 .0));
+        let top: Vec<String> = top
+            .iter()
+            .take(10)
+            .map(|(k, (ns, n))| format!("{k}={:.1}ms/{n}", ms(*ns)))
+            .collect();
+        Some(format!(
+            "[launch-trace] fuel={} resolve={:.1}ms/{} intrinsic={:.1}ms/{} clinit={:.1}ms/{} string={:.1}ms/{} top=[{}]",
+            self.fuel_used,
+            ms(tr.resolve_ns.get()),
+            tr.resolve_calls.get(),
+            ms(tr.intrinsic_ns.get()),
+            tr.intrinsic_calls.get(),
+            ms(tr.clinit_ns.get()),
+            tr.clinit_calls.get(),
+            ms(tr.string_ns.get()),
+            tr.string_calls.get(),
+            top.join(" "),
+        ))
     }
 
     pub fn fuel_remaining(&self) -> u64 {
@@ -818,7 +947,9 @@ impl Engine {
             )));
         }
         self.clinit_running.insert(class.to_string());
+        let t0 = self.trace_start();
         let result = self.initialize_class(class);
+        self.trace_clinit(t0);
         self.clinit_running.remove(class);
         match result {
             Ok(()) => {

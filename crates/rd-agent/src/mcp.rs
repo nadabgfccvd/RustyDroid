@@ -1514,6 +1514,10 @@ impl AgentSession {
         let t_launch = std::time::Instant::now();
         let r = eng.launch_app(desc, package_out, Vec::new());
         phase("launch_app_cold", t_launch);
+        // M7: decomposição do launch (RD_LAUNCH_TRACE) — stderr, como as fases.
+        if let Some(report) = eng.launch_trace_report() {
+            eprintln!("{report}");
+        }
         if r.is_ok() {
             self.pending_snapshot = None;
             self.engine = Some(eng);
