@@ -604,6 +604,15 @@ impl Runtime {
             "lround" | "llround" => (1, false, true),
             _ => return None,
         };
+        // issue #393: diagnóstico opt-in. Quando o argumento FP não chega
+        // (o runner do CI devolve `floor(5.5) == 0`), sem isto só é possível
+        // ver o valor final errado — não o estado do trap.
+        if std::env::var_os("RD_NDK_TRAP_DUMP").is_some() {
+            eprintln!(
+                "rd-ndk trap: libm {name} abi={:?} single={single} fp={:?} args={:?}",
+                self.abi, t.fp, t.args
+            );
+        }
         let mut x = [0f64; 2];
         for (i, v) in x.iter_mut().enumerate().take(arity) {
             *v = match self.abi {
