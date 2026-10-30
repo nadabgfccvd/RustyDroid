@@ -79,6 +79,14 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
                     return sp_now
                         .saturating_sub(lo)
                         .saturating_sub(NATIVE_STACK_GUARD_RESERVE)
+                        // Regressão #313 no CI: com só `livre - 512 KiB` uma
+                        // thread de 2 MiB abortava. O guard roda na entrada de
+                        // cada frame, então precisa de folga para o frame mais
+                        // profundo que ainda será empilhado depois da última
+                        // checagem — e esse frame cresce com a versão do rustc
+                        // em build debug. Nunca confiamos em mais de METADE da
+                        // VMA: a outra metade fica de folga dura.
+                        .min(hi.saturating_sub(lo) / 2)
                         .max(256 * 1024);
                 }
             }
@@ -539,6 +547,31 @@ impl Engine {
             self.entry_sp = 0;
             self.entry_stack_budget = FALLBACK_NATIVE_STACK_BYTES;
         }
+    }
+
+    /// Checagem de pilha nativa para caminhos que recursam **sem reentrar** no
+    /// interpretador — por exemplo `object_to_string`, que chama o intrínseco
+    /// diretamente. Sem esta checagem a recursão cresce em frames Rust puros,
+    /// nenhum guard é consultado e o processo aborta com SIGABRT em vez de
+    /// lançar `StackOverflowError` (#394, caso `ArrayMap` em ciclo).
+    /// Usa a âncora `entry_sp` já estabelecida pela entrada externa; não
+    /// empilha nem desempilha frame.
+    pub(crate) fn check_native_stack(&self) -> Result<(), VmExit> {
+        if self.entry_sp == 0 {
+            return Ok(());
+        }
+        let sp_now = current_stack_addr();
+        if self.entry_sp.abs_diff(sp_now) >= self.entry_stack_budget {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/StackOverflowError;",
+                format!(
+                    "profundidade de chamadas ≥ {} (limite do motor: {})",
+                    self.depth.saturating_add(self.host_depth),
+                    self.config.max_depth
+                ),
+            )));
+        }
+        Ok(())
     }
 
     /// Executa um frame completo (loop de interpretador em `interp.rs`).
