@@ -198,7 +198,7 @@ jobs:
       # M9 DoD: five real F-Droid APKs (pinned by SHA-256, never committed —
       # GH-05) make JNI calls from their real DEX with checked results, on
       # every ABI they ship.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: golden-apks/cache
           key: m9-gate-apks-${{ hashFiles('golden-apks/native-gate.sh') }}
@@ -273,7 +273,7 @@ jobs:
         with:
           python-version: "3.12"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/native-language-sdk
           key: native-languages-sdk-r27c-platform26-r8-8.5.35-v1
