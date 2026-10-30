@@ -321,6 +321,20 @@ impl Engine {
                 }
             }
         }
+        #[cfg(feature = "virtual-devices")]
+        {
+            let mut vdev_keys = Vec::new();
+            self.fw.vdev.gc_keys(&mut vdev_keys);
+            for k in vdev_keys {
+                if let Some(b) = has_side.get_mut(k as usize) {
+                    let was_zero = *b == 0;
+                    *b |= 8;
+                    if minor && was_zero && !self.heap.is_young(k) {
+                        m.stack.push(k);
+                    }
+                }
+            }
+        }
         let mut traced_objects = 0;
         // weak references: (reference, referent) pairs whose referent is not
         // traced through the reference; cleared after marking if unreached
@@ -417,6 +431,10 @@ impl Engine {
                 None => {}
             }
             // module side tables keyed by object (Matcher, Spannable, Reader…)
+            #[cfg(feature = "virtual-devices")]
+            if side & 8 != 0 {
+                self.fw.vdev.gc_trace_entry(r, &mut cand);
+            }
             if side & 2 != 0 {
                 let mut scanner = RefScanner::new(n, |x| cand.push(x));
                 crate::jregex::gc_entry(r, &mut scanner);
@@ -517,6 +535,8 @@ impl Engine {
         crate::jrandom::gc_purge(&alive_ref);
         crate::android_uri::gc_purge(&alive_ref);
         crate::jannotations::gc_purge(&alive_ref);
+        #[cfg(feature = "virtual-devices")]
+        self.fw.vdev.gc_purge(&alive);
         if std::env::var_os("RD_GC_TRACE").is_some() {
             eprintln!(
                 "[rd gc] roots {:?} ({} B text, {} candidates) mark {:?} total {:?}",
