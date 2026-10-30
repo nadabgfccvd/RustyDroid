@@ -1800,5 +1800,151 @@ pub fn after() -> Option<u32> {
                 self.assertEqual(ids.get("new-instance-collection-cell"), "P2")
 
 
+class StalePublicationTests(unittest.TestCase):
+    """Issue #233: a moved live PR (base advanced / head superseded) is not an
+    integrity failure, but it must never become a pass either."""
+
+    BASE = "a" * 40
+    HEAD = "b" * 40
+
+    def _client(self, live_head: str, live_base: str, files: list[str]):
+        class FakeClient(GitHubClient):
+            def __init__(self):
+                super().__init__("owner/repo", token="test", dry_run=False)
+                self.statuses: list[tuple[str, str, str]] = []
+                self.comments: list[str] = []
+                self.added: list[list[str]] = []
+                self.removed: list[str] = []
+                self.check_payloads: list[dict] = []
+
+            def get_pr(self, number):
+                return {"head": {"sha": live_head}, "base": {"sha": live_base}, "labels": []}
+
+            def pr_files(self, number):
+                return list(files)
+
+            def ensure_label(self, name, color, description):
+                return None
+
+            def upsert_issue_comment(self, issue_number, body, marker="<!-- rd-sentinel-report -->"):
+                self.comments.append(body)
+                return {"id": 1}
+
+            def add_labels(self, issue_number, labels):
+                self.added.append(list(labels))
+                return {}
+
+            def remove_label(self, issue_number, label):
+                self.removed.append(label)
+                return {}
+
+            def create_commit_status(self, sha, state, *, context, description, target_url=""):
+                self.statuses.append((sha, state, description))
+                return {"state": state}
+
+            def create_check_run(self, payload):
+                self.check_payloads.append(payload)
+                return {"id": 9}
+
+            def upload_code_scanning_sarif(self, *, sarif, commit_sha, ref):
+                return {"id": "sarif"}
+
+        return FakeClient()
+
+    def _report(self, findings: list[dict] | None = None) -> dict:
+        report = {
+            "repository": "owner/repo",
+            "pr_number": 233,
+            "base_sha": self.BASE,
+            "head_sha": self.HEAD,
+            "head_ref": "feature",
+            "campaign": "test",
+            "profile": "auto",
+            "areas": [],
+            "risk_score": 10,
+            "risk_factors": [],
+            "changed_files": [{"path": "crates/rd-vm/src/lib.rs"}],
+            "dependency_changes": [],
+            "plan": [],
+            "metrics": {},
+            "checks": [],
+            "findings": findings or [],
+        }
+        finalize_report(report, POLICY)  # type: ignore[arg-type]
+        return report
+
+    def _publish(self, client, report):
+        return publish_report(
+            client=client,
+            report=report,  # type: ignore[arg-type]
+            policy=POLICY,
+            expected_head_sha=self.HEAD,
+            workflow_conclusion="success",
+        )
+
+    def test_base_advanced_pass_is_stale_pending_not_p0_and_not_pass(self):
+        self.assertEqual("pass", self._report()["verdict"])
+        client = self._client(self.HEAD, "c" * 40, ["crates/rd-vm/src/lib.rs"])
+        result = self._publish(client, self._report())
+        self.assertFalse(result["override_blocked"])
+        self.assertEqual([(self.HEAD, "pending", "RD Sentinel stale; risk 10/100")], client.statuses)
+        self.assertIn("**STALE**", client.comments[0])
+        self.assertNotIn("Trusted publisher rejected", client.comments[0])
+        self.assertNotIn("sentinel:pass", result["labels"])
+        self.assertNotIn("sentinel:blocked", result["labels"])
+        self.assertNotIn("sentinel:P0", result["labels"])
+        # a previous pass label is actively removed until fresh evidence exists
+        self.assertIn("sentinel:pass", client.removed)
+        self.assertNotEqual("success", client.check_payloads[0]["conclusion"])
+
+    def test_base_advanced_keeps_real_blocking_findings(self):
+        finding = Finding(
+            id="example-finding",
+            severity="P1",
+            area="vm-core",
+            title="real regression",
+            evidence="evidence",
+            path="crates/rd-vm/src/lib.rs",
+            line=1,
+            remediation="fix it",
+        ).to_dict()
+        client = self._client(self.HEAD, "c" * 40, ["crates/rd-vm/src/lib.rs"])
+        result = self._publish(client, self._report([finding]))
+        self.assertIn("sentinel:blocked", result["labels"])
+        self.assertEqual("failure", client.statuses[0][1])
+        self.assertNotIn("Trusted publisher rejected", client.comments[0])
+
+    def test_base_advanced_with_file_mismatch_is_still_integrity_p0(self):
+        client = self._client(self.HEAD, "c" * 40, ["crates/rd-vm/src/lib.rs", "evil.rs"])
+        result = self._publish(client, self._report())
+        self.assertTrue(result["override_blocked"])
+        self.assertEqual("failure", client.statuses[0][1])
+        self.assertIn("Trusted publisher rejected", client.comments[0])
+        self.assertIn("does not match live PR base", client.comments[0])
+
+    def test_superseded_head_never_writes_to_the_live_pr(self):
+        client = self._client("d" * 40, self.BASE, ["crates/rd-vm/src/lib.rs"])
+        result = self._publish(client, self._report())
+        self.assertTrue(result["superseded"])
+        self.assertFalse(result["override_blocked"])
+        self.assertEqual([], client.statuses)
+        self.assertEqual([], client.comments)
+        self.assertEqual([], client.added)
+        self.assertEqual([], client.removed)
+        self.assertEqual([], client.check_payloads)
+
+    def test_artifact_head_mismatch_with_workflow_run_stays_p0(self):
+        client = self._client("d" * 40, self.BASE, ["crates/rd-vm/src/lib.rs"])
+        result = publish_report(
+            client=client,
+            report=self._report(),  # type: ignore[arg-type]
+            policy=POLICY,
+            expected_head_sha="e" * 40,
+            workflow_conclusion="success",
+        )
+        self.assertTrue(result["override_blocked"])
+        self.assertEqual("failure", client.statuses[0][1])
+
+
 if __name__ == "__main__":
     unittest.main()

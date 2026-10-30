@@ -4205,22 +4205,33 @@ fn instance_intrinsic_dispatch(
     {
         return Ok(Some(v));
     }
-    // ClassLoader.loadClass (jlsystem.rs)
-    if let Some(v) = crate::jlsystem::class_loader_intrinsic(
-        vm,
+    // ClassLoader.loadClass (jlsystem.rs) — Issue #271: guarda de
+    // descritor ANTES de montar os argumentos. A forma anterior alocava
+    // um Vec<Value> via .concat() em TODA invoke que chegava aqui, só
+    // para class_loader_intrinsic devolver None fora destes 5
+    // descritores (os únicos que ela trata; subclasses não listadas
+    // também recebiam None — semântica preservada).
+    if matches!(
         mref_class,
-        name,
-        sig,
-        &[&[Value::Obj(recv)][..], args].concat()[if matches!(
-            mref_class,
-            "Ljava/lang/Class;" | "Ljava/lang/Package;"
-        ) {
-            0
-        } else {
-            1
-        }..],
-    )? {
-        return Ok(Some(v));
+        "Ljava/lang/Class;"
+            | "Ljava/lang/Package;"
+            | "Ljava/lang/ClassLoader;"
+            | "Ldalvik/system/BaseDexClassLoader;"
+            | "Ldalvik/system/PathClassLoader;"
+    ) {
+        let full;
+        let call_args: &[Value] =
+            if matches!(mref_class, "Ljava/lang/Class;" | "Ljava/lang/Package;") {
+                full = [&[Value::Obj(recv)][..], args].concat();
+                &full
+            } else {
+                args
+            };
+        if let Some(v) =
+            crate::jlsystem::class_loader_intrinsic(vm, mref_class, name, sig, call_args)?
+        {
+            return Ok(Some(v));
+        }
     }
     // java.io.File + Context directory getters (jfile.rs)
     if let Some(v) = crate::juuid::instance_intrinsic(vm, recv_class, name, recv, args)? {
@@ -4393,9 +4404,21 @@ fn instance_intrinsic_dispatch(
     // Stateless platform base defaults are only reached when no DEX override
     // exists. Otherwise an invoke-virtual whose symbolic owner is the base
     // class (e.g. DataSetObserver.onChanged) must dispatch to the guest method.
-    let dex_virtual_override = vm.cp.resolve_method(recv_class, name, sig).is_some();
-    if !dex_virtual_override {
-        if let Some(v) = crate::platform_base::instance_intrinsic(mref_class, name, sig) {
+    // issue #228: AbsSavedState/BaseSavedState state is consulted BEFORE that
+    // gate — the `super(Parcelable)` ctor is invoke-direct on the platform
+    // base while the receiver class declares its own <init> (the gate would
+    // otherwise hide the superState storage).
+    if let Some(v) = crate::platform_base::saved_state_instance(
+        vm, recv_class, mref_class, name, sig, recv, args,
+    )? {
+        return Ok(Some(v));
+    }
+    // Issue #271: o match de platform_base é quase grátis; só pagamos a
+    // resolução DEX completa quando ele realmente casa. Antes,
+    // resolve_method rodava em TODA chamada que chegava aqui (~40k
+    // resoluções desperdiçadas num cold launch típico).
+    if let Some(v) = crate::platform_base::instance_intrinsic(mref_class, name, sig) {
+        if vm.cp.resolve_method(recv_class, name, sig).is_none() {
             return Ok(Some(v));
         }
     }
