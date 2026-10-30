@@ -125,7 +125,7 @@ impl Default for VmConfig {
 /// (`Engine::gc` / `maybe_gc`, ver `gc.rs`) e descartado quando o Engine cai.
 pub struct Engine {
     #[cfg(feature = "jit")]
-    jit: crate::jit::JitState,
+    pub(crate) jit: crate::jit::JitState,
     #[cfg(feature = "native")]
     pub(crate) native: Option<crate::native::NativeState>,
     #[cfg(feature = "native")]
@@ -142,12 +142,12 @@ pub struct Engine {
     clinit_failed: HashSet<String>,
     /// M3: estado host do framework (Activity/View/Handler/…)
     pub fw: crate::framework::HostState,
-    depth: usize,
+    pub(crate) depth: usize,
     pub(crate) fuel_used: u64,
     pub(crate) fuel_window_start: u64,
     /// AG-09: cobertura de métodos — chave `(dex_idx << 32) | method_idx`
     /// de cada corpo DEX que chegou a executar neste Engine.
-    coverage: HashSet<u64>,
+    pub(crate) coverage: HashSet<u64>,
     pub(crate) frame_labels: Vec<String>,
     /// Cooperative green threads (threads.rs)
     pub threads: crate::threads::Threads,
@@ -351,6 +351,12 @@ impl Engine {
         sig: &str,
         args: &[Value],
     ) -> Result<Value, VmExit> {
+        #[cfg(feature = "jit")]
+        if self.jit.stats.enabled && trace_method_pattern().is_none() {
+            if let Some(res) = crate::jit::try_invoke_static_fast(self, class, method, sig, args) {
+                return res;
+            }
+        }
         let param_types = parse_param_types(sig).ok_or_else(|| {
             crate::err::vm_error("INVALID_ARG", format!("assinatura malformada: {sig}"))
         })?;
@@ -406,7 +412,15 @@ impl Engine {
         }
         self.ensure_initialized(class)?;
         let slots = slot_form(&args, &param_types);
-        self.call(dex_idx, def, &m, slots)
+        let res = self.call(dex_idx, def, &m, slots);
+        #[cfg(feature = "jit")]
+        if res.is_ok() && self.jit.stats.enabled {
+            let key = ((dex_idx as u64) << 32) | u64::from(m.method_idx);
+            if self.jit.is_compiled(key) {
+                self.jit.bind_static_ic(class, method, sig, key);
+            }
+        }
+        res
     }
 
     /// Public entry point: `new C()` — runs `<clinit>` (if pending), allocates
@@ -568,18 +582,6 @@ impl Engine {
                 eprintln!("T/RustyDroid: call {label} depth={}", self.depth);
             }
         }
-        // Ponto de partida DEX-corrto do invoke-super: a SUPER da classe que
-        // DECLARA o frame atual (não `super(mref.class)` — Dalvik Reference).
-        // Resolvido aqui onde temos o ClassDef do frame em mãos.
-        let frame_super = {
-            let dex = &self.cp.dexes[dex_idx];
-            let s = dex.type_str(def.superclass_idx).to_string();
-            if s.is_empty() || s == "?" {
-                None
-            } else {
-                Some(s)
-            }
-        };
         let Some(code) = self.cp.code(dex_idx, m.code_off)? else {
             if m.access_flags & ACC_NATIVE != 0 {
                 #[cfg(feature = "native")]
@@ -617,18 +619,25 @@ impl Engine {
         self.coverage
             .insert(((dex_idx as u64) << 32) | u64::from(m.method_idx));
         #[cfg(feature = "jit")]
-        if m.access_flags & ACC_STATIC != 0 && self.jit.stats.enabled {
+        if self.jit.stats.enabled {
             let key = ((dex_idx as u64) << 32) | u64::from(m.method_idx);
-            let proto = self.cp.method_ref(dex_idx, m.method_idx)?.proto.clone();
-            if let Some(value) = self
-                .jit
-                .run(key, &code, &proto, &ins, self.fuel_remaining())
-            {
-                self.fuel_used += code.instructions.len() as u64;
-                return Ok(Value::Int(value));
+            if let Some(value) = crate::jit::try_exec_method(self, dex_idx, m, key, &code, &ins)? {
+                return Ok(value);
             }
         }
         let stack_tok = self.enter_stack_frame(true)?;
+        // Ponto de partida DEX-corrto do invoke-super: a SUPER da classe que
+        // DECLARA o frame atual (não `super(mref.class)` — Dalvik Reference).
+        // Resolvido aqui onde temos o ClassDef do frame em mãos.
+        let frame_super = {
+            let dex = &self.cp.dexes[dex_idx];
+            let s = dex.type_str(def.superclass_idx).to_string();
+            if s.is_empty() || s == "?" {
+                None
+            } else {
+                Some(s)
+            }
+        };
         let frame_label = self.method_label(dex_idx, m);
         self.frame_labels.push(frame_label);
         let scope_depth = self.heap.gc_scope_depth();
