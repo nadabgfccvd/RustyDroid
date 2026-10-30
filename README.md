@@ -19,7 +19,7 @@
 </p>
 
 ---
-
+## Under development, Mostly incomplete
 ## ✨ What is RustyDroid?
 
 RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android OS
