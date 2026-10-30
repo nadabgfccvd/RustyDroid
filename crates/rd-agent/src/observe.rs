@@ -478,8 +478,80 @@ impl AgentSession {
         }
     }
 
+    /// Issue #259 (item 2): com um snapshot ADR-009 apresentado e o
+    /// engine ainda não materializado, o `observe` serve as strings
+    /// ARMAZENADAS (`observe_text`/`observe_json` da captura) em vez
+    /// de forçar `screen_refresh` → `require_engine` — o fluxo mais
+    /// comum (launch → observe) não pode anular o fast-path. Devolve
+    /// `None` quando não há snapshot pendente (caminho normal).
+    /// A materialização continua preguiçosa: tap e demais tools de
+    /// engine seguem materializando no primeiro uso.
+    fn observe_from_pending_snapshot(
+        &mut self,
+        args: &serde_json::Map<String, serde_json::Value>,
+        t0: std::time::Instant,
+    ) -> Option<Result<ToolResult, RdError>> {
+        if self.engine.is_some() {
+            return None;
+        }
+        let pending = self.pending_snapshot.as_ref()?;
+        let stored_text = pending.loaded.observe_text.clone();
+        let stored_json = pending.loaded.observe_json.clone();
+        let format = args.get("format").and_then(|v| v.as_str()).unwrap_or("text");
+        let diff = args.get("diff").and_then(|v| v.as_bool()).unwrap_or(true);
+        let v = self.screen.version;
+        let mut j: serde_json::Value =
+            serde_json::from_str(&stored_json).unwrap_or_else(|_| serde_json::json!({}));
+        let cur: Vec<String> = j["texts"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t["text"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let out = match format {
+            "json" => {
+                j["version"] = serde_json::json!(v);
+                j["snapshot"] = serde_json::json!(true);
+                if diff {
+                    if let Some((pv, prev)) = &self.screen.observed {
+                        j["changed"] = serde_json::json!(*pv != v);
+                        j["since"] = serde_json::json!(pv);
+                        j["added"] = serde_json::json!(
+                            cur.iter().filter(|t| !prev.contains(t)).collect::<Vec<_>>()
+                        );
+                        j["removed"] = serde_json::json!(
+                            prev.iter().filter(|t| !cur.contains(t)).collect::<Vec<_>>()
+                        );
+                    }
+                }
+                j["observe_ms"] =
+                    serde_json::json!((t0.elapsed().as_secs_f64() * 10000.0).round() / 10.0);
+                Ok(ToolResult::json(&j))
+            }
+            "text" => {
+                let mut s = stored_text;
+                if diff {
+                    s.push_str(&self.diff_line(&cur));
+                }
+                Ok(ToolResult::text(s))
+            }
+            other => Err(agent_error(
+                "INVALID_FORMAT",
+                format!("observe: format '{other}' desconhecido"),
+                Some("use format \"text\" (compacto, default) ou \"json\""),
+            )),
+        };
+        self.screen.observed = Some((v, cur));
+        Some(out)
+    }
+
     fn tool_observe(&mut self, args: &serde_json::Map<String, serde_json::Value>) -> Result<ToolResult, RdError> {
         let t0 = std::time::Instant::now();
+        if let Some(out) = self.observe_from_pending_snapshot(args, t0) {
+            return out;
+        }
         self.screen_refresh()?;
         let format = args.get("format").and_then(|v| v.as_str()).unwrap_or("text");
         let diff = args.get("diff").and_then(|v| v.as_bool()).unwrap_or(true);

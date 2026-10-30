@@ -5211,6 +5211,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&snap_root);
     }
 
+    /// Issue #259 item 2: `observe` (text and json) must serve the STORED
+    /// snapshot after a snapshot launch. The launch -> observe flow must not
+    /// materialize the engine (that defeats the ADR 009 fast path).
+    #[test]
+    fn observe_serves_stored_snapshot_without_materializing_259() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        let apk_path = fixture_apk_path();
+        let snap_root = std::env::temp_dir().join(format!(
+            "rd-snap-test-259-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::env::set_var("RD_SNAPSHOT_DIR", &snap_root);
+
+        let mut s1 = AgentSession::new();
+        install_ok(&mut s1, &apk_path);
+        let lv = launch_ok(&mut s1, serde_json::json!({}));
+        let activity = lv["activity"].as_str().expect("activity desc").to_string();
+        s1.capture_snapshot("com.test.mcp", &activity)
+            .expect("capture");
+        let key = s1
+            .find_installed("com.test.mcp")
+            .and_then(|a| a.snapshot_key.clone())
+            .expect("snapshot key recorded");
+
+        let mut s2 = AgentSession::new();
+        s2.try_install_snapshot(std::path::Path::new(&apk_path))
+            .expect("fast install runs")
+            .expect("snapshot hit");
+        let pending = s2
+            .snapshot_for_launch("com.test.mcp", &activity, Some(&key), None)
+            .expect("presentable snapshot");
+        s2.present_snapshot(pending);
+        assert!(s2.engine.is_none(), "present must not materialize");
+
+        let (obs, err) = call(&mut s2, "observe", serde_json::json!({}));
+        assert!(!err, "observe text: {obs}");
+        assert!(s2.engine.is_none(), "observe must not materialize");
+        assert!(s2.pending_snapshot.is_some());
+        let (obsj, err) = call(&mut s2, "observe", serde_json::json!({"format": "json"}));
+        assert!(!err, "observe json: {obsj}");
+        assert_eq!(obsj["snapshot"], true);
+        assert!(obsj["texts"].is_array());
+        assert!(s2.engine.is_none(), "observe json must not materialize");
+
+        std::env::remove_var("RD_SNAPSHOT_DIR");
+        let _ = std::fs::remove_dir_all(&snap_root);
+    }
+
     /// Issue #259: o fingerprint do APK não enxerga grants nem estado
     /// persistido — assim que a sessão diverge do install pristine
     /// (aqui: um grant), o snapshot não pode mais ser servido.
