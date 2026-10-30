@@ -61,7 +61,7 @@ crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).
   (43 dangerous/12 grupos, 15 specials, 78 normais puras + 15 com flag special = 93 normal-level, 36 signature, 3 internal) +
   13 roles + 7 appops; estado instalável/mutável (grant/deny/revoke) e auditoria
   estática (exported sem guarda, debuggable, cleartext, desconhecidas).
-- **fd-devices**: 6 perfis de device; `moto-e5` é o piso contratual (512 MB RSS /
+- **fd-devices**: 6 perfis de device; `moto-e5` é o piso contratual (1024 MB RSS /
   256 MB heap / 25% single-thread / Adreno 308 fill-rate).
 - **fd-behavior**: 25 comutadores targetSdk 26→36 (PRF-07), consultáveis por target.
 - **CLI `rd`**: `inspect` (humano + `--json`), `perm list|info|audit`,
@@ -274,7 +274,7 @@ certos); configs específicas (land/locale/density) selecionáveis.
    via `/proc/self/task/*/schedstat`; RSS de pico via `VmHWM`. Exit `0` orçamentos
    ok · `1` orçamento falhou ou erro de execução (`PERF_FAILED`).
 2. ✅ **Orçamentos do perfil `moto-e5`** (Apêndice A2): startup cold emulado
-   `< 2000 ms` (DoD do M7) · RSS de pico `≤ 512 MB` (falha fechado fora do
+   `< 2000 ms` (DoD do M7) · RSS de pico `≤ 1024 MB` (ADR 015) (falha fechado fora do
    Linux) · heap do app `≤ 256 MB` (marca d'água da arena da VM,
    `runtime_health.heap_peak_bytes`, lida fora do cronômetro).
 3. ✅ **Gate de CI**: `crates/rd-cli/tests/perf_cli.rs` roda o binário sobre o
