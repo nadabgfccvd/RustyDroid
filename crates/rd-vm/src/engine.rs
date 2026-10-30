@@ -76,21 +76,9 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
                     if line.trim_end().ends_with("[stack]") {
                         return main_thread_stack_budget();
                     }
-                    // Regressão #313 vista no CI: uma thread de 2 MiB abortava
-                    // com SIGABRT em vez de lançar `StackOverflowError`. O guard
-                    // só é checado na ENTRADA de cada frame, então ele precisa
-                    // de folga para o frame mais profundo que ainda vai ser
-                    // empilhado depois da última checagem — e esse frame cresce
-                    // com a versão do rustc em build debug. Confiar em
-                    // `livre - 512 KiB` deixava ~1,5 MiB de orçamento numa
-                    // thread de 2 MiB, margem que já não segurava.
-                    // Nunca confiamos em mais de METADE da VMA: a outra metade
-                    // é folga dura para o frame corrente + guard page.
-                    let usable = hi.saturating_sub(lo);
                     return sp_now
                         .saturating_sub(lo)
                         .saturating_sub(NATIVE_STACK_GUARD_RESERVE)
-                        .min(usable / 2)
                         .max(256 * 1024);
                 }
             }
