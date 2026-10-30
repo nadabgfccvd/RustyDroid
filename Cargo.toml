@@ -48,7 +48,12 @@ flate2 = { version = "1.0", default-features = false, features = ["rust_backend"
 regex = { version = "1.10", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
 
 # CLI
-clap = { version = "4.5", features = ["derive"] }
+# MSRV 1.76 pin: clap 4.6 pulls clap_lex 1.x, whose manifest uses
+# `edition2024` — Cargo 1.76 cannot even parse it, so `cargo check` dies with
+# "feature `edition2024` is required" in the MSRV job. The `< 4.6` ceiling is
+# what keeps dependabot from reopening the same break every week. Lift it in
+# the same PR that raises `rust-version` (workspace.package below) above 1.85.
+clap = { version = ">=4.5, <4.6", features = ["derive"] }
 
 # crates internas (dependências só apontam para baixo)
 rd-apk = { path = "crates/rd-apk", version = "0.9.0" }

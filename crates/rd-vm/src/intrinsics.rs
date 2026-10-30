@@ -176,6 +176,10 @@ pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Resul
     if let Ok(HeapObj::Str(s)) = vm.heap.get(r) {
         return Ok(s.clone());
     }
+    // Este caminho chama o intrínseco direto (sem `invoke_instance`), então a
+    // recursão de `toString` em estruturas cíclicas não passaria por nenhum
+    // guard de pilha e abortaria o processo — ver #394.
+    vm.check_native_stack()?;
     crate::arrays::with_host_reentrant(vm, |vm| {
         let cls = vm.heap.class_of(r)?.to_string();
         match call_instance_intrinsic(vm, &cls, "toString", "()Ljava/lang/String;", r, &[])? {
