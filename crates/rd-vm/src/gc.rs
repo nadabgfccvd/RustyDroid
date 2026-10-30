@@ -200,9 +200,15 @@ impl Engine {
         }
         self.fw.androidx = androidx;
         self.fw.gms = gms;
+        // #304: `self.sparse` is deliberately NOT rendered here. Conservative
+        // Debug tokenization would turn every SparseArray key/value ObjRef into
+        // a strong root, so an unreachable SparseArray (and any scalar that
+        // happens to look like an ObjRef key) was pinned for the whole session.
+        // It is now traced precisely as an engine-level ephemeron map instead
+        // (see `ephem_keys` / `trace_ephemeron_owner` / `purge_dead` below).
         let _ = write!(
             s,
-            "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
             self.statics,
             self.threads,
             self.pending_permission_results,
@@ -212,7 +218,6 @@ impl Engine {
             self.attached_views,
             self.window_attached,
             self.window_token,
-            self.sparse,
         );
         let _ = write!(
             s,
@@ -293,6 +298,11 @@ impl Engine {
         crate::android_spannable::gc_keys(&mut module_keys);
         crate::jio_chars::gc_keys(&mut module_keys);
         host_ephemerons::collect_ephemeron_keys(&self.fw, &mut ephem_keys);
+        // #304: `Engine.sparse` (android.util.SparseArray) is an engine-level
+        // ephemeron map: it lives outside `fw`, so `collect_ephemeron_keys`
+        // cannot see it. Without this an unreachable SparseArray stays pinned
+        // forever by has_side bit 4 (and a minor GC never re-scans it).
+        ephem_keys.extend(self.sparse.keys().copied());
         side_keys.extend(self.fw.objects.keys().copied());
         side_keys.extend(self.gfx.objs.keys().copied());
         let mut has_side = vec![0u8; n + 1];
@@ -449,6 +459,15 @@ impl Engine {
             }
             if side & 4 != 0 {
                 host_ephemerons::trace_ephemeron_owner(&self.fw, r, &mut cand);
+                // #304: values of an engine-level SparseArray are ephemeron
+                // referents: reachable only while the array itself is alive.
+                if let Some(map) = self.sparse.get(&r) {
+                    for v in map.values() {
+                        if let Value::Obj(x) = v {
+                            cand.push(*x);
+                        }
+                    }
+                }
             }
             for x in cand.drain(..) {
                 m.push(x);
@@ -523,6 +542,8 @@ impl Engine {
         self.bignums.retain(|r, _| alive(r));
         self.break_iters.retain(|r, _| alive(r));
         host_ephemerons::purge_dead(&mut self.fw, &alive);
+        // #304: same for the engine-level SparseArray owners.
+        self.sparse.retain(|r, _| alive(r));
         #[cfg(feature = "native")]
         if let Some(native) = &mut self.native {
             cleared_weak += native.purge_dead_weak(&alive);
