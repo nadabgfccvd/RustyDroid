@@ -1146,58 +1146,10 @@ fn class_supported(name: &str, sig: &str) -> bool {
 /// BigDecimal.ZERO, …) through the same host hooks `sget` uses; cached in
 /// `vm.statics`.
 fn platform_static(vm: &mut Engine, owner: &str, field: &str) -> Result<Option<Value>, VmExit> {
-    let key = (owner.to_string(), field.to_string());
-    if let Some(v) = vm.statics.get(&key) {
-        return Ok(Some(v.clone()));
-    }
-    let v = match crate::android_build::host_static(vm, owner, field)? {
-        Some(v) => Some(v),
-        None => match crate::android_env::host_static(vm, owner, field)? {
-            Some(v) => Some(v),
-            None => match crate::boxes::host_static(vm, owner, field)? {
-                Some(v) => Some(v),
-                None => match crate::jbigdecimal::host_static(vm, owner, field)? {
-                    Some(v) => Some(v),
-                    None => match crate::jnormalizer::host_static(vm, owner, field)? {
-                        Some(v) => Some(v),
-                        None => {
-                            #[cfg(feature = "virtual-devices")]
-                            let m10_val = if vm.fw.vdev.virtual_hardware_enabled {
-                                crate::m10::host_static(vm, owner, field)?
-                            } else {
-                                None
-                            };
-                            #[cfg(not(feature = "virtual-devices"))]
-                            let m10_val: Option<Value> = None;
-                            match m10_val {
-                                Some(v) => Some(v),
-                                None => {
-                                    match crate::android_sysservices::host_static(vm, owner, field)?
-                                    {
-                                        Some(v) => Some(v),
-                                        None => {
-                                            match crate::android_stub_surfaces::host_static(
-                                                vm, owner, field,
-                                            )? {
-                                                Some(v) => Some(v),
-                                                None => crate::android_util::host_static(
-                                                    vm, owner, field,
-                                                )?,
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                },
-            },
-        },
-    };
-    if let Some(v) = &v {
-        vm.statics.insert(key, v.clone());
-    }
-    Ok(v)
+    // #330: MESMA fonte canônica que os opcodes `sget*` usam. Antes este
+    // caminho mantinha uma cadeia de providers própria e divergente, então a
+    // reflexão enxergava campos que o bytecode lia como 0/Null e vice-versa.
+    vm.resolve_host_static(owner, field)
 }
 
 /// Field descriptor for a host static value (reflection metadata).

@@ -1050,6 +1050,144 @@ impl Engine {
         }
     }
 
+    /// Resolução CANÔNICA de constantes estáticas de host não embutidas em
+    /// DEX (System.out/.err, TimeUnit, wrappers JDK, java.util.Locale,
+    /// constantes do android.jar, …).
+    ///
+    /// Issue #330: fonte ÚNICA compartilhada pelo bytecode Dalvik `sget*`
+    /// (interp.rs, opcodes 0x60..=0x66) e pelo acesso reflexivo
+    /// (`Class.getField` / `Field.get(null)` / enum-constant em
+    /// intrinsics.rs). Antes da unificação os dois caminhos tinham conjuntos
+    /// de providers divergentes (split-brain): o `sget` devolvia 0/Null para
+    /// campos que a reflexão enxergava (android_sysservices /
+    /// android_stub_surfaces) e a reflexão não via os 8 providers que o
+    /// bytecode enxergava (TimeUnit, jtext_format, android_colorspace,
+    /// graphics, parcel, platform_base, collections, jtime) — e nenhum via
+    /// as constantes `Locale.*`. A ordem dos providers é documentada e
+    /// determinística (owners são disjuntos entre providers, então a ordem
+    /// define determinismo, não semântica). Hits são cacheados em
+    /// `self.statics`: semântica JDK, duas leituras da mesma constante
+    /// devolvem o MESMO objeto (identidade), enquanto `Locale.US` permanece
+    /// distinto de qualquer `new Locale("en","US")` construído pelo guest.
+    pub(crate) fn resolve_host_static(
+        &mut self,
+        owner: &str,
+        field: &str,
+    ) -> Result<Option<Value>, VmExit> {
+        let key = (owner.to_string(), field.to_string());
+        if let Some(v) = self.statics.get(&key).cloned() {
+            return Ok(Some(v));
+        }
+        // issues #43/#48: System.out/.err materializam um PrintStream embutido
+        // na primeira leitura (println/print são intrínsecos; a saída vai para
+        // stdout/stderr do host; spec PrintStream: nunca lança)
+        if owner == "Ljava/lang/System;" && (field == "out" || field == "err") {
+            let fd = if field == "err" { 2 } else { 1 };
+            let r = self
+                .heap
+                .alloc_instance(
+                    "Ljava/io/PrintStream;".to_string(),
+                    vec![("fd".to_string(), Value::Int(fd))],
+                )
+                .map_err(crate::err::oom_throwable)?;
+            let v = Value::Obj(r);
+            self.statics.insert(key, v.clone());
+            return Ok(Some(v));
+        }
+        // TimeUnit: instâncias dos 7 enums do JDK (sget já as servia; a
+        // reflexão não via — unificado aqui)
+        if owner == "Ljava/util/concurrent/TimeUnit;"
+            && matches!(
+                field,
+                "NANOSECONDS"
+                    | "MICROSECONDS"
+                    | "MILLISECONDS"
+                    | "SECONDS"
+                    | "MINUTES"
+                    | "HOURS"
+                    | "DAYS"
+            )
+        {
+            let unit = self.time_unit_obj(field)?;
+            let v = Value::Obj(unit);
+            self.statics.insert(key, v.clone());
+            return Ok(Some(v));
+        }
+        let v = self.host_static_providers(owner, field)?;
+        if let Some(v) = &v {
+            self.statics.insert(key, v.clone());
+        }
+        Ok(v)
+    }
+
+    /// Cadeia de providers host estáticos, na ordem canônica do issue #330
+    /// (a ordem histórica do `sget`, com os providers que faltavam em cada
+    /// lado adicionados no fim de suas metades). Owners são disjuntos entre
+    /// providers; cada provider devolve `Ok(None)` para classes que não são
+    /// suas.
+    fn host_static_providers(&mut self, owner: &str, field: &str) -> Result<Option<Value>, VmExit> {
+        if let Some(v) = crate::boxes::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        // issue #330: constantes predefinidas de java.util.Locale (antes
+        // `sget-object Locale.US` devolvia Null e quebrava <clinit> de APKs
+        // reais — org.primftpd_71.apk via DateTimeFormatter.ofPattern)
+        if let Some(v) = crate::android_res::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::jnormalizer::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::jbigdecimal::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::jtext_format::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::android_colorspace::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::android_env::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::android_build::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::graphics::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::parcel::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::android_util::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::platform_base::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::collections::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::jtime::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        // m10: constantes do android.jar (Context.*_SERVICE, Sensor.TYPE_*,
+        // …) existem independem de hardware virtual ativo — mesmo gate do
+        // `sget` histórico (feature-only). A reflexão gateava em
+        // virtual_hardware_enabled (divergência do split-brain); unificado.
+        #[cfg(feature = "virtual-devices")]
+        if let Some(v) = crate::m10::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::android_sysservices::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::android_stub_surfaces::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        Ok(None)
+    }
+
     /// issue #57 (JVMS 5.4.3.2): classe DECLARANTE do slot static de um campo
     /// referenciado por `ref_class` — sobe superclasses/interfaces. Classe
     /// fora do DEX (plataforma embutida, ex. System) declara nela mesma
