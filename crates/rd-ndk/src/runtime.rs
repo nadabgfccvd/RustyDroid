@@ -681,6 +681,15 @@ impl Runtime {
         }))
     }
     fn libc(&mut self, name: &str, t: &Trap) -> Result<Return> {
+        // issue #393: diagnóstico opt-in de TODO trap de import — não só dos
+        // nomes que `libm` reconhece. Sem isto, um símbolo com nome
+        // inesperado no runner (soname/versão) ficaria invisível.
+        if std::env::var_os("RD_NDK_TRAP_DUMP").is_some() {
+            eprintln!(
+                "rd-ndk trap: name={name:?} abi={:?} fp={:?} args={:?}",
+                self.abi, t.fp, t.args
+            );
+        }
         if let Some(r) = self.libm(name, t) {
             return r;
         }

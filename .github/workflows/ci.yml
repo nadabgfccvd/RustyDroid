@@ -194,6 +194,7 @@ jobs:
       - name: Native ABI + JNI bridge tests
         env:
           RD_NATIVE_PYTHON: python
+          RD_NDK_TRAP_DUMP: "1"
         run: cargo test -p rd-ndk -p rd-vm --features native
       # M9 DoD: five real F-Droid APKs (pinned by SHA-256, never committed —
       # GH-05) make JNI calls from their real DEX with checked results, on
