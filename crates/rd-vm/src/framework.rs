@@ -79,7 +79,7 @@ pub const DENSITY: f32 = 2.0;
 /// issue #40: cap de profundidade para caminhos host na árvore de views
 /// (hit-test/layout/dump) — árvore programática profunda (addView) não pode
 /// estourar a stack Rust e abortar o processo. Mesmo teto do inflate.
-const MAX_VIEW_DEPTH: usize = 512;
+pub(crate) const MAX_VIEW_DEPTH: usize = 512;
 
 /// Virtual vsync period.
 const VSYNC_MS: u64 = 16;
@@ -953,6 +953,8 @@ pub struct HostState {
     pub(crate) traversal_pending: bool,
     /// re-entrancy guard for the traversal run from `advance_clock`
     pub(crate) in_traversal: bool,
+    /// Recursion depth guard for `host_dispatch_draw` and `dispatch_touch` / `host_dispatch_touch`.
+    pub(crate) view_dispatch_depth: usize,
     main_looper: Option<ObjRef>,
     /// M8: thread "main" sintética (VM single-threaded — ver `THREAD`)
     pub(crate) main_thread: Option<ObjRef>,
@@ -1682,6 +1684,25 @@ impl Engine {
                     format!("classe {activity_desc} não existe no DEX — não há o que lançar"),
                 ),
                 "confira o nome da activity (package_list/ui_tree) ou lance sem `activity` para usar a LAUNCHER declarada no AndroidManifest.xml",
+            )
+            .into());
+        }
+        // APK-Tester (rodada end-to-end do PR-Agent): a classe EXISTE no DEX
+        // mas não estende android.app.Activity (41 APKs de engines declaram
+        // MainActivity extends java.lang.Object). Sem esta checagem a VM
+        // alocava a instância, não executava onCreate algum e devolvia
+        // sucesso com tela vazia — falha silenciosa (Lei 1). No Android o
+        // launch morre com ClassCastException na instrumentação; aqui o
+        // contrato de borda é o erro estruturado (mesmo padrão do #82).
+        if !self.cp.is_subtype(activity_desc, "Landroid/app/Activity;") {
+            return Err(crate::err::with_suggestion(
+                crate::err::vm_error(
+                    "VM_TYPE_ERROR",
+                    format!(
+                        "classe {activity_desc} não estende android.app.Activity — não é uma activity lançável (no Android o launch falha com ClassCastException)"
+                    ),
+                ),
+                "declare a componente como subclasse de android.app.Activity ou lance a LAUNCHER do AndroidManifest.xml",
             )
             .into());
         }
@@ -2910,18 +2931,23 @@ impl Engine {
     }
 
     pub(crate) fn find_view_by_id(&self, root: ObjRef, id: i32) -> Option<ObjRef> {
-        let (vid, children) = match self.fw.get(root)? {
-            HostObj::View {
-                id: vid, children, ..
-            } => (*vid, children.clone()),
-            _ => return None,
-        };
-        if vid != 0 && vid == id {
-            return Some(root);
-        }
-        for c in children {
-            if let Some(hit) = self.find_view_by_id(c, id) {
-                return Some(hit);
+        let mut stack = vec![(root, 0usize)];
+        let mut seen = std::collections::HashSet::new();
+        while let Some((cur, depth)) = stack.pop() {
+            if depth > MAX_VIEW_DEPTH || !seen.insert(cur) {
+                continue;
+            }
+            let (vid, children) = match self.fw.get(cur) {
+                Some(HostObj::View {
+                    id: vid, children, ..
+                }) => (*vid, children.as_slice()),
+                _ => continue,
+            };
+            if vid != 0 && vid == id {
+                return Some(cur);
+            }
+            for c in children.iter().rev() {
+                stack.push((*c, depth + 1));
             }
         }
         None
@@ -3051,12 +3077,21 @@ fn call_host_static_rooted(
         }
         // ── SharedPreferences padrão: canonical per-package file, loaded
         // from and persisted to app-private `shared_prefs` XML.
-        (PREFERENCE_MANAGER, "getDefaultSharedPreferences") => {
-            Ok(Some(Value::Obj(vm.shared_prefs_obj()?)))
-        }
-        (PREFERENCE_MANAGER, "getDefaultSharedPreferencesName") => {
-            let name = prefs_default_name(vm);
-            Ok(Some(Value::Obj(intrinsics::alloc_string(vm, name)?)))
+        (PREFERENCE_MANAGER, "getDefaultSharedPreferences")
+        | (PREFERENCE_MANAGER, "getDefaultSharedPreferencesName") => {
+            // Both dereference context.getPackageName().
+            if !matches!(args.first(), Some(Value::Obj(_))) {
+                return Err(VmExit::Exception(crate::err::Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "PreferenceManager context null",
+                )));
+            }
+            if name == "getDefaultSharedPreferences" {
+                Ok(Some(Value::Obj(vm.shared_prefs_obj()?)))
+            } else {
+                let name = prefs_default_name(vm);
+                Ok(Some(Value::Obj(intrinsics::alloc_string(vm, name)?)))
+            }
         }
         (SYSTEM_CLOCK, "sleep") => {
             // sleep(ms): avança o relógio virtual e drena o Looper
@@ -3309,12 +3344,10 @@ fn call_host_instance_rooted(
             "putString" | "putStringSet" | "putInt" | "putLong" | "putFloat" | "putBoolean" => {
                 let key = match args.first() {
                     Some(Value::Obj(r)) => vm.heap.as_str(*r)?.to_string(),
-                    _ => {
-                        return Err(VmExit::Exception(crate::err::Throwable::new(
-                            "Ljava/lang/NullPointerException;",
-                            "Editor.put com key null",
-                        )))
-                    }
+                    // AOSP stages null keys in the editor's HashMap; the
+                    // host store keys on String, so a null-key edit is
+                    // tolerated but not persisted.
+                    _ => return Ok(Some(Value::Obj(recv))),
                 };
                 let value = match name {
                     // AOSP EditorImpl treats a null String/Set value as a
@@ -3435,10 +3468,8 @@ fn call_host_instance_rooted(
                         .is_some_and(|store| store.contains_key(&key));
                     Ok(Some(Value::Int(contains as i32)))
                 } else {
-                    Err(VmExit::Exception(crate::err::Throwable::new(
-                        "Ljava/lang/NullPointerException;",
-                        "SharedPreferences.contains com key null",
-                    )))
+                    // HashMap.containsKey(null) is simply false.
+                    Ok(Some(Value::Int(0)))
                 }
             }
             ("edit", _) => Ok(None),
@@ -4367,13 +4398,7 @@ fn call_host_instance_rooted(
             Ok(Some(Value::Int(valid as i32)))
         }
         (VIEWGROUP, "addView") | (LINEARLAYOUT, "addView") | (FRAMELAYOUT, "addView") => {
-            let Some(Value::Obj(child)) = args.first() else {
-                return Err(crate::err::vm_error("INVALID_FORMAT", "addView sem view").into());
-            };
-            if let Some(params) = explicit_layout_params(vm, args) {
-                crate::err::put_field_result(vm.heap.put_field(*child, "mLayoutParams", params))?;
-            }
-            add_child(vm, recv, *child)?;
+            host_add_view(vm, recv, sig, args, false)?;
             Ok(Some(Value::Null))
         }
         (VIEWGROUP, "getChildCount")
@@ -4427,7 +4452,7 @@ fn call_host_instance_rooted(
                             .unwrap_or(0)
                             .max(0) as usize;
                         let st = st.min(children.len());
-                        let en = (st + n).min(children.len());
+                        let en = st.saturating_add(n).min(children.len());
                         children.drain(st..en).collect()
                     }
                     "removeView" | "removeViewInLayout" => {
@@ -4811,10 +4836,9 @@ fn prefs_get(
     args: &[Value],
 ) -> Result<Value, VmExit> {
     let Some(Value::Obj(key_ref)) = args.first() else {
-        return Err(VmExit::Exception(crate::err::Throwable::new(
-            "Ljava/lang/NullPointerException;",
-            format!("SharedPreferences.{method} com key null"),
-        )));
+        // SharedPreferencesImpl looks null keys up in a HashMap: a
+        // miss yields the caller's default, never an NPE.
+        return Ok(args.get(1).cloned().unwrap_or(Value::Null));
     };
     let key = vm.heap.as_str(*key_ref)?.to_string();
     let name = prefs_name_for_obj(vm, prefs);
@@ -4862,9 +4886,9 @@ fn apply_prefs_editor(vm: &mut Engine, editor: ObjRef) -> Result<bool, VmExit> {
     ensure_prefs_loaded(vm, &name);
 
     let mut changed_keys = Vec::new();
-    if vm.fw.m8.prefs_clear.remove(&editor).unwrap_or(false) {
+    let keys_cleared = vm.fw.m8.prefs_clear.remove(&editor).unwrap_or(false);
+    if keys_cleared {
         let store = vm.fw.m8.prefs_stores.entry(name.clone()).or_default();
-        changed_keys.extend(store.keys().cloned());
         store.clear();
     }
     if let Some(edits) = vm.fw.m8.prefs_editors.remove(&editor) {
@@ -4906,6 +4930,18 @@ fn apply_prefs_editor(vm: &mut Engine, editor: ObjRef) -> Result<bool, VmExit> {
         .get(&prefs)
         .cloned()
         .unwrap_or_default();
+    // Since targetSdk R, a clear() reports one null-key callback
+    // instead of one per cleared entry.
+    if keys_cleared {
+        for listener in &listeners {
+            vm.invoke_instance(
+                *listener,
+                "onSharedPreferenceChanged",
+                "(Landroid/content/SharedPreferences;Ljava/lang/String;)V",
+                &[Value::Obj(prefs), Value::Null],
+            )?;
+        }
+    }
     for key in changed_keys {
         let key_ref = intrinsics::alloc_string(vm, key)?;
         for listener in &listeners {
@@ -5014,12 +5050,87 @@ pub fn attach_child_public(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Re
 }
 
 pub(crate) fn attach_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
+    attach_child_at(vm, parent, child, -1)
+}
+
+fn validate_can_attach_child(
+    vm: &Engine,
+    parent: ObjRef,
+    child: ObjRef,
+    index: i32,
+) -> Result<usize, VmExit> {
+    let parent_len = match vm.fw.get(parent) {
+        Some(HostObj::View { children, .. }) => children.len(),
+        _ => return Err(crate::err::vm_error("INVALID_FORMAT", "addView em não-ViewGroup").into()),
+    };
+    let existing_parent = match vm.fw.get(child) {
+        Some(HostObj::View { parent: p, .. }) => *p,
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalArgumentException;",
+                "Cannot add a non-View child to a ViewGroup",
+            )));
+        }
+    };
+    if let Some(ep) = existing_parent {
+        let live_in_parent = matches!(
+            vm.fw.get(ep),
+            Some(HostObj::View { children, .. }) if children.contains(&child)
+        );
+        if live_in_parent {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalStateException;",
+                "The specified child already has a parent. You must call removeView() on the child's parent first.",
+            )));
+        }
+    }
+    // Reject self-cycles (`vg.addView(vg)`) and multi-node ancestor cycles
+    // (`a.addView(b); b.addView(a);`), bounded by `MAX_VIEW_DEPTH`.
+    let mut cur = Some(parent);
+    let mut steps = 0usize;
+    while let Some(anc) = cur {
+        if anc == child {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalArgumentException;",
+                "Cannot add a view as a descendant of itself",
+            )));
+        }
+        if steps >= MAX_VIEW_DEPTH {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalStateException;",
+                "View hierarchy depth limit exceeded",
+            )));
+        }
+        steps += 1;
+        cur = match vm.fw.get(anc) {
+            Some(HostObj::View { parent: p, .. }) => *p,
+            _ => None,
+        };
+    }
+    if index == -1 {
+        Ok(parent_len)
+    } else if index >= 0 && (index as usize) <= parent_len {
+        Ok(index as usize)
+    } else {
+        Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/IndexOutOfBoundsException;",
+            format!("index={index} count={parent_len}"),
+        )))
+    }
+}
+
+pub(crate) fn attach_child_at(
+    vm: &mut Engine,
+    parent: ObjRef,
+    child: ObjRef,
+    index: i32,
+) -> Result<(), VmExit> {
+    let pos = validate_can_attach_child(vm, parent, child, index)?;
     if let Some(HostObj::View { parent: p, .. }) = vm.fw.objects.get_mut(&child) {
         *p = Some(parent);
     }
-    match vm.fw.objects.get_mut(&parent) {
-        Some(HostObj::View { children, .. }) => children.push(child),
-        _ => return Err(crate::err::vm_error("INVALID_FORMAT", "addView em não-ViewGroup").into()),
+    if let Some(HostObj::View { children, .. }) = vm.fw.objects.get_mut(&parent) {
+        children.insert(pos, child);
     }
     // inserted under an attached parent → attached now (ViewGroup.addViewInner)
     crate::view_attach::on_child_added(vm, parent, child)
@@ -5061,17 +5172,83 @@ fn explicit_layout_params(vm: &Engine, args: &[Value]) -> Option<Value> {
     })
 }
 
-pub(crate) fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
-    ensure_child_layout_params(vm, parent, child)?;
-    attach_child(vm, parent, child)?;
-    // re-layout do container na sua posição corrente — addView PROGRAMÁTICO
-    // (pós-setContentView): O(N) por chamada, não cumulativo (issue #45)
-    let (px, py, pw) = match vm.fw.get(parent) {
-        Some(HostObj::View { x, y, w, .. }) => (*x, *y, if *w == 0 { WINDOW_W } else { *w }),
-        _ => (0, 0, WINDOW_W),
+pub(crate) fn host_add_view(
+    vm: &mut Engine,
+    parent: ObjRef,
+    sig: &str,
+    args: &[Value],
+    prevent_request_layout: bool,
+) -> Result<(), VmExit> {
+    let child = match args.first() {
+        Some(Value::Obj(c)) => *c,
+        None | Some(Value::Null) | Some(Value::Int(0)) => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalArgumentException;",
+                "Cannot add a null child view to a ViewGroup",
+            )));
+        }
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalArgumentException;",
+                "Cannot add a non-View child to a ViewGroup",
+            )));
+        }
     };
-    vm.layout(parent, px, py, pw);
+    let (index, explicit_params) = match sig {
+        "(Landroid/view/View;)V" => (-1, None),
+        "(Landroid/view/View;I)V" => {
+            let idx = args.get(1).map_or(Ok(-1), |v| v.as_int())?;
+            (idx, None)
+        }
+        "(Landroid/view/View;II)V" => {
+            let w = args.get(1).map_or(Ok(-2), |v| v.as_int())?;
+            let h = args.get(2).map_or(Ok(-2), |v| v.as_int())?;
+            let lp = vm
+                .heap
+                .alloc_instance("Landroid/view/ViewGroup$LayoutParams;".into(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            crate::err::put_field_result(vm.heap.put_field(lp, "width", Value::Int(w)))?;
+            crate::err::put_field_result(vm.heap.put_field(lp, "height", Value::Int(h)))?;
+            (-1, Some(Value::Obj(lp)))
+        }
+        "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V" => {
+            (-1, explicit_layout_params(vm, args))
+        }
+        "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V"
+        | "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)Z"
+        | "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;Z)Z" => {
+            let idx = args.get(1).map_or(Ok(-1), |v| v.as_int())?;
+            (idx, explicit_layout_params(vm, args))
+        }
+        _ => (-1, explicit_layout_params(vm, args)),
+    };
+    // Validate tree invariants & insertion index BEFORE mutating child fields.
+    let _ = validate_can_attach_child(vm, parent, child, index)?;
+    if let Some(params) = explicit_params {
+        crate::err::put_field_result(vm.heap.put_field(child, "mLayoutParams", params))?;
+    } else {
+        ensure_child_layout_params(vm, parent, child)?;
+    }
+    attach_child_at(vm, parent, child, index)?;
+    if !prevent_request_layout {
+        let (px, py, pw) = match vm.fw.get(parent) {
+            Some(HostObj::View { x, y, w, .. }) => (*x, *y, if *w == 0 { WINDOW_W } else { *w }),
+            _ => (0, 0, WINDOW_W),
+        };
+        vm.layout(parent, px, py, pw);
+    }
     Ok(())
+}
+
+#[allow(dead_code)]
+pub(crate) fn add_child(vm: &mut Engine, parent: ObjRef, child: ObjRef) -> Result<(), VmExit> {
+    host_add_view(
+        vm,
+        parent,
+        "(Landroid/view/View;)V",
+        &[Value::Obj(child)],
+        false,
+    )
 }
 
 fn enqueue(vm: &mut Engine, handler: ObjRef, runnable: ObjRef, when_ms: u64) -> Result<(), VmExit> {

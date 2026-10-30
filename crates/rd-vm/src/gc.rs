@@ -33,6 +33,9 @@ use crate::heap::{HeapObj, ObjRef};
 use crate::{Engine, Value};
 use std::fmt::Write as _;
 
+#[path = "gc_host_ephemerons.rs"]
+mod host_ephemerons;
+
 /// Class descriptor of a collected slot.
 pub const FREED_CLASS: &str = "Lrd/gc/Freed;";
 
@@ -176,12 +179,27 @@ impl Engine {
     /// except the weak host-object table (traced per reachable key). A generic
     /// sink lets collection scan the identical Debug text without allocating it.
     fn write_gc_roots(&mut self, s: &mut impl std::fmt::Write) {
-        // the parsed APK (zip, arsc, layouts) holds no heap refs: skip it
+        // the parsed APK (zip, arsc, layouts) holds no heap refs: skip it.
+        // Subsystem tables (`m8`, `m9`, `androidx`, `gms`) and `native` are
+        // traced precisely as strong roots + ephemerons rather than through
+        // `Debug` tokenization so scalar ints/IDs never false-pin heap slots.
         let objects = std::mem::take(&mut self.fw.objects);
         let resources = self.fw.resources.take();
+        let m8 = std::mem::take(&mut self.fw.m8);
+        #[cfg(feature = "advanced-components")]
+        let m9 = std::mem::take(&mut self.fw.m9);
+        let androidx = std::mem::take(&mut self.fw.androidx);
+        let gms = std::mem::take(&mut self.fw.gms);
         let _ = write!(s, "{:?}", self.fw);
         self.fw.objects = objects;
         self.fw.resources = resources;
+        self.fw.m8 = m8;
+        #[cfg(feature = "advanced-components")]
+        {
+            self.fw.m9 = m9;
+        }
+        self.fw.androidx = androidx;
+        self.fw.gms = gms;
         let _ = write!(
             s,
             "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
@@ -210,10 +228,6 @@ impl Engine {
             self.intent_meta,
             self.content,
         );
-        #[cfg(feature = "native")]
-        {
-            let _ = write!(s, "|{:?}", self.native);
-        }
     }
 
     /// Full collection. Interpreter frames must have published roots; external
@@ -259,15 +273,26 @@ impl Engine {
             self.write_gc_roots(&mut scanner);
             scanner.finish()
         };
+        host_ephemerons::collect_strong_roots(&self.fw, &mut cand);
+        #[cfg(feature = "native")]
+        if let Some(native) = &self.native {
+            native.collect_gc_roots(&mut cand);
+        }
+        for r in cand.drain(..) {
+            m.push(r);
+        }
         // Root phase now includes tokenization, rather than only formatting.
         let t_roots = t0.elapsed();
-        // objects with side state (host half, gfx object, module tables):
-        // one bitmap built per cycle instead of ~5 hash lookups per object
+        // objects with side state (host half, gfx object, module tables,
+        // subsystem ephemeron maps): one bitmap built per cycle instead of
+        // dozens of hash lookups per object.
         let mut side_keys: Vec<ObjRef> = Vec::new();
         let mut module_keys: Vec<ObjRef> = Vec::new();
+        let mut ephem_keys: Vec<ObjRef> = Vec::new();
         crate::jregex::gc_keys(&mut module_keys);
         crate::android_spannable::gc_keys(&mut module_keys);
         crate::jio_chars::gc_keys(&mut module_keys);
+        host_ephemerons::collect_ephemeron_keys(&self.fw, &mut ephem_keys);
         side_keys.extend(self.fw.objects.keys().copied());
         side_keys.extend(self.gfx.objs.keys().copied());
         let mut has_side = vec![0u8; n + 1];
@@ -281,6 +306,11 @@ impl Engine {
                 *b |= 2;
             }
         }
+        for k in ephem_keys {
+            if let Some(b) = has_side.get_mut(k as usize) {
+                *b |= 4;
+            }
+        }
         if minor {
             // Old side-state writes can introduce young refs without touching
             // Heap::get_mut. Scan these owners each minor; no missing barrier.
@@ -288,6 +318,20 @@ impl Engine {
             for r in 1..=n as ObjRef {
                 if !self.heap.is_young(r) && has_side[r as usize] != 0 {
                     m.stack.push(r);
+                }
+            }
+        }
+        #[cfg(feature = "virtual-devices")]
+        {
+            let mut vdev_keys = Vec::new();
+            self.fw.vdev.gc_keys(&mut vdev_keys);
+            for k in vdev_keys {
+                if let Some(b) = has_side.get_mut(k as usize) {
+                    let was_zero = *b == 0;
+                    *b |= 8;
+                    if minor && was_zero && !self.heap.is_young(k) {
+                        m.stack.push(k);
+                    }
                 }
             }
         }
@@ -387,6 +431,10 @@ impl Engine {
                 None => {}
             }
             // module side tables keyed by object (Matcher, Spannable, Reader…)
+            #[cfg(feature = "virtual-devices")]
+            if side & 8 != 0 {
+                self.fw.vdev.gc_trace_entry(r, &mut cand);
+            }
             if side & 2 != 0 {
                 let mut scanner = RefScanner::new(n, |x| cand.push(x));
                 crate::jregex::gc_entry(r, &mut scanner);
@@ -398,6 +446,9 @@ impl Engine {
                 let mut scanner = RefScanner::new(n, |x| cand.push(x));
                 let _ = write!(scanner, "{g:?}");
                 scanner.finish();
+            }
+            if side & 4 != 0 {
+                host_ephemerons::trace_ephemeron_owner(&self.fw, r, &mut cand);
             }
             for x in cand.drain(..) {
                 m.push(x);
@@ -471,6 +522,11 @@ impl Engine {
         self.gfx.objs.retain(|r, _| alive(r));
         self.bignums.retain(|r, _| alive(r));
         self.break_iters.retain(|r, _| alive(r));
+        host_ephemerons::purge_dead(&mut self.fw, &alive);
+        #[cfg(feature = "native")]
+        if let Some(native) = &mut self.native {
+            cleared_weak += native.purge_dead_weak(&alive);
+        }
         let alive_ref = |r: ObjRef| alive(&r);
         crate::jregex::gc_purge(&alive_ref);
         crate::android_spannable::gc_purge(&alive_ref);
@@ -479,6 +535,8 @@ impl Engine {
         crate::jrandom::gc_purge(&alive_ref);
         crate::android_uri::gc_purge(&alive_ref);
         crate::jannotations::gc_purge(&alive_ref);
+        #[cfg(feature = "virtual-devices")]
+        self.fw.vdev.gc_purge(&alive);
         if std::env::var_os("RD_GC_TRACE").is_some() {
             eprintln!(
                 "[rd gc] roots {:?} ({} B text, {} candidates) mark {:?} total {:?}",

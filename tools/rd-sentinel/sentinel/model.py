@@ -996,6 +996,11 @@ def render_markdown(report: Mapping[str, Any], *, artifact_note: str | None = No
         "pass": "✅ **PASS** — no blocking anti-regression finding in the executed campaign.",
         "blocked": "❌ **BLOCKED** — at least one strict anti-regression gate failed.",
         "incomplete": "⚠️ **INCOMPLETE** — required evidence was planned or skipped; this is not a pass.",
+        "stale": (
+            "⏳ **STALE** — the audit passed against an older base, but the base branch advanced "
+            "before publication; this is not a pass. Comment `/rd-sentinel rerun` or merge the base "
+            "branch for fresh evidence."
+        ),
     }.get(verdict, verdict)
     findings = [f for f in report.get("findings", []) if isinstance(f, Mapping)]
     checks = [c for c in report.get("checks", []) if isinstance(c, Mapping)]

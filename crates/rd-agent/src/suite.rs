@@ -405,7 +405,9 @@ fn attempt_step(
     let label = phase.label();
     let t0 = Instant::now();
     let args = resolve_args(&step.name, &step.arguments, base);
-    let r = session.call_tool(&step.name, &args);
+    // Issue #317: o CLI (`rd test`) também isola — panic de runtime
+    // vira passo falho tipado (INTERNAL_PANIC), não crash do processo.
+    let r = session.call_tool_isolated(&step.name, &args);
     let text = match r.content.first() {
         Some(ToolContent::Text(t)) => t.clone(),
         Some(ToolContent::Image { mime, .. }) => format!("<imagem {mime}>"),
