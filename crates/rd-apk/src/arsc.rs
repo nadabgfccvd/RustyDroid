@@ -393,11 +393,16 @@ fn parse_package(
             "arsc: package chunk too small (size {size}, header {header_size}, need 288)"
         )));
     }
-    let hdr_end = base
-        .checked_add(288)
+    if header_size > size {
+        return Err(RdError::parse(format!(
+            "arsc: package header {header_size} exceeds package chunk size {size}"
+        )));
+    }
+    let end = base
+        .checked_add(size)
         .ok_or_else(|| RdError::parse("arsc: package offset overflow"))?;
-    if hdr_end > data.len() {
-        return Err(RdError::parse("arsc: package chunk truncated (header)"));
+    if end > data.len() {
+        return Err(RdError::parse("arsc: package chunk truncated"));
     }
     let pkg_id = (u32_at(data, base + 8)? & 0xFF) as u8;
     let type_strings_off = u32_at(data, base + 268)? as usize;
@@ -414,64 +419,87 @@ fn parse_package(
     }
     let name = String::from_utf16_lossy(&name_units);
 
-    let (type_strings, _) = StringPool::parse(data, base + type_strings_off)?;
-    let (key_strings, _) = StringPool::parse(data, base + key_strings_off)?;
+    // Issue #246: type/key pools are subchunks of this package. Parse them
+    // from the package slice, never from bytes belonging to later chunks.
+    let package_data = &data[base..end];
+    let (type_strings, _) = StringPool::parse(package_data, type_strings_off)?;
+    let (key_strings, _) = StringPool::parse(package_data, key_strings_off)?;
 
     let mut entries: BTreeMap<u32, Vec<ResEntry>> = BTreeMap::new();
 
     // caminhar chunks internos a partir do fim do header real do pacote
-    let mut p = base + header_size;
-    let end = base + size;
+    let mut p = base
+        .checked_add(header_size)
+        .ok_or_else(|| RdError::parse("arsc: package header offset overflow"))?;
     while p + 8 <= end {
         let ctype = u16_at(data, p)?;
         let cheader = u16_at(data, p + 2)? as usize;
         let csize = u32_at(data, p + 4)? as usize;
+        let Some(chunk_end) = p.checked_add(csize) else {
+            break;
+        };
         // progresso garantido (chunk mínimo = 8 bytes) — endurece contra fuzz
-        if csize < 8 || csize < cheader || p + csize > end {
+        if csize < 8 || csize < cheader || chunk_end > end {
             break; // chunk truncado: não fatal para o M0 — o que veio antes fica
         }
         if ctype == RES_TABLE_TYPE_CHUNK {
-            let type_id = data.get(p + 8).copied().unwrap_or(0);
-            let flags = data.get(p + 9).copied().unwrap_or(0);
-            let entry_count = u32_at(data, p + 12)? as usize;
-            let entries_start = u32_at(data, p + 16)? as usize;
-
             // issue #29: ResTable_type tem no mínimo 20 bytes de header
             // (8 do ResChunk_header + id/res0/res1 + entryCount + entriesStart);
             // cheader < 20 causava underflow `cheader - 20` (pânico em
             // overflow-checks, config garbage em release)
-            if cheader < 20 {
+            if cheader < 20 || csize < 20 {
                 break; // chunk malformado: não fatal — o que veio antes fica
             }
+            let type_id = data.get(p + 8).copied().unwrap_or(0);
+            let flags = data.get(p + 9).copied().unwrap_or(0);
+            let entry_count = u32_at(data, p + 12)? as usize;
+            let entries_start = u32_at(data, p + 16)? as usize;
             let config = parse_config(data, p + 20, cheader - 20)?;
 
-            let entries_abs = p + entries_start;
+            // Issue #246: the offset table occupies [header, entriesStart)
+            // INSIDE this ResTable_type chunk. A declared entryCount larger
+            // than that window must not scan sibling chunks (which also made
+            // many tiny type chunks rescan the rest of the file). An invalid
+            // entriesStart yields no table entries for this chunk.
+            let table_start = p + cheader;
+            let table_limit = if entries_start >= cheader && entries_start <= csize {
+                p + entries_start
+            } else {
+                table_start
+            };
+            let entries_abs = table_limit;
+            let table_entries = |width: usize| entry_count.min((table_limit - table_start) / width);
             let mut collect = |idx: usize, rel_off: u32| -> RdResult<()> {
                 if rel_off == 0xFFFF_FFFF {
                     return Ok(());
                 }
-                let eoff = entries_abs + rel_off as usize;
-                if eoff + 8 > data.len() {
-                    return Ok(()); // entrada truncada: skip
+                let Some(eoff) = entries_abs.checked_add(rel_off as usize) else {
+                    return Ok(());
+                };
+                if eoff
+                    .checked_add(8)
+                    .map_or(true, |entry_end| entry_end > chunk_end)
+                {
+                    return Ok(()); // entrada fora/truncada neste chunk: skip
                 }
                 let e_size = u16_at(data, eoff)? as usize;
                 let e_flags = u16_at(data, eoff + 2)?;
                 let key_idx = u32_at(data, eoff + 4)?;
                 let (data_type, ddata, complex, parent, bag) = if e_flags & ENTRY_FLAG_COMPLEX != 0
                 {
-                    let parent = if e_size >= 16 && eoff + 16 <= p + csize {
+                    let parent = if e_size >= 16 && eoff + 16 <= chunk_end {
                         let parent = u32_at(data, eoff + 8)?;
                         (parent != 0).then_some(parent)
                     } else {
                         None
                     };
-                    let map_count = if e_size >= 16 && eoff + 16 <= p + csize {
+                    let map_count = if e_size >= 16 && eoff + 16 <= chunk_end {
                         u32_at(data, eoff + 12)? as usize
                     } else {
                         usize::MAX
                     };
                     let maps_start = eoff.saturating_add(e_size);
-                    let available = (p + csize).saturating_sub(maps_start) / 12;
+                    let available = chunk_end.saturating_sub(maps_start) / 12;
                     let bag = if map_count <= 65_536 && map_count <= available {
                         let mut bag = Vec::with_capacity(map_count);
                         for i in 0..map_count {
@@ -505,7 +533,9 @@ fn parse_package(
                     let Some(v) = eoff.checked_add(e_size) else {
                         return Ok(());
                     };
-                    if v + 8 > p + csize || v + 8 > data.len() {
+                    if v.checked_add(8)
+                        .map_or(true, |value_end| value_end > chunk_end)
+                    {
                         return Ok(());
                     }
                     let dtype = *data.get(v + 3).unwrap_or(&0);
@@ -535,35 +565,25 @@ fn parse_package(
 
             if flags & FLAG_SPARSE != 0 {
                 // ResTable_sparseTypeEntry: {idx u16, offset u16} — offset/4
-                let pairs = entry_count;
-                for i in 0..pairs {
-                    let o = p + cheader + i * 4;
-                    if o + 4 > data.len() {
-                        break;
-                    }
+                for i in 0..table_entries(4) {
+                    let o = table_start + i * 4;
                     let idx = u16_at(data, o)? as usize;
                     let off4 = u16_at(data, o + 2)? as u32;
                     collect(idx, off4 * 4)?;
                 }
             } else if flags & FLAG_OFFSET16 != 0 {
-                for i in 0..entry_count {
-                    let o = p + cheader + i * 2;
-                    if o + 2 > data.len() {
-                        break;
-                    }
+                for i in 0..table_entries(2) {
+                    let o = table_start + i * 2;
                     collect(i, u16_at(data, o)? as u32 * 4)?;
                 }
             } else {
-                for i in 0..entry_count {
-                    let o = p + cheader + i * 4;
-                    if o + 4 > data.len() {
-                        break;
-                    }
+                for i in 0..table_entries(4) {
+                    let o = table_start + i * 4;
                     collect(i, u32_at(data, o)?)?;
                 }
             }
         }
-        p += csize;
+        p = chunk_end;
     }
 
     Ok(Package {
@@ -884,5 +904,126 @@ mod tests {
         let arsc = Arsc::parse(&small).expect("arsc pequeno válido");
         let s = arsc.resolve_string(0x7f01_0000).expect("string resolve");
         assert_eq!(s.len(), 30_000);
+    }
+
+    // ─── #246: a tabela/entradas de um ResTable_type ficam no próprio chunk ──
+
+    fn complex_entry_header(key_idx: u32) -> Vec<u8> {
+        let mut e = Vec::new();
+        e.extend_from_slice(&16u16.to_le_bytes()); // ResTable_entry size
+        e.extend_from_slice(&ENTRY_FLAG_COMPLEX.to_le_bytes());
+        e.extend_from_slice(&key_idx.to_le_bytes());
+        e.extend_from_slice(&0u32.to_le_bytes()); // parent
+        e.extend_from_slice(&0u32.to_le_bytes()); // count
+        e
+    }
+
+    fn dummy_chunk_with_complex(chunk_type: u16, key_idx: u32) -> Vec<u8> {
+        let mut c = Vec::new();
+        c.extend_from_slice(&chunk_type.to_le_bytes());
+        c.extend_from_slice(&8u16.to_le_bytes()); // headerSize
+        c.extend_from_slice(&24u32.to_le_bytes()); // 8 + complex header
+        c.extend(complex_entry_header(key_idx));
+        c
+    }
+
+    fn offset16_type_chunk(
+        type_id: u8,
+        entry_count: u32,
+        entries_start: u32,
+        offsets: &[u16],
+    ) -> Vec<u8> {
+        const CHEAD: usize = 56;
+        let mut c = Vec::new();
+        c.extend_from_slice(&RES_TABLE_TYPE_CHUNK.to_le_bytes());
+        c.extend_from_slice(&(CHEAD as u16).to_le_bytes());
+        c.extend_from_slice(&((CHEAD + offsets.len() * 2) as u32).to_le_bytes());
+        c.push(type_id);
+        c.push(FLAG_OFFSET16);
+        c.extend_from_slice(&0u16.to_le_bytes());
+        c.extend_from_slice(&entry_count.to_le_bytes());
+        c.extend_from_slice(&entries_start.to_le_bytes());
+        c.resize(CHEAD, 0); // ResTable_config zeros
+        for off in offsets {
+            c.extend_from_slice(&off.to_le_bytes());
+        }
+        c
+    }
+
+    fn package_with_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
+        let mut pkg = Vec::new();
+        pkg.extend_from_slice(&RES_TABLE_PACKAGE_TYPE.to_le_bytes());
+        pkg.extend_from_slice(&288u16.to_le_bytes());
+        pkg.extend_from_slice(&0u32.to_le_bytes()); // size (patched)
+        pkg.extend_from_slice(&0x7fu32.to_le_bytes()); // id
+        pkg.resize(288, 0);
+        pkg[268..272].copy_from_slice(&288u32.to_le_bytes()); // typeStrings
+        pkg[276..280].copy_from_slice(&288u32.to_le_bytes()); // keyStrings
+        pkg.extend(empty_global_pool());
+        for c in chunks {
+            pkg.extend_from_slice(c);
+        }
+        let size = pkg.len() as u32;
+        pkg[4..8].copy_from_slice(&size.to_le_bytes());
+        pkg
+    }
+
+    #[test]
+    fn issue_246_type_tables_and_entries_cannot_cross_chunk_bounds() {
+        // Chunk 1 declares two OFFSET16 entries but its own size contains
+        // only the first table slot. The next word is the following chunk's
+        // type (0x0001); treating it as the second offset points into that
+        // sibling's payload, where a complex entry header is planted.
+        let table_chunk = offset16_type_chunk(1, 2, 62, &[0xFFFF]);
+        let sibling_payload_1 = dummy_chunk_with_complex(0x0001, 7);
+        // Chunk 2 has its table slot in-bounds, but the offset points past
+        // its end into the next sibling's planted complex entry header.
+        let entry_chunk = offset16_type_chunk(2, 1, 58, &[2]);
+        let sibling_payload_2 = dummy_chunk_with_complex(RES_TABLE_TYPE_SPEC, 8);
+        let data = package_with_chunks(&[
+            table_chunk,
+            sibling_payload_1,
+            entry_chunk,
+            sibling_payload_2,
+        ]);
+
+        let mut budget = ArscBudget::default();
+        let pkg = parse_package(
+            &data,
+            0,
+            data.len(),
+            288,
+            &StringPool::default(),
+            &mut budget,
+        )
+        .expect("package with hostile type chunks still parses");
+        assert!(
+            !pkg.entries.contains_key(&0x7f01_0001),
+            "offset table read the sibling chunk header as an offset"
+        );
+        assert!(
+            !pkg.entries.contains_key(&0x7f02_0000),
+            "entry header was read from the sibling chunk"
+        );
+        assert!(pkg.entries.is_empty());
+    }
+
+    #[test]
+    fn issue_246_package_string_pools_cannot_read_past_package_end() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&RES_TABLE_PACKAGE_TYPE.to_le_bytes());
+        data.extend_from_slice(&288u16.to_le_bytes());
+        data.extend_from_slice(&288u32.to_le_bytes()); // package size
+        data.extend_from_slice(&0x7fu32.to_le_bytes());
+        data.resize(288, 0);
+        data[268..272].copy_from_slice(&288u32.to_le_bytes());
+        data[276..280].copy_from_slice(&288u32.to_le_bytes());
+        // A perfectly valid empty pool, but entirely AFTER the package chunk.
+        data.extend(empty_global_pool());
+
+        let mut budget = ArscBudget::default();
+        let err = parse_package(&data, 0, 288, 288, &StringPool::default(), &mut budget)
+            .expect_err("package pools must live inside the package chunk");
+        assert_eq!(err.code, "PARSE_ERROR");
     }
 }
