@@ -272,9 +272,7 @@ impl AgentSession {
         match r {
             Ok(r) => r,
             Err(p) => {
-                let msg = p.downcast_ref::<String>().cloned()
-                    .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
-                    .unwrap_or_else(|| "panic".into());
+                let msg = Self::panic_message(&*p);
                 // Capture context before dropping the failed process. Never
                 // inspect guest frames/heap or acquire the log lock here.
                 let result = self.tool_error_result(name, &agent_error(
@@ -282,16 +280,73 @@ impl AgentSession {
                     format!("runtime panic durante '{name}': {msg} — o app foi encerrado; a sessão continua"),
                     Some("relance com `launch` e reporte o bug (logs tem a mensagem)"),
                 ));
-                self.engine = None;
-                self.engine_package = None;
-                self.native_engine = None;
-                self.activity = None;
-                self.screen.snap = None;
-                self.screen.dirty = true;
-                self.logs.lock()
-                    .map(|mut l| l.extend_from_slice(format!("E/RustyDroid: runtime panic in '{name}': {msg}\n").as_bytes()))
-                    .ok();
+                self.teardown_after_panic(name, &msg);
                 result
+            }
+        }
+    }
+
+    fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
+        p.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_else(|| "panic".into())
+    }
+
+    /// Estado pós-panic de runtime: o app morreu; a sessão continua.
+    fn teardown_after_panic(&mut self, name: &str, msg: &str) {
+        self.engine = None;
+        self.engine_package = None;
+        self.native_engine = None;
+        self.activity = None;
+        self.screen.snap = None;
+        self.screen.dirty = true;
+        self.logs
+            .lock()
+            .map(|mut l| {
+                l.extend_from_slice(
+                    format!("E/RustyDroid: runtime panic in '{name}': {msg}\n").as_bytes(),
+                )
+            })
+            .ok();
+    }
+
+    /// Issue #317: `screen_after_call` roda FORA do `catch_unwind` da
+    /// chamada (em `tools/call`), mas executa `screen_refresh` →
+    /// desenho de frame, que roda código guest. Um panic ali escapava
+    /// do isolamento e derrubava o servidor MCP. Mesmo teardown do
+    /// caminho da tool: o app é encerrado, a sessão vive.
+    pub fn screen_after_call_isolated(&mut self, tool: &str, ms: f64) {
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.screen_after_call(tool, ms)
+        }));
+        if let Err(p) = r {
+            let msg = Self::panic_message(&*p);
+            self.teardown_after_panic(tool, &msg);
+        }
+    }
+
+    /// Issue #317: `resources/read` executa `screen_refresh` /
+    /// `screen_png` (código guest) — isolado como as tools: panic
+    /// vira erro JSON-RPC tipado + teardown do app, nunca crash
+    /// do servidor MCP.
+    pub fn resource_read_isolated(
+        &mut self,
+        uri: &str,
+    ) -> Result<serde_json::Value, (i64, String)> {
+        let r =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.resource_read(uri)));
+        match r {
+            Ok(r) => r,
+            Err(p) => {
+                let msg = Self::panic_message(&*p);
+                self.teardown_after_panic("resources/read", &msg);
+                Err((
+                    -32002,
+                    format!(
+                        "INTERNAL_PANIC: runtime panic em resources/read '{uri}': {msg} — o app foi encerrado; a sessão continua"
+                    ),
+                ))
             }
         }
     }
@@ -373,10 +428,16 @@ impl AgentSession {
         };
         if let Some(msg) = &draw_error {
             if self.screen.draw_error.as_deref() != Some(msg) {
+                // Issue #317: log é best-effort — buffer envenenado não
+                // pode transformar um erro de desenho em panic.
                 self.logs
                     .lock()
-                    .expect("logs")
-                    .extend_from_slice(format!("W/RustyDroid: draw pass failed: {msg}\n").as_bytes());
+                    .map(|mut l| {
+                        l.extend_from_slice(
+                            format!("W/RustyDroid: draw pass failed: {msg}\n").as_bytes(),
+                        )
+                    })
+                    .ok();
             }
         }
         self.screen.draw_error = draw_error;
@@ -559,7 +620,10 @@ impl AgentSession {
             "json" => {
                 let boxes = args.get("boxes").and_then(|v| v.as_bool()).unwrap_or(false);
                 let v = self.screen.version;
-                let snap = self.screen.snap.as_ref().expect("snap");
+                // Issue #317: invariante quebrada vira erro tipado.
+                let snap = self.screen.snap.as_ref().ok_or_else(|| {
+                    agent_error("NOT_RUNNING", "sem frame de tela disponível", None)
+                })?;
                 let mut j = snap.to_json(v, boxes);
                 let cur: Vec<String> = snap.texts().iter().map(|t| t.text.clone()).collect();
                 if diff {
@@ -598,7 +662,10 @@ impl AgentSession {
         let exact = args.get("exact").and_then(|v| v.as_bool()).unwrap_or(false);
         let nth = args.get("nth").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         self.screen_refresh()?;
-        let snap = self.screen.snap.as_ref().expect("snap");
+        // Issue #317: invariante quebrada vira erro tipado.
+        let snap = self.screen.snap.as_ref().ok_or_else(|| {
+            agent_error("NOT_RUNNING", "sem frame de tela disponível", None)
+        })?;
         let w = norm(want);
         let hit = |label: &str| {
             let l = norm(label);
@@ -666,13 +733,28 @@ impl AgentSession {
         let content = match uri {
             RES_SCREEN => {
                 self.screen_refresh().map_err(err)?;
-                let snap = self.screen.snap.as_ref().expect("snap");
+                // Issue #317: nada de `expect` em caminho de servidor —
+                // se o refresh não produziu frame, o read falha tipado.
+                let Some(snap) = self.screen.snap.as_ref() else {
+                    return Err(err(agent_error(
+                        "NOT_RUNNING",
+                        "sem frame de tela disponível — lance um app primeiro",
+                        None,
+                    )));
+                };
                 serde_json::json!({"uri": uri, "mimeType": "application/json",
                     "text": snap.to_json(self.screen.version, true).to_string()})
             }
             RES_SCREEN_TXT => {
                 self.screen_refresh().map_err(err)?;
-                let snap = self.screen.snap.as_ref().expect("snap");
+                // Issue #317: sem `expect` em caminho de servidor.
+                let Some(snap) = self.screen.snap.as_ref() else {
+                    return Err(err(agent_error(
+                        "NOT_RUNNING",
+                        "sem frame de tela disponível — lance um app primeiro",
+                        None,
+                    )));
+                };
                 serde_json::json!({"uri": uri, "mimeType": "text/plain", "text": snap.to_text(self.screen.version)})
             }
             RES_SCREEN_PNG => {
@@ -680,7 +762,14 @@ impl AgentSession {
                 serde_json::json!({"uri": uri, "mimeType": "image/png", "blob": base64_encode(&png)})
             }
             RES_LOGS => {
-                let buf = self.logs.lock().expect("logs");
+                // Issue #317: buffer envenenado degrada tipado, sem panic.
+                let buf = self.logs.lock().map_err(|_| {
+                    err(agent_error(
+                        "LOG_BUFFER_UNAVAILABLE",
+                        "buffer de logs indisponível (mutex envenenado por panic anterior)",
+                        None,
+                    ))
+                })?;
                 serde_json::json!({"uri": uri, "mimeType": "text/plain", "text": String::from_utf8_lossy(&buf).to_string()})
             }
             other => return Err((-32002, format!("resource '{other}' não existe (veja resources/list)"))),
