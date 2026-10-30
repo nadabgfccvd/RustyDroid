@@ -1503,6 +1503,53 @@ class TinyRepoTests(unittest.TestCase):
         )
         self.assertIn("new-thread-local-state", {f["id"] for f in report["findings"]})
 
+    def test_three_dot_diff_ignores_main_advancing_after_fork(self):
+        """issue #362: o audit deve usar 3 pontos (merge-base).
+
+        Reproduz o cenário real: o PR nasce de `main`, `main` avança com um
+        arquivo novo, e o PR roda o audit depois. Com `base..head` (2 pontos) o
+        diff mostra o PR *apagando* o arquivo que só existe no `main` novo —
+        finding falso em todo PR aberto ao mesmo tempo.
+        """
+        td, repo, fork = self._repo()
+        self.addCleanup(td.cleanup)
+        main_branch = run(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+
+        # O PR cria sua própria branch a partir do fork e muda um arquivo.
+        run(repo, "checkout", "-qb", "feature", fork)
+        (repo / "crates/rd-vm/src/pr_only.rs").write_text(
+            "pub fn from_pr() -> u8 { 7 }\n", encoding="utf-8"
+        )
+        run(repo, "add", ".")
+        run(repo, "commit", "-qm", "pr work")
+
+        # `main` avança enquanto o PR está aberto: arquivo novo + API pública.
+        run(repo, "checkout", "-q", main_branch)
+        (repo / "crates/rd-vm/src/main_only.rs").write_text(
+            "pub fn just_landed() -> u8 { 9 }\n#[test] fn landed() {}\n",
+            encoding="utf-8",
+        )
+        run(repo, "add", ".")
+        run(repo, "commit", "-qm", "main advances")
+        advanced = run(repo, "rev-parse", "HEAD")
+        self.assertNotEqual(fork, advanced)
+
+        report = build_static_report(
+            repo=repo,
+            base_ref=advanced,          # tip atual do main, como no CI
+            head_ref="feature",
+            policy=POLICY,
+            baseline=BASELINE,
+            context=AuditContext(profile="auto"),
+        )
+
+        changed = {f["path"] for f in report["changed_files"]}
+        self.assertEqual({"crates/rd-vm/src/pr_only.rs"}, changed)
+        self.assertNotIn("crates/rd-vm/src/main_only.rs", changed)
+        # O relatório precisa deixar explícito qual base foi usada no diff.
+        self.assertEqual(fork, report["diff_base_sha"])
+        self.assertEqual(advanced, report["base_sha"])
+
     def test_removed_line_keeps_deleted_file_path_after_another_file(self):
         td, repo, _base = self._repo()
         self.addCleanup(td.cleanup)

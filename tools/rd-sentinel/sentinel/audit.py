@@ -116,6 +116,20 @@ def resolve_rev(repo: Path, rev: str) -> str | None:
     return value or None
 
 
+def merge_base_sha(repo: Path, base_sha: str, head_sha: str) -> str | None:
+    """Merge-base de `base` e `head`, ou `None` se não houver ancestral comum.
+
+    Issue #362: o audit precisa de semântica de 3 pontos (o que o PR *muda*),
+    não de 2 pontos (`base..head`). Com 2 pontos, assim que `main` avança
+    enquanto um PR está aberto, o diff passa a mostrar esse PR **apagando**
+    todos os arquivos, APIs públicas e testes que acabaram de entrar no
+    `main` — findings falsos em todo PR aberto ao mesmo tempo.
+    """
+    out = git_output(repo, ["merge-base", base_sha, head_sha])
+    value = out.strip()
+    return value or None
+
+
 def read_at_rev(repo: Path, rev: str | None, path: str) -> str | None:
     if rev is None or rev == "WORKTREE":
         target = repo / path
@@ -1985,8 +1999,11 @@ def build_static_report(
         raise RuntimeError(f"could not resolve head ref {head_ref}")
     head_for_git = "WORKTREE" if head_is_worktree else head_sha
 
-    files = collect_changed_files(repo, base_sha, head_for_git)
-    diff_lines = collect_diff_lines(repo, base_sha, head_for_git, files)
+    # issue #362: diff/inventários/manifestos com semântica de 3 pontos.
+    diff_base = merge_base_sha(repo, base_sha, head_sha) or base_sha
+
+    files = collect_changed_files(repo, diff_base, head_for_git)
+    diff_lines = collect_diff_lines(repo, diff_base, head_for_git, files)
     areas = areas_for_files(files)
     added_lines = sum(f.added or 0 for f in files)
     deleted_lines = sum(f.deleted or 0 for f in files)
@@ -2011,7 +2028,7 @@ def build_static_report(
         dependency_bot=dependency_bot,
     )
 
-    base_inventory = inventory_at(repo, base_sha)
+    base_inventory = inventory_at(repo, diff_base)
     head_inventory = inventory_at(repo, "WORKTREE" if head_is_worktree else head_sha)
     approvals = policy.get("approvals", {}) if isinstance(policy.get("approvals"), Mapping) else {}
     baseline_label = str(approvals.get("baseline_label", "sentinel:baseline-approved"))
@@ -2042,7 +2059,7 @@ def build_static_report(
     named_test_metrics: dict[str, Any] = {}
     if any(f.path.startswith("crates/") and f.path.endswith(".rs") for f in files):
         public_findings, public_api_metrics = _public_api_findings(
-            _public_api_inventory(repo, base_sha),
+            _public_api_inventory(repo, diff_base),
             _public_api_inventory(repo, "WORKTREE" if head_is_worktree else head_sha),
         )
         findings.extend(public_findings)
@@ -2050,7 +2067,7 @@ def build_static_report(
             triggers.add("public-api")
     if any(f.path.endswith(".rs") for f in files):
         named_test_findings, named_test_metrics = _named_test_findings(
-            _named_test_inventory(repo, base_sha),
+            _named_test_inventory(repo, diff_base),
             _named_test_inventory(repo, "WORKTREE" if head_is_worktree else head_sha),
             baseline_approved=baseline_approval_applied,
         )
@@ -2126,7 +2143,7 @@ def build_static_report(
         lockfiles = sorted(
             {
                 path
-                for rev in (base_sha, head_rev_for_read)
+                for rev in (diff_base, head_rev_for_read)
                 for path in list_files_at_rev(repo, rev)
                 if path.endswith("Cargo.lock")
             }
@@ -2134,7 +2151,7 @@ def build_static_report(
         aggregate_metrics: dict[str, int] = {}
         for lockfile in lockfiles:
             lock_changes, lock_metrics = compare_cargo_locks(
-                read_at_rev(repo, base_sha, lockfile),
+                read_at_rev(repo, diff_base, lockfile),
                 read_at_rev(repo, head_rev_for_read, lockfile),
             )
             for change in lock_changes:
@@ -2144,7 +2161,7 @@ def build_static_report(
                     aggregate_metrics[key] = aggregate_metrics.get(key, 0) + value
         dependency_metrics = dict(aggregate_metrics)
         dependency_metrics["dependency_lockfiles_checked"] = len(lockfiles)
-        _, manifest_findings = compare_manifests(repo, base_sha, head_rev_for_read)
+        _, manifest_findings = compare_manifests(repo, diff_base, head_rev_for_read)
         findings.extend(manifest_findings)
 
         dependencies_cfg = (
@@ -2402,6 +2419,7 @@ def build_static_report(
         "profile": context.profile,
         "base_ref": base_ref,
         "base_sha": base_sha,
+        "diff_base_sha": diff_base,
         "head_ref": context.head_ref or head_ref,
         "head_sha": head_sha,
         "head_is_worktree": head_is_worktree,
