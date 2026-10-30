@@ -365,7 +365,10 @@ pub(crate) fn host_static(
     let group: &[&str] = match canonical {
         "SIMPLIFIED_CHINESE" => &["SIMPLIFIED_CHINESE", "CHINA", "PRC"],
         "TRADITIONAL_CHINESE" => &["TRADITIONAL_CHINESE", "TAIWAN"],
-        _ => &[canonical],
+        // MSRV 1.76 (E0716): `&[canonical]` criava um temporário que morria
+        // no fim do statement. `from_ref` empresta a variável local, que vive
+        // até o fim da função.
+        _ => std::slice::from_ref(&canonical),
     };
     for name in group {
         if let Some(v) = vm
