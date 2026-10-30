@@ -1780,7 +1780,16 @@ fn resolve_or_run_host_invoke(
             let has_impl = m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0;
             if has_impl && (m.access_flags & ACC_STATIC) == 0 {
                 let decl = vm.cp.type_str(d2, def.class_idx);
-                if !is_bundled_shim_owner(&decl) {
+                // #315 (item 3) + regressão encontrada no CI deste port: só
+                // overrides de classes da APP (ou de bibliotecas empacotadas,
+                // excluídas logo abaixo) vencem o host. Uma implementação de
+                // PLATAFORMA — `Landroid/content/SharedPreferencesImpl;->getInt`
+                // — precisa continuar caindo no shim host; desviá-la para o DEX
+                // do framework quebra APKs reais (NOT_FOUND em getInt).
+                if !is_bundled_shim_owner(&decl)
+                    && !decl.starts_with("Landroid/")
+                    && !decl.starts_with("Ljava/")
+                {
                     // main devolve `InvokeTarget`; o PR chamava `vm.call` direto.
                     // `slots` é o conjunto completo de registradores do invoke
                     // (receiver + args), que é o que `call` espera.
