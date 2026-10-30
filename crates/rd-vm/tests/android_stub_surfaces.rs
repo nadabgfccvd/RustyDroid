@@ -1533,7 +1533,7 @@ fn camera_params_values_and_stream_map_compute_from_explicit_configs() {
         vec![Value::Obj(high_speed)],
     );
     let mut args: Vec<Value> = vec![config_array, min_array, stall_array];
-    args.extend(std::iter::repeat_n(Value::Null, 12));
+    args.extend(std::iter::repeat(Value::Null).take(12));
     args.push(high_speed_array);
     args.push(Value::Null);
     args.push(Value::Int(1));
@@ -3991,6 +3991,7 @@ const ANDROID_OS_CONSTANTS: &str = "Landroid/system/OsConstants;";
 const ANDROID_ERRNO: &str = "Landroid/system/ErrnoException;";
 const ANDROID_STRUCT_STAT: &str = "Landroid/system/StructStat;";
 const ANDROID_STRUCT_TIMESPEC: &str = "Landroid/system/StructTimespec;";
+const ANDROID_STRUCT_UTSNAME: &str = "Landroid/system/StructUtsname;";
 
 fn byte_array(engine: &mut Engine, values: &[u8]) -> Value {
     let array = engine
@@ -4214,6 +4215,55 @@ fn android_system_constants_structs_and_errno_values_are_guest_visible() {
     assert_eq!(field(&engine, stat, "st_size"), Value::Long(123));
     let mtim = object(field(&engine, stat, "st_mtim"));
     assert_eq!(field(&engine, mtim, "tv_sec"), Value::Long(12));
+
+    // Deep audit: libcore.util.Objects.toString renders the structs as
+    // Name[f=v,f=v] (square brackets, no spaces) with String fields
+    // double-quoted, in declared field order.
+    assert_eq!(
+        call_text(&mut engine, stat, "toString", "()Ljava/lang/String;", &[]),
+        "StructStat[st_dev=7,st_ino=42,st_mode=33188,st_nlink=1,st_uid=10000,st_gid=10000,\
+         st_rdev=0,st_size=123,st_atime=11,st_atim=StructTimespec[tv_sec=11,tv_nsec=0],\
+         st_mtime=12,st_mtim=StructTimespec[tv_sec=12,tv_nsec=0],st_ctime=13,\
+         st_ctim=StructTimespec[tv_sec=13,tv_nsec=0],st_blksize=4096,st_blocks=8]"
+    );
+    let linux = text(&mut engine, "Linux");
+    let phone = text(&mut engine, "phone");
+    let release = text(&mut engine, "6.1");
+    let version = text(&mut engine, "#1");
+    let machine = text(&mut engine, "aarch64");
+    let utsname = transition_new(
+        &mut engine,
+        ANDROID_STRUCT_UTSNAME,
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        &[linux, phone, release, version, machine],
+    );
+    assert_eq!(
+        call_text(
+            &mut engine,
+            utsname,
+            "toString",
+            "()Ljava/lang/String;",
+            &[]
+        ),
+        "StructUtsname[sysname=\"Linux\",nodename=\"phone\",release=\"6.1\",\
+         version=\"#1\",machine=\"aarch64\"]"
+    );
+    // The reflective renderer dereferences each field value, so a null
+    // field makes toString itself throw NullPointerException on AOSP.
+    let phone = text(&mut engine, "phone");
+    let release = text(&mut engine, "6.1");
+    let version = text(&mut engine, "#1");
+    let machine = text(&mut engine, "aarch64");
+    let bad_utsname = transition_new(
+        &mut engine,
+        ANDROID_STRUCT_UTSNAME,
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        &[Value::Null, phone, release, version, machine],
+    );
+    assert_throws(
+        engine.invoke_instance(bad_utsname, "toString", "()Ljava/lang/String;", &[]),
+        "Ljava/lang/NullPointerException;",
+    );
 
     assert!(engine.cp.is_subtype(ANDROID_ERRNO, "Ljava/lang/Exception;"));
     assert!(engine
@@ -9576,6 +9626,47 @@ fn tv_no_input_profile_ratings_and_tracks_are_guest_visible() {
         call(&mut engine, video, "getVideoPixelAspectRatio", "()F", &[]),
         Value::Float(1.0)
     );
+
+    // Deep audit: createRating keeps the caller's sub-ratings array
+    // (the constructor sorts it in place and retains the reference),
+    // so later caller-side mutation is visible through the rating.
+    let dom = text(&mut engine, "example.dom");
+    let sys = text(&mut engine, "SYS");
+    let main = text(&mut engine, "TV-PG");
+    let subs_array = p57_string_array(&mut engine, &["S", "D"]);
+    let subs_ref = object(subs_array.clone());
+    let candidate = object(call_static(
+        &mut engine,
+        rating_class,
+        "createRating",
+        create_sig,
+        &[dom, sys, main, subs_array],
+    ));
+    let mutated = text(&mut engine, "L");
+    engine.heap.array_elems_mut(subs_ref).unwrap()[0] = mutated;
+    assert_eq!(
+        call_text(
+            &mut engine,
+            candidate,
+            "flattenToString",
+            "()Ljava/lang/String;",
+            &[]
+        ),
+        "example.dom/SYS/TV-PG/L/S"
+    );
+    // getSubRatings exposes an unmodifiable list, not a mutable copy.
+    let subs_list_ref = object(call(
+        &mut engine,
+        candidate,
+        "getSubRatings",
+        "()Ljava/util/List;",
+        &[],
+    ));
+    let extra = text(&mut engine, "X");
+    assert_throws(
+        engine.invoke_instance(subs_list_ref, "add", "(Ljava/lang/Object;)Z", &[extra]),
+        "Ljava/lang/UnsupportedOperationException;",
+    );
 }
 
 #[test]
@@ -10484,6 +10575,17 @@ fn quicksettings_tile_and_unbound_service_are_guest_visible() {
     );
     assert_eq!(field(&engine, service, "mService"), Value::Null);
     assert_eq!(field(&engine, service, "mTileToken"), Value::Null);
+
+    // Deep audit: the Intent overload is banned since targetSdk 34.
+    assert_throws(
+        engine.invoke_instance(
+            service,
+            "startActivityAndCollapse",
+            "(Landroid/content/Intent;)V",
+            &[Value::Obj(bind_intent)],
+        ),
+        "Ljava/lang/UnsupportedOperationException;",
+    );
 }
 
 #[test]
@@ -14909,6 +15011,23 @@ fn location_and_criteria_values_are_guest_visible() {
 }
 
 #[test]
+fn location_bearings_round_atan2_to_float_before_scaling() {
+    let mut engine = engine_of(&DexBuilder::new());
+    let from = p35c_location_at(&mut engine, -15.5, 30.25);
+    let to = p35c_location_at(&mut engine, 40.4, -3.7);
+    let bearing = call(
+        &mut engine,
+        from,
+        "bearingTo",
+        "(Landroid/location/Location;)F",
+        &[Value::Obj(to)],
+    );
+    // AOSP narrows the atan2 result to float before multiplying by
+    // 180/pi; keeping the double changes the last bit here.
+    assert_eq!(bearing.as_float().unwrap().to_bits(), 0xc1e2_aee4);
+}
+
+#[test]
 fn location_deep_audit_fixes_are_guest_visible() {
     let mut engine = engine_of(&DexBuilder::new());
     let location = p35c_location_at(&mut engine, 1.0, 2.0);
@@ -17046,6 +17165,32 @@ fn opengl_matrix_math_is_guest_visible() {
         ),
         "Ljava/lang/IllegalArgumentException;",
     );
+
+    // Deep audit: AOSP's transposeM loop writes into the destination
+    // as it reads the source, so transposing a matrix in place yields
+    // the symmetrized lower triangle, not the true transpose.
+    let in_place = float_value_array(
+        &mut engine,
+        &[
+            0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+        ],
+    );
+    call_static(
+        &mut engine,
+        P36A_MATRIX,
+        "transposeM",
+        "([FI[FI)V",
+        &[
+            in_place.clone(),
+            Value::Int(0),
+            in_place.clone(),
+            Value::Int(0),
+        ],
+    );
+    assert_eq!(
+        p36a_float_values(&engine, &in_place),
+        vec![0.0, 1.0, 2.0, 3.0, 1.0, 5.0, 6.0, 7.0, 2.0, 6.0, 10.0, 11.0, 3.0, 7.0, 11.0, 15.0,]
+    );
 }
 
 #[test]
@@ -18365,6 +18510,40 @@ fn bluetooth_without_a_service_and_device_values_are_guest_visible() {
             "getRemoteDevice",
             "(Ljava/lang/String;)Landroid/bluetooth/BluetoothDevice;",
             &[bad_address],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
+    // Deep audit: the device constructor rejects a lowercase address
+    // (checkBluetoothAddress is uppercase-hex only) and a non
+    // PUBLIC/RANDOM address type; the byte[] factory rejects arrays
+    // that do not hold exactly 6 bytes.
+    let lowercase_address = text(&mut engine, "c0:11:22:33:aa:bb");
+    assert_throws(
+        engine.invoke_instance(
+            adapter,
+            "getRemoteDevice",
+            "(Ljava/lang/String;)Landroid/bluetooth/BluetoothDevice;",
+            &[lowercase_address],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
+    let typed_address = text(&mut engine, "C0:11:22:33:AA:BB");
+    assert_throws(
+        engine.invoke_instance(
+            adapter,
+            "getRemoteLeDevice",
+            "(Ljava/lang/String;I)Landroid/bluetooth/BluetoothDevice;",
+            &[typed_address, Value::Int(2)],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
+    let short_bytes = byte_array(&mut engine, &[0, 0x11, 0x22, 0x33, 0xaa]);
+    assert_throws(
+        engine.invoke_instance(
+            adapter,
+            "getRemoteDevice",
+            "([B)Landroid/bluetooth/BluetoothDevice;",
+            &[short_bytes],
         ),
         "Ljava/lang/IllegalArgumentException;",
     );
@@ -22454,6 +22633,68 @@ fn wifi_disabled_profile_and_value_classes_are_guest_visible() {
         ),
         Value::Int(8)
     );
+
+    // Deep audit: the static calculateSignalLevel is computed in float
+    // on AOSP. With numLevels=50_000_000 the float result for rssi=-90
+    // is 11111111, one more than integer arithmetic would give.
+    assert_eq!(
+        call_static(
+            &mut engine,
+            P36H_WIFI_MANAGER,
+            "calculateSignalLevel",
+            P36H_INTS2,
+            &[Value::Int(-90), Value::Int(50_000_000)]
+        ),
+        Value::Int(11_111_111)
+    );
+    // The instance form rates against the service thresholds
+    // [-88, -77, -66, -55]; pin every band edge.
+    for (rssi, level) in [
+        (-89, 0),
+        (-88, 1),
+        (-78, 1),
+        (-77, 2),
+        (-67, 2),
+        (-66, 3),
+        (-56, 3),
+        (-55, 4),
+    ] {
+        assert_eq!(
+            call(
+                &mut engine,
+                manager,
+                "calculateSignalLevel",
+                "(I)I",
+                &[Value::Int(rssi)]
+            ),
+            Value::Int(level),
+            "rssi {rssi}"
+        );
+    }
+    assert_eq!(
+        call(&mut engine, manager, "getMaxSignalLevel", "()I", &[]),
+        Value::Int(4)
+    );
+
+    // A WifiSsid whose bytes are not valid UTF-8 renders as lowercase
+    // hex through WifiInfo.getSSID (via WifiSsid.toString), never as
+    // WifiManager.UNKNOWN_SSID.
+    let raw = byte_array(&mut engine, &[0xff, 0x41]);
+    let ssid = object(call_static(
+        &mut engine,
+        P36H_WIFI_SSID,
+        "fromBytes",
+        "([B)Landroid/net/wifi/WifiSsid;",
+        &[raw],
+    ));
+    engine
+        .heap
+        .put_field(info, "mWifiSsid", Value::Obj(ssid))
+        .unwrap();
+    assert_eq!(
+        call_text(&mut engine, info, "getSSID", "()Ljava/lang/String;", &[]),
+        "ff41"
+    );
 }
 
 fn p36h_ike_builder(engine: &mut Engine) -> ObjRef {
@@ -26350,5 +26591,110 @@ fn graphics_matrix_audit_fixes_are_guest_visible() {
     assert_throws(
         engine.invoke_instance(m, "setValues", "([F)V", &[short]),
         "Ljava/lang/ArrayIndexOutOfBoundsException;",
+    );
+}
+
+#[test]
+fn color_drawable_alpha_opacity_and_csl_default_follow_aosp() {
+    let mut engine = engine_of(&DexBuilder::new());
+    const CD: &str = "Landroid/graphics/drawable/ColorDrawable;";
+    let cd = instance(&mut engine, CD);
+    let base = Value::Int(0x8060_4020u32 as i32);
+    call(
+        &mut engine,
+        cd,
+        "<init>",
+        "(I)V",
+        std::slice::from_ref(&base),
+    );
+    assert_eq!(
+        call(&mut engine, cd, "getColor", "()I", &[]),
+        Value::Int(0x8060_4020u32 as i32)
+    );
+    assert_eq!(
+        call(&mut engine, cd, "getAlpha", "()I", &[]),
+        Value::Int(0x80)
+    );
+    assert_eq!(
+        call(&mut engine, cd, "getOpacity", "()I", &[]),
+        Value::Int(-3)
+    );
+    // setAlpha(255) leaves the combined alpha at the base 0x80.
+    call(&mut engine, cd, "setAlpha", "(I)V", &[Value::Int(255)]);
+    assert_eq!(
+        call(&mut engine, cd, "getAlpha", "()I", &[]),
+        Value::Int(0x80)
+    );
+    // setAlpha(0) makes it fully transparent.
+    call(&mut engine, cd, "setAlpha", "(I)V", &[Value::Int(0)]);
+    assert_eq!(call(&mut engine, cd, "getAlpha", "()I", &[]), Value::Int(0));
+    assert_eq!(
+        call(&mut engine, cd, "getOpacity", "()I", &[]),
+        Value::Int(-2)
+    );
+    // An opaque colour is OPAQUE.
+    call(
+        &mut engine,
+        cd,
+        "setColor",
+        "(I)V",
+        &[Value::Int(0xFF11_2233u32 as i32)],
+    );
+    assert_eq!(
+        call(&mut engine, cd, "getOpacity", "()I", &[]),
+        Value::Int(-1)
+    );
+    // Java int arithmetic wraps for out-of-contract alpha values; the
+    // host must reproduce the wrapped colour instead of panicking.
+    call(&mut engine, cd, "setAlpha", "(I)V", &[Value::Int(i32::MAX)]);
+    assert_eq!(
+        call(&mut engine, cd, "getAlpha", "()I", &[]),
+        Value::Int(254)
+    );
+    assert_eq!(
+        call(&mut engine, cd, "getColor", "()I", &[]),
+        Value::Int(0xFE11_2233u32 as i32)
+    );
+    call(&mut engine, cd, "setAlpha", "(I)V", &[Value::Int(i32::MIN)]);
+    assert_eq!(call(&mut engine, cd, "getAlpha", "()I", &[]), Value::Int(0));
+    assert_eq!(
+        call(&mut engine, cd, "getColor", "()I", &[]),
+        Value::Int(0x0011_2233)
+    );
+
+    // ColorStateList: the LAST empty spec provides the default colour.
+    const CSL: &str = "Landroid/content/res/ColorStateList;";
+    let csl = instance(&mut engine, CSL);
+    let s0 = int_array(&mut engine, &[]);
+    let s1 = int_array(&mut engine, &[7]);
+    let s2 = int_array(&mut engine, &[]);
+    let states = object_array(&mut engine, "[[I", vec![s0, s1, s2]);
+    let colors = int_array(&mut engine, &[10, 20, 30]);
+    call(&mut engine, csl, "<init>", "([[I[I)V", &[states, colors]);
+    assert_eq!(
+        call(&mut engine, csl, "getDefaultColor", "()I", &[]),
+        Value::Int(30)
+    );
+
+    // RippleDrawable rejects a null color.
+    const RD: &str = "Landroid/graphics/drawable/RippleDrawable;";
+    let ripple = instance(&mut engine, RD);
+    assert_throws(
+        engine.invoke_instance(
+            ripple,
+            "<init>",
+            "(Landroid/content/res/ColorStateList;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;)V",
+            &[Value::Null, Value::Null, Value::Null],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
+    );
+    assert_throws(
+        engine.invoke_instance(
+            ripple,
+            "setColor",
+            "(Landroid/content/res/ColorStateList;)V",
+            &[Value::Null],
+        ),
+        "Ljava/lang/IllegalArgumentException;",
     );
 }

@@ -478,8 +478,75 @@ pub struct MarkerCfg {
     pub id: String,
 }
 
+/// Evento de listener pendente na fila de entrega (ver `fire_guarded`).
+#[derive(Debug, Clone)]
+pub enum PendingFire {
+    Firestore(String),
+    Rtdb(String),
+    Auth,
+}
+
+/// Entrega de Task adiada pela guarda de reentrância (ver
+/// `queue_task_delivery`): ou o disparo pós-settle (listeners +
+/// pendings, com as listas capturadas no settle), ou o disparo
+/// imediato de um listener registado numa Task já completa.
+#[derive(Debug)]
+pub enum TaskDelivery {
+    Settled {
+        task: ObjRef,
+        success: Vec<ObjRef>,
+        failure: Vec<ObjRef>,
+        complete: Vec<ObjRef>,
+        canceled_ls: Vec<ObjRef>,
+        result: Value,
+        exception: Option<Value>,
+        successful: bool,
+        canceled: bool,
+    },
+    Listener {
+        task: ObjRef,
+        kind: u8,
+        listener: ObjRef,
+    },
+}
+
+/// Teto por registo (log) do shim: ao dobrar, drena a metade mais
+/// antiga. Sem teto, um loop de logEvent/recordException/log em
+/// bytecode esgotava a RAM do hospedeiro fora da contabilidade do
+/// heap guest (provado: 200 mil eventos retidos e a crescer).
+pub const MAX_GMS_LOG_ENTRIES: usize = 10_000;
+
+/// Push com teto amortizado (mantém os mais recentes; conta os
+/// descartados em `GmsState::dropped_log_entries`).
+pub fn push_capped<T>(v: &mut Vec<T>, item: T, dropped: &mut usize) {
+    v.push(item);
+    if v.len() > 2 * MAX_GMS_LOG_ENTRIES {
+        let excess = v.len() - MAX_GMS_LOG_ENTRIES;
+        v.drain(..excess);
+        *dropped += excess;
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct GmsState {
+    /// Entrega de listeners em curso: escritas feitas DENTRO de um
+    /// callback enfileiram em `pending_fires` em vez de recursar
+    /// (sem isto, um listener que escreve no próprio path fazia a
+    /// pilha do hospedeiro transbordar — SIGABRT).
+    pub firing_listeners: bool,
+    pub pending_fires: Vec<PendingFire>,
+    /// Entrega de listeners de Tasks em curso: settles/listener-adds
+    /// aninhados enfileiram em `task_queue` em vez de recursar (um
+    /// OnCompleteListener que se re-adiciona abortava o processo).
+    pub task_delivering: bool,
+    pub task_queue: std::collections::VecDeque<TaskDelivery>,
+    /// Entradas descartadas pelo teto (todas as famílias).
+    pub dropped_log_entries: usize,
+    /// Profundidade corrente de callbacks host→DEX (ver
+    /// `call_dex_any`): o fusível global anti-recursão.
+    pub callback_depth: u32,
+    /// Callbacks descartados por excederem o fusível de profundidade.
+    pub dropped_callbacks: usize,
     pub availability_code: i32,
     pub availability_obj: Option<ObjRef>,
     pub error_notifications: i32,
@@ -835,14 +902,45 @@ fn make_bytes(vm: &mut Engine, bytes: &[u8]) -> Result<Value, VmExit> {
         .alloc_array(crate::heap::ElemKind::Int, bytes.len(), "[B")?;
     if let Ok(elems) = vm.heap.array_elems_mut(r) {
         elems.clear();
-        elems.extend(bytes.iter().map(|b| Value::Int(*b as i32)));
+        // issue #250: [B guarda byte COM sinal (-128..=127), como o aput-byte.
+        elems.extend(bytes.iter().map(|b| Value::Int(*b as i8 as i32)));
     }
     Ok(Value::Obj(r))
 }
 /// Invoca um callback DEX tentando assinaturas em ordem (bridges de
 /// genéricos apagam para `Object`, mas fixtures podem declarar o tipo
 /// concreto). `Ok(None)` = nenhum corpo DEX (objeto host/sintético).
+/// Fusível de profundidade para callbacks host→DEX do shim. As
+/// entregas são síncronas e um callback pode chamar métodos que
+/// disparam outro callback (retry no onPurchasesUpdated, listener
+/// que escreve, etc.); sem teto, a pilha do hospedeiro é o limite e
+/// o processo aborta (SIGABRT — provado em Billing, Tasks, RTDB,
+/// Firestore e LiveData). As filas de entrega (Tasks, FS/RTDB/Auth,
+/// LiveData) mantêm os fluxos legítimos rasos; este fusível é a rede
+/// para todos os outros callbacks. Acima do teto, a entrega é
+/// descartada e contada em `gms_dropped_callbacks`. O valor é baixo
+/// porque cada nível consome vários frames gordos do interpretador
+/// (medido: ~17 níveis já rebentam uma pilha de 2 MiB em debug).
+const MAX_CALLBACK_DEPTH: u32 = 8;
+
 fn call_dex_any(
+    vm: &mut Engine,
+    recv: ObjRef,
+    name: &str,
+    sigs: &[&str],
+    args: Vec<Value>,
+) -> Result<Option<Value>, VmExit> {
+    if vm.fw.gms.callback_depth >= MAX_CALLBACK_DEPTH {
+        vm.fw.gms.dropped_callbacks = vm.fw.gms.dropped_callbacks.saturating_add(1);
+        return Ok(None);
+    }
+    vm.fw.gms.callback_depth += 1;
+    let result = call_dex_any_inner(vm, recv, name, sigs, args);
+    vm.fw.gms.callback_depth -= 1;
+    result
+}
+
+fn call_dex_any_inner(
     vm: &mut Engine,
     recv: ObjRef,
     name: &str,
@@ -942,48 +1040,170 @@ fn try_settle_task(
             t.successful,
         )
     };
-    if canceled {
-        for l in canceled_ls {
-            let _ = call_dex_any(vm, l, "onCanceled", &["()V"], Vec::new())?;
+    queue_task_delivery(
+        vm,
+        TaskDelivery::Settled {
+            task: r,
+            success: success_ls,
+            failure: failure_ls,
+            complete: complete_ls,
+            canceled_ls,
+            result: res,
+            exception: exc,
+            successful: ok,
+            canceled,
+        },
+    )?;
+    Ok(true)
+}
+
+/// Teto de entregas de Tasks por disparo exterior. Cadeias síncronas
+/// legítimas são curtas; o teto trava ciclos (listener que se
+/// re-adiciona, continuações que se alimentam) sem recursão.
+const MAX_TASK_DELIVERIES_PER_TRIGGER: usize = 4096;
+
+/// Enfileira uma entrega e, se ninguém estiver a entregar, drena a
+/// fila iterativamente. O ESTADO das Tasks grava-se sempre de
+/// imediato no settle — só a notificação (listeners/pendings) é que
+/// passa pela fila quando há reentrância.
+fn queue_task_delivery(vm: &mut Engine, d: TaskDelivery) -> Result<(), VmExit> {
+    vm.fw.gms.task_queue.push_back(d);
+    if vm.fw.gms.task_delivering {
+        return Ok(());
+    }
+    vm.fw.gms.task_delivering = true;
+    let result = drain_task_queue(vm);
+    vm.fw.gms.task_delivering = false;
+    vm.fw.gms.task_queue.clear();
+    result
+}
+
+fn drain_task_queue(vm: &mut Engine) -> Result<(), VmExit> {
+    let mut budget = MAX_TASK_DELIVERIES_PER_TRIGGER;
+    while let Some(d) = vm.fw.gms.task_queue.pop_front() {
+        match d {
+            TaskDelivery::Settled {
+                task,
+                success,
+                failure,
+                complete,
+                canceled_ls,
+                result,
+                exception,
+                successful,
+                canceled,
+            } => {
+                if canceled {
+                    for l in canceled_ls {
+                        let _ = call_dex_any(vm, l, "onCanceled", &["()V"], Vec::new())?;
+                    }
+                } else if successful {
+                    for l in success {
+                        let _ = call_dex_any(
+                            vm,
+                            l,
+                            "onSuccess",
+                            &["(Ljava/lang/Object;)V"],
+                            vec![result.clone()],
+                        )?;
+                    }
+                } else if let Some(e) = &exception {
+                    for l in failure {
+                        let _ = call_dex_any(
+                            vm,
+                            l,
+                            "onFailure",
+                            &["(Ljava/lang/Exception;)V", "(Ljava/lang/Object;)V"],
+                            vec![e.clone()],
+                        )?;
+                    }
+                }
+                for l in complete {
+                    let _ = call_dex_any(
+                        vm,
+                        l,
+                        "onComplete",
+                        &[
+                            "(Lcom/google/android/gms/tasks/Task;)V",
+                            "(Ljava/lang/Object;)V",
+                        ],
+                        vec![Value::Obj(task)],
+                    )?;
+                }
+                let pendings = vm.fw.gms.pending.remove(&task).unwrap_or_default();
+                for p in pendings {
+                    run_pending(vm, task, p)?;
+                }
+            }
+            TaskDelivery::Listener {
+                task,
+                kind,
+                listener,
+            } => {
+                deliver_task_listener(vm, task, kind, listener)?;
+            }
         }
-    } else if ok {
-        for l in success_ls {
+        budget = budget.saturating_sub(1);
+        if budget == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Disparo imediato de um listener registado numa Task já completa
+/// (estado relido: pós-settle é imutável).
+fn deliver_task_listener(
+    vm: &mut Engine,
+    task: ObjRef,
+    kind: u8,
+    listener: ObjRef,
+) -> Result<(), VmExit> {
+    let Some(st) = task_state(vm, task) else {
+        return Ok(());
+    };
+    if !st.complete {
+        return Ok(());
+    }
+    match (kind, st.canceled, st.successful) {
+        (0, false, true) => {
             let _ = call_dex_any(
                 vm,
-                l,
+                listener,
                 "onSuccess",
                 &["(Ljava/lang/Object;)V"],
-                vec![res.clone()],
+                vec![st.result.clone()],
             )?;
         }
-    } else if let Some(e) = &exc {
-        for l in failure_ls {
+        (1, false, false) => {
+            if let Some(e) = st.exception.clone() {
+                let _ = call_dex_any(
+                    vm,
+                    listener,
+                    "onFailure",
+                    &["(Ljava/lang/Exception;)V", "(Ljava/lang/Object;)V"],
+                    vec![e],
+                )?;
+            }
+        }
+        (2, _, _) => {
             let _ = call_dex_any(
                 vm,
-                l,
-                "onFailure",
-                &["(Ljava/lang/Exception;)V", "(Ljava/lang/Object;)V"],
-                vec![e.clone()],
+                listener,
+                "onComplete",
+                &[
+                    "(Lcom/google/android/gms/tasks/Task;)V",
+                    "(Ljava/lang/Object;)V",
+                ],
+                vec![Value::Obj(task)],
             )?;
         }
+        (3, true, _) => {
+            let _ = call_dex_any(vm, listener, "onCanceled", &["()V"], Vec::new())?;
+        }
+        _ => {}
     }
-    for l in complete_ls {
-        let _ = call_dex_any(
-            vm,
-            l,
-            "onComplete",
-            &[
-                "(Lcom/google/android/gms/tasks/Task;)V",
-                "(Ljava/lang/Object;)V",
-            ],
-            vec![Value::Obj(r)],
-        )?;
-    }
-    let pendings = vm.fw.gms.pending.remove(&r).unwrap_or_default();
-    for p in pendings {
-        run_pending(vm, r, p)?;
-    }
-    Ok(true)
+    Ok(())
 }
 fn settle_task(
     vm: &mut Engine,
@@ -1147,45 +1367,17 @@ fn add_listener(
     if !st.complete {
         return Ok(());
     }
-    match (kind, st.canceled, st.successful) {
-        (0, false, true) => {
-            let _ = call_dex_any(
-                vm,
-                listener,
-                "onSuccess",
-                &["(Ljava/lang/Object;)V"],
-                vec![st.result.clone()],
-            )?;
-        }
-        (1, false, false) => {
-            if let Some(e) = st.exception.clone() {
-                let _ = call_dex_any(
-                    vm,
-                    listener,
-                    "onFailure",
-                    &["(Ljava/lang/Exception;)V", "(Ljava/lang/Object;)V"],
-                    vec![e],
-                )?;
-            }
-        }
-        (2, _, _) => {
-            let _ = call_dex_any(
-                vm,
-                listener,
-                "onComplete",
-                &[
-                    "(Lcom/google/android/gms/tasks/Task;)V",
-                    "(Ljava/lang/Object;)V",
-                ],
-                vec![Value::Obj(task)],
-            )?;
-        }
-        (3, true, _) => {
-            let _ = call_dex_any(vm, listener, "onCanceled", &["()V"], Vec::new())?;
-        }
-        _ => {}
-    }
-    Ok(())
+    // Task já completa: o disparo imediato passa pela fila — um
+    // listener que se re-adiciona no próprio callback não recursia
+    // até ao SIGABRT (ver queue_task_delivery).
+    queue_task_delivery(
+        vm,
+        TaskDelivery::Listener {
+            task,
+            kind,
+            listener,
+        },
+    )
 }
 
 fn tasks_static(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Option<Value>, VmExit> {
@@ -1820,10 +2012,14 @@ fn analytics_instance(
                 for (k, v) in params {
                     upsert(&mut all, k, v);
                 }
-                vm.fw.gms.analytics_events.push(AnalyticsEvent {
+                let ev = AnalyticsEvent {
                     name: ev,
                     params: all,
-                });
+                };
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(&mut g.analytics_events, ev, &mut g.dropped_log_entries);
+                }
             }
             Value::Null
         }
@@ -1895,6 +2091,10 @@ fn auth_fail(vm: &mut Engine, class: &str, msg: &str) -> Result<Value, VmExit> {
     Ok(Value::Obj(failed_task(vm, class, msg)?))
 }
 fn fire_auth_listeners(vm: &mut Engine) -> Result<(), VmExit> {
+    fire_guarded(vm, PendingFire::Auth)
+}
+
+fn fire_auth_listeners_now(vm: &mut Engine) -> Result<(), VmExit> {
     let Some(auth) = vm.fw.gms.auth_obj else {
         return Ok(());
     };
@@ -2094,7 +2294,14 @@ fn fb_auth_instance(
                 .iter()
                 .any(|u| !u.deleted && u.email == email)
             {
-                vm.fw.gms.auth_password_resets.push(email);
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(
+                        &mut g.auth_password_resets,
+                        email,
+                        &mut g.dropped_log_entries,
+                    );
+                }
                 Value::Obj(void_task(vm)?)
             } else {
                 auth_fail(
@@ -2405,7 +2612,10 @@ fn messaging_instance(
                     .get(&m)
                     .map(|x| x.message_id.clone())
                     .unwrap_or_default();
-                vm.fw.gms.fcm_upstream.push(id);
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(&mut g.fcm_upstream, id, &mut g.dropped_log_entries);
+                }
             }
             Value::Null
         }
@@ -2464,18 +2674,25 @@ fn crashlytics_instance(
                 ),
                 _ => ("?".to_string(), String::new()),
             };
-            vm.fw.gms.crashes.push(CrashRecord {
+            let rec = CrashRecord {
                 kind: "recorded".to_string(),
                 class,
                 message,
-            });
+            };
+            {
+                let g = &mut vm.fw.gms;
+                push_capped(&mut g.crashes, rec, &mut g.dropped_log_entries);
+            }
             Value::Null
         }
         "log" => {
             if vm.fw.gms.crashlytics_disabled {
                 vm.fw.gms.crashlytics_dropped += 1;
             } else if let Some(s) = sarg(vm, args, 0) {
-                vm.fw.gms.crashlytics_logs.push(s);
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(&mut g.crashlytics_logs, s, &mut g.dropped_log_entries);
+                }
             }
             Value::Null
         }
@@ -2631,7 +2848,52 @@ fn fs_cmp(a: Option<&Value>, b: Option<&Value>) -> std::cmp::Ordering {
         .then(ka.1.partial_cmp(&kb.1).unwrap_or(Equal))
         .then(ka.2.cmp(&kb.2))
 }
+/// Ponto único de entrega de listeners (Firestore/RTDB/Auth) com guarda
+/// de reentrância: a entrega é síncrona, por isso um callback que escreve
+/// (e dispara outro evento) NÃO pode recursir nesta pilha — o evento
+/// aninhado entra na fila e a chamada exterior drena-a iterativamente,
+/// com um teto de eventos por disparo para travar ping-pong infinito
+/// entre listeners (o excesso é descartado, nunca entregue com atraso
+/// escondido: o teto é alto o suficiente para fluxos reais e o descarte
+/// é a alternativa honesta a um abort do processo).
+const MAX_FIRES_PER_TRIGGER: usize = 256;
+
+fn fire_guarded(vm: &mut Engine, ev: PendingFire) -> Result<(), VmExit> {
+    if vm.fw.gms.firing_listeners {
+        vm.fw.gms.pending_fires.push(ev);
+        return Ok(());
+    }
+    vm.fw.gms.firing_listeners = true;
+    let result = fire_drain(vm, ev);
+    vm.fw.gms.firing_listeners = false;
+    vm.fw.gms.pending_fires.clear();
+    result
+}
+
+fn fire_drain(vm: &mut Engine, first: PendingFire) -> Result<(), VmExit> {
+    let mut queue = std::collections::VecDeque::from([first]);
+    let mut budget = MAX_FIRES_PER_TRIGGER;
+    while let Some(ev) = queue.pop_front() {
+        match &ev {
+            PendingFire::Firestore(path) => fs_fire_listeners_now(vm, path)?,
+            PendingFire::Rtdb(path) => rtdb_fire_now(vm, path)?,
+            PendingFire::Auth => fire_auth_listeners_now(vm)?,
+        }
+        let pending = std::mem::take(&mut vm.fw.gms.pending_fires);
+        queue.extend(pending);
+        budget = budget.saturating_sub(1);
+        if budget == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
 fn fs_fire_listeners(vm: &mut Engine, changed_doc: &str) -> Result<(), VmExit> {
+    fire_guarded(vm, PendingFire::Firestore(changed_doc.to_string()))
+}
+
+fn fs_fire_listeners_now(vm: &mut Engine, changed_doc: &str) -> Result<(), VmExit> {
     let doc_listeners: Vec<ObjRef> = vm
         .fw
         .gms
@@ -3070,6 +3332,10 @@ fn rtdb_ref_obj(vm: &mut Engine, path: String) -> Result<ObjRef, VmExit> {
     Ok(r)
 }
 fn rtdb_fire(vm: &mut Engine, changed: &str) -> Result<(), VmExit> {
+    fire_guarded(vm, PendingFire::Rtdb(changed.to_string()))
+}
+
+fn rtdb_fire_now(vm: &mut Engine, changed: &str) -> Result<(), VmExit> {
     let affected: Vec<(String, ObjRef)> = vm
         .fw
         .gms
@@ -4402,7 +4668,14 @@ fn ads_instance(
                     .unwrap_or_default();
                 let listener = vm.fw.gms.ad_views.get(&recv).and_then(|v| v.listener);
                 if vm.fw.gms.ad_load_fail {
-                    vm.fw.gms.ad_events.push(format!("banner_fail:{unit}"));
+                    {
+                        let g = &mut vm.fw.gms;
+                        push_capped(
+                            &mut g.ad_events,
+                            format!("banner_fail:{unit}"),
+                            &mut g.dropped_log_entries,
+                        );
+                    }
                     if let Some(l) = listener {
                         let err = make_ad_error(
                             vm,
@@ -4419,7 +4692,14 @@ fn ads_instance(
                         )?;
                     }
                 } else {
-                    vm.fw.gms.ad_events.push(format!("banner_load:{unit}"));
+                    {
+                        let g = &mut vm.fw.gms;
+                        push_capped(
+                            &mut g.ad_events,
+                            format!("banner_load:{unit}"),
+                            &mut g.dropped_log_entries,
+                        );
+                    }
                     if let Some(v) = vm.fw.gms.ad_views.get_mut(&recv) {
                         v.loaded = true;
                     }
@@ -4448,7 +4728,14 @@ fn ads_instance(
                 Value::Null
             }
             "show" => {
-                vm.fw.gms.ad_events.push(format!("show:{}", ad.unit_id));
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(
+                        &mut g.ad_events,
+                        format!("show:{}", ad.unit_id),
+                        &mut g.dropped_log_entries,
+                    );
+                }
                 if let Some(a) = vm.fw.gms.full_screen_ads.get_mut(&recv) {
                     a.shown = true;
                 }
@@ -4477,7 +4764,14 @@ fn ads_instance(
                             &["(Lcom/google/android/gms/ads/rewarded/RewardItem;)V"],
                             vec![Value::Obj(item)],
                         )?;
-                        vm.fw.gms.ad_events.push(format!("reward:{}", ad.unit_id));
+                        {
+                            let g = &mut vm.fw.gms;
+                            push_capped(
+                                &mut g.ad_events,
+                                format!("reward:{}", ad.unit_id),
+                                &mut g.dropped_log_entries,
+                            );
+                        }
                     }
                 }
                 if let Some(cb) = ad.callback {
@@ -4514,7 +4808,14 @@ fn ads_static(
     match (class, name) {
         (MOBILE_ADS, "initialize") => {
             vm.fw.gms.ads_initialized = true;
-            vm.fw.gms.ad_events.push("initialize".to_string());
+            {
+                let g = &mut vm.fw.gms;
+                push_capped(
+                    &mut g.ad_events,
+                    "initialize".to_string(),
+                    &mut g.dropped_log_entries,
+                );
+            }
             if let Some(listener) = oarg(args, 1) {
                 let status = alloc(vm, INIT_STATUS)?;
                 let _ = call_dex_any(
@@ -4546,7 +4847,14 @@ fn ads_static(
                 "interstitial"
             };
             if vm.fw.gms.ad_load_fail {
-                vm.fw.gms.ad_events.push(format!("{kind}_fail:{unit}"));
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(
+                        &mut g.ad_events,
+                        format!("{kind}_fail:{unit}"),
+                        &mut g.dropped_log_entries,
+                    );
+                }
                 if let Some(cb) = callback {
                     let err = make_ad_error(
                         vm,
@@ -4563,7 +4871,14 @@ fn ads_static(
                     )?;
                 }
             } else {
-                vm.fw.gms.ad_events.push(format!("{kind}_load:{unit}"));
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(
+                        &mut g.ad_events,
+                        format!("{kind}_load:{unit}"),
+                        &mut g.dropped_log_entries,
+                    );
+                }
                 let ad = alloc(vm, class)?;
                 vm.fw.gms.full_screen_ads.insert(
                     ad,
@@ -5232,11 +5547,19 @@ fn cast_nearby_integrity_instance(
                         nonce.len()
                     )
                 };
-                vm.fw.gms.integrity_nonces.push(format!(
+                let nonce_rec = format!(
                     "safetynet:{}bytes:apiKeyPresent={}",
                     nonce.len(),
                     sarg(vm, args, 1).is_some()
-                ));
+                );
+                {
+                    let g = &mut vm.fw.gms;
+                    push_capped(
+                        &mut g.integrity_nonces,
+                        nonce_rec,
+                        &mut g.dropped_log_entries,
+                    );
+                }
                 let r = alloc(vm, ATTESTATION_RESPONSE)?;
                 vm.fw.gms.attestations.insert(r, jws);
                 Value::Obj(completed_task(vm, Value::Obj(r))?)
@@ -5974,11 +6297,15 @@ impl Engine {
     /// reais são capturados" do spec: o hospedeiro entrega aqui o
     /// resumo do VmExit fatal.
     pub fn gms_report_uncaught_crash(&mut self, class: &str, message: &str) {
-        self.fw.gms.crashes.push(CrashRecord {
+        let rec = CrashRecord {
             kind: "uncaught".to_string(),
             class: class.to_string(),
             message: message.to_string(),
-        });
+        };
+        {
+            let g = &mut self.fw.gms;
+            push_capped(&mut g.crashes, rec, &mut g.dropped_log_entries);
+        }
     }
 
     /// Sumários dos crashes registados.
@@ -6086,6 +6413,18 @@ impl Engine {
         self.fw.gms.ad_events.clone()
     }
 
+    /// Entradas de log descartadas pelo teto `MAX_GMS_LOG_ENTRIES`
+    /// (analytics/crash/ads/nonces/upstream/resets somados).
+    pub fn gms_dropped_log_entries(&self) -> usize {
+        self.fw.gms.dropped_log_entries
+    }
+
+    /// Callbacks DEX descartados pelo fusível de profundidade
+    /// (`MAX_CALLBACK_DEPTH`) — sinal de reentrância patológica.
+    pub fn gms_dropped_callbacks(&self) -> usize {
+        self.fw.gms.dropped_callbacks
+    }
+
     /// Faz os carregamentos de anúncios falharem com o código dado
     /// (0 interno, 1 pedido inválido, 2 rede, 3 sem fill).
     pub fn gms_ads_set_failure(&mut self, code: i32) {
@@ -6167,5 +6506,28 @@ impl Engine {
     /// Nº de Tasks por concluir — diagnóstico de esperas do app.
     pub fn gms_pending_tasks(&self) -> usize {
         self.fw.gms.tasks.values().filter(|t| !t.complete).count()
+    }
+}
+
+#[cfg(test)]
+mod narrow_bytes_250 {
+    use super::*;
+
+    /// issue #250: o `byte[]` criado pelo host guarda valores COM sinal,
+    /// a mesma invariante do aput-byte e do fill-array-data.
+    #[test]
+    fn make_bytes_is_signed() {
+        let mut vm = Engine::new(Vec::new(), Default::default());
+        let Value::Obj(r) = make_bytes(&mut vm, &[0xFF, 0x7F, 0x80, 0x00]).unwrap() else {
+            panic!("make_bytes deve devolver um objeto");
+        };
+        let got: Vec<i32> = vm
+            .heap
+            .array_elems_mut(r)
+            .unwrap()
+            .iter()
+            .map(|v| v.as_int().unwrap())
+            .collect();
+        assert_eq!(got, vec![-1, 127, -128, 0]);
     }
 }

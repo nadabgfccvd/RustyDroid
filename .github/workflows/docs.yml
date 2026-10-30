@@ -1,0 +1,68 @@
+name: Docs site (mdBook)
+
+# Publishes docs/ as a static mdBook site on GitHub Pages (M12).
+# The book scaffold (docs/book.toml + docs/SUMMARY.md) is the one proposed in
+# the M12 governance PR; this workflow only builds and deploys it.
+#
+# Required one-time setting: Settings → Pages → Build and deployment →
+# Source: "GitHub Actions".
+#
+# Sentinel notes (tools/rd-sentinel/sentinel/audit.py, `_workflow_findings`):
+# this job requests `pages: write` / `id-token: write`, so every action is
+# pinned to a full commit SHA (an unpinned ref next to a write permission is a
+# P1 finding). No `${{ }}` expression appears inside a `run:` script.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build book
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install mdBook (pinned)
+        run: cargo install mdbook --locked --version 0.5.4
+
+      - name: Build
+        run: mdbook build docs
+
+      - name: Fail if the book produced no index
+        run: test -f target/mdbook/index.html
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: target/mdbook
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

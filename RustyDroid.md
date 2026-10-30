@@ -5,10 +5,10 @@
 > Objetivo: **cobertura total do ecossistema Android** — todas as permissões, todas as APIs,
 > todos os componentes e todas as linguagens — com compatibilidade medida, não prometida.
 >
-> **Piso de API:** `minSdkVersion 26` (Android 8.0 Oreo) · `targetSdkVersion` = última estável no build (36 hoje).
+> **Piso de API:** `minSdkVersion 9` (Android 2.3 Gingerbread; APIs 9–25 em modo best-effort, tier T0 — ADR 016) · `targetSdkVersion` = última estável no build (36 hoje).
 > **Piso de hardware:** Motorola Moto E5 (Snapdragon 425, Adreno 308, 2 GB RAM) — **todos os budgets de performance são calibrados nele, não em emuladores modernos.**
 
-**Versão do documento:** 2.1 (piso API 26 + piso hardware Moto E5) · **Data:** 2026-10 · **Licença alvo:** MIT OR Apache-2.0
+**Versão do documento:** 2.2 (piso API 9, ADR 016 + piso hardware Moto E5) · **Data:** 2026-10 · **Licença alvo:** MIT OR Apache-2.0
 **Repositório alvo:** `github.com/nadabgfccvd/RustyDroid` (workspace Cargo monorepo)
 
 ---
@@ -239,8 +239,9 @@ Dado um APK real, o RustyDroid deve:
 - SEM SO convidado; exceção única: interpretador ARM p/ libs .so (se LANG-02)
 - Processo: < 800 MB RAM apps médios (modo normal); binário+deps < 200 MB
 - App trivial: instalar+iniciar < 5 s; UI ≥ 20 FPS telas simples
-- **Piso de API:** executa APKs com minSdk 26–36; APK com minSdk < 26 é parseado e
-  inspecionado, mas a execução responde `BELOW_FLOOR(minSdk=xx)` estruturado
+- **Piso de API:** executa APKs com minSdk 9–36 (9–25 best-effort, tier T0 —
+  ADR 016); APK com minSdk < 9 é parseado e inspecionado, mas a execução
+  responde `BELOW_FLOOR(minSdk=xx)` estruturado
 - **Modo piso E5 (PRF-06):** processo ≤ 1024 MB ([ADR 015](docs/adr/015-moto-e5-process-rss-1gb.md); heap do app ≤ 256 MB, equiv.
   dalvik.vm.heapgrowthlimit de um device de 2 GB); telas simples ≥ 60 FPS / médias
   ≥ 30 FPS sob budget de fill-rate equivalente ao Adreno 308; **gate de release**
@@ -341,19 +342,20 @@ Pergunte SOMENTE se um bloqueio físico impedir o progresso.
 
 # 📚 PARTE 2 — MATRIZES DE REFERÊNCIA (o "tudo" que o RustyDroid cobre)
 
-## Apêndice A — Versões Android suportadas (piso API 26 → teto 36)
+## Apêndice A — Versões Android suportadas (piso API 9 → teto 36)
 
-**Piso de compatibilidade: `minSdkVersion 26` (Android 8.0 Oreo — Android de fábrica do Motorola Moto E5).**
+**Piso de compatibilidade: `minSdkVersion 9` (Android 2.3 Gingerbread — ADR 016). O piso de HARDWARE continua sendo o Motorola Moto E5 (Android 8.0/API 26 de fábrica): são contratos distintos.**
 **Teto: `targetSdkVersion` = última estável no momento do build (hoje: 36 — Android 16).**
 
 | Tier | API levels | Android | Status no RustyDroid |
 |---|---|---|---|
-| T1 | 26–28 | 8.0–9 | **Piso obrigatório** — canais de notificação, autofill framework, PiP, background execution limits, adaptive icons, `invoke-custom` na VM (ART só suporta invokedynamic desde a API 26!) |
+| T0 | 9–25 | 2.3–7.1 | **Best-effort (ADR 016)** — executa com comutadores de comportamento por `targetSdk`; o que não existia na época (permissões em runtime <23, canais de notificação/`invoke-custom` <26) segue a semântica histórica ou erro estruturado — nunca invenção silenciosa. Sem gate de release neste tier |
+| T1 | 26–28 | 8.0–9 | **Compatibilidade plena (piso histórico)** — canais de notificação, autofill framework, PiP, background execution limits, adaptive icons, `invoke-custom` na VM (ART só suporta invokedynamic desde a API 26!) |
 | T2 | 29–33 | 10–13 | Suporte completo — scoped storage, roles, bubbles, POST_NOTIFICATIONS runtime, exact alarms |
 | T3 | 34–36 | 14–16 | Suporte evolutivo — foto picker, partial media access, Health Connect, 16K pages |
 
-> APKs com **minSdk < 26** (ex.: legados de API 21): são parseados e inspecionados
-> normalmente (M0), mas a execução responde `BELOW_FLOOR(minSdk=xx)` estruturado — nunca crash.
+> APKs com **minSdk < 9**: são parseados e inspecionados normalmente (M0),
+> mas a execução responde `BELOW_FLOOR(minSdk=xx)` estruturado — nunca crash.
 > Google Play exige **target API 36** a partir de 31/08/2026 — o parser normaliza
 > targetSdk 26→36 e aplica **comutadores de comportamento por targetSdk** (behavior
 > changes): scoped storage @29, roles @29, notifications runtime @33, exact alarms

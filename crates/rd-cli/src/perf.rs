@@ -183,7 +183,9 @@ fn call_json(
     name: &str,
     args: &serde_json::Value,
 ) -> Result<serde_json::Value, RdError> {
-    let r = s.call_tool(name, args);
+    // Issue #317: `rd perf` também isola — panic de runtime vira
+    // PERF_FAILED tipado neste passo, não crash do processo.
+    let r = s.call_tool_isolated(name, args);
     if r.is_error {
         return Err(RdError::new(
             "PERF_FAILED",

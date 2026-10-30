@@ -145,12 +145,120 @@ pub(crate) fn exec_frame(
                 }
             }};
         }
+        {
+            match insn.opcode {
+                0x22 => {
+                    let Kind::RegIndex(a, i) = &insn.kind else {
+                        return bad_kind(insn);
+                    };
+                    let class = vm.cp.type_str(dex_idx, *i as u32);
+                    step!(vm.ensure_initialized(&class));
+                    let obj = step!(finish_new_instance(vm, &class));
+                    regs[*a as usize] = obj;
+                }
+                0x60..=0x66 => {
+                    let Kind::RegIndex(a, i) = &insn.kind else {
+                        return bad_kind(insn);
+                    };
+                    let (ref_class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                    let owner = step!(vm.resolve_static_owner(&ref_class, &fname));
+                    step!(vm.ensure_initialized(&owner));
+                    let v = step!(finish_sget(vm, &owner, &fname, &ftype));
+                    let wide = matches!(v, Value::Long(_) | Value::Double(_));
+                    regs[*a as usize] = v;
+                    if wide {
+                        regs[*a as usize + 1] = Value::WideHi;
+                    }
+                }
+                0x67..=0x6D => {
+                    let Kind::RegIndex(a, i) = &insn.kind else {
+                        return bad_kind(insn);
+                    };
+                    let (ref_class, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                    let owner = step!(vm.resolve_static_owner(&ref_class, &fname));
+                    step!(vm.ensure_initialized(&owner));
+                    vm.statics.insert((owner, fname), regs[*a as usize].clone());
+                }
+                0x6E..=0x72 | 0x74..=0x78 => {
+                    let (midx, slots) = extract_invoke_args(insn, &regs)?;
+                    let invoke_op = insn.opcode;
+                    match do_invoke(vm, dex_idx, frame_super, invoke_op, midx, &slots) {
+                        Ok(v) => last_result = v,
+                        Err(VmExit::Exception(t)) => throw!(t),
+                        Err(e) => return Err(e),
+                    }
+                }
+                _ => match exec_leaf_insn(
+                    vm,
+                    dex_idx,
+                    &code,
+                    cur_pc,
+                    insn,
+                    &mut regs,
+                    &mut last_result,
+                    &mut pending_exc,
+                    pc,
+                )? {
+                    LeafResult::Next(next_pc) => pc = next_pc,
+                    LeafResult::Return(ret) => return Ok(ret),
+                },
+            }
+        }
+    }
+
+    enum LeafResult {
+        Next(usize),
+        Return(Value),
+    }
+
+    #[inline(never)]
+    #[allow(clippy::too_many_arguments)]
+    fn exec_leaf_insn(
+        vm: &mut Engine,
+        dex_idx: usize,
+        code: &Arc<CodeItem>,
+        cur_pc: usize,
+        insn: &Insn,
+        regs: &mut [Value],
+        last_result: &mut Value,
+        pending_exc: &mut Option<Throwable>,
+        pc_in: usize,
+    ) -> Result<LeafResult, VmExit> {
+        let mut pc = pc_in;
+        macro_rules! step {
+            ($e:expr) => {
+                match $e {
+                    Ok(v) => v,
+                    Err(VmExit::Exception(t)) => {
+                        match vm.enter_handler(dex_idx, code, cur_pc, t.clone()) {
+                            Ok(addr) => {
+                                *pending_exc = Some(t);
+                                return Ok(LeafResult::Next(addr));
+                            }
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
+        }
+        macro_rules! throw {
+            ($t:expr) => {{
+                let t: Throwable = $t;
+                match vm.enter_handler(dex_idx, code, cur_pc, t.clone()) {
+                    Ok(addr) => {
+                        *pending_exc = Some(t);
+                        return Ok(LeafResult::Next(addr));
+                    }
+                    Err(e) => return Err(e),
+                }
+            }};
+        }
         macro_rules! throw_exc {
             ($class:expr, $msg:expr) => {
                 throw!(vm.vm_exception($class, &$msg)?)
             };
         }
-
         match insn.opcode {
             // ── nop (0x00) — opcode REAL (format 10x, nenhum efeito):
             // padding executável e código ofuscado legítimo. Não cai no braço
@@ -193,13 +301,13 @@ pub(crate) fn exec_frame(
                 let Kind::Reg(a) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                regs[*a as usize] = last_result.clone();
+                regs[*a as usize] = (*last_result).clone();
             }
             0x0B => {
                 let Kind::Reg(a) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                regs[*a as usize] = last_result.clone();
+                regs[*a as usize] = (*last_result).clone();
                 regs[*a as usize + 1] = Value::WideHi;
             }
             0x0D => {
@@ -227,12 +335,12 @@ pub(crate) fn exec_frame(
             }
 
             // ── return family (0E..11) ──────────────────────────────────────
-            0x0E => return Ok(Value::Null),
+            0x0E => return Ok(LeafResult::Return(Value::Null)),
             0x0F..=0x11 => {
                 let Kind::Reg(a) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                return Ok(regs[*a as usize].clone());
+                return Ok(LeafResult::Return(regs[*a as usize].clone()));
             }
 
             // ── const family (12..19) ─ tabela canônica validada vs baksmali
@@ -401,26 +509,6 @@ pub(crate) fn exec_frame(
                     }
                 }
             }
-            0x22 => {
-                let Kind::RegIndex(a, i) = &insn.kind else {
-                    return bad_kind(insn);
-                };
-                let class = vm.cp.type_str(dex_idx, *i as u32);
-                // issue #25: criar instância é “ação ativa” (JLS 12.4.2) —
-                // <clinit> da classe roda ANTES do construtor; sem isto, o
-                // efeito do <clinit> só era observável no primeiro sget
-                // issue #41: exceção de <clinit> (EIIE) é despachada na MESMA
-                // frame (try/catch do método corrente) — `?` bypassava o handler
-                step!(vm.ensure_initialized(&class));
-                let r = step!(match vm.heap.alloc_instance(class.clone(), Vec::new()) {
-                    Ok(r) => Ok(r),
-                    Err(e) => Err(oom_exception(e)),
-                });
-                // M3: anexa estado host p/ classes de plataforma (Activity,
-                // View/TextView/Button/LinearLayout, Handler, Intent, Bundle)
-                step!(vm.attach_host_state(&class, r));
-                regs[*a as usize] = Value::Obj(r);
-            }
             0x23 => {
                 let Kind::RegRegIndex(a, b, i) = &insn.kind else {
                     return bad_kind(insn);
@@ -465,6 +553,14 @@ pub(crate) fn exec_frame(
                     _ => return bad_kind(insn),
                 };
                 let desc = vm.cp.type_str(dex_idx, type_idx);
+                // issue #250: o ART (interpreter_common.cc, DoFilledNewArray)
+                // só aceita int[] e arrays de referência. long[]/double[]
+                // lançam RuntimeException; os demais primitivos (boolean,
+                // byte, char, short, float) lançam InternalError. Antes os
+                // registradores entravam crus em [B/[Z/[C/[S, fora da faixa.
+                if let Some((class, msg)) = filled_new_array_unsupported(&desc) {
+                    throw_exc!(class, msg);
+                }
                 let Some(elem) = ElemKind::from_array_desc(&desc) else {
                     return Err(err::not_implemented(format!("filled-new-array {desc}")).into());
                 };
@@ -473,7 +569,7 @@ pub(crate) fn exec_frame(
                 for (i, v) in src.into_iter().enumerate() {
                     elems[i] = v;
                 }
-                last_result = Value::Obj(r);
+                *last_result = Value::Obj(r);
             }
             0x26 => {
                 // fill-array-data vAA, +payload (payload em +offset)
@@ -770,169 +866,6 @@ pub(crate) fn exec_frame(
                 )));
             }
 
-            // ── sget (60..66) / sput (67..6D) ───────────────────────────────
-            0x60..=0x66 => {
-                let Kind::RegIndex(a, i) = &insn.kind else {
-                    return bad_kind(insn);
-                };
-                let (ref_class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
-                // issue #57: JVMS 5.4.3.2 — o slot static é da classe
-                // DECLARANTE (sobe superclasses/interfaces; miss final =
-                // NoSuchFieldError capturável). Antes: statics keyados pela
-                // classe do ref — sget de campo herdado via ref da subclasse
-                // lia default silenciosamente e sput criava slot divergente.
-                let owner = step!(vm.resolve_static_owner(&ref_class, &fname));
-                // issue #41: EIIE de <clinit> despacha na frame corrente
-                // (JVMS 5.5: init é disparado no DECLARANTE — via ref da
-                // subclasse NÃO inicializa a subclasse)
-                step!(vm.ensure_initialized(&owner));
-                // issues #43/#48: System.out/.err materializam um PrintStream
-                // embutido na primeira leitura (println/print são intrínsecos;
-                // saída vai para stdout/stderr do host, spec PrintStream: nunca lança)
-                if owner == "Ljava/lang/System;" && (fname == "out" || fname == "err") {
-                    let key = (owner.clone(), fname.clone());
-                    if let std::collections::hash_map::Entry::Vacant(e) = vm.statics.entry(key) {
-                        let fd = if fname == "err" { 2 } else { 1 };
-                        let r = step!(vm
-                            .heap
-                            .alloc_instance(
-                                "Ljava/io/PrintStream;".to_string(),
-                                vec![("fd".to_string(), Value::Int(fd))],
-                            )
-                            .map_err(oom_exception));
-                        e.insert(Value::Obj(r));
-                    }
-                }
-                if owner == "Ljava/util/concurrent/TimeUnit;"
-                    && !vm.statics.contains_key(&(owner.clone(), fname.clone()))
-                    && matches!(
-                        fname.as_str(),
-                        "NANOSECONDS"
-                            | "MICROSECONDS"
-                            | "MILLISECONDS"
-                            | "SECONDS"
-                            | "MINUTES"
-                            | "HOURS"
-                            | "DAYS"
-                    )
-                {
-                    let unit = step!(vm.time_unit_obj(&fname));
-                    vm.statics
-                        .insert((owner.clone(), fname.clone()), Value::Obj(unit));
-                }
-                // JDK constants not backed by any DEX (Boolean.TRUE/FALSE,
-                // MAX_VALUE, NaN, ...) are materialized on first read.
-                // Host-static resolution needs `&mut Engine`; keeping a map Entry
-                // live across those calls would conflict with the mutable borrow.
-                #[allow(clippy::map_entry)]
-                if !vm.statics.contains_key(&(owner.clone(), fname.clone())) {
-                    if let Some(c) = step!(crate::boxes::host_static(vm, &owner, &fname)) {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::jnormalizer::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::jbigdecimal::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::jtext_format::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_colorspace::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_env::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_build::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) = step!(crate::graphics::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) = step!(crate::parcel::host_static(vm, &owner, &fname)) {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::android_util::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::platform_base::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) =
-                        step!(crate::collections::host_static(vm, &owner, &fname))
-                    {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    } else if let Some(c) = step!(crate::jtime::host_static(vm, &owner, &fname)) {
-                        vm.statics.insert((owner.clone(), fname.clone()), c);
-                    }
-                    #[cfg(feature = "virtual-devices")]
-                    if !vm.statics.contains_key(&(owner.clone(), fname.clone())) {
-                        if let Some(c) = step!(crate::m10::host_static(vm, &owner, &fname)) {
-                            vm.statics.insert((owner.clone(), fname.clone()), c);
-                        }
-                    }
-                }
-                let v = vm
-                    .statics
-                    .get(&(owner, fname))
-                    .cloned()
-                    // issue #37: default POR TIPO declarado — Int(0) genérico
-                    // quebrava sget-wide (Long lido como Int → VM_TYPE_ERROR)
-                    .unwrap_or_else(|| default_for(&ftype));
-                regs[*a as usize] = v;
-                if matches!(regs[*a as usize], Value::Long(_) | Value::Double(_)) {
-                    regs[*a as usize + 1] = Value::WideHi; // sget-wide
-                }
-            }
-            0x67..=0x6D => {
-                let Kind::RegIndex(a, i) = &insn.kind else {
-                    return bad_kind(insn);
-                };
-                let (ref_class, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
-                // issue #57: grava no slot da classe DECLARANTE (JVMS 5.4.3.2)
-                // — refs pela subclasse e pela superclasse vêem o MESMO valor.
-                let owner = step!(vm.resolve_static_owner(&ref_class, &fname));
-                // issue #41: EIIE de <clinit> despacha na frame corrente
-                step!(vm.ensure_initialized(&owner));
-                vm.statics.insert((owner, fname), regs[*a as usize].clone());
-            }
-
-            // ── invokes (6E..72, 74..78) ────────────────────────────────────
-            0x6E..=0x72 | 0x74..=0x78 => {
-                let (midx, slots) = match &insn.kind {
-                    Kind::Invoke35c {
-                        count,
-                        idx,
-                        regs: rr,
-                    } => (
-                        *idx as u32,
-                        rr[..*count as usize]
-                            .iter()
-                            .map(|r| regs[*r as usize].clone())
-                            .collect::<Vec<_>>(),
-                    ),
-                    Kind::InvokeRange3rc { count, idx, start } => {
-                        let s = *start as usize;
-                        let n = *count as usize;
-                        (*idx as u32, regs[s..s + n].to_vec())
-                    }
-                    _ => return bad_kind(insn),
-                };
-                let invoke_op = insn.opcode;
-                match do_invoke(vm, dex_idx, frame_super, invoke_op, midx, &slots) {
-                    Ok(v) => last_result = v,
-                    Err(VmExit::Exception(t)) => throw!(t),
-                    Err(e) => return Err(e),
-                }
-            }
-
             // ── unop (7B..8F) ───────────────────────────────────────────────
             0x7B..=0x8F => {
                 let Kind::Regs(a, b) = &insn.kind else {
@@ -953,7 +886,7 @@ pub(crate) fn exec_frame(
                 let x = regs[*b as usize].clone();
                 let y = regs[*c as usize].clone();
                 let v = step!(binop(vm, insn.opcode, x, y));
-                write_binop(&mut regs, *a, v);
+                write_binop(regs, *a, v);
             }
             0xB0..=0xCF => {
                 let Kind::Regs(a, b) = &insn.kind else {
@@ -963,7 +896,7 @@ pub(crate) fn exec_frame(
                 let y = regs[*b as usize].clone();
                 // 2addr: mesmo grupo, offset -0x20
                 let v = step!(binop(vm, insn.opcode - 0x20, x, y));
-                write_binop(&mut regs, *a, v);
+                write_binop(regs, *a, v);
             }
             0xD0..=0xD7 => {
                 // lit16: add, rsub, mul, div, rem, and, or, xor
@@ -981,7 +914,7 @@ pub(crate) fn exec_frame(
                     0xD6 => step!(binop(vm, 0x96, x, Value::Int(*lit as i32))), // or
                     op => step!(binop(vm, op_to_base(op), x, Value::Int(*lit as i32))), // xor
                 };
-                write_binop(&mut regs, *a, v);
+                write_binop(regs, *a, v);
             }
             0xD8..=0xE2 => {
                 // lit8: add, rsub, mul, div, rem, and, or, xor, shl, shr, ushr
@@ -1003,7 +936,7 @@ pub(crate) fn exec_frame(
                     0xE1 => step!(binop(vm, 0x99, x, lit)), // shr
                     op => step!(binop(vm, op_to_base(op), x, lit)), // ushr (0xE2)
                 };
-                write_binop(&mut regs, *a, v);
+                write_binop(regs, *a, v);
             }
 
             _ => {
@@ -1020,6 +953,127 @@ pub(crate) fn exec_frame(
                 }
             }
         }
+        Ok(LeafResult::Next(pc))
+    }
+}
+
+#[inline(never)]
+fn finish_new_instance(vm: &mut Engine, class: &str) -> Result<Value, VmExit> {
+    let r = vm
+        .heap
+        .alloc_instance(class.to_string(), Vec::new())
+        .map_err(oom_exception)?;
+    vm.attach_host_state(class, r)?;
+    Ok(Value::Obj(r))
+}
+
+#[inline(never)]
+fn finish_sget(vm: &mut Engine, owner: &str, fname: &str, ftype: &str) -> Result<Value, VmExit> {
+    if owner == "Ljava/lang/System;" && (fname == "out" || fname == "err") {
+        let key = (owner.to_string(), fname.to_string());
+        if let std::collections::hash_map::Entry::Vacant(e) = vm.statics.entry(key) {
+            let fd = if fname == "err" { 2 } else { 1 };
+            let r = vm
+                .heap
+                .alloc_instance(
+                    "Ljava/io/PrintStream;".to_string(),
+                    vec![("fd".to_string(), Value::Int(fd))],
+                )
+                .map_err(oom_exception)?;
+            e.insert(Value::Obj(r));
+        }
+    }
+    if owner == "Ljava/util/concurrent/TimeUnit;"
+        && !vm
+            .statics
+            .contains_key(&(owner.to_string(), fname.to_string()))
+        && matches!(
+            fname,
+            "NANOSECONDS"
+                | "MICROSECONDS"
+                | "MILLISECONDS"
+                | "SECONDS"
+                | "MINUTES"
+                | "HOURS"
+                | "DAYS"
+        )
+    {
+        let unit = vm.time_unit_obj(fname)?;
+        vm.statics
+            .insert((owner.to_string(), fname.to_string()), Value::Obj(unit));
+    }
+    #[allow(clippy::map_entry)]
+    if !vm
+        .statics
+        .contains_key(&(owner.to_string(), fname.to_string()))
+    {
+        let host_val = if let Some(c) = crate::boxes::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::jnormalizer::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::jbigdecimal::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::jtext_format::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::android_colorspace::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::android_env::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::android_build::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::graphics::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::parcel::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::android_util::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::platform_base::host_static(vm, owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::collections::host_static(vm, owner, fname)? {
+            Some(c)
+        } else {
+            crate::jtime::host_static(vm, owner, fname)?
+        };
+        if let Some(c) = host_val {
+            vm.statics.insert((owner.to_string(), fname.to_string()), c);
+        }
+        #[cfg(feature = "virtual-devices")]
+        if !vm
+            .statics
+            .contains_key(&(owner.to_string(), fname.to_string()))
+        {
+            if let Some(c) = crate::m10::host_static(vm, owner, fname)? {
+                vm.statics.insert((owner.to_string(), fname.to_string()), c);
+            }
+        }
+    }
+    Ok(vm
+        .statics
+        .get(&(owner.to_string(), fname.to_string()))
+        .cloned()
+        .unwrap_or_else(|| default_for(ftype)))
+}
+
+#[inline(never)]
+fn extract_invoke_args(insn: &Insn, regs: &[Value]) -> Result<(u32, Vec<Value>), VmExit> {
+    match &insn.kind {
+        Kind::Invoke35c {
+            count,
+            idx,
+            regs: rr,
+        } => Ok((
+            *idx as u32,
+            rr[..*count as usize]
+                .iter()
+                .map(|r| regs[*r as usize].clone())
+                .collect::<Vec<_>>(),
+        )),
+        Kind::InvokeRange3rc { count, idx, start } => {
+            let s = *start as usize;
+            let n = *count as usize;
+            Ok((*idx as u32, regs[s..s + n].to_vec()))
+        }
+        _ => bad_kind(insn),
     }
 }
 
@@ -1080,7 +1134,7 @@ fn branch_target(cur_pc: usize, off: i64) -> Result<usize, VmExit> {
     Ok(target as usize)
 }
 
-fn bad_kind(insn: &Insn) -> Result<Value, VmExit> {
+fn bad_kind<T>(insn: &Insn) -> Result<T, VmExit> {
     Err(err::vm_error(
         "INVALID_FORMAT",
         format!(
@@ -1103,6 +1157,33 @@ fn oom_exception(e: crate::heap::OomError) -> VmExit {
             e.requested, e.budget
         ),
     ))
+}
+
+/// `filled-new-array` com componente primitivo diferente de `int`: a exceção
+/// que o ART lança (classe, mensagem). `None` para `[I` e arrays de
+/// referência, que são os únicos casos suportados.
+fn filled_new_array_unsupported(desc: &str) -> Option<(&'static str, String)> {
+    let pretty = match desc {
+        "[Z" => "boolean",
+        "[B" => "byte",
+        "[C" => "char",
+        "[S" => "short",
+        "[F" => "float",
+        "[J" => "long",
+        "[D" => "double",
+        _ => return None,
+    };
+    Some(if matches!(desc, "[J" | "[D") {
+        (
+            "Ljava/lang/RuntimeException;",
+            format!("Bad filled array request for type {pretty}"),
+        )
+    } else {
+        (
+            "Ljava/lang/InternalError;",
+            format!("Found type {pretty}; filled-new-array not implemented for anything but 'int'"),
+        )
+    })
 }
 
 fn new_filled_array(
@@ -1445,11 +1526,12 @@ fn fill_array(
         // issue #48: [C é SEM sinal — decodificar u16. O desc real do array
         // vem do elem_class guardado no HeapObj (class_of devolve "[I"
         // genérico para todos os integrais primitivos)
-        let is_char_array = match vm.heap.get(arr)? {
-            crate::heap::HeapObj::Array { elem_class, .. } => {
-                elem_class == "C" || elem_class == "[C"
-            }
-            _ => false,
+        let (is_char_array, is_bool_array) = match vm.heap.get(arr)? {
+            crate::heap::HeapObj::Array { elem_class, .. } => (
+                elem_class == "C" || elem_class == "[C",
+                elem_class == "Z" || elem_class == "[Z",
+            ),
+            _ => (false, false),
         };
         let mut values = Vec::with_capacity(count as usize);
         for i in 0..count as usize {
@@ -1470,6 +1552,10 @@ fn fill_array(
                     slice.try_into().unwrap_or([0; 8]),
                 ))),
                 _ => match width {
+                    // issue #250: boolean[] guarda 0|1, a mesma invariante do
+                    // aput-boolean (`!= 0`). Com extensão de sinal, um payload
+                    // 0xFF virava −1 num [Z.
+                    1 if is_bool_array => Value::Int((slice[0] != 0) as i32),
                     1 => Value::Int(slice[0] as i8 as i32),
                     // issue #48: char[] decodifica SEM sinal (u16 — payload
                     // 0xFFFD é U+FFFD/65533, não −3); short[] continua i16
@@ -1499,14 +1585,38 @@ fn fill_array(
 
 // ── invokes ─────────────────────────────────────────────────────────────────
 
+enum InvokeTarget {
+    Value(Value),
+    Dex(
+        usize,
+        rd_dex::classes::ClassDef,
+        rd_dex::methods::EncodedMethod,
+    ),
+}
+
 fn do_invoke(
     vm: &mut Engine,
     dex_idx: usize,
     frame_super: Option<&str>,
     invoke_op: u8,
     method_idx: u32,
-    slots: &[Value],
+    raw: &[Value],
 ) -> Result<Value, VmExit> {
+    match resolve_or_run_host_invoke(vm, dex_idx, frame_super, invoke_op, method_idx, raw)? {
+        InvokeTarget::Value(v) => Ok(v),
+        InvokeTarget::Dex(d2, def, m) => vm.call(d2, def, &m, raw.to_vec()),
+    }
+}
+
+#[inline(never)]
+fn resolve_or_run_host_invoke(
+    vm: &mut Engine,
+    dex_idx: usize,
+    frame_super: Option<&str>,
+    invoke_op: u8,
+    method_idx: u32,
+    slots: &[Value],
+) -> Result<InvokeTarget, VmExit> {
     let mref = vm.cp.method_ref(dex_idx, method_idx)?;
     // Host dispatch (intrinsics, m8/m9, framework, native loader) receives
     // LOGICAL arguments: one Value per parameter. Register slots carry a
@@ -1515,7 +1625,6 @@ fn do_invoke(
     // AtomicLongFieldUpdater.compareAndSet(o, J, J) wrote 0 on every CAS,
     // which made kotlinx.coroutines' lock-free queue spin forever.
     // DEX callees still get the raw register form.
-    let raw = slots;
     // Fast path (ADR 008 Stage 1b): most invokes carry no wide values, so
     // the register slots are already the logical arguments — no allocation.
     let logical: Vec<Value>;
@@ -1548,38 +1657,38 @@ fn do_invoke(
         if let Some(v) =
             intrinsics::call_native_loader(vm, &mref.class, &mref.name, &mref.proto, slots)?
         {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         #[cfg(feature = "advanced-components")]
         if let Some(v) = crate::m9::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         #[cfg(feature = "virtual-devices")]
         if let Some(v) = crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         if let Some(v) =
             intrinsics::call_static_intrinsic(vm, &mref.class, &mref.name, &mref.proto, slots)?
         {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         // M8: subsistemas de compat real (OkHttp/WorkManager/Room/Uri…)
         if let Some(v) = crate::m8::call_m8_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
         {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         // Apêndice D: shims host AndroidX (FileProvider, AppInitializer,
         // DataStore keys, MultiDex.install…) — `None` mantém o DEX real.
         if let Some(v) =
             crate::androidx::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
         {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         // Apêndice E (Google Play Services / Firebase, modo "sem GMS"
         // honesto): só responde por classes GMS/Firebase/Billing, antes do
         // host `Landroid` genérico — `None` continua para DEX.
         if let Some(v) = crate::gms::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
-            return Ok(v);
+            return Ok(InvokeTarget::Value(v));
         }
         // M3: classes android/* são HOST (framework.rs) — nunca estão no DEX
         if mref.class.starts_with("Landroid/") {
@@ -1590,7 +1699,7 @@ fn do_invoke(
                 &mref.proto,
                 slots,
             )? {
-                Some(v) => Ok(v),
+                Some(v) => Ok(InvokeTarget::Value(v)),
                 None => {
                     Err(
                         crate::classpath::unresolved_method(&mref.class, &mref.name, &mref.proto)
@@ -1615,7 +1724,7 @@ fn do_invoke(
             )
             .into());
         }
-        return vm.call(d2, def, &m, raw.to_vec());
+        return Ok(InvokeTarget::Dex(d2, def, m));
     }
 
     // não-static: receiver é o primeiro slot
@@ -1624,7 +1733,7 @@ fn do_invoke(
     };
     // java/lang/Object.<init> é no-op (raiz de toda hierarquia de usuário)
     if mref.class == "Ljava/lang/Object;" && mref.name == "<init>" {
-        return Ok(Value::Null);
+        return Ok(InvokeTarget::Value(Value::Null));
     }
     // issue #25: construtores são “ação ativa” (JLS 12.4.2) — normalmente já
     // inicializada pelo new-instance imediatamente anterior (no-op aqui)
@@ -1654,7 +1763,9 @@ fn do_invoke(
         && mref.proto == "(Ljava/lang/Object;)Z"
     {
         let other = slots.get(1).and_then(|slot| slot.as_ref().ok()).flatten();
-        return Ok(Value::Int((other == Some(recv)) as i32));
+        return Ok(InvokeTarget::Value(Value::Int(
+            (other == Some(recv)) as i32,
+        )));
     }
 
     // intrínseco de instância (String/StringBuilder/Throwable/Object)
@@ -1667,7 +1778,7 @@ fn do_invoke(
         recv,
         &slots[1..],
     )? {
-        return Ok(v);
+        return Ok(InvokeTarget::Value(v));
     }
     // Covariant bridge: `Appendable.append(..)Appendable` on a host
     // StringBuilder (or any host method whose declared return is a supertype
@@ -1688,7 +1799,7 @@ fn do_invoke(
                 recv,
                 &slots[1..],
             )? {
-                return Ok(v);
+                return Ok(InvokeTarget::Value(v));
             }
         }
     }
@@ -1697,14 +1808,14 @@ fn do_invoke(
     if let Some(v) =
         crate::m9::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
-        return Ok(v);
+        return Ok(InvokeTarget::Value(v));
     }
 
     #[cfg(feature = "virtual-devices")]
     if let Some(v) =
         crate::m10::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
-        return Ok(v);
+        return Ok(InvokeTarget::Value(v));
     }
 
     // M8: compat real — host sequestra só os métodos listados em m8.rs;
@@ -1712,7 +1823,7 @@ fn do_invoke(
     if let Some(v) =
         crate::m8::call_m8_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
-        return Ok(v);
+        return Ok(InvokeTarget::Value(v));
     }
 
     // Apêndice D: shims host AndroidX por módulo (lifecycle, livedata,
@@ -1721,7 +1832,7 @@ fn do_invoke(
     if let Some(v) =
         crate::androidx::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
-        return Ok(v);
+        return Ok(InvokeTarget::Value(v));
     }
     // Apêndice E: objetos seguidos pelo shim GMS/Firebase e classes
     // `Lcom/google/android/gms/`, `Lcom/google/firebase/`,
@@ -1729,7 +1840,7 @@ fn do_invoke(
     if let Some(v) =
         crate::gms::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
-        return Ok(v);
+        return Ok(InvokeTarget::Value(v));
     }
 
     // M3: framework host (Activity/View/TextView/Button/LinearLayout/
@@ -1737,13 +1848,13 @@ fn do_invoke(
     if mref.class.starts_with("Landroid/") {
         if !is_direct && !is_super {
             if let Some((d2, def, m)) = vm.cp.resolve_method(&recv_class, &mref.name, &mref.proto) {
-                return vm.call(d2, def, &m, raw.to_vec());
+                return Ok(InvokeTarget::Dex(d2, def, m));
             }
         }
         if let Some(value) =
             inherited_android_host(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
         {
-            return Ok(value);
+            return Ok(InvokeTarget::Value(value));
         }
         // Generic property storage is strictly last: it must not swallow
         // inherited View IDs, EditText text, or Activity/Context state.
@@ -1755,7 +1866,7 @@ fn do_invoke(
             recv,
             &slots[1..],
         )? {
-            return Ok(value);
+            return Ok(InvokeTarget::Value(value));
         }
         return Err(crate::classpath::unresolved_method_on(
             &mref.class,
@@ -1803,14 +1914,14 @@ fn do_invoke(
                 recv,
                 &slots[1..],
             )? {
-                return Ok(value);
+                return Ok(InvokeTarget::Value(value));
             }
         }
         return Err(
             crate::classpath::unresolved_method(&start_class, &mref.name, &mref.proto).into(),
         );
     };
-    vm.call(d2, def, &m, raw.to_vec())
+    Ok(InvokeTarget::Dex(d2, def, m))
 }
 
 /// Resolve only real inherited Android hosts; never invent an app method.

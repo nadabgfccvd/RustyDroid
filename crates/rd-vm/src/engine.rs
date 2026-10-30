@@ -37,11 +37,84 @@ pub struct VmConfig {
     pub exception_trace: bool,
 }
 
+/// Reserva mínima preservada acima da guard page nativa (512 KiB) e orçamento
+/// conservador de fallback quando `/proc` não está disponível (1,25 MiB).
+const NATIVE_STACK_GUARD_RESERVE: usize = 512 * 1024;
+const FALLBACK_NATIVE_STACK_BYTES: usize = 1_280 * 1024;
+const MAX_MAIN_NATIVE_STACK_BYTES: usize = 6 * 1024 * 1024;
+
+#[inline(never)]
+fn current_stack_addr() -> usize {
+    let marker = 0u8;
+    std::ptr::addr_of!(marker) as usize
+}
+
+/// Calcula o orçamento seguro de pilha nativa disponível abaixo de `sp_now`
+/// na entrada externa da thread atual (executado apenas 1× quando `entry_sp == 0`).
+fn detect_native_stack_budget(sp_now: usize) -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(maps) = std::fs::read_to_string("/proc/thread-self/maps") {
+            for line in maps.lines() {
+                let Some((range, rest)) = line.split_once(' ') else {
+                    continue;
+                };
+                if !rest.starts_with("rw") {
+                    continue;
+                }
+                let Some((lo_hex, hi_hex)) = range.split_once('-') else {
+                    continue;
+                };
+                let (Ok(lo), Ok(hi)) = (
+                    usize::from_str_radix(lo_hex, 16),
+                    usize::from_str_radix(hi_hex, 16),
+                ) else {
+                    continue;
+                };
+                if sp_now >= lo && sp_now <= hi {
+                    // A VMA `[stack]` da thread principal cresce sob demanda até `RLIMIT_STACK`.
+                    if line.trim_end().ends_with("[stack]") {
+                        return main_thread_stack_budget();
+                    }
+                    return sp_now
+                        .saturating_sub(lo)
+                        .saturating_sub(NATIVE_STACK_GUARD_RESERVE)
+                        .max(256 * 1024);
+                }
+            }
+        }
+    }
+    let _ = sp_now;
+    if std::thread::current().name() == Some("main") {
+        MAX_MAIN_NATIVE_STACK_BYTES
+    } else {
+        FALLBACK_NATIVE_STACK_BYTES
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn main_thread_stack_budget() -> usize {
+    if let Ok(limits) = std::fs::read_to_string("/proc/self/limits") {
+        for line in limits.lines() {
+            if let Some(rest) = line.strip_prefix("Max stack size") {
+                if let Some(tok) = rest.split_whitespace().next() {
+                    if let Ok(bytes) = tok.parse::<usize>() {
+                        return bytes
+                            .saturating_sub(4 * NATIVE_STACK_GUARD_RESERVE)
+                            .clamp(FALLBACK_NATIVE_STACK_BYTES, MAX_MAIN_NATIVE_STACK_BYTES);
+                    }
+                }
+            }
+        }
+    }
+    MAX_MAIN_NATIVE_STACK_BYTES
+}
+
 impl Default for VmConfig {
     fn default() -> Self {
         VmConfig {
             fuel: 200_000_000,
-            max_depth: 512,
+            max_depth: 128,
             heap_budget: crate::heap::DEFAULT_HEAP_BUDGET,
             exception_trace: false,
         }
@@ -126,6 +199,11 @@ pub struct Engine {
     pub(crate) gc_stats: crate::gc::GcStats,
     pub(crate) gc_slots_after: usize,
     pub(crate) gc_frames: Vec<Vec<crate::heap::ObjRef>>,
+    host_depth: usize,
+    entry_sp: usize,
+    entry_stack_budget: usize,
+    /// Active host->host reentrant call depth (`object_to_string`, `obj_equals`, `obj_hash`, etc.).
+    pub(crate) host_reentrant_depth: usize,
 }
 
 /// Cobertura por classe (AG-09, nível de método).
@@ -151,6 +229,9 @@ pub struct CoverageSnapshot {
 
 impl Engine {
     pub fn new(dexes: Vec<rd_dex::Dex>, config: VmConfig) -> Self {
+        // Issue #230: nasce um Heap novo (ObjRefs reiniciam) — o estado
+        // host thread_local indexado por refs do heap anterior morre aqui.
+        crate::reset_host_thread_state();
         let budget = config.heap_budget;
         Engine {
             #[cfg(feature = "native")]
@@ -198,6 +279,10 @@ impl Engine {
             gc_stats: Default::default(),
             gc_slots_after: 0,
             gc_frames: Vec::new(),
+            host_depth: 0,
+            entry_sp: 0,
+            entry_stack_budget: FALLBACK_NATIVE_STACK_BYTES,
+            host_reentrant_depth: 0,
             #[cfg(feature = "jit")]
             jit: {
                 let mut j = crate::jit::JitState::default();
@@ -371,23 +456,32 @@ impl Engine {
         let Some((dex_idx, def, m)) = self.cp.resolve_method(&class, method, sig) else {
             // Host receiver (String, collections, java.io, android.*): the
             // same host chains the interpreter's invoke uses.
-            if let Some(v) = intrinsics::call_instance_intrinsic_mref(
-                self, &class, &class, method, sig, recv, &args,
-            )? {
-                return Ok(v);
-            }
-            if let Some(v) = crate::m8::call_m8_instance(self, &class, method, sig, recv, &args)? {
-                return Ok(v);
-            }
-            if let Some(v) =
-                crate::interp::inherited_android_host(self, &class, method, sig, recv, &args)?
-            {
-                return Ok(v);
-            }
-            if let Some(v) = crate::view_props::fallback(self, &class, method, sig, recv, &args)? {
-                return Ok(v);
-            }
-            return Err(crate::classpath::unresolved_method(&class, method, sig).into());
+            let tok = self.enter_stack_frame(false)?;
+            let host_res = (|| {
+                if let Some(v) = intrinsics::call_instance_intrinsic_mref(
+                    self, &class, &class, method, sig, recv, &args,
+                )? {
+                    return Ok(v);
+                }
+                if let Some(v) =
+                    crate::m8::call_m8_instance(self, &class, method, sig, recv, &args)?
+                {
+                    return Ok(v);
+                }
+                if let Some(v) =
+                    crate::interp::inherited_android_host(self, &class, method, sig, recv, &args)?
+                {
+                    return Ok(v);
+                }
+                if let Some(v) =
+                    crate::view_props::fallback(self, &class, method, sig, recv, &args)?
+                {
+                    return Ok(v);
+                }
+                Err(crate::classpath::unresolved_method(&class, method, sig).into())
+            })();
+            self.leave_stack_frame(tok);
+            return host_res;
         };
         if m.access_flags & ACC_STATIC != 0 {
             return Err(crate::err::vm_error(
@@ -406,6 +500,47 @@ impl Engine {
         slot_form(args, param_types)
     }
 
+    fn enter_stack_frame(&mut self, count_vm_frame: bool) -> Result<(bool, bool), VmExit> {
+        let sp_now = current_stack_addr();
+        let combined = self.depth.saturating_add(self.host_depth);
+        let stack_exceeded =
+            self.entry_sp != 0 && self.entry_sp.abs_diff(sp_now) >= self.entry_stack_budget;
+        if combined >= self.config.max_depth || stack_exceeded {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/StackOverflowError;",
+                format!(
+                    "profundidade de chamadas ≥ {} (limite do motor: {})",
+                    combined, self.config.max_depth
+                ),
+            )));
+        }
+        let anchored = if self.entry_sp == 0 {
+            self.entry_sp = sp_now;
+            self.entry_stack_budget = detect_native_stack_budget(sp_now);
+            true
+        } else {
+            false
+        };
+        if count_vm_frame {
+            self.depth += 1;
+        } else {
+            self.host_depth += 1;
+        }
+        Ok((anchored, count_vm_frame))
+    }
+
+    fn leave_stack_frame(&mut self, token: (bool, bool)) {
+        if token.1 {
+            self.depth = self.depth.saturating_sub(1);
+        } else {
+            self.host_depth = self.host_depth.saturating_sub(1);
+        }
+        if token.0 {
+            self.entry_sp = 0;
+            self.entry_stack_budget = FALLBACK_NATIVE_STACK_BYTES;
+        }
+    }
+
     /// Executa um frame completo (loop de interpretador em `interp.rs`).
     pub(super) fn call(
         &mut self,
@@ -414,15 +549,18 @@ impl Engine {
         m: &EncodedMethod,
         ins: Vec<Value>,
     ) -> Result<Value, VmExit> {
-        if self.depth >= self.config.max_depth {
-            return Err(crate::err::vm_error(
-                "VM_STACK_OVERFLOW",
+        let sp_check = current_stack_addr();
+        let combined = self.depth.saturating_add(self.host_depth);
+        if combined >= self.config.max_depth
+            || (self.entry_sp != 0 && self.entry_sp.abs_diff(sp_check) >= self.entry_stack_budget)
+        {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/StackOverflowError;",
                 format!(
-                    "profundidade de chamadas ≥ {} (limite do motor)",
-                    self.config.max_depth
+                    "profundidade de chamadas ≥ {} (limite do motor: {})",
+                    combined, self.config.max_depth
                 ),
-            )
-            .into());
+            )));
         }
         if let Some(pat) = trace_method_pattern() {
             let label = self.method_label(dex_idx, m);
@@ -447,7 +585,8 @@ impl Engine {
                 #[cfg(feature = "native")]
                 {
                     let r = self.cp.method_ref(dex_idx, m.method_idx)?;
-                    return crate::native::invoke(
+                    let nat_tok = self.enter_stack_frame(true)?;
+                    let nat_res = crate::native::invoke(
                         self,
                         &r.class,
                         &r.name,
@@ -455,6 +594,8 @@ impl Engine {
                         m.access_flags & ACC_STATIC != 0,
                         &ins,
                     );
+                    self.leave_stack_frame(nat_tok);
+                    return nat_res;
                 }
                 #[cfg(not(feature = "native"))]
                 return Err(crate::err::not_implemented(format!(
@@ -487,9 +628,9 @@ impl Engine {
                 return Ok(Value::Int(value));
             }
         }
+        let stack_tok = self.enter_stack_frame(true)?;
         let frame_label = self.method_label(dex_idx, m);
         self.frame_labels.push(frame_label);
-        self.depth += 1;
         let scope_depth = self.heap.gc_scope_depth();
         if self.gc_frames.is_empty() {
             self.heap.gc_host_enter(true);
@@ -517,7 +658,7 @@ impl Engine {
             }
             _ => {}
         }
-        self.depth -= 1;
+        self.leave_stack_frame(stack_tok);
         self.frame_labels.pop();
         // Observabilidade opt-in (default off — nenhuma saída existente muda):
         // exceção Java que este frame NÃO tratou recebe a linha "at" do frame
