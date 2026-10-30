@@ -1687,6 +1687,25 @@ impl Engine {
             )
             .into());
         }
+        // APK-Tester (rodada end-to-end do PR-Agent): a classe EXISTE no DEX
+        // mas não estende android.app.Activity (41 APKs de engines declaram
+        // MainActivity extends java.lang.Object). Sem esta checagem a VM
+        // alocava a instância, não executava onCreate algum e devolvia
+        // sucesso com tela vazia — falha silenciosa (Lei 1). No Android o
+        // launch morre com ClassCastException na instrumentação; aqui o
+        // contrato de borda é o erro estruturado (mesmo padrão do #82).
+        if !self.cp.is_subtype(activity_desc, "Landroid/app/Activity;") {
+            return Err(crate::err::with_suggestion(
+                crate::err::vm_error(
+                    "VM_TYPE_ERROR",
+                    format!(
+                        "classe {activity_desc} não estende android.app.Activity — não é uma activity lançável (no Android o launch falha com ClassCastException)"
+                    ),
+                ),
+                "declare a componente como subclasse de android.app.Activity ou lance a LAUNCHER do AndroidManifest.xml",
+            )
+            .into());
+        }
         self.fw.package_name = package_name.to_string();
         // M8 (38º gap real): Android cria a Application do processo ANTES
         // da activity e roda Application.onCreate — o DEX do app depende

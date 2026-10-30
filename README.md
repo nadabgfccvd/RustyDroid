@@ -112,8 +112,8 @@ See [the automation guide](docs/mcp-automation.md) for structured host-view sele
 | **M11** | ⬜ **PLANNED** — Engines, in the order accepted by [ADR 013](docs/adr/013-m11-engine-execution-strategy.md): WASM → React Native → Mono → Flutter (one real app each in a golden flow; detection alone never counts) |
 | **M12** | Full GitHub ecosystem: docs site, live compat matrix, releases → **v1.0** |
 
-**Compatibility floor:** `minSdkVersion 26` (Android 8.0 Oreo) · **ceiling:** latest stable (`targetSdk 36`).
-APKs below the floor are inspected fine and reported with a structured `BELOW_FLOOR` finding — never a crash. (Known gap, 2026-10-25: `rd app run` does not yet refuse below-floor APKs; the fix is in progress.)
+**Compatibility floor:** `minSdkVersion 9` for execution ([ADR 016](docs/adr/016-api-floor-9.md); API 9–25 is the best-effort tier T0, 26–36 the full tiers) · **ceiling:** latest stable (`targetSdk 36`). The hardware floor (Moto E5, factory API 26) is unchanged.
+APKs below the floor are inspected fine and every execution surface (`rd app run` and MCP) answers with a structured `BELOW_FLOOR` — never a crash.
 
 ---
 
