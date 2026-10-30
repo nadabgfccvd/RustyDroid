@@ -45,6 +45,7 @@ from sentinel.audit import (  # noqa: E402
 from sentinel.campaigns import (  # noqa: E402
     CampaignOptions,
     CampaignRunner,
+    RawResult,
     _mad,
     _noise_floor_ms,
     mutation_check_status,
@@ -597,6 +598,74 @@ test vm::stable ... ok
             runner._native_fixtures_ensured = False
             runner._ensure_native_test_fixtures("core", all_features)
             self.assertEqual([["bash", "golden/native/build.sh"]], calls)
+
+    # issue #283: a base already over the absolute `rd perf` budget must
+    # not block every candidate (catch-22); regressions stay blocked.
+    def _perf_runner(self, root: Path, runs: dict[str, tuple[int, dict | None]]):
+        report = {"bot_version": "1.1.0", "checks": [], "metrics": {}}
+        runner = CampaignRunner(
+            repo=root,
+            report=report,  # type: ignore[arg-type]
+            policy=POLICY,
+            baseline=BASELINE,
+            options=CampaignOptions(output_dir=root / "out", execute=True),
+        )
+
+        def fake_raw(argv, **_kw):
+            exit_code, payload = runs[Path(argv[0]).name]
+            return RawResult(list(argv), root, exit_code, json.dumps(payload) if payload else "garbage", "", 1.0)
+
+        runner._run_raw = fake_raw  # type: ignore[method-assign]
+        return runner, report
+
+    @staticmethod
+    def _perf_json(p50: float, ok: bool) -> dict:
+        return {"pass": ok, "cold_p50_emulated_ms": p50, "cold_max_emulated_ms": p50 + 40, "peak_rss_mb": 95.0, "app_heap_peak_mb": 3.7}
+
+    def _perf_compare(self, base, cand):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            runner, report = self._perf_runner(root, {"rd-base": base, "rd-cand": cand})
+            apk = root / "app.apk"
+            runner._run_perf(root / "rd-base", apk, label="base")
+            runner._run_perf(root / "rd-cand", apk, label="candidate")
+            runner._resolve_perf_budgets()
+            checks = {c["id"]: c for c in report["checks"]}
+            findings = [f["id"] for f in report.get("findings", [])]
+            return checks, findings
+
+    def test_perf_red_base_does_not_block_improving_candidate(self):
+        checks, findings = self._perf_compare((1, self._perf_json(1819.0, False)), (0, self._perf_json(900.0, True)))
+        self.assertEqual("pass", checks["perf-rd-perf-base-app"]["status"])
+        self.assertEqual("pass", checks["perf-rd-perf-candidate-app"]["status"])
+        self.assertNotIn("perf-budget-candidate-app", checks)
+        self.assertEqual(["perf-base-budget-preexisting"], findings)
+
+    def test_perf_red_base_and_red_candidate_is_preexisting_not_blocking(self):
+        checks, findings = self._perf_compare((1, self._perf_json(1819.0, False)), (1, self._perf_json(1840.0, False)))
+        self.assertEqual("pass", checks["perf-budget-candidate-app"]["status"])
+        self.assertIn("pre-existing", checks["perf-budget-candidate-app"]["summary"])
+        self.assertIn("perf-base-budget-preexisting", findings)
+
+    def test_perf_green_base_and_red_candidate_still_blocks(self):
+        checks, findings = self._perf_compare((0, self._perf_json(1400.0, True)), (1, self._perf_json(1550.0, False)))
+        self.assertEqual("fail", checks["perf-budget-candidate-app"]["status"])
+        self.assertTrue(checks["perf-budget-candidate-app"]["required"])
+        self.assertNotIn("perf-base-budget-preexisting", findings)
+
+    def test_perf_missing_measurement_still_blocks(self):
+        checks, _ = self._perf_compare((1, self._perf_json(1819.0, False)), (101, None))
+        self.assertEqual("fail", checks["perf-rd-perf-candidate-app"]["status"])
+
+    def test_perf_candidate_without_base_reference_still_blocks(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            runner, report = self._perf_runner(root, {"rd-cand": (1, self._perf_json(1840.0, False))})
+            runner._run_perf(root / "rd-cand", root / "app.apk", label="candidate")
+            runner._resolve_perf_budgets()
+            checks = {c["id"]: c for c in report["checks"]}
+            self.assertEqual("fail", checks["perf-budget-candidate-app"]["status"])
+            self.assertIn("base not measured", checks["perf-budget-candidate-app"]["summary"])
 
     def test_dynamic_feature_sets_cover_singletons_pairs_and_all(self):
         sets = CampaignRunner._feature_sets_from_names(
@@ -1729,6 +1798,152 @@ pub fn after() -> Option<u32> {
                 ids = self._rule_ids(text)
                 self.assertNotIn("new-global-collection", ids)
                 self.assertEqual(ids.get("new-instance-collection-cell"), "P2")
+
+
+class StalePublicationTests(unittest.TestCase):
+    """Issue #233: a moved live PR (base advanced / head superseded) is not an
+    integrity failure, but it must never become a pass either."""
+
+    BASE = "a" * 40
+    HEAD = "b" * 40
+
+    def _client(self, live_head: str, live_base: str, files: list[str]):
+        class FakeClient(GitHubClient):
+            def __init__(self):
+                super().__init__("owner/repo", token="test", dry_run=False)
+                self.statuses: list[tuple[str, str, str]] = []
+                self.comments: list[str] = []
+                self.added: list[list[str]] = []
+                self.removed: list[str] = []
+                self.check_payloads: list[dict] = []
+
+            def get_pr(self, number):
+                return {"head": {"sha": live_head}, "base": {"sha": live_base}, "labels": []}
+
+            def pr_files(self, number):
+                return list(files)
+
+            def ensure_label(self, name, color, description):
+                return None
+
+            def upsert_issue_comment(self, issue_number, body, marker="<!-- rd-sentinel-report -->"):
+                self.comments.append(body)
+                return {"id": 1}
+
+            def add_labels(self, issue_number, labels):
+                self.added.append(list(labels))
+                return {}
+
+            def remove_label(self, issue_number, label):
+                self.removed.append(label)
+                return {}
+
+            def create_commit_status(self, sha, state, *, context, description, target_url=""):
+                self.statuses.append((sha, state, description))
+                return {"state": state}
+
+            def create_check_run(self, payload):
+                self.check_payloads.append(payload)
+                return {"id": 9}
+
+            def upload_code_scanning_sarif(self, *, sarif, commit_sha, ref):
+                return {"id": "sarif"}
+
+        return FakeClient()
+
+    def _report(self, findings: list[dict] | None = None) -> dict:
+        report = {
+            "repository": "owner/repo",
+            "pr_number": 233,
+            "base_sha": self.BASE,
+            "head_sha": self.HEAD,
+            "head_ref": "feature",
+            "campaign": "test",
+            "profile": "auto",
+            "areas": [],
+            "risk_score": 10,
+            "risk_factors": [],
+            "changed_files": [{"path": "crates/rd-vm/src/lib.rs"}],
+            "dependency_changes": [],
+            "plan": [],
+            "metrics": {},
+            "checks": [],
+            "findings": findings or [],
+        }
+        finalize_report(report, POLICY)  # type: ignore[arg-type]
+        return report
+
+    def _publish(self, client, report):
+        return publish_report(
+            client=client,
+            report=report,  # type: ignore[arg-type]
+            policy=POLICY,
+            expected_head_sha=self.HEAD,
+            workflow_conclusion="success",
+        )
+
+    def test_base_advanced_pass_is_stale_pending_not_p0_and_not_pass(self):
+        self.assertEqual("pass", self._report()["verdict"])
+        client = self._client(self.HEAD, "c" * 40, ["crates/rd-vm/src/lib.rs"])
+        result = self._publish(client, self._report())
+        self.assertFalse(result["override_blocked"])
+        self.assertEqual([(self.HEAD, "pending", "RD Sentinel stale; risk 10/100")], client.statuses)
+        self.assertIn("**STALE**", client.comments[0])
+        self.assertNotIn("Trusted publisher rejected", client.comments[0])
+        self.assertNotIn("sentinel:pass", result["labels"])
+        self.assertNotIn("sentinel:blocked", result["labels"])
+        self.assertNotIn("sentinel:P0", result["labels"])
+        # a previous pass label is actively removed until fresh evidence exists
+        self.assertIn("sentinel:pass", client.removed)
+        self.assertNotEqual("success", client.check_payloads[0]["conclusion"])
+
+    def test_base_advanced_keeps_real_blocking_findings(self):
+        finding = Finding(
+            id="example-finding",
+            severity="P1",
+            area="vm-core",
+            title="real regression",
+            evidence="evidence",
+            path="crates/rd-vm/src/lib.rs",
+            line=1,
+            remediation="fix it",
+        ).to_dict()
+        client = self._client(self.HEAD, "c" * 40, ["crates/rd-vm/src/lib.rs"])
+        result = self._publish(client, self._report([finding]))
+        self.assertIn("sentinel:blocked", result["labels"])
+        self.assertEqual("failure", client.statuses[0][1])
+        self.assertNotIn("Trusted publisher rejected", client.comments[0])
+
+    def test_base_advanced_with_file_mismatch_is_still_integrity_p0(self):
+        client = self._client(self.HEAD, "c" * 40, ["crates/rd-vm/src/lib.rs", "evil.rs"])
+        result = self._publish(client, self._report())
+        self.assertTrue(result["override_blocked"])
+        self.assertEqual("failure", client.statuses[0][1])
+        self.assertIn("Trusted publisher rejected", client.comments[0])
+        self.assertIn("does not match live PR base", client.comments[0])
+
+    def test_superseded_head_never_writes_to_the_live_pr(self):
+        client = self._client("d" * 40, self.BASE, ["crates/rd-vm/src/lib.rs"])
+        result = self._publish(client, self._report())
+        self.assertTrue(result["superseded"])
+        self.assertFalse(result["override_blocked"])
+        self.assertEqual([], client.statuses)
+        self.assertEqual([], client.comments)
+        self.assertEqual([], client.added)
+        self.assertEqual([], client.removed)
+        self.assertEqual([], client.check_payloads)
+
+    def test_artifact_head_mismatch_with_workflow_run_stays_p0(self):
+        client = self._client("d" * 40, self.BASE, ["crates/rd-vm/src/lib.rs"])
+        result = publish_report(
+            client=client,
+            report=self._report(),  # type: ignore[arg-type]
+            policy=POLICY,
+            expected_head_sha="e" * 40,
+            workflow_conclusion="success",
+        )
+        self.assertTrue(result["override_blocked"])
+        self.assertEqual("failure", client.statuses[0][1])
 
 
 if __name__ == "__main__":

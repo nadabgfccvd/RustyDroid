@@ -409,6 +409,11 @@ pub struct AgentSession {
     logs: Arc<Mutex<Vec<u8>>>,
     /// ADR 009: snapshot frame presented but engine not yet materialized.
     pending_snapshot: Option<PendingSnapshot>,
+    /// Issue #259: pacotes cujo estado visível ao guest pode divergir
+    /// de um install pristine NESTA sessão (engine já rodou, grants
+    /// mudaram). O fingerprint do snapshot só enxerga o APK — servir
+    /// ou gravar frame para estes pacotes quebraria o determinismo.
+    snapshot_dirty: std::collections::HashSet<String>,
     devices: DeviceTable,
     behavior: SwitchTable,
     /// Round 6: cached screen model / PNG per frame version, resource
@@ -432,6 +437,11 @@ impl AgentSession {
         // (nunca ao stdout do protocolo — mesmo contrato da #55).
         let logs: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         rd_vm::set_app_stdout(HostOut::Buffer(logs.clone()));
+        // Issue #230: sessão nova = dispositivo limpo. O VFS do hóspede é
+        // thread_local no rd-vm; sem este reset, arquivos/SQLite/prefs de
+        // uma sessão (ou cenário de suíte) anterior na mesma thread
+        // vazavam para a próxima, quebrando o isolamento do M6.
+        rd_vm::reset_vfs();
         let policy = Policy::from_env();
         let roots = policy.canonical_roots();
         let session_id = format!(
@@ -454,6 +464,7 @@ impl AgentSession {
             activity: None,
             logs,
             pending_snapshot: None,
+            snapshot_dirty: std::collections::HashSet::new(),
             devices: DeviceTable::embedded().expect("devices.toml embutido parseia"),
             behavior: SwitchTable::embedded().expect("behavior-switches.toml embutido parseia"),
             screen: ScreenState::default(),
@@ -530,6 +541,10 @@ impl AgentSession {
             self.engine_package = None;
             self.native_engine = None;
             self.activity = None;
+            // Issue #230: o heap morreu aqui — o estado host indexado por
+            // ObjRef nas thread_locals do rd-vm morre junto, para o
+            // próximo Engine (mesma thread) não herdar fantasmas.
+            rd_vm::reset_host_thread_state();
             true
         } else {
             false
@@ -667,7 +682,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "install",
             description:
-                "Instala um APK na sessão (abre, valida o piso API 26 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.",
+                "Instala um APK na sessão (abre, valida o piso API 9 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.",
             schema: obj(
                 serde_json::json!({ "apk": { "type": "string", "description": "caminho do arquivo .apk dentro do sandbox" } }),
                 &["apk"],
@@ -891,8 +906,8 @@ pub fn tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "device_profile",
-            description: "Perfil de device corrente (piso contratual moto-e5, budgets e snapshot de periféricos virtuais M10) e controle determinístico AG-10 via `action` opcional (`get`, `location`, `sensor`, `battery`, `network`, `telephony`, `sms_receive`, `ble_advertisement`, `nfc_tag`, `camera_frame`, `biometric`, `audio_input`, `media_action`, `dark_mode`, `locale`, `font_scale`, `orientation`, `clipboard`).",
-            schema: obj(device_profile_schema_props(), &[]),
+            description: "Perfil de device corrente (piso contratual moto-e5, budgets e snapshot de periféricos virtuais M10) e controle determinístico AG-10 via `action` opcional (`get`, `location`, `sensor`, `battery`, `network`, `telephony`, `sms_receive`, `ble_advertisement`, `nfc_tag`, `camera_frame`, `biometric`, `audio_input`, `media_action`, `dark_mode`, `locale`, `font_scale`, `orientation`, `clipboard`) + Apêndice E programável (`gms`: availability, conta/Sign-In fake, token/mensagem FCM, catálogo/resultado Billing, falha Ads, Integrity/SafetyNet, Fit, Cast; `gms_state`: snapshot capturado — analytics, compras, ads, crashes, maps). Sem rede: modo no-gms-honest.",
+            schema: obj(device_profile_all_props(), &[]),
         },
         ToolDef {
             name: "behavior_switches",
@@ -908,7 +923,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "compat_gaps",
             description:
-                "Catálogo HONESTO das lacunas de compatibilidade do runtime v1 (notificações M9, args String/array na sonda, foco, teclas, gestures, intent implícito, transporte HTTP) + sumário executável do Apêndice C (data/api-coverage.toml: domínios/status das superfícies android.*) — o agente consulta antes de planejar.",
+                "Catálogo HONESTO das lacunas de compatibilidade do runtime v1 (notificações M9, args String/array na sonda, foco, teclas, gestures, intent implícito, transporte HTTP) + sumários executáveis dos Apêndices C (data/api-coverage.toml), D (data/jetpack.toml: AndroidX/Jetpack) e E (data/gms.toml: GMS/Firebase sem rede) + superfícies stub/not_implemented referenciadas pelo app activo (app_library_gaps) — o agente consulta antes de planejar.",
             schema: obj(serde_json::json!({}), &[]),
         },
         ToolDef {
@@ -927,7 +942,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "get_api_usage",
             description:
-                "AG-09 (metade estática): quais APIs android.* o app instalado REFERENCIA nos DEX — tipos (method_ids/field_ids/superclass/interfaces), métodos por classe, contagem por pacote e classificação Apêndice C (`api_coverage`: domínio funcional/status/gaps via data/api-coverage.toml). É análise ESTÁTICA do DEX; para coverage de EXECUÇÃO use get_coverage. Com `package` consulta outro app instalado; sem, o app ativo.",
+                "AG-09 (metade estática): quais APIs android.* o app instalado REFERENCIA nos DEX — tipos (method_ids/field_ids/superclass/interfaces), métodos por classe, contagem por pacote e classificação Apêndice C (`api_coverage`: domínio funcional/status/gaps via data/api-coverage.toml), mais os tipos androidx.* contra o Apêndice D (`jetpack`, data/jetpack.toml) e com.google.android.gms.*/com.google.firebase.* contra o Apêndice E (`gms`, data/gms.toml, modo no-gms-honest: registro ≠ backend). É análise ESTÁTICA do DEX; para coverage de EXECUÇÃO use get_coverage. Com `package` consulta outro app instalado; sem, o app ativo.",
             schema: obj(
                 serde_json::json!({
                     "package": { "type": "string", "description": "package instalado a analisar. Default: o app ativo" },
@@ -1211,7 +1226,7 @@ impl AgentSession {
                 false,
             ),
             "permissions_audit" => self.tool_permissions_audit(),
-            "device_profile" => self.tool_device_profile_m10(&args),
+            "device_profile" => self.tool_device_profile(&args),
             "behavior_switches" => self.tool_behavior_switches(),
             "runtime_health" => {
                 if args.get("gc").and_then(|v| v.as_bool()) == Some(true) {
@@ -1277,10 +1292,12 @@ impl AgentSession {
                     st.last_used_before / 1024,
                     st.last_used_after / 1024
                 );
+                // Issue #317: log é best-effort (buffer pode estar
+                // envenenado por um panic anterior já isolado).
                 self.logs
                     .lock()
-                    .expect("logs")
-                    .extend_from_slice(line.as_bytes());
+                    .map(|mut l| l.extend_from_slice(line.as_bytes()))
+                    .ok();
             }
         }
         out
@@ -1339,14 +1356,15 @@ impl AgentSession {
         let apk =
             Apk::from_bytes(bytes).map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
         phase("install_apk_from_bytes", t_open);
-        // piso API 26 é contrato: instalação recusa com erro tipado
+        // piso de API é contrato (ADR 016: 9): instalação recusa com erro tipado
         if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } = apk.floor_status() {
+            let suggestion = format!("use um APK com minSdkVersion ≥ {floor}");
             return Err(agent_error(
                 "BELOW_FLOOR",
                 format!(
                     "minSdkVersion={min_sdk} abaixo do piso {floor} — o app não roda neste runtime"
                 ),
-                Some("use um APK com minSdkVersion ≥ 26"),
+                Some(&suggestion),
             ));
         }
         // Tudo validado — SÓ AGORA muta o estado (instalação transacional:
@@ -1453,7 +1471,16 @@ impl AgentSession {
         let mut eng = if let Some(id) = selected_engine {
             #[cfg(feature = "native-engines")]
             {
-                rd_engine_registry::NativeProcess::from_apk(id, (*resources).clone())?.into_engine()
+                // issue #260: o desc já foi resolvido e validado aqui em cima
+                // (activity explícita não-launcher, alias via #109 ou launcher
+                // default) — repassa o descritor em vez de exigir launcher de
+                // novo, e compartilha o Arc<Apk> em vez de clonar o APK.
+                rd_engine_registry::NativeProcess::from_apk_with_activity(
+                    id,
+                    resources.clone(),
+                    desc,
+                )?
+                .into_engine()
             }
             #[cfg(not(feature = "native-engines"))]
             {
@@ -1605,6 +1632,16 @@ impl AgentSession {
         let warm = self.engine.is_some()
             && self.engine_package.as_deref() == Some(package_out.as_str())
             && self.native_engine == selected_engine;
+        // Issue #259: lançar um pacote DIFERENTE abandona qualquer
+        // frame de snapshot apresentado — ele nunca pode ser servido
+        // ou materializado para o novo alvo, nem se este launch falhar.
+        if self
+            .pending_snapshot
+            .as_ref()
+            .is_some_and(|p| p.package != package_out)
+        {
+            self.pending_snapshot = None;
+        }
         // ADR 009 (opt-in): present a stored first frame immediately; the
         // engine materializes lazily on the first engine-requiring tool.
         // Only when no other engine is live (a cold launch would replace
@@ -1668,6 +1705,13 @@ impl AgentSession {
             if let Err(e) = self.capture_snapshot(&package_out, &desc) {
                 snapshot_error = Some(e.cause);
             }
+        }
+        // Issue #259: com o engine real executado, o estado do app
+        // pode ter persistido — marcado DEPOIS da captura acima (que
+        // registra exatamente o frame deste primeiro launch pristine).
+        // O rastreio só é consultado com RD_SNAPSHOT ligado.
+        if !used_snapshot && snapshot_enabled() {
+            self.mark_snapshot_dirty(&package_out);
         }
         let mut out = serde_json::json!({
             "launched": true,
@@ -2081,7 +2125,7 @@ impl AgentSession {
             "min_sdk": m.min_sdk,
             "target_sdk": m.target_sdk,
             "floor": serde_json::json!(match apk.floor_status() {
-                rd_apk::FloorStatus::Ok => serde_json::json!({"ok": true, "floor": 26}),
+                rd_apk::FloorStatus::Ok => serde_json::json!({"ok": true, "floor": rd_apk::FLOOR_MIN_SDK}),
                 rd_apk::FloorStatus::BelowFloor { min_sdk, floor } =>
                     serde_json::json!({"ok": false, "min_sdk": min_sdk, "floor": floor}),
             }),
@@ -2134,6 +2178,9 @@ impl AgentSession {
         // Android: desinstalar app em execução o mata primeiro — nunca
         // estado inconsistente (engine de outro app segue rodando).
         let killed = self.kill_engine_if_running(package);
+        // Issue #230: desinstalar apaga também os dados privados do app
+        // no VFS (/data/user/0/<pkg>/), não só o registro da sessão.
+        rd_vm::clear_package_data(package);
         self.installed.retain(|a| a.package != package);
         if self.active.as_deref() == Some(package) {
             self.active = self.installed.last().map(|a| a.package.clone());
@@ -2168,6 +2215,10 @@ impl AgentSession {
         // Android clear data: app em execução é morto e as permissões
         // runtime voltam ao estado de instalação.
         let killed = self.kill_engine_if_running(package);
+        // Issue #230: clear data apaga de fato o armazenamento privado
+        // (/data/user/0/<pkg>/: arquivos, SQLite, shared_prefs) — antes
+        // só as permissões resetavam e os dados continuavam legíveis.
+        rd_vm::clear_package_data(package);
         let table = PermissionTable::embedded()
             .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
         let fresh = PermissionEngine::install(&manifest, table);
@@ -2222,6 +2273,12 @@ impl AgentSession {
                 perms.revoke(permission).map_err(rd_to_rd)?
             }
         };
+        // Issue #259: o conjunto de grants divergiu do install — o
+        // fingerprint do APK não o enxerga, então snapshot não pode
+        // mais servir nem gravar frames para este pacote na sessão.
+        if let Some(p) = self.active.clone() {
+            self.mark_snapshot_dirty(&p);
+        }
         // keep the running engine's grant set in sync (perms.rs)
         if self.engine_package == self.active {
             let granted: Option<Vec<String>> = self.active.as_ref().and_then(|p| {
@@ -2293,13 +2350,20 @@ impl AgentSession {
     /// Saúde do runtime (M5): reporta o estado SEM exigir app — nunca
     /// falha por falta de app (é a tool de diagnóstico).
     fn tool_runtime_health(&mut self) -> Result<ToolResult, RdError> {
+        // Issue #317: a tool de diagnóstico sobrevive a buffer
+        // envenenado reportando disponibilidade, nunca por panic.
+        let (logs_bytes, logs_available) = match self.logs.lock() {
+            Ok(l) => (l.len(), true),
+            Err(_) => (0, false),
+        };
         let mut v = serde_json::json!({
             "session_id": self.session_id,
             "installed_count": self.installed.len(),
             "active_package": self.active,
             "running": self.engine.is_some(),
             "running_package": self.engine_package,
-            "logs_bytes": self.logs.lock().expect("logs").len(),
+            "logs_bytes": logs_bytes,
+            "logs_available": logs_available,
         });
         match self.engine.as_ref() {
             Some(eng) => {
@@ -2353,13 +2417,13 @@ impl AgentSession {
                 "android-framework-clock",
                 "vm",
                 "partial",
-                "SystemClock host (uptimeMillis/elapsedRealtime(+Nanos)/currentThreadTimeMillis/sleep) sobre o relógio VIRTUAL determinístico da VM (mesmo clock do postDelayed/advance_clock; sleep avança e drena o Looper — sem tempo de parede). Looper getMainLooper/loop/getThread host. Thread host single-threaded: currentThread/getName (fixo main)/getId/isDaemon/isAlive + sleep avança o relógio virtual (yield no-op); start/interrupt fora. System.currentTimeMillis/nanoTime seguem fora",
+                "SystemClock host (uptimeMillis/elapsedRealtime(+Nanos)/currentThreadTimeMillis/sleep) sobre o relógio VIRTUAL determinístico da VM (mesmo clock do postDelayed/advance_clock; sleep avança e drena o Looper — sem tempo de parede). Looper getMainLooper/loop/getThread host. Thread host single-threaded: currentThread/getName (fixo main)/getId/isDaemon/isAlive + sleep avança o relógio virtual (yield no-op); start/interrupt fora. System.currentTimeMillis/nanoTime SÃO host sobre o mesmo relógio virtual (jlsystem: currentTimeMillis = epoch base determinística + clock virtual; nanoTime deriva do clock)",
             ),
             (
                 "notifications",
                 "ui",
-                "not-implemented",
-                "M9: channels, notification builders, PendingIntents, actions, listener callbacks, timeout/cancel and agent controls; platform visual notification shade not modeled",
+                "partial",
+                "M9: channels, notification builders, PendingIntents, actions, listener callbacks, timeout/cancel and agent controls (tool notifications); platform visual notification shade not modeled",
             ),
             (
                 "invoke-string-args",
@@ -2389,13 +2453,13 @@ impl AgentSession {
                 "swipe-gestures",
                 "input",
                 "partial",
-                "swipe vira clique quando down/up caem na mesma view; scroll/fling só relatório (sem efeito)",
+                "swipe do agente vira clique quando down/up caem na mesma view; scroll/fling do GESTO seguem só-relatório (Engine::swipe_app v1). android.view.VelocityTracker é host para código DEX: velocidade determinística estilo AOSP (#210)",
             ),
             (
                 "start-activity-implicit",
                 "intent",
-                "not-implemented",
-                "startActivity com intent implícito/action — navegação v1 é por componente",
+                "partial",
+                "startActivity implícito VIEW/deep link navega quando há handler registado (Engine::m8_register_deep_link, M8) e é registado em m8_deep_links; resolução geral de intent-filters do sistema, choosers e verificação de App Links seguem fora",
             ),
             (
                 "http-transport",
@@ -2406,8 +2470,8 @@ impl AgentSession {
             (
                 "ime-widgets",
                 "ui",
-                "not-implemented",
-                "M9 IME InputConnection and RemoteViews widget rendering; unsupported methods fail typed (docs/m9.md)",
+                "partial",
+                "M9 IME InputConnection (tool ime) and RemoteViews widget rendering (tools widgets/widget_screenshot); unsupported methods fail typed (docs/m9.md)",
             ),
         ];
         let gaps: Vec<serde_json::Value> = GAPS
@@ -2425,6 +2489,29 @@ impl AgentSession {
         // relatório gerado consomem. Isto não substitui os gaps narrativos
         // acima; dá ao agente a contagem auditável por domínio/status.
         let api_table = rd_framework::fd_api_coverage::ApiCoverageTable::embedded()?;
+        // Apêndices D/E executáveis (S8, issue #234): os mesmos registros
+        // que `rd jetpack`/`rd gms` e `get_api_usage` consomem.
+        let jetpack_table = rd_framework::fd_jetpack::JetpackTable::embedded()?;
+        let gms_table = rd_framework::fd_gms::GmsTable::embedded()?;
+        // Superfícies stub/not_implemented que o app ACTIVO referencia
+        // (análise estática — sem app instalado/activo, null honesto).
+        let app_library_gaps = match self.active.clone() {
+            Some(pkg) => match self.find_installed_mut(&pkg) {
+                Some(installed) => {
+                    let apk = installed.apk()?;
+                    let dexes = dexes_of_apk(&apk)?;
+                    let usage = crate::api_usage::scan(&apk.manifest.package, &dexes);
+                    serde_json::json!({
+                        "package": usage.package,
+                        "analysis": "static-dex-references",
+                        "jetpack": usage.jetpack_gap_surfaces,
+                        "gms": usage.gms_gap_surfaces,
+                    })
+                }
+                None => serde_json::Value::Null,
+            },
+            None => serde_json::Value::Null,
+        };
         Ok(ToolResult::json(&serde_json::json!({
             "gaps": gaps,
             "api_coverage": {
@@ -2438,6 +2525,25 @@ impl AgentSession {
                 "by_domain": api_table.domain_summaries(),
                 "hint": "get_api_usage classifica as referências DEX de um app contra este registro; get_coverage continua sendo a cobertura de execução",
             },
+            "jetpack": {
+                "source": jetpack_table.source,
+                "data": "data/jetpack.toml",
+                "categories": jetpack_table.category.len(),
+                "libraries": jetpack_table.library.len(),
+                "by_status": jetpack_table.status_counts(),
+                "hint": "get_api_usage classifica as referências DEX androidx.*/Material/bibliotecas comuns contra este registro (campo jetpack); rd jetpack check <classe> no CLI",
+            },
+            "gms": {
+                "source": gms_table.source,
+                "data": "data/gms.toml",
+                "categories": gms_table.category.len(),
+                "services": gms_table.service.len(),
+                "by_status": gms_table.status_counts(),
+                "mode": "no-gms-honest",
+                "network": "none",
+                "hint": "get_api_usage classifica as referências DEX GMS/Firebase/Billing contra este registro (campo gms); respostas são mocks programáveis via Engine::gms_* — nunca Play Services real",
+            },
+            "app_library_gaps": app_library_gaps,
             "hint": "behavior_switches lista os comutadores targetSdk ativos (PRF-07)",
         })))
     }
@@ -2533,7 +2639,9 @@ impl AgentSession {
             // issue #80: o formato já foi validado para o lote inteiro acima
             let name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let args = c.get("arguments").cloned().unwrap_or(serde_json::json!({}));
-            let r = self.call_tool(name, &args);
+            // Issue #317: cada passo é isolado — um panic vira
+            // INTERNAL_PANIC no próprio passo, nunca mata lote/processo.
+            let r = self.call_tool_isolated(name, &args);
             let content_json: serde_json::Value = match &r.content[0] {
                 ToolContent::Text(t) => serde_json::from_str(t).unwrap_or(serde_json::json!(t)),
                 ToolContent::Image { mime, .. } => serde_json::json!({"image": mime}),
@@ -3111,7 +3219,9 @@ fn handle_single(
             let args = msg.pointer("/params/arguments").unwrap_or(&empty);
             let t0 = std::time::Instant::now();
             let result = session.call_tool_isolated(&name, args);
-            session.screen_after_call(&name, t0.elapsed().as_secs_f64() * 1000.0);
+            // Issue #317: o pós-chamada redesenha (código guest) — também
+            // isolado, senão um panic ali derrubava o servidor.
+            session.screen_after_call_isolated(&name, t0.elapsed().as_secs_f64() * 1000.0);
             let content: Vec<serde_json::Value> = result
                 .content
                 .iter()
@@ -3153,7 +3263,9 @@ fn handle_single(
                 )));
             };
             let r = match method {
-                "resources/read" => session.resource_read(uri),
+                // Issue #317: read executa código guest (refresh/draw) —
+                // isolado como as tools, nunca crash do servidor.
+                "resources/read" => session.resource_read_isolated(uri),
                 m => session
                     .resource_subscribe(uri, m == "resources/subscribe")
                     .map(|()| serde_json::json!({})),
@@ -3240,6 +3352,7 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
 
 include!("m9_tools.rs");
 include!("m10_tools.rs");
+include!("appendix_tools.rs");
 include!("observe.rs");
 include!("snapshot.rs");
 include!("ui_tools.rs");
@@ -3753,6 +3866,11 @@ mod tests {
         install_ok(&mut s, &apk_path);
         let (v, err) = call(&mut s, "app_info", serde_json::json!({}));
         assert!(!err, "app_info: {v}");
+        // ADR 016: the reported floor follows FLOOR_MIN_SDK (was a stale literal 26).
+        assert_eq!(
+            v["floor"],
+            serde_json::json!({"ok": true, "floor": rd_apk::FLOOR_MIN_SDK})
+        );
         assert_eq!(v["engines"], serde_json::to_value(expected).unwrap());
         assert_eq!(v["engines"]["registered_engines"], 28);
         assert_eq!(v["engines"]["execution_claimed"], false);
@@ -3843,6 +3961,147 @@ mod tests {
             partial > supported && supported <= Some(8),
             "registro não pode fingir Android completo: {v}"
         );
+    }
+
+    /// S8 (#234): compat_gaps expõe também os sumários executáveis dos
+    /// Apêndices D/E (mesmos registros de `rd jetpack`/`rd gms`), e a
+    /// tabela narrativa não pode voltar a defasar (#238).
+    #[test]
+    fn compat_gaps_includes_appendix_d_e_summaries() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        let mut s = AgentSession::new();
+        let (v, err) = call(&mut s, "compat_gaps", serde_json::json!({}));
+        assert!(!err, "{v}");
+        assert_eq!(v["jetpack"]["data"], "data/jetpack.toml");
+        assert_eq!(v["jetpack"]["libraries"].as_u64(), Some(46), "{v}");
+        let js = &v["jetpack"]["by_status"];
+        assert!(
+            js["partial"].as_u64() > js["supported"].as_u64(),
+            "D honesto: miolo partial: {v}"
+        );
+        assert_eq!(v["gms"]["data"], "data/gms.toml");
+        assert_eq!(v["gms"]["services"], 21, "{v}");
+        assert_eq!(v["gms"]["by_status"]["partial"], 20, "{v}");
+        assert_eq!(v["gms"]["by_status"]["not_implemented"], 1, "{v}");
+        assert_eq!(v["gms"]["network"], "none");
+        assert!(v["app_library_gaps"].is_null(), "{v}");
+        let gaps = v["gaps"].as_array().expect("gaps");
+        let status = |id: &str| {
+            gaps.iter()
+                .find(|g| g["id"] == id)
+                .map(|g| g["status"].as_str().unwrap_or("?").to_string())
+        };
+        assert_eq!(status("notifications").as_deref(), Some("partial"));
+        assert_eq!(status("ime-widgets").as_deref(), Some("partial"));
+        assert_eq!(
+            status("start-activity-implicit").as_deref(),
+            Some("partial")
+        );
+        let clock_note = gaps
+            .iter()
+            .find(|g| g["id"] == "android-framework-clock")
+            .map(|g| g["note"].as_str().unwrap_or("").to_string())
+            .unwrap_or_default();
+        assert!(
+            !clock_note.contains("seguem fora"),
+            "currentTimeMillis/nanoTime existem: {clock_note}"
+        );
+    }
+
+    /// S8 (Apêndice E programável): device_profile action=gms programa o
+    /// estado mock e action=gms_state o devolve — sem tools novas.
+    #[test]
+    fn device_profile_gms_program_and_state() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        // O esquema anuncia as duas acções (catálogo = tools/list = docs).
+        let defs = tool_defs();
+        let dp = defs
+            .iter()
+            .find(|d| d.name == "device_profile")
+            .expect("device_profile");
+        let actions = dp.schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("enum de acções")
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect::<Vec<_>>();
+        assert!(actions.contains(&"gms".to_string()), "{actions:?}");
+        assert!(actions.contains(&"gms_state".to_string()), "{actions:?}");
+        assert!(actions.contains(&"location".to_string()), "AG-10 intacto");
+
+        let mut s = AgentSession::new();
+        // Sem app em execução: erro tipado, nunca sucesso fingido.
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms_state"}),
+        );
+        assert!(err, "gms_state sem engine deve falhar: {v}");
+
+        let apk_path = fixture_apk_path();
+        let (v, err) = call(&mut s, "install", serde_json::json!({"apk": apk_path}));
+        assert!(!err, "install: {v}");
+        let (v, err) = call(&mut s, "launch", serde_json::json!({}));
+        assert!(!err, "launch: {v}");
+
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({
+                "action": "gms",
+                "gms_availability": 2,
+                "gms_account_email": "jogador@example.com",
+                "gms_account_name": "Jogador Um",
+                "gms_signin": true,
+                "fcm_token": "tok-mcp-1",
+                "billing_sku": {"id": "coins_100", "price": "R$ 4,90", "price_micros": 4900000},
+                "billing_outcome": "canceled",
+                "ads_failure_code": 3,
+                "integrity_token": "tok-integrity-mcp",
+                "fit_steps": 1234
+            }),
+        );
+        assert!(!err, "programar: {v}");
+        assert_eq!(v["mode"], "no-gms-honest");
+        assert_eq!(v["network"], "none");
+        let applied = v["applied"].as_array().expect("applied");
+        for want in [
+            "gms_availability",
+            "gms_account",
+            "gms_signin",
+            "fcm_token",
+            "billing_sku",
+            "billing_outcome",
+            "ads_failure",
+            "integrity_token",
+            "fit_steps",
+        ] {
+            assert!(
+                applied.iter().any(|a| a == want),
+                "applied deve conter {want}: {v}"
+            );
+        }
+
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms_state"}),
+        );
+        assert!(!err, "gms_state: {v}");
+        assert_eq!(v["availability_code"], 2);
+        assert_eq!(v["network"], "none");
+        assert!(v["billing_purchases"]
+            .as_array()
+            .expect("purchases")
+            .is_empty());
+
+        // billing_outcome inválido: INVALID_FORMAT tipado.
+        let (v, err) = call(
+            &mut s,
+            "device_profile",
+            serde_json::json!({"action": "gms", "billing_outcome": "grátis"}),
+        );
+        assert!(err, "outcome inválido deve falhar: {v}");
     }
 
     /// AG-09 (metade estática): get_api_usage reporta as APIs android.* que o
@@ -5157,6 +5416,115 @@ mod tests {
         assert!(s2.engine.is_some());
         let (v, err) = call(&mut s2, "tap", serde_json::json!({"x": 10, "y": 10}));
         assert!(!err, "tap after materialization: {v}");
+        std::env::remove_var("RD_SNAPSHOT_DIR");
+        let _ = std::fs::remove_dir_all(&snap_root);
+    }
+
+    /// Issue #259 item 2: `observe` (text and json) must serve the STORED
+    /// snapshot after a snapshot launch. The launch -> observe flow must not
+    /// materialize the engine (that defeats the ADR 009 fast path).
+    #[test]
+    fn observe_serves_stored_snapshot_without_materializing_259() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        let apk_path = fixture_apk_path();
+        let snap_root = std::env::temp_dir().join(format!(
+            "rd-snap-test-259-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::env::set_var("RD_SNAPSHOT_DIR", &snap_root);
+
+        let mut s1 = AgentSession::new();
+        install_ok(&mut s1, &apk_path);
+        let lv = launch_ok(&mut s1, serde_json::json!({}));
+        let activity = lv["activity"].as_str().expect("activity desc").to_string();
+        s1.capture_snapshot("com.test.mcp", &activity)
+            .expect("capture");
+        let key = s1
+            .find_installed("com.test.mcp")
+            .and_then(|a| a.snapshot_key.clone())
+            .expect("snapshot key recorded");
+
+        let mut s2 = AgentSession::new();
+        s2.try_install_snapshot(std::path::Path::new(&apk_path))
+            .expect("fast install runs")
+            .expect("snapshot hit");
+        let pending = s2
+            .snapshot_for_launch("com.test.mcp", &activity, Some(&key), None)
+            .expect("presentable snapshot");
+        s2.present_snapshot(pending);
+        assert!(s2.engine.is_none(), "present must not materialize");
+
+        let (obs, err) = call(&mut s2, "observe", serde_json::json!({}));
+        assert!(!err, "observe text: {obs}");
+        assert!(s2.engine.is_none(), "observe must not materialize");
+        assert!(s2.pending_snapshot.is_some());
+        let (obsj, err) = call(&mut s2, "observe", serde_json::json!({"format": "json"}));
+        assert!(!err, "observe json: {obsj}");
+        assert_eq!(obsj["snapshot"], true);
+        assert!(obsj["texts"].is_array());
+        assert!(s2.engine.is_none(), "observe json must not materialize");
+
+        std::env::remove_var("RD_SNAPSHOT_DIR");
+        let _ = std::fs::remove_dir_all(&snap_root);
+    }
+
+    /// Issue #259: o fingerprint do APK não enxerga grants nem estado
+    /// persistido — assim que a sessão diverge do install pristine
+    /// (aqui: um grant), o snapshot não pode mais ser servido.
+    #[test]
+    fn snapshot_gated_by_session_state() {
+        let _guard = SESSION_LOCK.lock().unwrap();
+        let apk_path = fixture_form_apk_path("com.test.form");
+        let snap_root = std::env::temp_dir().join(format!(
+            "rd-snap-gate-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::env::set_var("RD_SNAPSHOT_DIR", &snap_root);
+
+        // Sessão 1 (pristine): captura o snapshot.
+        let mut s1 = AgentSession::new();
+        install_ok(&mut s1, &apk_path);
+        let lv = launch_ok(&mut s1, serde_json::json!({}));
+        let activity = lv["activity"].as_str().expect("activity desc").to_string();
+        s1.capture_snapshot("com.test.form", &activity)
+            .expect("capture");
+        let key = s1
+            .find_installed("com.test.form")
+            .and_then(|a| a.snapshot_key.clone())
+            .expect("snapshot key recorded");
+        assert!(load_snapshot(&key).is_some());
+
+        // Sessão 2: pristine serve o frame; após conceder CAMERA, o
+        // mesmo snapshot não pode mais ser apresentado (o primeiro
+        // frame real agora veria a permissão concedida) — é o fluxo
+        // install → grant → launch da issue.
+        let mut s2 = AgentSession::new();
+        install_ok(&mut s2, &apk_path);
+        assert!(
+            s2.snapshot_for_launch("com.test.form", &activity, Some(&key), None)
+                .is_some(),
+            "sessão pristine serve o snapshot"
+        );
+        let (v, err) = call(
+            &mut s2,
+            "permissions_grant",
+            serde_json::json!({"permission": "android.permission.CAMERA"}),
+        );
+        assert!(!err, "grant: {v}");
+        assert!(
+            s2.snapshot_for_launch("com.test.form", &activity, Some(&key), None)
+                .is_none(),
+            "após um grant, servir o frame pré-grant quebraria o determinismo"
+        );
+
         std::env::remove_var("RD_SNAPSHOT_DIR");
         let _ = std::fs::remove_dir_all(&snap_root);
     }

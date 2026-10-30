@@ -334,14 +334,31 @@ fn rounded_bytes(size_bytes: i64, flags: i32) -> (f32, &'static str, usize, i64)
     let rounded = if flags & FLAG_CALCULATE_ROUNDED == 0 {
         0
     } else {
-        ((result * round_factor as f32).round() as i64) * mult / round_factor
+        // java.lang.Math.round(float) is (int) floor(value + 0.5f),
+        // not round-half-away-from-zero.
+        (((result * round_factor as f32 + 0.5).floor() as i32) as i64) * mult / round_factor
     };
     (result, units, round_digits, rounded)
 }
 
+/// Format a size value the way AOSP's ICU-backed NumberFormat does:
+/// the digits of the float value rounded HALF_UP at `digits` fraction
+/// digits (Rust's float formatting would round half-to-even).
+fn format_half_up(value: f32, digits: usize) -> String {
+    let factor = 10f64.powi(digits as i32);
+    let scaled = ((value as f64).abs() * factor + 0.5).floor() as u64;
+    let sign = if value.is_sign_negative() { "-" } else { "" };
+    if digits == 0 {
+        format!("{sign}{scaled}")
+    } else {
+        let pow = 10u64.pow(digits as u32);
+        format!("{sign}{}.{:0>digits$}", scaled / pow, scaled % pow)
+    }
+}
+
 fn format_size(size_bytes: i64, flags: i32) -> String {
     let (value, units, digits, _) = rounded_bytes(size_bytes, flags);
-    format!("{value:.digits$} {units}")
+    format!("{} {units}", format_half_up(value, digits))
 }
 
 fn formatter_static(
@@ -380,7 +397,7 @@ fn formatter_static(
                 return Err(npe("Formatter.formatBytes resources == null"));
             }
             let (value, units, digits, rounded) = rounded_bytes(larg(args, 1), iarg(args, 2));
-            let value = jstr(vm, format!("{value:.digits$}"))?;
+            let value = jstr(vm, format_half_up(value, digits))?;
             let units = jstr(vm, units.to_string())?;
             Value::Obj(alloc_obj(
                 vm,
@@ -488,14 +505,64 @@ fn android_date_pattern(pattern: &str, ms: i64) -> String {
         }
         match c {
             'A' => out.push_str(&"a".repeat(n)),
-            'c' => out.push_str(&"E".repeat(n)),
+            'c' | 'E' => {
+                // AOSP: count 4 is the wide weekday, 5 is narrow, and
+                // every other count is abbreviated.
+                let dow = (ms.div_euclid(86_400_000) + 4).rem_euclid(7) as usize;
+                let name = match n {
+                    4 => [
+                        "Sunday",
+                        "Monday",
+                        "Tuesday",
+                        "Wednesday",
+                        "Thursday",
+                        "Friday",
+                        "Saturday",
+                    ][dow],
+                    5 => ["S", "M", "T", "W", "T", "F", "S"][dow],
+                    _ => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow],
+                };
+                out.push('\'');
+                out.push_str(name);
+                out.push('\'');
+            }
             'k' => out.push_str(&"H".repeat(n)),
             'K' => out.push_str(&format!("'{:0width$}'", hour0_11, width = n)),
-            'z' => out.push_str(if n >= 4 {
-                "'Coordinated Universal Time'"
-            } else {
-                "'UTC'"
-            }),
+            'M' | 'L' if n >= 5 => {
+                let month = crate::jtime::format_pattern("M", "en", ms)
+                    .parse::<usize>()
+                    .unwrap_or(1);
+                if n == 5 {
+                    let narrow =
+                        ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"][month - 1];
+                    out.push('\'');
+                    out.push_str(narrow);
+                    out.push('\'');
+                } else {
+                    // AOSP falls back to the zero-padded month number.
+                    out.push_str(&format!("'{month:0n$}'"));
+                }
+            }
+            'S' | 'u' => {
+                // Not android.text.format.DateFormat designators; AOSP
+                // passes them through literally.
+                out.push('\'');
+                out.push_str(&c.to_string().repeat(n));
+                out.push('\'');
+            }
+            'y' => {
+                if n <= 2 {
+                    // AOSP always uses the two-digit year for count <= 2.
+                    out.push_str("yy");
+                } else {
+                    // AOSP prints the plain year for count >= 3 (no padding).
+                    let year = crate::jtime::format_pattern("y", "en", ms);
+                    out.push('\'');
+                    out.push_str(&year);
+                    out.push('\'');
+                }
+            }
+            'z' => out.push_str(if n == 1 { "'+0000'" } else { "'UTC'" }),
             _ => out.push_str(&c.to_string().repeat(n)),
         }
         i += n;
@@ -537,7 +604,9 @@ fn date_format_order(pattern: &str) -> Result<[u16; 3], VmExit> {
                     let Some(end) = chars.iter().skip(i + 1).position(|c| *c == '\'') else {
                         return Err(iae(format!("Bad quoting in {pattern}")));
                     };
-                    i += end + 2;
+                    // AOSP resumes two positions past the closing quote,
+                    // skipping the character right after it.
+                    i += end + 3;
                     continue;
                 }
             }
@@ -1113,12 +1182,29 @@ fn rfc822_tokenizer_instance(
         ("findTokenStart", "(Ljava/lang/CharSequence;I)I") => {
             let text = req_charseq(vm, args, 0, "Rfc822Tokenizer.findTokenStart text == null")?;
             let units: Vec<u16> = text.encode_utf16().collect();
-            Value::Int(find_token_start_u16(&units, iarg(args, 1).max(0) as usize) as i32)
+            let cursor = iarg(args, 1);
+            // Past-the-end cursors walk into charAt(len + 1) on AOSP.
+            if cursor > units.len() as i32 {
+                return Err(throw(
+                    "Ljava/lang/StringIndexOutOfBoundsException;",
+                    format!("String index out of range: {}", units.len() + 1),
+                ));
+            }
+            Value::Int(find_token_start_u16(&units, cursor.max(0) as usize) as i32)
         }
         ("findTokenEnd", "(Ljava/lang/CharSequence;I)I") => {
             let text = req_charseq(vm, args, 0, "Rfc822Tokenizer.findTokenEnd text == null")?;
             let units: Vec<u16> = text.encode_utf16().collect();
-            Value::Int(find_token_end_u16(&units, iarg(args, 1).max(0) as usize) as i32)
+            let cursor = iarg(args, 1);
+            // A negative cursor indexes charAt(-1); a past-the-end
+            // cursor is returned untouched.
+            if cursor < 0 {
+                return Err(throw(
+                    "Ljava/lang/StringIndexOutOfBoundsException;",
+                    format!("String index out of range: {cursor}"),
+                ));
+            }
+            Value::Int(find_token_end_u16(&units, cursor as usize) as i32)
         }
         ("terminateToken", "(Ljava/lang/CharSequence;)Ljava/lang/CharSequence;") => {
             let text = charseq(vm, args.first())?;
@@ -1216,7 +1302,8 @@ fn interpolator_instance(
             }
         }
         "Landroid/view/animation/AccelerateDecelerateInterpolator;" => {
-            (((input as f64 + 1.0) * std::f64::consts::PI).cos() / 2.0) as f32 + 0.5
+            // AOSP computes (input + 1) in float before widening.
+            (f64::from(input + 1.0) * std::f64::consts::PI).cos() as f32 / 2.0 + 0.5
         }
         "Landroid/view/animation/AnticipateInterpolator;" => {
             let tension = ffield(vm, recv, "mTension", 2.0);
@@ -1271,6 +1358,20 @@ fn account_name_type(vm: &Engine, account: ObjRef) -> (String, String) {
     )
 }
 
+fn account_safe_name(name: &str, replacement: char) -> String {
+    // AOSP iterates UTF-16 code units, so a surrogate pair is never a
+    // letter or digit: supplementary letters survive unchanged.
+    name.chars()
+        .map(|c| {
+            if (c as u32) < 0x1_0000 && c.is_alphanumeric() {
+                replacement
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 fn account_static(
     vm: &mut Engine,
     name: &str,
@@ -1280,12 +1381,8 @@ fn account_static(
     if name == "toSafeName" && sig == "(Ljava/lang/String;C)Ljava/lang/String;" {
         let input =
             opt_str(vm, args.first()).ok_or_else(|| npe("Account.toSafeName name == null"))?;
-        let replacement = char::from_u32(iarg(args, 1) as u32).unwrap_or('x');
-        let safe: String = input
-            .chars()
-            .map(|c| if c.is_alphanumeric() { replacement } else { c })
-            .collect();
-        return Ok(Some(jstr(vm, safe)?));
+        let replacement = char::from_u32((iarg(args, 1) & 0xffff) as u32).unwrap_or('x');
+        return Ok(Some(jstr(vm, account_safe_name(&input, replacement))?));
     }
     Ok(None)
 }
@@ -1481,6 +1578,26 @@ fn require_account(args: &[Value], i: usize) -> Result<ObjRef, VmExit> {
     oarg(args, i).ok_or_else(|| iae("account is null"))
 }
 
+/// AOSP `setPasswordInternal` deletes every cached auth token for the
+/// account whenever the password is set or cleared.
+fn purge_account_tokens(vm: &mut Engine, entry: ObjRef) -> Result<(), VmExit> {
+    let token_fields: Vec<String> = vm
+        .heap
+        .as_instance(entry)
+        .map(|(_, fields)| {
+            fields
+                .iter()
+                .filter(|(n, _)| n.starts_with("rd$authToken."))
+                .map(|(n, _)| n.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    for field in token_fields {
+        put(vm, entry, &field, Value::Null)?;
+    }
+    Ok(())
+}
+
 fn user_data_field(key: &str) -> String {
     format!("rd$userData.{key}")
 }
@@ -1608,6 +1725,7 @@ fn account_manager_instance(
                     "rd$password",
                     args.get(1).cloned().unwrap_or(Value::Null),
                 )?;
+                purge_account_tokens(vm, entry)?;
             }
             Value::Null
         }
@@ -1615,16 +1733,15 @@ fn account_manager_instance(
             let account = require_account(args, 0)?;
             if let Some(entry) = find_account(vm, account)? {
                 put(vm, entry, "rd$password", Value::Null)?;
+                purge_account_tokens(vm, entry)?;
             }
             Value::Null
         }
         ("getUserData", "(Landroid/accounts/Account;Ljava/lang/String;)Ljava/lang/String;") => {
-            let Some(account) = oarg(args, 0) else {
-                return Ok(Some(Value::Null));
-            };
-            let Some(key) = opt_str(vm, args.get(1)) else {
-                return Ok(Some(Value::Null));
-            };
+            // The client property cache recomputes through the service
+            // on a miss, where the null checks throw these exact IAEs.
+            let account = require_account(args, 0)?;
+            let key = opt_str(vm, args.get(1)).ok_or_else(|| iae("key is null"))?;
             match find_account(vm, account)? {
                 Some(entry) => get(vm, entry, &user_data_field(&key)),
                 None => Value::Null,
@@ -2043,7 +2160,8 @@ fn compute_gesture_obb(vm: &mut Engine, original: &[f32]) -> Result<Value, VmExi
     }
     Ok(Value::Obj(gesture_obb_object(
         vm,
-        (f64::from(angle) * 180.0 / core::f64::consts::PI) as f32,
+        // AOSP evaluates `angle * 180` in float before dividing by PI.
+        (f64::from(angle * 180.0) / core::f64::consts::PI) as f32,
         centroid[0],
         centroid[1],
         max_x - min_x,

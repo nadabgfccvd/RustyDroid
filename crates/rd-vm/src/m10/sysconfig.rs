@@ -548,7 +548,7 @@ pub(super) fn instance_call(
             "acquire" => {
                 if let Some(wl) = vm.fw.vdev.wake_locks.get_mut(&recv) {
                     if wl.ref_counted {
-                        wl.count += 1;
+                        wl.count = wl.count.saturating_add(1);
                     } else {
                         wl.count = 1;
                     }
