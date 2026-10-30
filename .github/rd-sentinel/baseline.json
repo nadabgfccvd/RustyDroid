@@ -8,7 +8,7 @@
     "floor_min_sdk": 26,
     "mcp_tool_count": 47,
     "golden_vector_count": 150,
-    "fuzz_target_count": 5,
+    "fuzz_target_count": 6,
     "minimum_static_test_attributes": 699,
     "startup_budget_emulated_ms_max": 1500.0
   },

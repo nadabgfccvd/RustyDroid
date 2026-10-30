@@ -1,6 +1,6 @@
 # Fuzzing — RustyDroid
 
-Os parsers de formato não-confiável (ZIP, AXML, ARSC, DEX) são fuzz-hardened:
+Os parsers de formato não-confiável (ZIP, AXML, ARSC, DEX, ELF) são fuzz-hardened:
 toda leitura é bounds-checked, todo loop tem guarda de avanço e a Lei nº 1
 proíbe pânico — falhas são sempre `RdError { code, cause, suggestion, module_id }`.
 
@@ -8,6 +8,8 @@ proíbe pânico — falhas são sempre `RdError { code, cause, suggestion, modul
 
 - `crates/rd-apk/fuzz/` — targets `zip`, `axml`, `arsc`, `apk_full`
 - `crates/rd-dex/fuzz/` — target `dex` (parse + render das primeiras classes)
+- `crates/rd-ndk/fuzz/` — target `elf` (loader ELF do M9: header, PT_DYNAMIC,
+  símbolos, relocações, DT_NEEDED; RustyDroid.md §3.1)
 
 Os crates de fuzz ficam FORA do workspace principal (padrão cargo-fuzz) para
 não contaminar o MSRV nem o lockfile de produção.
@@ -24,7 +26,7 @@ cargo +nightly fuzz run dex -- -max_total_time=60
 ## Política
 
 - O DoD do M1 pede fuzz 24 h sem crash antes de declarar o parser "estável".
-  O script recomendado: rodar os 5 targets por 24 h paralelos em uma noite e
+  O script recomendado: rodar os 6 targets por 24 h paralelos em uma noite e
   arquivar os crashes (se houver) como issues com o input minimizado.
 - O CI roda `cargo fuzz build` (compilação em nightly, sem execução) para
   garantir que os targets não apodrecem entre milestones.

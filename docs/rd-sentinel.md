@@ -134,7 +134,7 @@ Runs Monday-Saturday on `main`:
   network is enabled, and a CycloneDX SBOM artifact;
 - beta Rust and Rust 1.76 trials;
 - release binary size, `rd perf`, process-cold snapshot, and real-APK probes;
-- all five fuzz targets for the configured bounded duration;
+- all six fuzz targets (zip, axml, arsc, apk_full, dex, elf) for the configured bounded duration;
 - isolated semver-compatible dependency-update trial in the weekly core job.
 
 ### Weekly campaign
