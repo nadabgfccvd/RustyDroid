@@ -1847,6 +1847,16 @@ fn resolve_or_run_host_invoke(
         {
             return Ok(InvokeTarget::Value(value));
         }
+        // Receiver-first, then the declaring class: platform implementations such as
+        // `Landroid/content/SharedPreferencesImpl;` may have no shim of their own, while
+        // the declaring interface (`Landroid/content/SharedPreferences;`) does (CI #315).
+        if host_start != &mref.class {
+            if let Some(value) =
+                inherited_android_host(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+            {
+                return Ok(InvokeTarget::Value(value));
+            }
+        }
         // Generic property storage is strictly last: it must not swallow
         // inherited View IDs, EditText text, or Activity/Context state.
         if let Some(value) = crate::view_props::fallback(
