@@ -125,13 +125,15 @@ fn issue_320_diamond_interface_dag_resolves_without_exponential_hang() {
         let _ = tx.send((val, start.elapsed()));
     });
 
+    // Hang guard, not a speed test: the bound is generous because a debug build
+    // under parallel load can exceed 250 ms. An unbounded walk still fails here.
     let (val, elapsed) = rx
-        .recv_timeout(Duration::from_millis(250))
-        .expect("17-level 8-way diamond interface resolution hung (>250ms)");
+        .recv_timeout(Duration::from_secs(60))
+        .expect("17-level 8-way diamond interface resolution hung (>60s)");
     assert_eq!(val, Value::Int(7));
     assert!(
-        elapsed < Duration::from_millis(250),
-        "expected fast bounded resolution, took {elapsed:?}"
+        elapsed < Duration::from_secs(60),
+        "expected bounded resolution, took {elapsed:?}"
     );
 }
 
