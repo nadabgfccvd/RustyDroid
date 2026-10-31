@@ -3548,7 +3548,7 @@ mod tests {
     /// subscriptions and `notifications/resources/updated`.
     #[test]
     fn observe_tap_text_and_screen_resources() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         let (v, err) = call(&mut s, "observe", serde_json::json!({}));
@@ -3698,7 +3698,7 @@ mod tests {
     #[test]
     fn live_viewer_serves_page_state_and_frame() {
         use std::io::{Read, Write};
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         let addr = s.enable_live("127.0.0.1:0").expect("bind");
@@ -3729,7 +3729,7 @@ mod tests {
     /// DoD M5 na unidade: instala → executa → navega → assera SÓ com as tools.
     #[test]
     fn golden_flow_install_launch_navigate_assert() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
 
@@ -3803,7 +3803,7 @@ mod tests {
 
     #[test]
     fn explicit_native_selection_never_falls_back_to_generic_android() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &path);
@@ -3838,7 +3838,7 @@ mod tests {
     /// parsing any executable artifact, including malformed native payloads.
     #[test]
     fn app_info_includes_all_engine_findings_without_runtime_claims() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut zip = rd_testsupport::apkfix::ZipFix::new();
         zip.add(
             "AndroidManifest.xml",
@@ -3888,7 +3888,7 @@ mod tests {
 
     #[test]
     fn app_info_preserves_identity_when_optional_engine_analysis_is_limited() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path =
             fixture_apk_write(rd_testsupport::apkfix::build_large_inventory_apk(100_000));
         let mut session = AgentSession::new();
@@ -3906,7 +3906,7 @@ mod tests {
     /// Sem app: tools falham tipadas (nunca pânico).
     #[test]
     fn tools_fail_typed_without_app() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
         // launch: sem APK instalado → NO_APP
         let (v, err) = call(&mut s, "launch", serde_json::json!({}));
@@ -3932,7 +3932,7 @@ mod tests {
     /// notifications tool: honesta NOT_IMPLEMENTED (M9).
     #[test]
     fn notifications_without_running_app_is_typed() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
         let (v, err) = call(&mut s, "notifications", serde_json::json!({}));
         assert!(err);
@@ -3943,7 +3943,7 @@ mod tests {
     /// android.* junto dos gaps narrativos históricos.
     #[test]
     fn compat_gaps_includes_appendix_c_summary() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
         let (v, err) = call(&mut s, "compat_gaps", serde_json::json!({}));
         assert!(!err, "{v}");
@@ -3968,7 +3968,7 @@ mod tests {
     /// tabela narrativa não pode voltar a defasar (#238).
     #[test]
     fn compat_gaps_includes_appendix_d_e_summaries() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
         let (v, err) = call(&mut s, "compat_gaps", serde_json::json!({}));
         assert!(!err, "{v}");
@@ -4012,7 +4012,7 @@ mod tests {
     /// estado mock e action=gms_state o devolve — sem tools novas.
     #[test]
     fn device_profile_gms_program_and_state() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // O esquema anuncia as duas acções (catálogo = tools/list = docs).
         let defs = tool_defs();
         let dp = defs
@@ -4108,7 +4108,7 @@ mod tests {
     /// app referencia nos DEX (análise estática) e exige app instalado.
     #[test]
     fn get_api_usage_reports_android_references() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // sem app: erro tipado
         let mut s0 = AgentSession::new();
         let (v, err) = call(&mut s0, "get_api_usage", serde_json::json!({}));
@@ -4162,7 +4162,7 @@ mod tests {
     /// (nível de método) do app em uso; sem app lançado → NOT_RUNNING.
     #[test]
     fn get_coverage_reports_executed_methods() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // nada instalado → NOT_RUNNING (é tool de runtime, como tap/screenshot)
         let mut s0 = AgentSession::new();
         let (v, err) = call(&mut s0, "get_coverage", serde_json::json!({}));
@@ -4204,7 +4204,7 @@ mod tests {
     /// Envelope JSON-RPC no shape MCP.
     #[test]
     fn envelope_jsonrpc_is_mcp_shape() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
 
         let r = handle_message(
@@ -4268,7 +4268,7 @@ mod tests {
     /// desconhecido. Só requisições (com `id`) recebem `-32601`.
     #[test]
     fn unknown_method_notification_is_silent() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
 
         // notificações desconhecidas → silêncio (nenhuma resposta)
@@ -4307,7 +4307,7 @@ mod tests {
     /// as requisições eram descartadas em silêncio.
     #[test]
     fn batch_returns_one_response_per_request() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
 
         let r = handle_message(
@@ -4342,7 +4342,7 @@ mod tests {
     /// notificações não produz resposta alguma (§4.1 + §6).
     #[test]
     fn batch_notifications_are_not_answered() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
 
         let r = handle_message(
@@ -4370,7 +4370,7 @@ mod tests {
     /// estrutura não permite detectá-lo, é `null` (JSON-RPC 2.0 §5.1).
     #[test]
     fn invalid_structure_is_invalid_request_32600() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
 
         for (label, line, want_id) in [
@@ -4474,7 +4474,7 @@ mod tests {
     /// na tela (antes virava x=100 e a resposta ecoava o valor truncado).
     #[test]
     fn tap_and_swipe_reject_coordinates_outside_i32() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4509,7 +4509,7 @@ mod tests {
     /// passavam sem verificar nada (falso verde em teste automatizado).
     #[test]
     fn empty_assert_criteria_are_invalid_format() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4584,7 +4584,7 @@ mod tests {
         assert!(!class_matches("TextView", "View"));
 
         // e na árvore real do app (TextView dentro de LinearLayout)
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4640,7 +4640,7 @@ mod tests {
     /// invalida tudo que o agente concluir depois.
     #[test]
     fn launch_rejects_activity_missing_from_dex() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4721,7 +4721,7 @@ mod tests {
     /// ActivityNotFoundException.
     #[test]
     fn launch_rejects_activity_not_declared_in_manifest() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4792,7 +4792,7 @@ mod tests {
     /// MAIN/LAUNCHER. No Android, iniciar o alias abre a `targetActivity`.
     #[test]
     fn launch_resolves_activity_alias_to_target() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path_alias();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4849,7 +4849,7 @@ mod tests {
     /// MISSING_ENTRY que cita só a classe resolvida.
     #[test]
     fn launch_alias_with_ghost_target_is_structured_error() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path_alias_ghost_target();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4891,7 +4891,7 @@ mod tests {
     /// matam o processo; o launch seguinte volta a ser frio.
     #[test]
     fn launch_warm_reuses_running_process() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -4940,7 +4940,7 @@ mod tests {
     /// sabia o que mudou no app nem de onde retomar).
     #[test]
     fn batch_invalid_step_runs_nothing() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -5019,7 +5019,7 @@ mod tests {
     /// `resume_hint` não nulo promete trabalho pendente que não existe.
     #[test]
     fn batch_resume_hint_is_null_when_batch_completes() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -5084,7 +5084,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn screenshot_refuses_symlink_escape() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let base = std::env::temp_dir().join(format!(
             "rd-agent-symlink-{}-{}",
@@ -5170,7 +5170,7 @@ mod tests {
     /// serve_stdio: sessão completa por linhas (loop real de E/S).
     #[test]
     fn serve_stdio_drives_full_session() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let input = format!(
             "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{{}}}}\n\
@@ -5344,7 +5344,7 @@ mod tests {
     /// lives in the callers and its OnceLock is process-global.
     #[test]
     fn snapshot_capture_present_materialize() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let snap_root = std::env::temp_dir().join(format!(
             "rd-snap-test-{}-{}",
@@ -5425,7 +5425,7 @@ mod tests {
     /// materialize the engine (that defeats the ADR 009 fast path).
     #[test]
     fn observe_serves_stored_snapshot_without_materializing_259() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let snap_root = std::env::temp_dir().join(format!(
             "rd-snap-test-259-{}-{}",
@@ -5477,7 +5477,7 @@ mod tests {
     /// (aqui: um grant), o snapshot não pode mais ser servido.
     #[test]
     fn snapshot_gated_by_session_state() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_form_apk_path("com.test.form");
         let snap_root = std::env::temp_dir().join(format!(
             "rd-snap-gate-{}-{}",
@@ -5533,7 +5533,7 @@ mod tests {
     /// e tem schema com required ⊆ properties.
     #[test]
     fn catalog_matches_dispatch_and_schemas() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
         let defs = tool_defs();
         assert_eq!(defs.len(), 47);
@@ -5562,7 +5562,7 @@ mod tests {
     /// Controles M5: sandbox de caminhos, URLs, APK excessivo e caps de tempo.
     #[test]
     fn policy_sandbox_urls_and_caps() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         // sandbox restrita: SOMENTE o diretório do fixture (URLs e `..` e
         // caminhos externos recusados ANTES de tocar o estado)
@@ -5662,7 +5662,7 @@ mod tests {
     /// cap de passos e proibição de aninhamento.
     #[test]
     fn batch_idempotent_resume_and_caps() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -5757,7 +5757,7 @@ mod tests {
     /// com o app em execução encerrado quando o Android encerraria.
     #[test]
     fn package_registry_lifecycle() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_a = fixture_apk_path(); // com.test.mcp
         let apk_b = fixture_form_apk_path("com.test.form");
         let mut s = AgentSession::new();
@@ -5838,7 +5838,7 @@ mod tests {
     /// não a entrega a apps de terceiros; a sessão não pode concedê-la).
     #[test]
     fn permissions_denied_system_for_signature_outside_b5() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let (arsc, layout, dex) = fixture_parts();
         let manifest = rd_testsupport::apkfix::build_manifest_axml_sdk_perms(
             "com.test.mcp",
@@ -5887,7 +5887,7 @@ mod tests {
     /// registros independentes; TODO resultado carrega sessionId/package.
     #[test]
     fn session_ids_and_isolation() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_a = fixture_apk_path();
         let apk_b = fixture_form_apk_path("com.test.form");
         let mut s1 = AgentSession::new();
@@ -5918,7 +5918,7 @@ mod tests {
     /// vence por timeout honesto (found=false) e respeita o cap.
     #[test]
     fn wait_for_condition_and_caps() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_apk_path();
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);
@@ -5978,7 +5978,7 @@ mod tests {
     /// key DEL apaga e BACK finaliza a activity.
     #[test]
     fn swipe_type_key_form_flow() {
-        let _guard = SESSION_LOCK.lock().unwrap();
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let apk_path = fixture_form_apk_path("com.test.form");
         let mut s = AgentSession::new();
         install_ok(&mut s, &apk_path);

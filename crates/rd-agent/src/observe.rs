@@ -875,9 +875,18 @@ impl AgentSession {
 fn live_serve_conn(mut stream: std::net::TcpStream, sh: &LiveShared) {
     use std::io::{Read, Write};
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf).unwrap_or(0);
-    let req = String::from_utf8_lossy(&buf[..n]);
+    // Lê o cabeçalho HTTP inteiro (até CRLFCRLF). Uma única `read` pode devolver
+    // só parte da requisição; fechar o socket com bytes não lidos no buffer de
+    // recepção envia RST e o cliente vê ConnectionReset.
+    let mut buf: Vec<u8> = Vec::with_capacity(1024);
+    let mut chunk = [0u8; 1024];
+    while buf.len() < 16 * 1024 && !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+    }
+    let req = String::from_utf8_lossy(&buf);
     let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
     let (route, query) = path.split_once('?').unwrap_or((path.as_str(), ""));
     let (ctype, body): (&str, Vec<u8>) = match route {
