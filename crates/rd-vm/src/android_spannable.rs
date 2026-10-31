@@ -419,6 +419,20 @@ pub fn instance_intrinsic(
                     s
                 }
             };
+            // The builder text lives on the host (u16 units). Charge the grown
+            // length against the heap budget first, so `sb.append(sb)` repeated
+            // cannot double host memory past `heap_budget` (#369).
+            let new_len = st.text.len().saturating_add(src.text.len());
+            let cost = new_len.saturating_mul(2).saturating_add(32);
+            if vm.heap.used().saturating_add(cost) > vm.heap.budget() {
+                return Err(exc(
+                    "Ljava/lang/OutOfMemoryError;",
+                    format!(
+                        "alocação de {cost} bytes excede o heap de {} bytes",
+                        vm.heap.budget()
+                    ),
+                ));
+            }
             let at = st.text.len();
             splice(&mut st, at, at, &src);
             if sig.starts_with("(Ljava/lang/CharSequence;Ljava/lang/Object;I)") {
