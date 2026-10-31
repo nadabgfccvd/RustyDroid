@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793479327896,
+  "lastUpdate": 1793480584366,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -107,6 +107,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 9645,
             "range": "± 114",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e3ea5383dcad945e5b53382a3a84f54ce3ceba4",
+          "message": "fix(rd-vm): ViewModel base host shim (#232) (#439)\n\n* fix(rd-vm): ViewModel base host shim (getTag, setTagIfAbsent, addCloseable, clear) (#232)\n\nSubclasses DEX de androidx.lifecycle.ViewModel que não definem getTag /\nsetTagIfAbsent / addCloseable / clear falhavam com UNRESOLVED_METHOD,\nmesmo com o shim host de ViewModelStore.\n\n- androidx: classe base Landroidx/lifecycle/ViewModel; tags e closeables\n  ficam nos campos da instância (rd_vm_*), seguidos pelo GC.\n- clear(): chama onCleared (override DEX) e fecha os Closeable em ordem.\n- ViewModelStore.clear() também fecha os Closeable registrados.\n- Teste: crates/rd-vm/tests/androidx_viewmodel_232.rs (repro do #232,\n  via invoke-virtual em bytecode).\n\nDeclaração: código escrito com assistência de IA.\n\n* test(rd-vm): assinatura do probe no teste #232 (LVMProbe;)\n\n* test(rd-vm): nomes snake_case e clippy no teste #232 (-D warnings)\n\n---------\n\nCo-authored-by: xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-10-31T18:02:45-03:00",
+          "tree_id": "e741f73ff83b80d09ecb326ef7560d74355b9936",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/2e3ea5383dcad945e5b53382a3a84f54ce3ceba4"
+        },
+        "date": 1793480584037,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 16799,
+            "range": "± 156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 16776,
+            "range": "± 84",
             "unit": "ns/iter"
           }
         ]
