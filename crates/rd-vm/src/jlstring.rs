@@ -584,12 +584,14 @@ pub(crate) fn instance_intrinsic(
         }
         ("replaceAll", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") => {
             let (p, r) = (charseq(vm, &args[0])?, charseq(vm, &args[1])?);
-            let out = crate::jregex::replace(&compile(&p)?, &this, &r, true)?;
+            let cap = crate::jregex::output_cap(vm);
+            let out = crate::jregex::replace(&compile(&p)?, &this, &r, true, cap)?;
             new_str(vm, out)?
         }
         ("replaceFirst", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") => {
             let (p, r) = (charseq(vm, &args[0])?, charseq(vm, &args[1])?);
-            let out = crate::jregex::replace(&compile(&p)?, &this, &r, false)?;
+            let cap = crate::jregex::output_cap(vm);
+            let out = crate::jregex::replace(&compile(&p)?, &this, &r, false, cap)?;
             new_str(vm, out)?
         }
         ("matches", "(Ljava/lang/String;)Z") => {
@@ -1242,11 +1244,11 @@ mod tests {
     fn replacement_syntax() {
         let re = compile(r"(\d+)-(\d+)").unwrap();
         assert_eq!(
-            crate::jregex::replace(&re, "1-2", "$2:$1", true).unwrap(),
+            crate::jregex::replace(&re, "1-2", "$2:$1", true, usize::MAX).unwrap(),
             "2:1"
         );
         assert_eq!(
-            crate::jregex::replace(&re, "1-2", r"\$", true).unwrap(),
+            crate::jregex::replace(&re, "1-2", r"\$", true, usize::MAX).unwrap(),
             "$"
         );
     }

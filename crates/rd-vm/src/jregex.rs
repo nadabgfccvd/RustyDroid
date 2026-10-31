@@ -353,11 +353,9 @@ fn new_match_result(vm: &mut Engine, st: &MState) -> Result<Value, VmExit> {
 }
 
 /// Java replacement string (`$1`, `${name}`, `\$`) expanded for a match.
-fn expand(
-    re: &fancy_regex::Regex,
-    rep: &str,
-    caps: &fancy_regex::Captures<'_>,
-) -> Result<String, VmExit> {
+/// Expands `$n`, `${name}` and `\x` in `rep`. `texts[i]` is group `i` of the match,
+/// `None` when the group did not participate (#374).
+fn expand(re: &fancy_regex::Regex, rep: &str, texts: &[Option<&str>]) -> Result<String, VmExit> {
     let mut out = String::new();
     let mut it = rep.chars().peekable();
     while let Some(c) = it.next() {
@@ -402,7 +400,7 @@ fn expand(
                             format!("No group with name <{name}>"),
                         ));
                     };
-                    out.push_str(caps.get(idx).map(|m| m.as_str()).unwrap_or(""));
+                    out.push_str(texts.get(idx).copied().flatten().unwrap_or(""));
                 } else {
                     let mut num = String::new();
                     let total_groups = re.captures_len();
@@ -433,7 +431,7 @@ fn expand(
                             format!("No group {g}"),
                         ));
                     }
-                    out.push_str(caps.get(g).map(|m| m.as_str()).unwrap_or(""));
+                    out.push_str(texts.get(g).copied().flatten().unwrap_or(""));
                 }
             }
             c => out.push(c),
@@ -442,11 +440,32 @@ fn expand(
     Ok(out)
 }
 
+/// Largest host string `replace` may build with the heap budget that is left.
+/// Mirrors `check_string_budget` (2 bytes per char plus a 32-byte header) (#374).
+pub(crate) fn output_cap(vm: &Engine) -> usize {
+    vm.heap
+        .budget()
+        .saturating_sub(vm.heap.used())
+        .saturating_sub(32)
+        / 2
+}
+
+fn check_out_cap(len: usize, cap: usize) -> Result<(), VmExit> {
+    if len > cap {
+        return Err(exc(
+            "Ljava/lang/OutOfMemoryError;",
+            format!("alocação de {len} bytes excede o heap disponível"),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn replace(
     re: &fancy_regex::Regex,
     input: &str,
     rep: &str,
     all: bool,
+    cap: usize,
 ) -> Result<String, VmExit> {
     let mut out = String::new();
     let mut last = 0;
@@ -456,13 +475,18 @@ pub(crate) fn replace(
             continue;
         };
         out.push_str(&input[last..m.start()]);
-        out.push_str(&expand(re, rep, &caps)?);
+        let texts: Vec<Option<&str>> = (0..re.captures_len())
+            .map(|i| caps.get(i).map(|g| g.as_str()))
+            .collect();
+        out.push_str(&expand(re, rep, &texts)?);
         last = m.end();
+        check_out_cap(out.len(), cap)?;
         if !all {
             break;
         }
     }
     out.push_str(&input[last..]);
+    check_out_cap(out.len(), cap)?;
     Ok(out)
 }
 
@@ -510,6 +534,18 @@ pub fn static_intrinsic(
     name: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if class == MATCHER && name == "quoteReplacement" {
+        // Escapes '\\' and '$' so the text is literal in a replacement (#374).
+        let s = req_char_seq(vm, args.first(), "quoteReplacement(null)")?;
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            if c == '\\' || c == '$' {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        return Ok(Some(jstr(vm, out)?));
+    }
     if class != PATTERN {
         return Ok(None);
     }
@@ -753,7 +789,8 @@ pub fn instance_intrinsic(
         "hitEnd" => Value::Int(st.hit_end as i32),
         "replaceAll" | "replaceFirst" => {
             let rep = req_char_seq(vm, args.first(), "Matcher.replace(null)")?;
-            let r = replace(&re, &st.input, &rep, name == "replaceAll")?;
+            let cap = output_cap(vm);
+            let r = replace(&re, &st.input, &rep, name == "replaceAll", cap)?;
             st.next = 0;
             st.matched = false;
             jstr(vm, r)?
@@ -798,12 +835,15 @@ pub fn instance_intrinsic(
                     return Err(no_match());
                 }
                 let (s, e) = st.groups[0].unwrap_or((0, 0));
+                // Expand against the stored groups, not a new unanchored search:
+                // for `a|ab` the stored match is "ab" (#374).
                 let input = st.input.clone();
-                let caps = re
-                    .captures_from_pos(&input, s)
-                    .map_err(runtime_error)?
-                    .ok_or_else(no_match)?;
-                let t = format!("{}{}", &input[st.append..s], expand(&re, &rep, &caps)?);
+                let texts: Vec<Option<&str>> = st
+                    .groups
+                    .iter()
+                    .map(|g| g.map(|(a, b)| &input[a..b]))
+                    .collect();
+                let t = format!("{}{}", &input[st.append..s], expand(&re, &rep, &texts)?);
                 st.append = e;
                 t
             };
@@ -865,8 +905,14 @@ mod tests {
     #[test]
     fn replacement_groups() {
         let re = compile(r"(\d+)-(\d+)", 0).unwrap();
-        assert_eq!(replace(&re, "1-2 3-4", "$2:$1", true).unwrap(), "2:1 4:3");
-        assert_eq!(replace(&re, "1-2 3-4", r"\$", false).unwrap(), "$ 3-4");
+        assert_eq!(
+            replace(&re, "1-2 3-4", "$2:$1", true, usize::MAX).unwrap(),
+            "2:1 4:3"
+        );
+        assert_eq!(
+            replace(&re, "1-2 3-4", r"\$", false, usize::MAX).unwrap(),
+            "$ 3-4"
+        );
     }
     #[test]
     fn utf16_offsets() {
