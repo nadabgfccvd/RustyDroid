@@ -82,13 +82,41 @@ def dec(v):
         if "f" in v:
             return float(v["f"])
     return v
+# Guest SQL runs on a host Python process. Confine it to the in-memory database:
+# no ATTACH/DETACH (VACUUM INTO also needs ATTACH), no writable_schema, no extension
+# loading, and a per-statement VDBE step budget so a runaway recursive CTE cannot
+# hang the VM past its fuel (issue #321).
+STEP_BUDGET = 50000  # progress callbacks per statement; one callback per 1000 VDBE ops
+steps = [0]
+def _progress():
+    steps[0] += 1
+    return 1 if steps[0] > STEP_BUDGET else 0
+def _authorize(action, arg1, arg2, dbname, source):
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    if action == sqlite3.SQLITE_PRAGMA and str(arg1).lower() == "writable_schema":
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+def harden(db):
+    db.set_authorizer(_authorize)
+    db.set_progress_handler(_progress, 1000)
+    if hasattr(db, "enable_load_extension"):
+        db.enable_load_extension(False)
+    if hasattr(db, "setlimit") and hasattr(sqlite3, "SQLITE_LIMIT_ATTACHED"):
+        db.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
 def load_db(db, data):
     if not data:
         return
     if data.startswith(DUMP_PREFIX):
         db.executescript(data[len(DUMP_PREFIX):].decode())
     elif hasattr(db, "deserialize"):
-        db.deserialize(data)
+        # Host-owned snapshot (never guest SQL). sqlite3_deserialize itself trips
+        # the authorizer, so lift it for this one call and restore it right after.
+        db.set_authorizer(None)
+        try:
+            db.deserialize(data)
+        finally:
+            db.set_authorizer(_authorize)
     else:
         raise sqlite3.DatabaseError("sqlite3.deserialize is unavailable")
 def dump_db(db):
@@ -102,7 +130,9 @@ for line in sys.stdin:
         db = dbs.get(name)
         if db is None:
             db = sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
+            harden(db)
             dbs[name] = db
+        steps[0] = 0
         op = r["op"]
         if op == "close":
             db.close(); del dbs[name]; out = {}
