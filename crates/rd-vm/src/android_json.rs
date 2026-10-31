@@ -946,7 +946,12 @@ impl<'a> ReaderState<'a> {
                     }
                 }
                 Token::Name => {
+                    // AOSP: at depth 0 only the property name is skipped; its value
+                    // stays for the caller (#364).
                     self.take_peeked();
+                    if depth == 0 {
+                        return Ok(());
+                    }
                 }
                 Token::String | Token::Number | Token::Boolean | Token::Null => {
                     self.take_peeked();
