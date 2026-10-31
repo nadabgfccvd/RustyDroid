@@ -19,7 +19,7 @@
 //!   `TypedArray.getValue` reports an int as a color type when the attribute
 //!   name contains "color" or "tint".
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use rd_apk::axml::{AttrValue, XmlAttribute, XmlElement};
@@ -57,11 +57,43 @@ struct ParserState {
 thread_local! {
     static PARSERS: RefCell<HashMap<ObjRef, ParserState>> = RefCell::new(HashMap::new());
     static ARRAYS: RefCell<HashMap<ObjRef, Vec<Option<XmlAttribute>>>> = RefCell::new(HashMap::new());
+    /// Bytes de host (estimativa) retidos por `PARSERS`. Ficam fora de
+    /// `heap.used()`, então são cobrados contra `heap_budget` na abertura (#370).
+    static PARSER_HOST_BYTES: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Estimativa dos bytes de host de um parser: caminho, eventos, nomes, textos e atributos.
+fn parser_host_cost(file: &str, events: &[Ev]) -> usize {
+    events.iter().fold(
+        file.len() + std::mem::size_of::<ParserState>(),
+        |acc, ev| {
+            let payload = match ev {
+                Ev::Start { name, attrs, .. } => {
+                    name.len() + attrs.len() * std::mem::size_of::<XmlAttribute>()
+                }
+                Ev::Text(s, _) => s.len(),
+                Ev::End { name, .. } => name.len(),
+            };
+            acc + std::mem::size_of::<Ev>() + payload
+        },
+    )
+}
+
+fn parser_host_release(cost: usize) {
+    PARSER_HOST_BYTES.with(|b| b.set(b.get().saturating_sub(cost)));
 }
 
 /// GC: drop state of collected objects (slots are reused).
 pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    PARSERS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
+    PARSERS.with(|m| {
+        m.borrow_mut().retain(|k, v| {
+            if alive(*k) {
+                return true;
+            }
+            parser_host_release(parser_host_cost(&v.file, &v.events));
+            false
+        })
+    });
     ARRAYS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
 }
 
@@ -69,6 +101,7 @@ pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
 /// `ObjRef`s de um heap morto não podem vazar para o próximo `Engine`.
 pub(crate) fn reset_all() {
     PARSERS.with(|m| m.borrow_mut().clear());
+    PARSER_HOST_BYTES.with(|b| b.set(0));
     ARRAYS.with(|m| m.borrow_mut().clear());
 }
 
@@ -170,11 +203,24 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
     })?;
     let mut events = Vec::new();
     flatten(&doc.root, 1, &mut events);
+    // #370: a árvore vive no host com pouco custo no heap guest; cobra-se o
+    // total retido contra o orçamento antes de guardar o parser.
+    let cost = parser_host_cost(&path, &events);
+    let held = PARSER_HOST_BYTES.with(|b| b.get());
+    if vm.heap.used().saturating_add(held).saturating_add(cost) > vm.heap.budget() {
+        return Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/OutOfMemoryError;",
+            format!(
+                "XML parser for {path} needs {cost} host bytes; heap_budget is {}",
+                vm.heap.budget()
+            ),
+        )));
+    }
     let r = vm
         .heap
         .alloc_instance(PARSER.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
-    PARSERS.with(|p| {
+    let old = PARSERS.with(|p| {
         p.borrow_mut().insert(
             r,
             ParserState {
@@ -184,6 +230,10 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
             },
         )
     });
+    if let Some(old) = old {
+        parser_host_release(parser_host_cost(&old.file, &old.events));
+    }
+    PARSER_HOST_BYTES.with(|b| b.set(b.get().saturating_add(cost)));
     Ok(Value::Obj(r))
 }
 
