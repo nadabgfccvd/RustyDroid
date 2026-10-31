@@ -275,14 +275,24 @@ pub fn instance_intrinsic(
             Value::Obj(recv)
         }
         "appendCodePoint" => {
-            let c = char::from_u32(int(args, 0) as u32).ok_or_else(|| {
-                VmExit::Exception(Throwable::new(
+            // Como a JDK: qualquer valor em 0..=0x10FFFF é aceito. Um surrogate
+            // isolado (0xD800..=0xDFFF) é anexado como uma unidade UTF-16; só
+            // valores fora do intervalo lançam IllegalArgumentException.
+            let cp = int(args, 0);
+            if !(0..=0x10FFFF).contains(&cp) {
+                return Err(VmExit::Exception(Throwable::new(
                     "Ljava/lang/IllegalArgumentException;",
-                    "Not a valid Unicode code point",
-                ))
-            })?;
-            let mut b = [0u16; 2];
-            u.extend_from_slice(c.encode_utf16(&mut b));
+                    format!("Not a valid Unicode code point: 0x{:X}", cp as u32),
+                )));
+            }
+            let cp = cp as u32;
+            if cp < 0x10000 {
+                u.push(cp as u16);
+            } else {
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                let mut b = [0u16; 2];
+                u.extend_from_slice(c.encode_utf16(&mut b));
+            }
             set(vm, recv, &u)?;
             Value::Obj(recv)
         }
@@ -397,8 +407,20 @@ pub fn instance_intrinsic(
             if i < 0 || i as usize >= len {
                 return Err(sioobe(format!("index {i},length {len}")));
             }
-            let s = String::from_utf16_lossy(&u[i as usize..]);
-            Value::Int(s.chars().next().map(|c| c as i32).unwrap_or(0))
+            // Como a JDK: par válido vira o code point; surrogate isolado vira o
+            // próprio valor da unidade (não U+FFFD).
+            let i = i as usize;
+            let hi = u[i] as u32;
+            let cp = match u.get(i + 1) {
+                Some(&lo)
+                    if (0xD800..0xDC00).contains(&hi)
+                        && (0xDC00..0xE000).contains(&(lo as u32)) =>
+                {
+                    ((hi - 0xD800) << 10) + (lo as u32 - 0xDC00) + 0x10000
+                }
+                _ => hi,
+            };
+            Value::Int(cp as i32)
         }
         "indexOf" | "lastIndexOf" => {
             let needle = required_text(vm, args.first())?;
