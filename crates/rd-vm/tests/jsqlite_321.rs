@@ -86,3 +86,34 @@ fn runaway_recursive_cte_is_interrupted_and_vm_stays_usable() {
     );
     exec(&mut vm, db, "CREATE TABLE ok(a)").expect("normal SQL still works after interrupt");
 }
+
+/// Issue #321 bug 2: a single value above the 16 MiB SQLITE_LIMIT_LENGTH is refused
+/// inside SQLite, before the host encodes it into a JSON line. The default limit
+/// (1e9 bytes) allowed `zeroblob(1000000000)` to reach the host pipe.
+#[test]
+fn oversized_blob_result_is_refused_by_length_limit() {
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    let q = jstr(&mut vm, "SELECT length(zeroblob(20000000))");
+    let res = vm.invoke_instance(
+        db,
+        "rawQuery",
+        "(Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+        &[q, Value::Null],
+    );
+    assert!(res.is_err(), "a 20 MB blob must exceed the value limit");
+}
+
+#[test]
+fn small_blob_result_still_works() {
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    let q = jstr(&mut vm, "SELECT length(zeroblob(4096))");
+    let res = vm.invoke_instance(
+        db,
+        "rawQuery",
+        "(Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+        &[q, Value::Null],
+    );
+    assert!(res.is_ok(), "a 4 KiB blob must keep working: {res:?}");
+}

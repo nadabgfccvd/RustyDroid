@@ -87,6 +87,7 @@ def dec(v):
 # loading, and a per-statement VDBE step budget so a runaway recursive CTE cannot
 # hang the VM past its fuel (issue #321).
 STEP_BUDGET = 50000  # progress callbacks per statement; one callback per 1000 VDBE ops
+VALUE_LIMIT = 16 * 1024 * 1024  # max bytes of one string/blob value
 steps = [0]
 def _progress():
     steps[0] += 1
@@ -104,6 +105,11 @@ def harden(db):
         db.enable_load_extension(False)
     if hasattr(db, "setlimit") and hasattr(sqlite3, "SQLITE_LIMIT_ATTACHED"):
         db.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
+    # The default LENGTH limit is 1e9 bytes: zeroblob(1000000000) would be encoded
+    # to a multi-GiB JSON line outside heap_budget (issue #321 bug 2). 16 MiB caps
+    # one value's size.
+    if hasattr(db, "setlimit") and hasattr(sqlite3, "SQLITE_LIMIT_LENGTH"):
+        db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, VALUE_LIMIT)
 def load_db(db, data):
     if not data:
         return
