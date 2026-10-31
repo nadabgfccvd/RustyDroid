@@ -87,14 +87,16 @@ fn alloc_array_resized(
     new_len: usize,
     prefix: &[Value],
 ) -> Result<Value, VmExit> {
-    let elem_class = if k == ElemKind::Obj {
-        desc.strip_prefix('[').unwrap_or(desc).to_string()
-    } else {
+    // `desc` is the array class. Keep it whole: stripping one '[' turned `[[I`
+    // into `[I` (#379). A bare element name (from a Class object) gets one '['.
+    let array_desc = if desc.starts_with('[') {
         desc.to_string()
+    } else {
+        format!("[{desc}")
     };
     let r = vm
         .heap
-        .alloc_array(k, new_len, &elem_class)
+        .alloc_array_exact(k, new_len, &array_desc)
         .map_err(crate::err::oom_throwable)?;
     let copy_len = prefix.len().min(new_len);
     let fill = default_of(k);
