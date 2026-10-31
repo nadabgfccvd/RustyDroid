@@ -117,3 +117,34 @@ fn small_blob_result_still_works() {
     );
     assert!(res.is_ok(), "a 4 KiB blob must keep working: {res:?}");
 }
+
+/// Issue #321 bug 2: a SELECT whose rows exceed the per-statement result budget
+/// is refused with a catchable SQLiteException, and the VM stays usable.
+#[test]
+fn oversized_result_set_is_refused_by_statement_budget() {
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    // 20 000 rows x 1000 bytes = 20 MB, above the 16 MiB per-statement budget.
+    let big = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 20000) \
+               SELECT zeroblob(1000) FROM c";
+    let q = jstr(&mut vm, big);
+    let res = vm.invoke_instance(
+        db,
+        "rawQuery",
+        "(Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+        &[q, Value::Null],
+    );
+    assert!(res.is_err(), "a 20 MB result set must exceed the budget");
+    // A small result still works afterwards.
+    let small = jstr(&mut vm, "SELECT 1");
+    let ok = vm.invoke_instance(
+        db,
+        "rawQuery",
+        "(Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+        &[small, Value::Null],
+    );
+    assert!(
+        ok.is_ok(),
+        "the VM must stay usable after the refusal: {ok:?}"
+    );
+}
