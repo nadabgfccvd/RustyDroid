@@ -67,6 +67,27 @@ const PY: &str = r#"
 import sys, json, sqlite3, base64, math
 dbs = {}
 DUMP_PREFIX = b"-- RustyDroid SQLite dump\n"
+# Per-statement result budget (issue #321 bug 2). The rows of a SELECT are kept
+# in the host, outside heap_budget, and the JSON line carries every value, so the
+# total is bounded here, row by row, before the host copies the rest.
+RESULT_ROWS = 100000
+RESULT_BYTES = 16 * 1024 * 1024
+def _sized(v):
+    if isinstance(v, (str, bytes, bytearray, memoryview)):
+        return len(v) + 8
+    return 8
+def fetch_rows(cur):
+    rows = []
+    total = 0
+    while True:
+        chunk = cur.fetchmany(256)
+        if not chunk:
+            return rows
+        for row in chunk:
+            total += sum(_sized(v) for v in row) + 16
+            if len(rows) >= RESULT_ROWS or total > RESULT_BYTES:
+                raise sqlite3.DataError("result set exceeds the statement budget")
+            rows.append([enc(v) for v in row])
 def enc(v):
     if isinstance(v, (bytes, bytearray, memoryview)):
         return {"b": base64.b64encode(bytes(v)).decode()}
@@ -149,7 +170,7 @@ for line in sys.stdin:
         else:
             cur = db.execute(r["sql"], [dec(a) for a in r.get("args", [])])
             cols = [d[0] for d in cur.description] if cur.description else []
-            rows = [[enc(v) for v in row] for row in cur.fetchall()] if cur.description else []
+            rows = fetch_rows(cur) if cur.description else []
             ch, last = db.execute("select changes(), last_insert_rowid()").fetchone()
             out = {"cols": cols, "rows": rows, "changes": ch, "last": last}
     except sqlite3.IntegrityError as e:
