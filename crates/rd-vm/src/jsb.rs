@@ -75,6 +75,19 @@ fn int(args: &[Value], i: usize) -> i32 {
     args.get(i).and_then(|v| v.as_int().ok()).unwrap_or(0)
 }
 
+/// Text argument that must not be null (`replace`, `indexOf`, `lastIndexOf`,
+/// `compareTo`): the JDK throws `NullPointerException`. `append`/`insert` keep
+/// `text_of`, where `null` means "null" (#376).
+fn required_text(vm: &mut Engine, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
+    match v {
+        None | Some(Value::Null) => Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/NullPointerException;",
+            "argument is null".to_string(),
+        ))),
+        _ => text_of(vm, v),
+    }
+}
+
 fn text_of(vm: &mut Engine, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
     Ok(match v {
         Some(Value::Obj(r)) => {
@@ -324,7 +337,7 @@ pub fn instance_intrinsic(
             if start < 0 || start as usize > len || start > end {
                 return Err(sioobe(format!("start {start}, end {end}, length {len}")));
             }
-            let add = text_of(vm, args.get(2))?;
+            let add = required_text(vm, args.get(2))?;
             u.splice(start as usize..end as usize, add);
             set(vm, recv, &u)?;
             Value::Obj(recv)
@@ -388,7 +401,7 @@ pub fn instance_intrinsic(
             Value::Int(s.chars().next().map(|c| c as i32).unwrap_or(0))
         }
         "indexOf" | "lastIndexOf" => {
-            let needle = text_of(vm, args.first())?;
+            let needle = required_text(vm, args.first())?;
             if name == "indexOf" {
                 Value::Int(find(
                     &u,
@@ -454,7 +467,7 @@ pub fn instance_intrinsic(
             String::from_utf16_lossy(&u),
         )?),
         "compareTo" => {
-            let other = text_of(vm, args.first())?;
+            let other = required_text(vm, args.first())?;
             Value::Int(match u.cmp(&other) {
                 std::cmp::Ordering::Less => -1,
                 std::cmp::Ordering::Equal => 0,
