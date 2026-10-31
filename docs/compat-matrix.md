@@ -8,10 +8,10 @@
 | Fase | Entrega | Status |
 |---|---|---|
 | M0 | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | **✅ implementado** |
-| M1 | rd-dex 100% + disassembler | **✅ implementado** |
+| M1 | rd-dex 100% + disassembler | ⚠️ **parcial** |
 | M2 | VM Dalvik mínima | **✅ implementado** |
 | M3 | Framework essencial | **✅ implementado** |
-| M4 | Render+dump | **✅ implementado** |
+| M4 | Render+dump | ⚠️ **parcial** |
 | M5 | Agente MCP v1 (30 tools + controles) | **✅ implementado** |
 | M6 | Executor de testes | **✅ implementado** |
 | M7 | Performance + gate piso E5 | ⬜ |

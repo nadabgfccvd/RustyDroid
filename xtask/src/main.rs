@@ -240,6 +240,8 @@ fn compat_report(root: &Path, out: &Path) -> Result<()> {
     for ph in &phases {
         let status = if ph.done {
             "**✅ implementado**"
+        } else if ph.partial {
+            "⚠️ **parcial**"
         } else {
             "⬜"
         };
@@ -469,6 +471,8 @@ struct PhaseRow {
     id: String,
     entrega: String,
     done: bool,
+    /// ⚠️ parcial: código presente, DoD incompleto (ver docs/ROADMAP.md, regra de status).
+    partial: bool,
 }
 
 /// Lê a tabela `| Fase | Entrega central | DoD | Status |` do ROADMAP.
@@ -501,6 +505,7 @@ fn parse_roadmap_phases(text: &str) -> Result<Vec<PhaseRow>> {
             id: id.to_string(),
             entrega: cells[1].to_string(),
             done: cells[cells.len() - 1].contains('✅'),
+            partial: cells[cells.len() - 1].contains('⚠'),
         });
     }
     if rows.is_empty() {
@@ -607,15 +612,17 @@ mod tests {
 
     #[test]
     fn roadmap_parser_only_takes_the_status_table() {
-        let sample = "| Fase | X | Y | Status |\n|---|---|---|---|\n| **M1** | a | b | ✅ |\n| **M2** | c | d | ⬜ |\n\nfora | M9 | x | ✅ |\n| M8 | depois | da | ✅ |\n";
+        let sample = "| Fase | X | Y | Status |\n|---|---|---|---|\n| **M1** | a | b | ✅ |\n| **M2** | c | d | ⬜ |\n| **M3** | e | f | ⚠️ parcial |\n\nfora | M9 | x | ✅ |\n| M8 | depois | da | ✅ |\n";
         let rows = parse_roadmap_phases(sample).unwrap();
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
+        assert!(rows[2].partial && !rows[2].done);
         assert_eq!(
             rows[0],
             PhaseRow {
                 id: "M1".into(),
                 entrega: "a".into(),
-                done: true
+                done: true,
+                partial: false
             }
         );
         assert!(!rows[1].done);

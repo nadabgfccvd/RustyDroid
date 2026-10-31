@@ -5,14 +5,16 @@
 
 ## Status atual
 
+**Regra de status:** "concluído" só quando o DoD é reproduzível a partir do repositório e executado no CI ou em uma campanha documentada. Código presente, benchmark local não repetível ou uma nota no worklog não bastam, isoladamente. Fase com código presente mas DoD incompleto = ⚠️ **parcial**, com a lacuna explícita.
+
 | Fase | Entrega central | DoD (done quando…) | Status |
 |---|---|---|---|
 | **M0** | Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões | inspect de APK real imprime componentes/permissões/features completos; CI verde | ✅ **implementado (2026-10)** |
-| M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ✅ |
+| M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⚠️ **parcial** — fuzz 24 h nunca executado; comparador não versionado |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | screenshot correto; get_ui_tree com ids certos | ✅ |
-| M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ |
+| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — dump/screenshot ativos; sem `tiny-skia` nem shaping (ADR 019); sem golden de referência Android |
+| M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (provas e2e usam APK sintético, não APK real do corpus) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ✅ **implementado (2026-10)** |
 | M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial (2026-10)** — `rd perf` + gate de CI no app trivial (estimativa); golden pendente |
 | M8 | Compat real | app OSS médio navega funcional; v0.9 | ✅ **implementado (2026-10)** |
@@ -71,7 +73,9 @@ crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).
 - **CI**: fmt + clippy `-D warnings` + test + MSRV 1.76 + smoke do binário.
 - **Fixture GH-05**: `golden-apks/fetch.sh` baixa APKs OSS (nunca commitados).
 
-## ✅ M1 concluído — rd-dex (2026-10)
+## ⚠️ M1 parcial — rd-dex (2026-10)
+
+> **Auditoria (2026-10):** o DoD do M1 exige fuzz 24 h sem crash e comparação versionada com baksmali. A campanha de 24 h nunca foi executada e o comparador não está versionado. Até lá, M1 é ⚠️ parcial.
 
 1. ✅ Parser DEX 100% (header, maps, strings MUTF-8, types, protos, fields,
    methods, classes, code items, debug info, annotations, call sites,
@@ -158,7 +162,10 @@ crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).
 Na sequência do M3 (M4): render + UI dump rico (`get_ui_tree` com ids
 certos); configs específicas (land/locale/density) selecionáveis.
 
-## ✅ M4 concluído (2026-10) — rd-render real
+## ⚠️ M4 parcial (2026-10) — rd-render
+
+> **Auditoria (ver ADR 019):** o DoD diz "tiny-skia desenha" e a spec fixa `tiny-skia` + `rustybuzz`. Nenhum dos dois está nas dependências; o texto usa um atlas DejaVu Sans pré-rasterizado (32 px), sem shaping nem bidi. Não há ADR aprovado que substitua a decisão, e não há golden de referência Android.
+
 
 1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
    (class/resource-id `package:id/nome`/text/bounds/visibility/enabled/
@@ -167,8 +174,8 @@ certos); configs específicas (land/locale/density) selecionáveis.
 2. ✅ **Screenshot correto**: software renderer determinístico (framebuffer
    RGB 720×1440) + painter por classe/estado (contêiner/texto/botão/borda de
    clickable; INVISIBLE não pinta a subárvore) + encoder PNG sem
-   dependências (zlib STORED + crc32/adler32 próprios). Texto com glifos de
-   bloco 3×7 (fonte tipográfica real: M8/M9 — o Android real usa skia).
+   dependências (zlib STORED + crc32/adler32 próprios). Texto com atlas
+   DejaVu Sans pré-rasterizado (32 px, `scripts/gen_glyph_atlas.py`), sem shaping nem bidi (shaping real: ADR 019; o Android real usa skia).
 3. ✅ **CLI**: `rd app dump <apk>` (uiautomator XML | `--text` | `--json`) e
    `rd app shot <apk> --out FILE.png`; ações de script `xml` e `shot FILE`.
 4. ✅ Testes e2e contra fixture real: ids/bounds/clickable/text na árvore;

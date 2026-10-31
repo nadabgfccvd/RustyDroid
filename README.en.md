@@ -40,8 +40,8 @@ for Android") built from day one for headless automation and AI agents:
   isolated Unicorn subprocess worker ([`docs/m9.md`](./docs/m9.md),
   [`docs/native-languages.md`](./docs/native-languages.md)) — guest native code
   never runs directly on the host CPU.
-- **Deterministic Software Rendering (`rd-render`):** Headless `tiny-skia`
-  rasterizer + reproducible PNG output + structured `uiautomator`-compatible UI
+- **Deterministic Software Rendering (`rd-render`):** Headless software
+  rasterizer (own, pre-rendered DejaVu Sans atlas, no shaping; `tiny-skia` is the spec target, see [ADR 019](docs/adr/019-renderer-tiny-skia-pendente.md)) + reproducible PNG output + structured `uiautomator`-compatible UI
   trees.
 - **AI-Agent Control Plane (`rd-agent`):** Zero-dependency JSON-RPC 2.0 MCP
   server (`rd mcp`) exposing **47 structured tools**, subscribable
@@ -102,7 +102,7 @@ cargo build --release -p rd-cli
 | `crates/rd-vm` | Dalvik VM, generational GC, Android/`androidx`/M8/M9/M10 host surfaces |
 | `crates/rd-jni` | Narrow JNI descriptors and optional Cranelift JIT compilation (`jit` feature) |
 | `crates/rd-ndk` | ELF32/64 loader + isolated Unicorn subprocess bridge (`native` feature) |
-| `crates/rd-render` | Headless `tiny-skia` software renderer & deterministic PNG encoder |
+| `crates/rd-render` | Headless software renderer (own rasterizer; `tiny-skia` is the spec target, see [ADR 019](docs/adr/019-renderer-tiny-skia-pendente.md)) & deterministic PNG encoder |
 | `crates/rd-engine-registry` | Appendix G 28-engine catalog, signature detector, and feature-gated contracts |
 | `crates/rd-agent` | 47-tool JSON-RPC 2.0 MCP server, `observe`, screen resources, `--live` viewer |
 | `crates/rd-cli` | `rd` command-line binary (`inspect`, `dex`, `vm`, `app`, `mcp`, `test`, `perf`, `device`, `engine`, `jetpack`, `gms`) |
