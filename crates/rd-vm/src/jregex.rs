@@ -314,11 +314,23 @@ fn new_pattern(vm: &mut Engine, src: String, flags: i32) -> Result<Value, VmExit
     Ok(Value::Obj(r))
 }
 
+/// Cópia do `input` no heap guest (campo `input`), para que cada `Matcher`
+/// ou `MatchResult` pague pelo texto que guarda no host (#374 item 2b). O GC
+/// libera a cópia junto com o objeto dono.
+fn mirror_input(vm: &mut Engine, r: ObjRef, input: &str) -> Result<(), VmExit> {
+    let mirror = vm
+        .heap
+        .alloc_string(input.to_string())
+        .map_err(crate::err::oom_throwable)?;
+    crate::err::put_field_result(vm.heap.put_field(r, "input", Value::Obj(mirror)))
+}
+
 fn new_matcher(vm: &mut Engine, pattern: ObjRef, input: String) -> Result<Value, VmExit> {
     let r = vm
         .heap
         .alloc_instance(MATCHER.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
+    mirror_input(vm, r, &input)?;
     MATCHERS.with(|m| {
         m.borrow_mut().insert(
             r,
@@ -337,6 +349,7 @@ fn new_match_result(vm: &mut Engine, st: &MState) -> Result<Value, VmExit> {
         .heap
         .alloc_instance(MATCH_RESULT.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
+    mirror_input(vm, r, &st.input)?;
     let snap = MState {
         pattern: st.pattern,
         input: st.input.clone(),
