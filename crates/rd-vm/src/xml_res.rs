@@ -358,6 +358,11 @@ fn as_i32(vm: &Engine, v: &AttrValue) -> Option<i32> {
             let t = s.trim();
             if let Some(h) = t.strip_prefix('#') {
                 // #RGB / #ARGB expand each nibble (#f00 == #ff0000), #RRGGBB / #AARRGGBB as-is.
+                // Android aceita só #RGB, #ARGB, #RRGGBB e #AARRGGBB, todos hex
+                // (#370 item 3). `from_str_radix` aceitaria um `+` inicial.
+                if !matches!(h.len(), 3 | 4 | 6 | 8) || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return None;
+                }
                 let expanded: String = match h.len() {
                     3 | 4 => h.chars().flat_map(|c| [c, c]).collect(),
                     _ => h.to_string(),
@@ -844,5 +849,31 @@ mod tests {
         assert_eq!(color("#8f00"), Some(0x88FF_0000u32 as i32));
         assert_eq!(color("#ff0000"), Some(0xFFFF_0000u32 as i32));
         assert_eq!(color("#80ff0000"), Some(0x80FF_0000u32 as i32));
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::*;
+
+    fn color(text: &str) -> Option<i32> {
+        let vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        as_i32(&vm, &AttrValue::String(text.to_string()))
+    }
+
+    #[test]
+    fn issue_370_shorthand_colors_expand_each_nibble() {
+        assert_eq!(color("#fff"), Some(0xFFFF_FFFFu32 as i32));
+        assert_eq!(color("#f00"), Some(0xFFFF_0000u32 as i32));
+        assert_eq!(color("#f08c"), Some(0xFF00_88CCu32 as i32));
+        assert_eq!(color("#ff0000"), Some(0xFFFF_0000u32 as i32));
+        assert_eq!(color("#80ff0000"), Some(0x80FF_0000u32 as i32));
+    }
+
+    #[test]
+    fn issue_370_invalid_color_lengths_and_signs_are_rejected() {
+        for bad in ["#1", "#12", "#12345", "#1234567", "#+12", "#+12345", "#zzz"] {
+            assert_eq!(color(bad), None, "{bad} must not parse as a color");
+        }
     }
 }
