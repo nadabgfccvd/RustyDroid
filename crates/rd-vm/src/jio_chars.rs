@@ -75,6 +75,8 @@ struct WState {
     text: Vec<u16>,
     autoflush: bool,
     closed: bool,
+    /// Erro sinalizado para `checkError()` (JDK: PrintWriter/PrintStream não lançam, #366).
+    error: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -273,6 +275,17 @@ fn slice<T: Clone>(all: &[T], off: i32, len: i32) -> Result<Vec<T>, VmExit> {
     Ok(all[uoff..uoff + ulen].to_vec())
 }
 
+/// `ByteArrayInputStream(buf, off, len)` na JDK: `count = min(off + len, buf.length)`,
+/// sem exceção por estouro (#366). Offsets negativos continuam IOOBE.
+fn clamp_slice<T: Clone>(all: &[T], off: i32, len: i32) -> Result<Vec<T>, VmExit> {
+    if off < 0 || len < 0 {
+        return slice(all, off, len);
+    }
+    let start = (off as usize).min(all.len());
+    let end = (off as usize).saturating_add(len as usize).min(all.len());
+    Ok(all[start..end].to_vec())
+}
+
 /// Value printed by `print(x)` for the parameter type in `sig`, as UTF-16 units
 /// so surrogate `char` arguments survive paired `print(char)` calls.
 fn print_units(vm: &mut Engine, sig: &str, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
@@ -361,7 +374,10 @@ fn write_units(recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
         return Ok(());
     };
     if st.closed {
-        return Err(exc("Ljava/io/IOException;", "Stream closed"));
+        // JDK: escrita após close() não lança; vira checkError() (#366).
+        st.error = true;
+        wput(recv, st);
+        return Ok(());
     }
     match st.sink {
         Sink::Buffer => st.text.extend_from_slice(units),
@@ -473,6 +489,7 @@ fn writer(
                 text: Vec::new(),
                 autoflush,
                 closed: false,
+                error: false,
             },
         );
         return Ok(Some(Value::Null));
@@ -603,7 +620,7 @@ fn writer(
         }
         "checkError" => {
             flush_writer(vm, recv, false, false)?;
-            Value::Int(0)
+            Value::Int(wget(recv).is_some_and(|w| w.error) as i32)
         }
         "toString" if class == SW => {
             let t = wget(recv)
@@ -1007,10 +1024,16 @@ fn bytes_stream(
     let get = || BYTES_ST.with(|m| m.borrow().get(&recv).cloned());
     let set = |st: BState| BYTES_ST.with(|m| m.borrow_mut().insert(recv, st));
     if name == "<init>" {
+        if class == BAOS && args.len() == 1 && int(args, 0) < 0 {
+            return Err(exc(
+                "Ljava/lang/IllegalArgumentException;",
+                format!("Negative initial size: {}", int(args, 0)),
+            ));
+        }
         let st = if class == BAIS {
             let all = require_byte_array(vm, args.first())?;
             let bytes = if args.len() == 3 {
-                slice(&all, int(args, 1), int(args, 2))?
+                clamp_slice(&all, int(args, 1), int(args, 2))?
             } else {
                 all
             };
