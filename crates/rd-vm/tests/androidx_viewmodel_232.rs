@@ -97,7 +97,7 @@ fn bytecode_getTag_on_dex_viewmodel_subclass_resolves_to_host_shim() {
         .invoke_static(
             "LVMCaller;",
             "probe",
-            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            "(LVMProbe;)Ljava/lang/Object;",
             &[Value::Obj(probe)],
         )
         .expect("bytecode invoke-virtual getTag must not be UNRESOLVED_METHOD");
