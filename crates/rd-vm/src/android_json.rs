@@ -734,7 +734,8 @@ impl<'a> ReaderState<'a> {
             if ch == quote {
                 return Ok(String::from_utf16_lossy(&units));
             }
-            if ch == '\n' {
+            // Newline literal só é erro no modo estrito (#364).
+            if ch == '\n' && !self.lenient {
                 return Err(self.malformed("Unterminated string"));
             }
             if ch == '\\' {
@@ -1788,17 +1789,17 @@ fn json_writer(
                 WriterOut::Null
             }
             ("setLenient", "(Z)V") => {
-                state.lenient = matches!(args.first(), Some(Value::Int(1)));
+                state.lenient = matches!(args.first(), Some(Value::Int(v)) if *v != 0);
                 WriterOut::Null
             }
             ("isLenient", "()Z") => WriterOut::Bool(state.lenient),
             ("setHtmlSafe", "(Z)V") => {
-                state.html_safe = matches!(args.first(), Some(Value::Int(1)));
+                state.html_safe = matches!(args.first(), Some(Value::Int(v)) if *v != 0);
                 WriterOut::Null
             }
             ("isHtmlSafe", "()Z") => WriterOut::Bool(state.html_safe),
             ("setSerializeNulls", "(Z)V") => {
-                state.serialize_nulls = matches!(args.first(), Some(Value::Int(1)));
+                state.serialize_nulls = matches!(args.first(), Some(Value::Int(v)) if *v != 0);
                 WriterOut::Null
             }
             ("getSerializeNulls", "()Z") => WriterOut::Bool(state.serialize_nulls),
@@ -1833,7 +1834,7 @@ fn json_writer(
                 WriterOut::This
             }
             ("value", "(Z)Landroid/util/JsonWriter;") => {
-                let value = matches!(args.first(), Some(Value::Int(1)));
+                let value = matches!(args.first(), Some(Value::Int(v)) if *v != 0);
                 state.raw_value(if value { "true" } else { "false" })?;
                 WriterOut::This
             }
