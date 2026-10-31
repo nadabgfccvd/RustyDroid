@@ -554,7 +554,15 @@ fn file_provider_uri(vm: &mut Engine, args: &[Value]) -> Result<Value, VmExit> {
     let url = format!("content://{authority}/rustydroid/{clean}");
     let r = alloc(vm, "Landroid/net/Uri;")?;
     vm.fw.m8.uris.insert(r, url.clone());
-    vm.fw.androidx.file_provider_uris.push(url);
+    // Keep only the newest URIs: a loop over getUriForFile must not grow host RAM
+    // without limit (#367).
+    const MAX_FILE_PROVIDER_URIS: usize = 4096;
+    let uris = &mut vm.fw.androidx.file_provider_uris;
+    uris.push(url);
+    if uris.len() > MAX_FILE_PROVIDER_URIS {
+        let excess = uris.len() - MAX_FILE_PROVIDER_URIS;
+        uris.drain(..excess);
+    }
     Ok(Value::Obj(r))
 }
 
