@@ -1790,11 +1790,12 @@ fn resolve_or_run_host_invoke(
                     && !decl.starts_with("Landroid/")
                     && !decl.starts_with("Ljava/")
                 {
-                    // main devolve `InvokeTarget`; o PR chamava `vm.call` direto.
-                    // `slots` é o conjunto completo de registradores do invoke
-                    // (receiver + args), que é o que `call` espera.
-                    let v = vm.call(d2, def, &m, slots.to_vec())?;
-                    return Ok(InvokeTarget::Value(v));
+                    // Devolve `InvokeTarget::Dex`: `do_invoke` chama `vm.call` com os
+                    // registradores brutos (`raw`, com `WideHi` após long/double). `slots`
+                    // aqui são os argumentos lógicos, e passá-los a `call` quebra o frame
+                    // (`INVALID_FORMAT ... argumentos para ... registradores`) em APKs
+                    // reais com parâmetros long (ex.: logback `setTotalSizeCap(J)V`).
+                    return Ok(InvokeTarget::Dex(d2, def, m));
                 }
             }
         }
