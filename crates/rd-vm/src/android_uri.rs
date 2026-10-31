@@ -201,8 +201,38 @@ pub(crate) fn new_uri(vm: &mut Engine, s: String) -> Result<Value, VmExit> {
         .heap
         .alloc_instance(URI.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
-    vm.fw.m8.uris.insert(r, s);
+    remember_uri(vm, r, s)?;
     Ok(Value::Obj(r))
+}
+
+/// Registra o texto de um `Uri` já alocado. O texto também vive numa `String`
+/// do heap guest (campo `encoded`), então entra na conta do `heap_budget` e
+/// é liberado pelo GC junto com o `Uri` (#367). O mapa do host é só um
+/// índice; `gc_purge` o limpa para objetos mortos.
+pub(crate) fn remember_uri(vm: &mut Engine, r: ObjRef, s: String) -> Result<(), VmExit> {
+    let mirror = vm
+        .heap
+        .alloc_string(s.clone())
+        .map_err(crate::err::oom_throwable)?;
+    crate::err::put_field_result(vm.heap.put_field(r, "encoded", Value::Obj(mirror)))?;
+    vm.fw.m8.uris.insert(r, s);
+    Ok(())
+}
+
+/// Conta o texto atual de um `Uri$Builder` no heap guest, trocando a `String`
+/// anterior pela nova (só a diferença entra no orçamento). Sem isto, o builder
+/// guardava `String`s no host sem limite (#367).
+fn charge_builder(vm: &mut Engine, recv: ObjRef, s: String) -> Result<(), VmExit> {
+    match vm.heap.get_field(recv, "content") {
+        Ok(Value::Obj(m)) => vm
+            .heap
+            .initialize_string(m, s)
+            .map_err(crate::err::oom_throwable),
+        _ => {
+            let m = vm.heap.alloc_string(s).map_err(crate::err::oom_throwable)?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "content", Value::Obj(m)))
+        }
+    }
 }
 
 fn builder_from_parts(p: Parts) -> B {
@@ -677,6 +707,7 @@ fn builder(
         }
         _ => return Ok(None),
     };
+    charge_builder(vm, recv, build_string(&b))?;
     BUILDERS.with(|m| m.borrow_mut().insert(recv, b));
     Ok(Some(if ret_self { Value::Obj(recv) } else { out }))
 }

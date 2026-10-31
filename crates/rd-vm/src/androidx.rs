@@ -553,7 +553,7 @@ fn file_provider_uri(vm: &mut Engine, args: &[Value]) -> Result<Value, VmExit> {
     let clean = path.trim_start_matches('/');
     let url = format!("content://{authority}/rustydroid/{clean}");
     let r = alloc(vm, "Landroid/net/Uri;")?;
-    vm.fw.m8.uris.insert(r, url.clone());
+    crate::android_uri::remember_uri(vm, r, url.clone())?;
     // Keep only the newest URIs: a loop over getUriForFile must not grow host RAM
     // without limit (#367).
     const MAX_FILE_PROVIDER_URIS: usize = 4096;
