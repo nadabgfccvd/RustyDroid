@@ -1,0 +1,88 @@
+//! Regression tests for issue #321: guest SQL must stay inside the in-memory
+//! database. `ATTACH` / `VACUUM INTO` must not reach the host filesystem,
+//! `writable_schema` must be refused, and a runaway recursive CTE must be
+//! interrupted instead of hanging the VM.
+
+mod common;
+
+use common::*;
+use rd_vm::value::Value;
+use rd_vm::Engine;
+
+const SQL_DB: &str = "Landroid/database/sqlite/SQLiteDatabase;";
+
+fn jstr(vm: &mut Engine, s: &str) -> Value {
+    Value::Obj(vm.heap.alloc_string(s.to_string()).unwrap())
+}
+
+fn open_memory_db(vm: &mut Engine) -> u32 {
+    match vm
+        .invoke_static(
+            SQL_DB,
+            "create",
+            "(Landroid/database/sqlite/SQLiteDatabase$CursorFactory;)Landroid/database/sqlite/SQLiteDatabase;",
+            &[Value::Null],
+        )
+        .unwrap()
+    {
+        Value::Obj(r) => r,
+        other => panic!("expected SQLiteDatabase ObjRef, got {other:?}"),
+    }
+}
+
+fn exec(vm: &mut Engine, db: u32, sql: &str) -> Result<Value, String> {
+    let s = jstr(vm, sql);
+    vm.invoke_instance(db, "execSQL", "(Ljava/lang/String;)V", &[s])
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[test]
+fn attach_database_is_denied_and_creates_no_host_file() {
+    let path = std::env::temp_dir().join("rd_jsqlite_321_attach.db");
+    let _ = std::fs::remove_file(&path);
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    let sql = format!("ATTACH DATABASE '{}' AS ext", path.display());
+    assert!(exec(&mut vm, db, &sql).is_err(), "ATTACH must be refused");
+    assert!(!path.exists(), "ATTACH must not create a host file");
+}
+
+#[test]
+fn vacuum_into_host_path_is_denied() {
+    let path = std::env::temp_dir().join("rd_jsqlite_321_vacuum.db");
+    let _ = std::fs::remove_file(&path);
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    exec(&mut vm, db, "CREATE TABLE t(a)").unwrap();
+    exec(&mut vm, db, "INSERT INTO t VALUES (1)").unwrap();
+    let sql = format!("VACUUM INTO '{}'", path.display());
+    assert!(
+        exec(&mut vm, db, &sql).is_err(),
+        "VACUUM INTO must be refused"
+    );
+    assert!(!path.exists(), "VACUUM INTO must not write a host file");
+}
+
+#[test]
+fn writable_schema_pragma_is_denied() {
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    assert!(exec(&mut vm, db, "PRAGMA writable_schema=ON").is_err());
+}
+
+#[test]
+fn runaway_recursive_cte_is_interrupted_and_vm_stays_usable() {
+    let mut vm = engine_of(&DexBuilder::new());
+    let db = open_memory_db(&mut vm);
+    let started = std::time::Instant::now();
+    let runaway = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) SELECT x FROM c";
+    assert!(
+        exec(&mut vm, db, runaway).is_err(),
+        "runaway CTE must be interrupted"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(60),
+        "runaway CTE must not hang"
+    );
+    exec(&mut vm, db, "CREATE TABLE ok(a)").expect("normal SQL still works after interrupt");
+}
