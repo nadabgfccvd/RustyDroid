@@ -185,6 +185,47 @@ pub(crate) fn charset_name(vm: &mut Engine, v: Option<&Value>) -> Result<String,
     .to_ascii_uppercase())
 }
 
+/// Charsets that `encode`/`decode` implement. Other names are rejected by the
+/// `String` APIs instead of silently falling back to UTF-8 (#378).
+fn known_charset(cs: &str) -> bool {
+    matches!(
+        cs,
+        "UTF-8"
+            | "UTF8"
+            | "UTF_8"
+            | "ISO-8859-1"
+            | "LATIN1"
+            | "ISO8859_1"
+            | "US-ASCII"
+            | "ASCII"
+            | "UTF-16"
+            | "UTF_16"
+            | "UTF-16BE"
+            | "UTF_16BE"
+            | "X-UTF-16BE"
+            | "UNICODEBIGUNMARKED"
+            | "UTF-16LE"
+            | "UTF_16LE"
+            | "X-UTF-16LE"
+            | "UNICODELITTLEUNMARKED"
+    )
+}
+
+/// Charset argument of `String.getBytes` / `new String(...)`: an explicit `null`
+/// throws `NullPointerException`; an unknown charset name throws
+/// `UnsupportedEncodingException`. A missing argument keeps the default (#378).
+fn string_charset_name(vm: &mut Engine, v: Option<&Value>) -> Result<String, VmExit> {
+    if let Some(Value::Null) = v {
+        return Err(npe("charset is null"));
+    }
+    let name = charset_name(vm, v)?;
+    let is_java_string = matches!(v, Some(Value::Obj(r)) if vm.heap.as_str(*r).is_ok());
+    if is_java_string && !known_charset(&name) {
+        return Err(exc("Ljava/io/UnsupportedEncodingException;", name));
+    }
+    Ok(name)
+}
+
 pub(crate) fn encode(s: &str, cs: &str) -> Vec<u8> {
     match cs {
         "ISO-8859-1" | "LATIN1" | "ISO8859_1" => s
@@ -520,6 +561,16 @@ pub(crate) fn instance_intrinsic(
                 }
                 new_str(vm, out)?
             } else {
+                // Budget the result before building it (#378): the length is
+                // len - occ*|target| + occ*|replacement|.
+                let occ = this.matches(t.as_str()).count();
+                let removed = occ.checked_mul(t.len());
+                let added = occ.checked_mul(r.len());
+                let est = match (removed, added) {
+                    (Some(d), Some(a)) => this.len().saturating_sub(d).checked_add(a),
+                    _ => None,
+                };
+                check_string_budget(vm, est)?;
                 new_str(vm, this.replace(&t, &r))?
             }
         }
@@ -547,7 +598,7 @@ pub(crate) fn instance_intrinsic(
         }
         ("getBytes", "()[B") => byte_array(vm, this.as_bytes())?,
         ("getBytes", "(Ljava/lang/String;)[B") | ("getBytes", "(Ljava/nio/charset/Charset;)[B") => {
-            let cs = charset_name(vm, args.first())?;
+            let cs = string_charset_name(vm, args.first())?;
             byte_array(vm, &encode(&this, &cs))?
         }
         _ => return Ok(None),
@@ -567,7 +618,7 @@ fn string_ctor(
         }
         "([BLjava/lang/String;)V" | "([BLjava/nio/charset/Charset;)V" => {
             let b: Vec<u8> = int_elems(vm, &args[0])?.iter().map(|x| *x as u8).collect();
-            let cs = charset_name(vm, args.get(1))?;
+            let cs = string_charset_name(vm, args.get(1))?;
             decode(&b, &cs)
         }
         "([BII)V" | "([BIILjava/lang/String;)V" | "([BIILjava/nio/charset/Charset;)V" => {
@@ -585,7 +636,7 @@ fn string_ctor(
                 ));
             };
             let b: Vec<u8> = all[start..end].iter().map(|x| *x as u8).collect();
-            let cs = charset_name(vm, args.get(3))?;
+            let cs = string_charset_name(vm, args.get(3))?;
             decode(&b, &cs)
         }
         "([III)V" => {
@@ -660,7 +711,25 @@ pub(crate) fn static_intrinsic(
                 },
                 _ => return Err(npe("String.join(_, null)")),
             };
-            let mut parts = Vec::new();
+            // Budget the joined length before cloning any element (#378).
+            let mut total: Option<usize> = Some(0);
+            for e in &elems {
+                let len = match e {
+                    Value::Null => 4,
+                    Value::Obj(r) if vm.heap.as_str(*r).is_ok() => {
+                        vm.heap.as_str(*r).map(str::len).unwrap_or(0)
+                    }
+                    v => charseq(vm, v)?.len(),
+                };
+                total = total.and_then(|t| t.checked_add(len));
+            }
+            let seps = d.len().checked_mul(elems.len().saturating_sub(1));
+            let total = match (total, seps) {
+                (Some(a), Some(b)) => a.checked_add(b),
+                _ => None,
+            };
+            check_string_budget(vm, total)?;
+            let mut parts = Vec::with_capacity(elems.len());
             for e in elems {
                 parts.push(match e {
                     Value::Null => "null".to_string(),
@@ -904,10 +973,19 @@ pub(crate) fn java_format(
             }
             'h' | 'H' => {
                 let v = take()?;
-                let h = match &v {
-                    Value::Null => "null".to_string(),
-                    Value::Obj(r) => format!("{r:x}"),
-                    _ => "0".to_string(),
+                // %h / %H: Integer.toHexString(arg.hashCode()) (#378).
+                let hash: Option<i32> = match &v {
+                    Value::Null => None,
+                    Value::Int(i) => Some(*i),
+                    Value::Obj(r) => match vm.invoke_instance(*r, "hashCode", "()I", &[])? {
+                        Value::Int(x) => Some(x),
+                        _ => Some(0),
+                    },
+                    _ => Some(0),
+                };
+                let h = match hash {
+                    None => "null".to_string(),
+                    Some(x) => format!("{:x}", x as u32),
                 };
                 if conv == 'H' {
                     h.to_uppercase()
