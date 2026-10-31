@@ -39,19 +39,37 @@ fn sioobe(msg: String) -> VmExit {
 }
 
 fn get(vm: &Engine, r: ObjRef) -> Vec<u16> {
-    match vm.heap.get_field(r, "buf") {
+    let mut u: Vec<u16> = match vm.heap.get_field(r, "buf") {
         Ok(Value::Obj(s)) => vm
             .heap
             .as_str(s)
             .map(|s| s.encode_utf16().collect())
             .unwrap_or_default(),
         _ => Vec::new(),
+    };
+    // A trailing high surrogate cannot live in the UTF-8 `buf`; it is kept in
+    // the `pend` field until its low surrogate arrives (#376).
+    if let Ok(Value::Int(h)) = vm.heap.get_field(r, "pend") {
+        if h != 0 {
+            u.push(h as u16);
+        }
+    }
+    u
+}
+/// Splits a trailing high surrogate off the units: `(text_part, pending_unit)`.
+/// `pending_unit` is 0 when there is none (#376).
+fn split_pending(u: &[u16]) -> (&[u16], i32) {
+    match u.last() {
+        Some(&last) if (0xD800..=0xDBFF).contains(&last) => (&u[..u.len() - 1], last as i32),
+        _ => (u, 0),
     }
 }
 fn set(vm: &mut Engine, r: ObjRef, u: &[u16]) -> Result<(), VmExit> {
-    // internal buffer growth: a budget overrun is VM_OOM (as with the former SB arms)
-    let s = vm.heap.alloc_string(String::from_utf16_lossy(u))?;
-    crate::err::put_field_result(vm.heap.put_field(r, "buf", Value::Obj(s)))
+    // internal buffer growth: a budget overrun is VM_OOM (Lei 1 / ROADMAP)
+    let (body, pend) = split_pending(u);
+    let s = vm.heap.alloc_string(String::from_utf16_lossy(body))?;
+    crate::err::put_field_result(vm.heap.put_field(r, "buf", Value::Obj(s)))?;
+    crate::err::put_field_result(vm.heap.put_field(r, "pend", Value::Int(pend)))
 }
 fn int(args: &[Value], i: usize) -> i32 {
     args.get(i).and_then(|v| v.as_int().ok()).unwrap_or(0)
@@ -335,11 +353,14 @@ pub fn instance_intrinsic(
                 }
             }
             u.resize(target, 0);
+            // setLength keeps its catchable OutOfMemoryError mapping.
+            let (body, pend) = split_pending(&u);
             let s = vm
                 .heap
-                .alloc_string(String::from_utf16_lossy(&u))
+                .alloc_string(String::from_utf16_lossy(body))
                 .map_err(crate::err::oom_throwable)?;
             crate::err::put_field_result(vm.heap.put_field(recv, "buf", Value::Obj(s)))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "pend", Value::Int(pend)))?;
             Value::Null
         }
         "setCharAt" => {
