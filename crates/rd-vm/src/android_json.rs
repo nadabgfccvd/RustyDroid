@@ -1778,6 +1778,27 @@ fn json_writer(
             None
         };
 
+    // #364 item 2: o texto de um argumento é expandido no host (escapes de até
+    // 6 bytes por caractere) antes de chegar ao writer. Cobrar o pior caso
+    // contra o orçamento do heap antes da expansão.
+    let worst = args
+        .iter()
+        .filter_map(|v| match v {
+            Value::Obj(r) => vm.heap.as_str(*r).ok().map(|t| t.len()),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let cost = worst.saturating_mul(6).saturating_add(32);
+    if vm.heap.used().saturating_add(cost) > vm.heap.budget() {
+        return Err(throw(
+            "Ljava/lang/OutOfMemoryError;",
+            format!(
+                "JSON escaping of {cost} bytes exceeds heap of {} bytes",
+                vm.heap.budget()
+            ),
+        ));
+    }
     let mut state = writer_load(vm, recv);
     let result = (|| -> Result<WriterOut, VmExit> {
         Ok(match (name, sig) {
