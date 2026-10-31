@@ -312,11 +312,17 @@ fn print_units(vm: &mut Engine, sig: &str, v: Option<&Value>) -> Result<Vec<u16>
 
 // ── writers ─────────────────────────────────────────────────────────────
 
-fn wget(r: ObjRef) -> Option<WState> {
-    WRITERS_ST.with(|m| m.borrow().get(&r).cloned())
-}
 fn wput(r: ObjRef, st: WState) {
     WRITERS_ST.with(|m| m.borrow_mut().insert(r, st));
+}
+/// Leitura sem clonar o estado (o `text` pode ser grande). #366: clonar a cada
+/// `write` tornava a escrita O(N^2).
+fn wview<R>(r: ObjRef, f: impl FnOnce(&WState) -> R) -> Option<R> {
+    WRITERS_ST.with(|m| m.borrow().get(&r).map(f))
+}
+/// Mutação in-place do estado (sem clone e sem reinserir).
+fn wmod<R>(r: ObjRef, f: impl FnOnce(&mut WState) -> R) -> Option<R> {
+    WRITERS_ST.with(|m| m.borrow_mut().get_mut(&r).map(f))
 }
 
 fn flush_writer(
@@ -325,31 +331,32 @@ fn flush_writer(
     close: bool,
     hold_trailing_high: bool,
 ) -> Result<(), VmExit> {
-    let Some(mut st) = wget(recv) else {
+    let Some((sink, data)) = wmod(recv, |st| {
+        let units = if !close
+            && hold_trailing_high
+            && st
+                .pending
+                .last()
+                .is_some_and(|u| (0xD800..=0xDBFF).contains(u))
+        {
+            let keep = st.pending.pop();
+            let taken = std::mem::take(&mut st.pending);
+            if let Some(hi) = keep {
+                st.pending.push(hi);
+            }
+            taken
+        } else {
+            std::mem::take(&mut st.pending)
+        };
+        let data = String::from_utf16_lossy(&units);
+        if close {
+            st.closed = true;
+        }
+        (st.sink.clone(), data)
+    }) else {
         return Ok(());
     };
-    let units = if !close
-        && hold_trailing_high
-        && st
-            .pending
-            .last()
-            .is_some_and(|u| (0xD800..=0xDBFF).contains(u))
-    {
-        let keep = st.pending.pop();
-        let taken = std::mem::take(&mut st.pending);
-        if let Some(hi) = keep {
-            st.pending.push(hi);
-        }
-        taken
-    } else {
-        std::mem::take(&mut st.pending)
-    };
-    let data = String::from_utf16_lossy(&units);
-    if close {
-        st.closed = true;
-    }
-    wput(recv, st.clone());
-    match &st.sink {
+    match &sink {
         Sink::Buffer => {}
         Sink::Writer(w) => {
             if !data.is_empty() {
@@ -369,27 +376,42 @@ fn flush_writer(
     Ok(())
 }
 
-fn write_units(recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
-    let Some(mut st) = wget(recv) else {
-        return Ok(());
-    };
-    if st.closed {
-        // JDK: escrita após close() não lança; vira checkError() (#366).
-        st.error = true;
-        wput(recv, st);
-        return Ok(());
-    }
-    match st.sink {
-        Sink::Buffer => st.text.extend_from_slice(units),
-        _ => st.pending.extend_from_slice(units),
-    }
-    wput(recv, st);
-    Ok(())
+fn write_units(vm: &Engine, recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
+    let (used, budget) = (vm.heap.used(), vm.heap.budget());
+    let res = wmod(recv, |st| {
+        if st.closed {
+            // JDK: escrita após close() não lança; vira checkError() (#366).
+            st.error = true;
+            return Ok(());
+        }
+        // O buffer vive no host (u16). Cobrar o tamanho resultante contra o
+        // orçamento do heap antes de crescer, como em SpannableStringBuilder (#366).
+        let is_buffer = matches!(st.sink, Sink::Buffer);
+        let cur = if is_buffer {
+            st.text.len()
+        } else {
+            st.pending.len()
+        };
+        let cost = (cur + units.len()).saturating_mul(2).saturating_add(32);
+        if used.saturating_add(cost) > budget {
+            return Err(exc(
+                "Ljava/lang/OutOfMemoryError;",
+                format!("writer buffer of {cost} bytes exceeds heap of {budget} bytes"),
+            ));
+        }
+        if is_buffer {
+            st.text.extend_from_slice(units);
+        } else {
+            st.pending.extend_from_slice(units);
+        }
+        Ok(())
+    });
+    res.unwrap_or(Ok(()))
 }
 
-fn write_text(recv: ObjRef, s: &str) -> Result<(), VmExit> {
+fn write_text(vm: &Engine, recv: ObjRef, s: &str) -> Result<(), VmExit> {
     let units: Vec<u16> = s.encode_utf16().collect();
-    write_units(recv, &units)
+    write_units(vm, recv, &units)
 }
 
 /// Sink for a writer constructor's first argument.
@@ -494,7 +516,7 @@ fn writer(
         );
         return Ok(Some(Value::Null));
     }
-    if wget(recv).is_none() {
+    if wview(recv, |_| ()).is_none() {
         return Ok(None);
     }
     let ret_self = sig.ends_with(")Ljava/io/Writer;")
@@ -511,11 +533,11 @@ fn writer(
                 slice(&all, int(args, 1), int(args, 2))?
             };
             flush_writer(vm, recv, false, false)?;
-            if let Some(WState {
-                sink: Sink::Stream(os, _),
-                closed: false,
-                ..
-            }) = wget(recv)
+            if let Some(os) = wview(recv, |w| match (&w.sink, w.closed) {
+                (Sink::Stream(os, _), false) => Some(*os),
+                _ => None,
+            })
+            .flatten()
             {
                 let b = crate::jlstring::byte_array(vm, &raw)?;
                 vm.invoke_instance(os, "write", "([B)V", &[b])?;
@@ -526,11 +548,11 @@ fn writer(
         "writeBytes" if class == PS => {
             let raw = require_byte_array(vm, args.first())?;
             flush_writer(vm, recv, false, false)?;
-            if let Some(WState {
-                sink: Sink::Stream(os, _),
-                closed: false,
-                ..
-            }) = wget(recv)
+            if let Some(os) = wview(recv, |w| match (&w.sink, w.closed) {
+                (Sink::Stream(os, _), false) => Some(*os),
+                _ => None,
+            })
+            .flatten()
             {
                 let b = crate::jlstring::byte_array(vm, &raw)?;
                 vm.invoke_instance(os, "write", "([B)V", &[b])?;
@@ -556,7 +578,7 @@ fn writer(
                     .encode_utf16()
                     .collect(),
             };
-            write_units(recv, &units)?;
+            write_units(vm, recv, &units)?;
             Value::Null
         }
         "append" => {
@@ -573,7 +595,7 @@ fn writer(
                 }
                 _ => text_of(vm, args.first())?.encode_utf16().collect(),
             };
-            write_units(recv, &units)?;
+            write_units(vm, recv, &units)?;
             Value::Obj(recv)
         }
         "print" | "println" => {
@@ -581,7 +603,7 @@ fn writer(
             if name == "println" {
                 units.push(b'\n' as u16);
             }
-            write_units(recv, &units)?;
+            write_units(vm, recv, &units)?;
             Value::Null
         }
         "printf" | "format" => {
@@ -601,11 +623,11 @@ fn writer(
                 _ => Vec::new(),
             };
             let s = crate::jlstring::java_format(vm, &fmt, &fargs, ('.', ','))?;
-            write_text(recv, &s)?;
+            write_text(vm, recv, &s)?;
             Value::Obj(recv)
         }
         "newLine" => {
-            write_text(recv, "\n")?;
+            write_text(vm, recv, "\n")?;
             Value::Null
         }
         "flush" => {
@@ -613,25 +635,21 @@ fn writer(
             Value::Null
         }
         "close" => {
-            if class != SW && !wget(recv).is_some_and(|w| w.closed) {
+            if class != SW && !wview(recv, |w| w.closed).unwrap_or(false) {
                 flush_writer(vm, recv, true, false)?;
             }
             Value::Null
         }
         "checkError" => {
             flush_writer(vm, recv, false, false)?;
-            Value::Int(wget(recv).is_some_and(|w| w.error) as i32)
+            Value::Int(wview(recv, |w| w.error).unwrap_or(false) as i32)
         }
         "toString" if class == SW => {
-            let t = wget(recv)
-                .map(|w| String::from_utf16_lossy(&w.text))
-                .unwrap_or_default();
+            let t = wview(recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
             jstr(vm, t)?
         }
         "getBuffer" if class == SW => {
-            let t = wget(recv)
-                .map(|w| String::from_utf16_lossy(&w.text))
-                .unwrap_or_default();
+            let t = wview(recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
             let sb = vm
                 .heap
                 .alloc_instance("Ljava/lang/StringBuffer;".to_string(), Vec::new())
@@ -648,7 +666,7 @@ fn writer(
             )?;
             Value::Obj(sb)
         }
-        "getEncoding" => match wget(recv).map(|w| w.sink) {
+        "getEncoding" => match wview(recv, |w| w.sink.clone()) {
             Some(Sink::Stream(_, cs)) => jstr(vm, cs.replace('-', ""))?,
             _ => Value::Null,
         },
@@ -661,7 +679,7 @@ fn writer(
         )
         && !matches!(sig, "([B)V" | "([BII)V");
     let printwriter_autoflush =
-        class == PW && name == "println" && wget(recv).is_some_and(|w| w.autoflush);
+        class == PW && name == "println" && wview(recv, |w| w.autoflush).unwrap_or(false);
     if stream_write || printwriter_autoflush {
         flush_writer(vm, recv, false, name != "println" && name != "newLine")?;
     }
