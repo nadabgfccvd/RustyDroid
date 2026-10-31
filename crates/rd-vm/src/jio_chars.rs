@@ -1031,6 +1031,27 @@ pub(crate) fn new_byte_input_stream(vm: &mut Engine, bytes: Vec<u8>) -> Result<V
     Ok(Value::Obj(r))
 }
 
+/// Acrescenta `data` ao buffer do BAOS in place. O buffer vive no host, então
+/// o crescimento é cobrado contra `heap_budget` antes (mesma regra de #369/#366).
+fn baos_append(vm: &Engine, recv: ObjRef, data: &[u8]) -> Result<(), VmExit> {
+    let (used, budget) = (vm.heap.used(), vm.heap.budget());
+    BYTES_ST.with(|m| {
+        let mut m = m.borrow_mut();
+        let Some(st) = m.get_mut(&recv) else {
+            return Ok(());
+        };
+        let cost = st.bytes.len().saturating_add(data.len()).saturating_add(32);
+        if used.saturating_add(cost) > budget {
+            return Err(exc(
+                "Ljava/lang/OutOfMemoryError;",
+                format!("ByteArrayOutputStream of {cost} bytes exceeds heap of {budget} bytes"),
+            ));
+        }
+        st.bytes.extend_from_slice(data);
+        Ok(())
+    })
+}
+
 fn bytes_stream(
     vm: &mut Engine,
     class: &str,
@@ -1066,24 +1087,36 @@ fn bytes_stream(
         set(st);
         return Ok(Some(Value::Null));
     }
+    // BAOS: escritas e `size()` mexem no buffer in place. Clonar o buffer a cada
+    // chamada tornava N escritas O(N^2) (#366).
+    if class == BAOS {
+        match (name, sig) {
+            ("write", "(I)V")
+            | ("write", "([B)V")
+            | ("write", "([BII)V")
+            | ("writeBytes", "([B)V") => {
+                let data: Vec<u8> = match sig {
+                    "(I)V" => vec![int(args, 0) as u8],
+                    "([BII)V" => {
+                        let all = require_byte_array(vm, args.first())?;
+                        slice(&all, int(args, 1), int(args, 2))?
+                    }
+                    _ => require_byte_array(vm, args.first())?,
+                };
+                baos_append(vm, recv, &data)?;
+                return Ok(Some(Value::Null));
+            }
+            ("size", _) => {
+                if let Some(n) = BYTES_ST.with(|m| m.borrow().get(&recv).map(|s| s.bytes.len())) {
+                    return Ok(Some(Value::Int(n as i32)));
+                }
+            }
+            _ => {}
+        }
+    }
     let Some(mut st) = get() else { return Ok(None) };
     let n = st.bytes.len();
     let out = match (class, name) {
-        (BAOS, "write") => {
-            match sig {
-                "(I)V" => st.bytes.push(int(args, 0) as u8),
-                "([B)V" => st.bytes.extend(require_byte_array(vm, args.first())?),
-                _ => {
-                    let all = require_byte_array(vm, args.first())?;
-                    st.bytes.extend(slice(&all, int(args, 1), int(args, 2))?);
-                }
-            }
-            Value::Null
-        }
-        (BAOS, "writeBytes") => {
-            st.bytes.extend(require_byte_array(vm, args.first())?);
-            Value::Null
-        }
         (BAOS, "toByteArray") => crate::jlstring::byte_array(vm, &st.bytes)?,
         (BAOS, "toString") => {
             let cs = if args.is_empty() {
