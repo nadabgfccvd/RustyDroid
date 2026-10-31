@@ -333,7 +333,7 @@ fn call_m8_static_rooted(
                 return Err(npe("Uri.parse(null)"));
             };
             let r = alloc(vm, URI)?;
-            vm.fw.m8.uris.insert(r, s);
+            crate::android_uri::remember_uri(vm, r, s)?;
             Ok(Some(Value::Obj(r)))
         }
         (WORK_MANAGER, "getInstance") => {
