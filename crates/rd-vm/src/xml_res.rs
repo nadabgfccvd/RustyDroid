@@ -663,10 +663,71 @@ pub fn instance_intrinsic(
         "getLineNumber" => Value::Int((pos + 1) as i32),
         "getColumnNumber" => Value::Int(-1),
         "close" => {
-            PARSERS.with(|p| p.borrow_mut().remove(&recv));
+            // Idempotent: keep the parser registered and drop its events, so
+            // later close()/getEventType() calls still answer (END_DOCUMENT).
+            PARSERS.with(|p| {
+                if let Some(st) = p.borrow_mut().get_mut(&recv) {
+                    st.events.clear();
+                    st.pos = 0;
+                }
+            });
             Value::Null
         }
-        "require" => Value::Null,
+        // XmlPullParser.require(type, namespace, name): throws on any mismatch (#370).
+        "require" => {
+            let want_type = match args.first() {
+                Some(Value::Int(i)) => *i,
+                _ => -1,
+            };
+            let want_ns = str_arg(vm, args.get(1));
+            let want_name = str_arg(vm, args.get(2));
+            let cur_name = match &ev {
+                Some(Ev::Start { name, .. }) | Some(Ev::End { name, .. }) => Some(name.clone()),
+                _ => None,
+            };
+            let cur_type = event_type(pos, &ev);
+            // The parser has no namespaces: only null or "" matches.
+            let ns_ok = match want_ns.as_deref() {
+                None => true,
+                Some(n) => n.is_empty(),
+            };
+            let name_ok = want_name.is_none() || want_name == cur_name;
+            if cur_type != want_type || !ns_ok || !name_ok {
+                return Err(exc(
+                    "Lorg/xmlpull/v1/XmlPullParserException;",
+                    format!("expected type {want_type} name {want_name:?}"),
+                ));
+            }
+            Value::Null
+        }
+        // XmlPullParser.nextText(): the element must hold only text; leaves the parser on END_TAG (#370).
+        "nextText" => {
+            if event_type(pos, &ev) != 2 {
+                return Err(exc(
+                    "Lorg/xmlpull/v1/XmlPullParserException;",
+                    "parser must be on START_TAG to read next text",
+                ));
+            }
+            let st_events = PARSERS.with(|p| p.borrow()[&recv].events.clone());
+            let mut np = (pos + 1) as usize;
+            let mut text = String::new();
+            if let Some(Ev::Text(t, _)) = st_events.get(np) {
+                text = t.clone();
+                np += 1;
+            }
+            match st_events.get(np) {
+                Some(Ev::End { .. }) => {
+                    PARSERS.with(|p| p.borrow_mut().get_mut(&recv).map(|s| s.pos = np as isize));
+                    str_val(vm, text)?
+                }
+                _ => {
+                    return Err(exc(
+                        "Lorg/xmlpull/v1/XmlPullParserException;",
+                        "type START_TAG is not text-only; END_TAG expected",
+                    ))
+                }
+            }
+        }
         "getAttributeCount" => {
             Value::Int(current_attrs(recv).map(|a| a.len() as i32).unwrap_or(-1))
         }
