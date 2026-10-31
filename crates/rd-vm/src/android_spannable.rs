@@ -132,6 +132,24 @@ fn range(len: usize, a: i32, b: i32, what: &str) -> Result<(usize, usize), VmExi
     Ok((a as usize, b as usize))
 }
 
+/// Subintervalo `[a, b)` de `st` com os spans que o tocam, deslocados (#369 item 4).
+fn sub_state(st: &State, a: usize, b: usize) -> State {
+    let mut sub = State {
+        text: st.text[a..b].to_vec(),
+        spans: Vec::new(),
+    };
+    for sp in &st.spans {
+        if sp.end >= a && sp.start <= b {
+            sub.spans.push(Span {
+                start: sp.start.max(a) - a,
+                end: sp.end.min(b) - a,
+                ..sp.clone()
+            });
+        }
+    }
+    sub
+}
+
 /// Replace `[a, b)` of `st` with `src`, adjusting the spans.
 fn splice(st: &mut State, a: usize, b: usize, src: &State) {
     let ins = src.text.len();
@@ -212,6 +230,10 @@ pub fn instance_intrinsic(
     let builder = recv_class == SSB;
     Ok(Some(match name {
         "<init>" => {
+            // JDK: o texto do construtor não pode ser null (#369 item 4).
+            if matches!(args.first(), Some(Value::Null)) {
+                return Err(exc("Ljava/lang/NullPointerException;", "text"));
+            }
             let mut st = if args.is_empty() {
                 State::default()
             } else {
@@ -220,20 +242,7 @@ pub fn instance_intrinsic(
             if args.len() >= 3 {
                 // (CharSequence, int start, int end)
                 let (a, b) = range(st.text.len(), int(args, 1)?, int(args, 2)?, "subSequence")?;
-                let mut sub = State {
-                    text: st.text[a..b].to_vec(),
-                    spans: Vec::new(),
-                };
-                for sp in &st.spans {
-                    if sp.end >= a && sp.start <= b {
-                        sub.spans.push(Span {
-                            start: sp.start.max(a) - a,
-                            end: sp.end.min(b) - a,
-                            ..sp.clone()
-                        });
-                    }
-                }
-                st = sub;
+                st = sub_state(&st, a, b);
             }
             put(recv, st);
             Value::Null
@@ -451,7 +460,12 @@ pub fn instance_intrinsic(
             let mut st = get(recv);
             let at = int(args, 0)?;
             let (a, _) = range(st.text.len(), at, at, "insert")?;
-            let src = source(vm, args.get(1))?;
+            let mut src = source(vm, args.get(1))?;
+            if args.len() >= 4 {
+                // insert(where, tb, start, end): só tb[start, end) (#369 item 4).
+                let (sa, sb) = range(src.text.len(), int(args, 2)?, int(args, 3)?, "insert")?;
+                src = sub_state(&src, sa, sb);
+            }
             splice(&mut st, a, a, &src);
             put(recv, st);
             Value::Obj(recv)
@@ -462,10 +476,7 @@ pub fn instance_intrinsic(
             let mut src = source(vm, args.get(2))?;
             if args.len() >= 5 {
                 let (sa, sb) = range(src.text.len(), int(args, 3)?, int(args, 4)?, "replace")?;
-                src = State {
-                    text: src.text[sa..sb].to_vec(),
-                    spans: Vec::new(),
-                };
+                src = sub_state(&src, sa, sb);
             }
             splice(&mut st, a, b, &src);
             put(recv, st);
