@@ -707,6 +707,21 @@ impl ArscFix {
         self.resid_of("layout", name)
     }
 
+    /// Layout cuja entrada ARSC aponta para o arquivo `res/layout/<name>.xml`
+    /// (como o aapt emite), necessária para `Resources.getXml(id)`.
+    pub fn add_layout_file(&mut self, name: &str) -> u32 {
+        let path = format!("res/layout/{name}.xml");
+        if !self.values.contains(&path) {
+            self.values.push(path.clone());
+        }
+        self.slot("layout").push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Str(path),
+            lang: None,
+        });
+        self.resid_of("layout", name)
+    }
+
     pub fn add_string(&mut self, name: &str, value: &str) -> u32 {
         if !self.values.iter().any(|v| v == value) {
             self.values.push(value.to_string());

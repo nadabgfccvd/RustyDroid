@@ -357,8 +357,17 @@ fn as_i32(vm: &Engine, v: &AttrValue) -> Option<i32> {
         R::Str(s) => {
             let t = s.trim();
             if let Some(h) = t.strip_prefix('#') {
-                let n = u32::from_str_radix(h, 16).ok()?;
-                (if h.len() <= 6 { n | 0xFF00_0000 } else { n }) as i32
+                // #RGB / #ARGB expand each nibble (#f00 == #ff0000), #RRGGBB / #AARRGGBB as-is.
+                let expanded: String = match h.len() {
+                    3 | 4 => h.chars().flat_map(|c| [c, c]).collect(),
+                    _ => h.to_string(),
+                };
+                let n = u32::from_str_radix(&expanded, 16).ok()?;
+                (if expanded.len() <= 6 {
+                    n | 0xFF00_0000
+                } else {
+                    n
+                }) as i32
             } else {
                 t.parse().ok()?
             }
@@ -584,26 +593,40 @@ pub fn instance_intrinsic(
     };
     let v = match name {
         "next" | "nextToken" | "nextTag" => {
+            // XmlPullParser: once END_DOCUMENT is reached, next() keeps returning
+            // END_DOCUMENT; nextTag() must throw instead.
             if pos >= len {
-                return Err(exc(
-                    "Lorg/xmlpull/v1/XmlPullParserException;",
-                    "END_DOCUMENT reached",
-                ));
-            }
-            let mut np = pos + 1;
-            if name == "nextTag" {
-                while np < len
-                    && matches!(
-                        PARSERS.with(|p| p.borrow()[&recv].events.get(np as usize).cloned()),
-                        Some(Ev::Text(..))
-                    )
-                {
-                    np += 1;
+                if name == "nextTag" {
+                    return Err(exc(
+                        "Lorg/xmlpull/v1/XmlPullParserException;",
+                        "END_DOCUMENT reached",
+                    ));
                 }
+                Value::Int(1)
+            } else {
+                let mut np = pos + 1;
+                if name == "nextTag" {
+                    // Only whitespace text may be skipped by nextTag().
+                    while np < len
+                        && matches!(
+                            PARSERS.with(|p| p.borrow()[&recv].events.get(np as usize).cloned()),
+                            Some(Ev::Text(ref t, _)) if t.trim().is_empty()
+                        )
+                    {
+                        np += 1;
+                    }
+                }
+                PARSERS.with(|p| p.borrow_mut().get_mut(&recv).map(|s| s.pos = np));
+                let nev = PARSERS.with(|p| p.borrow()[&recv].events.get(np as usize).cloned());
+                let t = event_type(np, &nev);
+                if name == "nextTag" && t != 2 && t != 3 {
+                    return Err(exc(
+                        "Lorg/xmlpull/v1/XmlPullParserException;",
+                        "expected START_TAG or END_TAG",
+                    ));
+                }
+                Value::Int(t)
             }
-            PARSERS.with(|p| p.borrow_mut().get_mut(&recv).map(|s| s.pos = np));
-            let nev = PARSERS.with(|p| p.borrow()[&recv].events.get(np as usize).cloned());
-            Value::Int(event_type(np, &nev))
         }
         "getEventType" => Value::Int(event_type(pos, &ev)),
         "getName" => {
@@ -741,4 +764,24 @@ pub fn static_intrinsic(
         return Ok(None);
     }
     Ok(Some(args.first().cloned().unwrap_or(Value::Null)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn color(s: &str) -> Option<i32> {
+        let vm = Engine::new(Vec::new(), crate::VmConfig::default());
+        as_i32(&vm, &AttrValue::String(s.to_string()))
+    }
+
+    /// #370: `#RGB` / `#ARGB` expand each nibble; `#RRGGBB` / `#AARRGGBB` are taken as written.
+    #[test]
+    fn hex_color_shorthand_expands_each_nibble() {
+        assert_eq!(color("#f00"), Some(0xFFFF_0000u32 as i32));
+        assert_eq!(color("#abc"), Some(0xFFAA_BBCCu32 as i32));
+        assert_eq!(color("#8f00"), Some(0x88FF_0000u32 as i32));
+        assert_eq!(color("#ff0000"), Some(0xFFFF_0000u32 as i32));
+        assert_eq!(color("#80ff0000"), Some(0x80FF_0000u32 as i32));
+    }
 }
