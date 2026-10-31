@@ -79,7 +79,7 @@ fn fixture() -> DexBuilder {
         caller,
         "probe",
         "Ljava/lang/Object;",
-        vec!["LVMProbe;".into()],
+        vec!["LVMProbe;"],
         ACC_PUBLIC | ACC_STATIC,
         Some(b.code(3, 1, 2, pc)),
     );
@@ -88,7 +88,7 @@ fn fixture() -> DexBuilder {
 }
 
 #[test]
-fn bytecode_getTag_on_dex_viewmodel_subclass_resolves_to_host_shim() {
+fn bytecode_get_tag_on_dex_viewmodel_subclass_resolves_to_host_shim() {
     let b = fixture();
     let mut e = engine_of(&b);
     let probe = dex_obj(&mut e, "LVMProbe;");
@@ -105,7 +105,7 @@ fn bytecode_getTag_on_dex_viewmodel_subclass_resolves_to_host_shim() {
 }
 
 #[test]
-fn set_tag_if_absent_keeps_first_value_and_clear_runs_onCleared_and_closes() {
+fn set_tag_if_absent_keeps_first_value_and_clear_runs_on_cleared_and_closes() {
     let b = fixture();
     let mut e = engine_of(&b);
     let probe = dex_obj(&mut e, "LVMProbe;");
