@@ -296,14 +296,22 @@ pub fn instance_intrinsic(
             // getChars(int start, int end, char[] dest, int destoff)
             let st = get(recv);
             let (a, b) = range(st.text.len(), int(args, 0)?, int(args, 1)?, "getChars")?;
-            if let Some(Value::Obj(dst)) = args.get(2) {
-                let off = int(args, 3)?.max(0) as usize;
-                let elems = vm.heap.array_elems_mut(*dst)?;
-                for (k, c) in st.text[a..b].iter().enumerate() {
-                    if let Some(slot) = elems.get_mut(off + k) {
-                        *slot = Value::Int(*c as i32);
-                    }
-                }
+            // JDK: dest null → NPE; destoff negativo ou sem espaço → IOOBE, sem
+            // truncar nem clampar em silêncio (#369 item 3).
+            let Some(Value::Obj(dst)) = args.get(2).cloned() else {
+                return Err(exc("Ljava/lang/NullPointerException;", "getChars dest"));
+            };
+            let off = int(args, 3)?;
+            let dlen = vm.heap.as_array_elems(dst)?.0.len();
+            if off < 0 || (off as usize).saturating_add(b - a) > dlen {
+                return Err(exc(
+                    "Ljava/lang/IndexOutOfBoundsException;",
+                    format!("destoff {off}, count {}, length {dlen}", b - a),
+                ));
+            }
+            let elems = vm.heap.array_elems_mut(dst)?;
+            for (k, c) in st.text[a..b].iter().enumerate() {
+                elems[off as usize + k] = Value::Int(*c as i32);
             }
             Value::Null
         }
