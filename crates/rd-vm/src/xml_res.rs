@@ -72,24 +72,38 @@ pub(crate) fn reset_all() {
     ARRAYS.with(|m| m.borrow_mut().clear());
 }
 
-fn flatten(e: &XmlElement, depth: i32, out: &mut Vec<Ev>) {
-    out.push(Ev::Start {
-        name: e.name.clone(),
-        attrs: e.attrs.clone(),
-        depth,
-    });
-    if let Some(t) = &e.text {
-        if !t.trim().is_empty() {
-            out.push(Ev::Text(t.clone(), depth));
+/// Achata a árvore em eventos na mesma ordem de antes (Start, Text, filhos, End),
+/// com pilha explícita: uma árvore profunda não estoura a stack do host (#370 item 4).
+fn flatten(root: &XmlElement, depth: i32, out: &mut Vec<Ev>) {
+    enum Step<'a> {
+        Open(&'a XmlElement, i32),
+        Close(&'a str, i32),
+    }
+    let mut stack = vec![Step::Open(root, depth)];
+    while let Some(step) = stack.pop() {
+        match step {
+            Step::Open(e, d) => {
+                out.push(Ev::Start {
+                    name: e.name.clone(),
+                    attrs: e.attrs.clone(),
+                    depth: d,
+                });
+                if let Some(t) = &e.text {
+                    if !t.trim().is_empty() {
+                        out.push(Ev::Text(t.clone(), d));
+                    }
+                }
+                stack.push(Step::Close(&e.name, d));
+                for c in e.children.iter().rev() {
+                    stack.push(Step::Open(c, d + 1));
+                }
+            }
+            Step::Close(name, d) => out.push(Ev::End {
+                name: name.to_string(),
+                depth: d,
+            }),
         }
     }
-    for c in &e.children {
-        flatten(c, depth + 1, out);
-    }
-    out.push(Ev::End {
-        name: e.name.clone(),
-        depth,
-    });
 }
 
 fn exc(class: &str, msg: impl Into<String>) -> VmExit {
@@ -875,5 +889,56 @@ mod color_tests {
         for bad in ["#1", "#12", "#12345", "#1234567", "#+12", "#+12345", "#zzz"] {
             assert_eq!(color(bad), None, "{bad} must not parse as a color");
         }
+    }
+}
+
+#[cfg(test)]
+mod flatten_tests {
+    use super::*;
+    use rd_apk::axml::XmlElement;
+
+    fn el(name: &str, children: Vec<XmlElement>) -> XmlElement {
+        XmlElement {
+            name: name.to_string(),
+            attrs: Vec::new(),
+            children,
+            text: None,
+        }
+    }
+
+    #[test]
+    fn issue_370_flatten_keeps_document_order_and_depths() {
+        let mut root = el(
+            "a",
+            vec![el("b", vec![el("c", Vec::new())]), el("d", Vec::new())],
+        );
+        root.text = Some("hi".to_string());
+        let mut out = Vec::new();
+        flatten(&root, 1, &mut out);
+        let names: Vec<String> = out
+            .iter()
+            .map(|ev| match ev {
+                Ev::Start { name, depth, .. } => format!("<{name}@{depth}"),
+                Ev::End { name, depth } => format!("</{name}@{depth}"),
+                Ev::Text(t, depth) => format!("#{t}@{depth}"),
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec!["<a@1", "#hi@1", "<b@2", "<c@3", "</c@3", "</b@2", "<d@2", "</d@2", "</a@1"]
+        );
+    }
+
+    #[test]
+    fn issue_370_deep_tree_flattens_without_stack_overflow() {
+        const DEPTH: usize = 200_000;
+        let mut node = el("leaf", Vec::new());
+        for _ in 0..DEPTH {
+            node = el("n", vec![node]);
+        }
+        let mut out = Vec::new();
+        flatten(&node, 1, &mut out);
+        assert_eq!(out.len(), 2 * (DEPTH + 1));
+        assert!(matches!(out.last(), Some(Ev::End { depth: 1, .. })));
     }
 }
