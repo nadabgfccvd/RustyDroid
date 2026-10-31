@@ -658,7 +658,21 @@ pub(super) fn instance_call(
                 }
                 Ok(Some(Value::Null))
             }
-            _ => Ok(None), // getPrimaryClip/hasPrimaryClip/clearPrimaryClip fall through to m9::ime
+            "clearPrimaryClip" => {
+                let had_clip = matches!(
+                    vm.heap.get_field(recv, "rd_primary_clip"),
+                    Ok(Value::Obj(c)) if c != 0
+                );
+                put_field(vm, recv, "rd_primary_clip", Value::Null)?;
+                if had_clip {
+                    let listeners = vm.fw.vdev.sysconfig.clipboard_listeners.clone();
+                    for l in listeners {
+                        let _ = call_dex(vm, l, "onPrimaryClipChanged", "()V", Vec::new())?;
+                    }
+                }
+                Ok(Some(Value::Null))
+            }
+            _ => Ok(None), // getPrimaryClip/hasPrimaryClip/getPrimaryClipDescription fall through to m9::ime
         },
         CLIP_DATA => match name {
             "<init>" => {

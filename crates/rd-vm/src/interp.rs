@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use rd_dex::code::{CodeItem, Insn, Kind, Payload};
 
-use crate::engine::{default_for, ACC_STATIC};
+use crate::engine::{default_for, ACC_NATIVE, ACC_STATIC};
 use crate::err::{Throwable, VmExit};
 use crate::heap::ElemKind;
 use crate::intrinsics;
@@ -1756,43 +1756,69 @@ fn resolve_or_run_host_invoke(
         }
     }
 
-    #[cfg(feature = "advanced-components")]
-    if let Some(v) =
-        crate::m9::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
-    {
-        return Ok(InvokeTarget::Value(v));
+    // #315 (item 3): overrides concretos da app no DEX (`recv_class`, ou o
+    // nível intermediário num `invoke-super`) vencem os shims host de
+    // `m9`/`m10`/`m8`/`androidx`/`gms`, preservando a prioridade do host sobre
+    // classes empacotadas da própria biblioteca shimmed (`Landroidx/*`,
+    // `Lcom/google/*`, etc.).
+    // Nota do port: o `m9::call_instance` que existia aqui é redundante —
+    // `call_host_shim_layer` já começa por `m9` (ver a definição abaixo).
+    if !is_direct {
+        let poly_target = if is_super {
+            frame_super.map_or_else(
+                || {
+                    vm.cp
+                        .superclass_of(&mref.class)
+                        .unwrap_or_else(|| mref.class.clone())
+                },
+                str::to_string,
+            )
+        } else {
+            recv_class.clone()
+        };
+        if let Some((d2, def, m)) = vm.cp.resolve_method(&poly_target, &mref.name, &mref.proto) {
+            let has_impl = m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0;
+            if has_impl && (m.access_flags & ACC_STATIC) == 0 {
+                let decl = vm.cp.type_str(d2, def.class_idx);
+                // #315 (item 3) + regressão encontrada no CI deste port: só
+                // overrides de classes da APP (ou de bibliotecas empacotadas,
+                // excluídas logo abaixo) vencem o host. Uma implementação de
+                // PLATAFORMA — `Landroid/content/SharedPreferencesImpl;->getInt`
+                // — precisa continuar caindo no shim host; desviá-la para o DEX
+                // do framework quebra APKs reais (NOT_FOUND em getInt).
+                if !is_bundled_shim_owner(&decl)
+                    && !decl.starts_with("Landroid/")
+                    && !decl.starts_with("Ljava/")
+                {
+                    // Devolve `InvokeTarget::Dex`: `do_invoke` chama `vm.call` com os
+                    // registradores brutos (`raw`, com `WideHi` após long/double). `slots`
+                    // aqui são os argumentos lógicos, e passá-los a `call` quebra o frame
+                    // (`INVALID_FORMAT ... argumentos para ... registradores`) em APKs
+                    // reais com parâmetros long (ex.: logback `setTotalSizeCap(J)V`).
+                    return Ok(InvokeTarget::Dex(d2, def, m));
+                }
+            }
+        }
     }
 
-    #[cfg(feature = "virtual-devices")]
     if let Some(v) =
-        crate::m10::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+        call_host_shim_layer(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
     {
         return Ok(InvokeTarget::Value(v));
     }
-
-    // M8: compat real — host sequestra só os métodos listados em m8.rs;
-    // `None` cai para o DEX real da biblioteca (androidx/okhttp no APK).
-    if let Some(v) =
-        crate::m8::call_m8_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
-    {
-        return Ok(InvokeTarget::Value(v));
-    }
-
-    // Apêndice D: shims host AndroidX por módulo (lifecycle, livedata,
-    // viewmodel, collection, datastore valores, work Data, navigation,
-    // startup, biometria, futures) — `None` mantém o DEX real da lib.
-    if let Some(v) =
-        crate::androidx::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
-    {
-        return Ok(InvokeTarget::Value(v));
-    }
-    // Apêndice E: objetos seguidos pelo shim GMS/Firebase e classes
-    // `Lcom/google/android/gms/`, `Lcom/google/firebase/`,
-    // `Lcom/android/billingclient/` — `None` continua para o host/DEX.
-    if let Some(v) =
-        crate::gms::call_instance(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
-    {
-        return Ok(InvokeTarget::Value(v));
+    // #315 (item 4): dispatch polimórfico por interface/superclasse sobre
+    // objetos host concretos (ex.: `AutoCloseable.close()` em `Image`,
+    // `ImageReader`, `CameraDevice`, `CameraCaptureSession`).
+    // Nota do port: os blocos explícitos de `m8`/`androidx`/`gms` que existiam
+    // aqui foram removidos a favor desta resolução por `recv_class`, porque
+    // `call_host_shim_layer` (chamado logo abaixo com `mref.class`) já é a
+    // cadeia completa m9→m10→m8→androidx→gms.
+    if !is_direct && !is_super && recv_class != mref.class {
+        if let Some(v) =
+            call_host_shim_layer(vm, &recv_class, &mref.name, &mref.proto, recv, &slots[1..])?
+        {
+            return Ok(InvokeTarget::Value(v));
+        }
     }
 
     // M3: framework host (Activity/View/TextView/Button/LinearLayout/
@@ -1805,13 +1831,32 @@ fn resolve_or_run_host_invoke(
                 vm.trace_resolve(_t0);
                 r
             } {
-                return Ok(InvokeTarget::Dex(d2, def, m));
+                // #315 (item 3): só devolve o alvo DEX se houver implementação
+                // real; método abstrato cai para o host/DEX do super.
+                if m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0 {
+                    return Ok(InvokeTarget::Dex(d2, def, m));
+                }
             }
         }
+        let host_start = if !is_direct && !is_super {
+            &recv_class
+        } else {
+            &mref.class
+        };
         if let Some(value) =
-            inherited_android_host(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+            inherited_android_host(vm, host_start, &mref.name, &mref.proto, recv, &slots[1..])?
         {
             return Ok(InvokeTarget::Value(value));
+        }
+        // Receiver-first, then the declaring class: platform implementations such as
+        // `Landroid/content/SharedPreferencesImpl;` may have no shim of their own, while
+        // the declaring interface (`Landroid/content/SharedPreferences;`) does (CI #315).
+        if host_start != &mref.class {
+            if let Some(value) =
+                inherited_android_host(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
+            {
+                return Ok(InvokeTarget::Value(value));
+            }
         }
         // Generic property storage is strictly last: it must not swallow
         // inherited View IDs, EditText text, or Activity/Context state.
@@ -1881,7 +1926,65 @@ fn resolve_or_run_host_invoke(
             crate::classpath::unresolved_method(&start_class, &mref.name, &mref.proto).into(),
         );
     };
+    // #315 (item 4): método declarado abstrato/nativo-less subindo a
+    // superclasse — tenta a camada host herdada antes de entregar ao DEX.
+    if m.code_off == 0 && (m.access_flags & ACC_NATIVE) == 0 && (!is_direct || is_super) {
+        if let Some(value) =
+            inherited_android_host(vm, &start_class, &mref.name, &mref.proto, recv, &slots[1..])?
+        {
+            return Ok(InvokeTarget::Value(value));
+        }
+    }
     Ok(InvokeTarget::Dex(d2, def, m))
+}
+
+fn is_bundled_shim_owner(cls: &str) -> bool {
+    cls.starts_with("Landroidx/")
+        || cls.starts_with("Lcom/google/android/gms/")
+        || cls.starts_with("Lcom/google/android/play/")
+        || cls.starts_with("Lcom/google/firebase/")
+        || cls.starts_with("Lcom/android/billingclient/")
+        || cls.starts_with("Lcom/google/common/util/concurrent/")
+        || cls.starts_with("Lokhttp3/")
+}
+
+fn call_host_shim_layer(
+    vm: &mut Engine,
+    class: &str,
+    name: &str,
+    sig: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    #[cfg(feature = "advanced-components")]
+    if let Some(v) = crate::m9::call_instance(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+
+    #[cfg(feature = "virtual-devices")]
+    if let Some(v) = crate::m10::call_instance(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+
+    // M8: compat real — host sequestra só os métodos listados em m8.rs;
+    // `None` cai para o DEX real da biblioteca (androidx/okhttp no APK).
+    if let Some(v) = crate::m8::call_m8_instance(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+
+    // Apêndice D: shims host AndroidX por módulo (lifecycle, livedata,
+    // viewmodel, collection, datastore valores, work Data, navigation,
+    // startup, biometria, futures) — `None` mantém o DEX real da lib.
+    if let Some(v) = crate::androidx::call_instance(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    // Apêndice E: objetos seguidos pelo shim GMS/Firebase e classes
+    // `Lcom/google/android/gms/`, `Lcom/google/firebase/`,
+    // `Lcom/android/billingclient/` — `None` continua para o host/DEX.
+    if let Some(v) = crate::gms::call_instance(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    Ok(None)
 }
 
 /// Resolve only real inherited Android hosts; never invent an app method.
@@ -1942,6 +2045,10 @@ pub(crate) fn inherited_android_host(
                 return Ok(Some(value));
             }
             if let Some(value) = crate::platform_base::instance_intrinsic(&ancestor, name, sig) {
+                return Ok(Some(value));
+            }
+        } else if is_bundled_shim_owner(&ancestor) {
+            if let Some(value) = call_host_shim_layer(vm, &ancestor, name, sig, recv, args)? {
                 return Ok(Some(value));
             }
         }
