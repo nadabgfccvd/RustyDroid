@@ -1635,6 +1635,25 @@ fn helper_open(vm: &mut Engine, recv: ObjRef) -> Result<Value, VmExit> {
     crate::err::put_field_result(vm.heap.put_field(recv, "rd_sqlx_db", Value::Obj(d)))?;
     let dbv = Value::Obj(d);
     let sig1 = "(Landroid/database/sqlite/SQLiteDatabase;)V";
+    // The handle is published before the callbacks so re-entrant calls see it.
+    // If the open fails (onConfigure/onCreate/onUpgrade throws), un-publish it so
+    // the next getWritableDatabase() retries instead of reusing a half-initialized DB (#321 bug 3).
+    let opened = open_steps(vm, recv, path, dbv.clone(), sig1);
+    if opened.is_err() {
+        let _ = vm.heap.put_field(recv, "rd_sqlx_db", Value::Null);
+    }
+    opened?;
+    Ok(dbv)
+}
+
+/// Runs the open lifecycle (`onConfigure`, `onCreate`/`onUpgrade`/`onDowngrade`, `onOpen`).
+fn open_steps(
+    vm: &mut Engine,
+    recv: ObjRef,
+    path: String,
+    dbv: Value,
+    sig1: &str,
+) -> Result<(), VmExit> {
     crate::m8::call_dex(vm, recv, "onConfigure", sig1, vec![dbv.clone()])?;
     let want = match vm.heap.get_field(recv, "rd_sqlx_version") {
         Ok(Value::Int(v)) => v as i64,
@@ -1695,7 +1714,7 @@ fn helper_open(vm: &mut Engine, recv: ObjRef) -> Result<Value, VmExit> {
         r?;
     }
     crate::m8::call_dex(vm, recv, "onOpen", sig1, vec![dbv.clone()])?;
-    Ok(dbv)
+    Ok(())
 }
 
 /// Dispatch for `android.database.sqlite`. `None` = not handled here (the
