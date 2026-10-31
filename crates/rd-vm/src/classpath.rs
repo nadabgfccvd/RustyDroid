@@ -2695,15 +2695,22 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/util/Collection;",
             "Ljava/lang/Iterable;",
         ]),
-        "Ljava/util/WeakHashMap;"
-        | "Ljava/util/IdentityHashMap;"
-        | "Ljava/util/LinkedHashMap;"
-        | "Ljava/util/concurrent/ConcurrentHashMap;" => Some(&[
+        // Only ConcurrentHashMap implements ConcurrentMap (#363).
+        "Ljava/util/WeakHashMap;" | "Ljava/util/IdentityHashMap;" | "Ljava/util/LinkedHashMap;" => {
+            Some(&[
+                "Ljava/util/Map;",
+                "Ljava/lang/Cloneable;",
+                "Ljava/io/Serializable;",
+            ])
+        }
+        "Ljava/util/concurrent/ConcurrentHashMap;" => Some(&[
             "Ljava/util/Map;",
             "Ljava/util/concurrent/ConcurrentMap;",
             "Ljava/lang/Cloneable;",
             "Ljava/io/Serializable;",
         ]),
+        // `Parcelable.ClassLoaderCreator` extends `Parcelable.Creator` (#363).
+        "Landroid/os/Parcelable$ClassLoaderCreator;" => Some(&["Landroid/os/Parcelable$Creator;"]),
         // Immutable views from java.util.Collections (intrinsics.rs markers).
         "Ljava/util/Collections$UnmodifiableSet;" => Some(&[
             "Ljava/util/Set;",
