@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793551251082,
+  "lastUpdate": 1793554374791,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -827,6 +827,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 10926,
             "range": "± 91",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "859b3d154c7934f67077a5f1ec4da9cc2ee89f21",
+          "message": "deps: Cranelift 0.137 port + MSRV 1.97 + lint fixes (#463)\n\n* build(jit): move Cranelift to 0.137 and port the leaf JIT (supersedes #445-#448)\n\nBumps cranelift-codegen, -frontend, -jit and -module from 0.104.3 to 0.137.0,\nas in #445-#448, and ports crates/rd-jni/src/jit.rs to the 0.137 API:\n\n- MemFlags::trusted() is gone. Use MemFlagsData::new().with_notrap().with_aligned(),\n  which has the same meaning.\n- FunctionBuilder::finalize() takes module.target_config().\n- declare_var(ty) returns the Variable. The manual Variable::from_u32 indices are gone.\n- The *_imm builders are deprecated. Use the *_imm_s variants. They sign-extend,\n  as the old i64 immediates did, so behavior is unchanged.\n\nValidation: cargo test -p rd-jni --features jit (7 passed), cargo test -p\nrd-vm --features jit --test jit (10 passed), cargo clippy --workspace\n--all-targets --features rd-cli/jit -- -D warnings (exit 0), cargo fmt --check (exit 0).\n\nBlocker, not addressed here: cranelift 0.137 declares rust-version 1.97.0. The\nworkspace MSRV is 1.76, and the policy ceiling is 1.85. The MSRV job runs\n--all-features, so it cannot pass with this bump. Needs an owner decision.\n\n* build(msrv): subir MSRV para 1.97 e liberar clap (destrava #463)\n\n- Cargo.toml: rust-version 1.76 -> 1.97. O Cranelift 0.137 exige 1.97.0.\n- Cargo.toml: remove o teto `clap < 4.6` (o próprio comentário pedia\n  para levantá-lo junto com a subida do MSRV). Cargo.lock: clap 4.6.7,\n  clap_lex 1.1.1; lockfile v4 (Cargo 1.97).\n- ci.yml: job \"Rust MSRV (1.97)\" usa toolchain 1.97.\n- GOVERNANCE.md, README.en.md, worklog.md: MSRV 1.97.0.\n- Removida a label `sentinel:dependency-major-approved`: não existe\n  mais no GitHub. Removidas a chave `dependency_major_label` do\n  policy.json e a linha correspondente em docs/rd-sentinel.md.\n\nVerificado localmente em rustc 1.97.0: `cargo check --workspace`,\n`cargo check -p rd-vm --features jit --locked`,\n`cargo check --workspace --all-features --locked`, `cargo fmt --check`.\nADRs antigos e CHANGELOG mantêm o texto histórico (1.76).\n\n* chore(lint): clippy do stable atual (1.99) sem alterar comportamento\n\nO job \"Rust (stable)\" passou a usar rustc/clippy 1.99, que tem lints a\nmais. Corrigidos os sites que quebram `-D warnings`, todos de forma\nequivalente:\n- `map_or(true, f)` em Option -> `is_none_or(f)` (rd-apk, rd-vm)\n- `x % n == 0` / `!= 0` -> `x.is_multiple_of(n)` (rd-ndk, rd-vm, rd-framework, testes)\n- `chunks_exact(N)` com N constante -> `as_chunks::<N>()` (rd-apk, rd-dex, rd-ndk, rd-vm)\n- `repeat().take()` -> `repeat_n()`; `!(a..b).contains(&x)` (clippy --fix)\n\nVerificado com clippy 1.97 `--workspace --all-targets --all-features\n--locked -- -D warnings` (exit 0), cargo fmt --check, e testes de\nrd-apk/rd-dex/rd-framework/rd-vm (lib + android_assets + wasm_bridge).\nOs 3 testes de rd-ndk/native exigem o NDK (golden/native/build.sh) e\nseguem dependendo do job nativo do CI.\n\n* chore(lint): as_chunks_mut e isolate_lowest_one (clippy 1.99)\n\nDois chunks_exact_mut(2) em android_sysservices -> as_chunks_mut::<2>(); e\nbound & -bound == bound em jrandom -> (bound as u32).isolate_lowest_one()\n== bound as u32 (mesma máscara bit a bit; 0 e i32::MIN preservados).\nVerificado: clippy 1.97 --all-features -D warnings exit 0; rd-vm lib passa.\n\n* fix(vm): restaura semântica NaN de score/coordenada (regressão do clippy --fix)\n\nO clippy --fix transformou comparações explícitas (x < 0.0 || x > 1.0) em\n!(a..=b).contains(&x). Para NaN as duas formas divergem: a versão AOSP\naceita NaN, o contains rejeitava. Restauradas as comparações explícitas em\np41_chooser_instance e p35c_location_convert_from_string, com allow\njustificado de clippy::manual_range_contains nessas duas funções.\n\nVerificado: android_stub_surfaces 109/109; clippy 1.97 all-features exit 0.\n\n---------\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T14:32:34-03:00",
+          "tree_id": "63ea1f6cb22903f007427e15732fd525a248ce16",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/859b3d154c7934f67077a5f1ec4da9cc2ee89f21"
+        },
+        "date": 1793554374278,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3301,
+            "range": "± 60",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3340,
+            "range": "± 194",
             "unit": "ns/iter"
           }
         ]
