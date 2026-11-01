@@ -42,6 +42,9 @@ pub const MUTABLE_LIVEDATA: &str = "Landroidx/lifecycle/MutableLiveData;";
 pub const MEDIATOR_LIVEDATA: &str = "Landroidx/lifecycle/MediatorLiveData;";
 pub const VIEW_MODEL_STORE: &str = "Landroidx/lifecycle/ViewModelStore;";
 pub const VIEW_MODEL_PROVIDER: &str = "Landroidx/lifecycle/ViewModelProvider;";
+/// Base `ViewModel` (issue #232): métodos herdados por subclasses DEX do app
+/// (`getTag`, `setTagIfAbsent`, `addCloseable`, `clear`, `onCleared`).
+pub const VIEW_MODEL: &str = "Landroidx/lifecycle/ViewModel;";
 pub const SAVED_STATE_HANDLE: &str = "Landroidx/lifecycle/SavedStateHandle;";
 pub const ARRAY_MAP: &str = "Landroidx/collection/ArrayMap;";
 pub const SIMPLE_ARRAY_MAP: &str = "Landroidx/collection/SimpleArrayMap;";
@@ -112,6 +115,12 @@ pub struct LiveDataHost {
     pub value: Value,
     pub version: i32,
     pub observers: Vec<LiveObserver>,
+    /// As flags do AOSP (`mDispatchingValue`/`mDispatchInvalidated`):
+    /// um `setValue` dentro de `onChanged` marca invalidação e a
+    /// entrega recomeça iterativamente — sem elas, o despacho síncrono
+    /// recursia até ao SIGABRT do hospedeiro.
+    pub dispatching: bool,
+    pub dispatch_invalidated: bool,
 }
 
 impl Default for LiveDataHost {
@@ -120,6 +129,8 @@ impl Default for LiveDataHost {
             value: Value::Null,
             version: -1,
             observers: Vec::new(),
+            dispatching: false,
+            dispatch_invalidated: false,
         }
     }
 }
@@ -545,8 +556,16 @@ fn file_provider_uri(vm: &mut Engine, args: &[Value]) -> Result<Value, VmExit> {
     let clean = path.trim_start_matches('/');
     let url = format!("content://{authority}/rustydroid/{clean}");
     let r = alloc(vm, "Landroid/net/Uri;")?;
-    vm.fw.m8.uris.insert(r, url.clone());
-    vm.fw.androidx.file_provider_uris.push(url);
+    crate::android_uri::remember_uri(vm, r, url.clone())?;
+    // Keep only the newest URIs: a loop over getUriForFile must not grow host RAM
+    // without limit (#367).
+    const MAX_FILE_PROVIDER_URIS: usize = 4096;
+    let uris = &mut vm.fw.androidx.file_provider_uris;
+    uris.push(url);
+    if uris.len() > MAX_FILE_PROVIDER_URIS {
+        let excess = uris.len() - MAX_FILE_PROVIDER_URIS;
+        uris.drain(..excess);
+    }
     Ok(Value::Obj(r))
 }
 
@@ -826,29 +845,69 @@ fn observer_active(vm: &Engine, o: &LiveObserver) -> bool {
         },
     }
 }
+/// Teto de rondas de re-despacho por disparo (o AOSP não tem teto
+/// porque o main thread + watchdog o limitam; aqui o teto é a
+/// alternativa honesta a um loop/abort do hospedeiro).
+const MAX_LIVEDATA_DISPATCH_ROUNDS: usize = 256;
+
 fn livedata_dispatch(vm: &mut Engine, recv: ObjRef) -> Result<(), VmExit> {
-    // Deliver the current value to every active observer that has not
-    // seen this version; inactive observers keep their last version.
-    let snapshot: Vec<(ObjRef, Value)> = {
-        let Some(h) = vm.fw.androidx.livedata.get(&recv) else {
+    {
+        let Some(h) = vm.fw.androidx.livedata.get_mut(&recv) else {
             return Ok(());
         };
-        h.observers
-            .iter()
-            .filter(|o| o.last_version < h.version && observer_active(vm, o))
-            .map(|o| (o.observer, h.value.clone()))
-            .collect()
-    };
+        if h.dispatching {
+            // setValue aninhado (dentro de um onChanged): invalida e
+            // deixa a ronda exterior re-despachar com o valor novo.
+            h.dispatch_invalidated = true;
+            return Ok(());
+        }
+        h.dispatching = true;
+    }
+    let result = livedata_dispatch_rounds(vm, recv);
     if let Some(h) = vm.fw.androidx.livedata.get_mut(&recv) {
-        let version = h.version;
-        for o in h.observers.iter_mut() {
-            if snapshot.iter().any(|(obs, _)| *obs == o.observer) {
-                o.last_version = version;
+        h.dispatching = false;
+        h.dispatch_invalidated = false;
+    }
+    result
+}
+
+fn livedata_dispatch_rounds(vm: &mut Engine, recv: ObjRef) -> Result<(), VmExit> {
+    for _ in 0..MAX_LIVEDATA_DISPATCH_ROUNDS {
+        if let Some(h) = vm.fw.androidx.livedata.get_mut(&recv) {
+            h.dispatch_invalidated = false;
+        }
+        // Deliver the current value to every active observer that has
+        // not seen this version; inactive keep their last version.
+        let snapshot: Vec<(ObjRef, Value)> = {
+            let Some(h) = vm.fw.androidx.livedata.get(&recv) else {
+                return Ok(());
+            };
+            h.observers
+                .iter()
+                .filter(|o| o.last_version < h.version && observer_active(vm, o))
+                .map(|o| (o.observer, h.value.clone()))
+                .collect()
+        };
+        if let Some(h) = vm.fw.androidx.livedata.get_mut(&recv) {
+            let version = h.version;
+            for o in h.observers.iter_mut() {
+                if snapshot.iter().any(|(obs, _)| *obs == o.observer) {
+                    o.last_version = version;
+                }
             }
         }
-    }
-    for (obs, val) in snapshot {
-        let _ = crate::m8::call_dex(vm, obs, "onChanged", "(Ljava/lang/Object;)V", vec![val])?;
+        for (obs, val) in snapshot {
+            let _ = crate::m8::call_dex(vm, obs, "onChanged", "(Ljava/lang/Object;)V", vec![val])?;
+        }
+        let invalidated = vm
+            .fw
+            .androidx
+            .livedata
+            .get(&recv)
+            .is_some_and(|h| h.dispatch_invalidated);
+        if !invalidated {
+            break;
+        }
     }
     Ok(())
 }
@@ -1030,11 +1089,102 @@ fn vm_store(
             };
             for vm_ref in cleared {
                 let _ = crate::m8::call_dex(vm, vm_ref, "onCleared", "()V", Vec::new())?;
+                close_view_model_closeables(vm, vm_ref)?;
             }
             Value::Null
         }
         _ => return Ok(None),
     }))
+}
+
+// Estado do ViewModel base fica nos campos da própria instância (`rd_vm_*`),
+// para o GC seguir as referências sem tabela host extra.
+fn vm_field_put(vm: &mut Engine, r: ObjRef, name: &str, v: Value) -> Result<(), VmExit> {
+    crate::err::put_field_result(vm.heap.put_field(r, name, v))
+}
+
+fn vm_tag_get(vm: &Engine, r: ObjRef, key: &str) -> Value {
+    vm.heap
+        .get_field(r, &format!("rd_vm_tag:{key}"))
+        .unwrap_or(Value::Null)
+}
+
+fn vm_closeable_push(vm: &mut Engine, r: ObjRef, c: ObjRef) -> Result<(), VmExit> {
+    let n = match vm.heap.get_field(r, "rd_vm_closeables") {
+        Ok(Value::Int(n)) => n,
+        _ => 0,
+    };
+    vm_field_put(vm, r, &format!("rd_vm_closeable:{n}"), Value::Obj(c))?;
+    vm_field_put(vm, r, "rd_vm_closeables", Value::Int(n + 1))
+}
+
+/// Fecha, na ordem de registro, os `Closeable` adicionados ao ViewModel.
+fn close_view_model_closeables(vm: &mut Engine, r: ObjRef) -> Result<(), VmExit> {
+    let n = match vm.heap.get_field(r, "rd_vm_closeables") {
+        Ok(Value::Int(n)) => n,
+        _ => 0,
+    };
+    for i in 0..n {
+        if let Ok(Value::Obj(c)) = vm.heap.get_field(r, &format!("rd_vm_closeable:{i}")) {
+            let _ = vm.invoke_instance(c, "close", "()V", &[])?;
+        }
+    }
+    Ok(())
+}
+
+fn view_model(
+    vm: &mut Engine,
+    mref: &str,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    match (name, sig) {
+        ("<init>", "()V") => {
+            if dex_exists(vm, mref, name, sig) {
+                return Ok(None);
+            }
+            Ok(Some(Value::Null))
+        }
+        ("getTag", "(Ljava/lang/String;)Ljava/lang/Object;") => {
+            let key = sarg(vm, args, 0).ok_or_else(|| npe("ViewModel.getTag(null key)"))?;
+            Ok(Some(vm_tag_get(vm, recv, &key)))
+        }
+        ("setTagIfAbsent", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;") => {
+            let key = sarg(vm, args, 0).ok_or_else(|| npe("ViewModel.setTagIfAbsent(null key)"))?;
+            let existing = vm_tag_get(vm, recv, &key);
+            if !matches!(existing, Value::Null) {
+                return Ok(Some(existing));
+            }
+            let v = args.get(1).cloned().unwrap_or(Value::Null);
+            vm_field_put(vm, recv, &format!("rd_vm_tag:{key}"), v.clone())?;
+            Ok(Some(v))
+        }
+        ("addCloseable", "(Ljava/io/Closeable;)V")
+        | ("addCloseable", "(Ljava/lang/AutoCloseable;)V") => {
+            if let Some(c) = oarg(args, 0) {
+                vm_closeable_push(vm, recv, c)?;
+            }
+            Ok(Some(Value::Null))
+        }
+        ("addCloseable", "(Ljava/lang/String;Ljava/io/Closeable;)V")
+        | ("addCloseable", "(Ljava/lang/String;Ljava/lang/AutoCloseable;)V") => {
+            let key = sarg(vm, args, 0).ok_or_else(|| npe("ViewModel.addCloseable(null key)"))?;
+            if let Some(c) = oarg(args, 1) {
+                vm_field_put(vm, recv, &format!("rd_vm_tag:{key}"), Value::Obj(c))?;
+                vm_closeable_push(vm, recv, c)?;
+            }
+            Ok(Some(Value::Null))
+        }
+        ("onCleared", "()V") => Ok(Some(Value::Null)),
+        ("clear", "()V") => {
+            let _ = vm.invoke_instance(recv, "onCleared", "()V", &[])?;
+            close_view_model_closeables(vm, recv)?;
+            Ok(Some(Value::Null))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn vm_provider(
@@ -2792,6 +2942,9 @@ fn call_instance_rooted(
         || has_livedata
     {
         return livedata(vm, mref_class, name, sig, recv, args);
+    }
+    if mref_class == VIEW_MODEL {
+        return view_model(vm, mref_class, name, sig, recv, args);
     }
     if mref_class == VIEW_MODEL_STORE || has_store {
         return vm_store(vm, mref_class, name, sig, recv, args);

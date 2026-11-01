@@ -19,7 +19,6 @@ const LOCATION_REQUEST_BUILDER: &str = "Lcom/google/android/gms/location/Locatio
 const LOCATION_CALLBACK: &str = "Lcom/google/android/gms/location/LocationCallback;";
 const LOCATION_RESULT: &str = "Lcom/google/android/gms/location/LocationResult;";
 const GMS_TASK: &str = "Lcom/google/android/gms/tasks/Task;";
-const GMS_TASKS: &str = "Lcom/google/android/gms/tasks/Tasks;";
 
 const LOCATION_PERMS: &[&str] = &[
     "android.permission.ACCESS_FINE_LOCATION",
@@ -83,6 +82,35 @@ impl Default for LocationState {
             route_cursor: 0,
             listeners: Vec::new(),
         }
+    }
+}
+
+/// Fix que os apps veem agora: o último escrito pelo host (`gms_set_location_fix`)
+/// ou pelo agente (`m10_set_location`), ambos gravados em `gms.location_fix`.
+/// Sem nenhum, vale o fix padrão do dispositivo virtual.
+fn current_fix(vm: &Engine) -> LocationFix {
+    let current = &vm.fw.vdev.location.current;
+    match vm.fw.gms.location_fix.as_ref() {
+        Some(f) => LocationFix {
+            provider: if f.provider.is_empty() {
+                current.provider.clone()
+            } else {
+                f.provider.clone()
+            },
+            latitude: f.lat,
+            longitude: f.lng,
+            altitude: f.altitude_m,
+            accuracy: f.accuracy_m,
+            speed: f.speed_mps,
+            bearing: f.bearing_deg,
+            time_ms: if f.time_ms != 0 {
+                f.time_ms
+            } else {
+                current.time_ms
+            },
+            elapsed_ns: current.elapsed_ns,
+        },
+        None => current.clone(),
     }
 }
 
@@ -202,10 +230,12 @@ pub(super) fn static_call(
             let r = alloc_with(vm, LOCATION_RESULT, vec![("rd_locations".into(), list_val)])?;
             Ok(Some(Value::Obj(r)))
         }
-        (GMS_TASKS, "forResult") => {
-            let res = args.first().cloned().unwrap_or(Value::Null);
-            Ok(Some(Value::Obj(completed_task(vm, res)?)))
-        }
+        // Tasks.forResult NÃO é cunhado aqui: cai para o shim GMS
+        // (gms.rs) mais abaixo na cadeia estática, para que TODAS as
+        // Tasks de uso geral vivam no mesmo motor (continueWith,
+        // whenAll, listeners e getResult consistentes de bytecode).
+        // As Tasks dos próprios fluxos fused continuam a nascer em
+        // completed_task/rd_*.
         _ => Ok(None),
     }
 }
@@ -268,7 +298,7 @@ pub(super) fn instance_call(
                 if !enabled {
                     return Ok(Some(Value::Null));
                 }
-                let mut fix = vm.fw.vdev.location.current.clone();
+                let mut fix = current_fix(vm);
                 fix.provider = prov;
                 Ok(Some(Value::Obj(build_location_obj(vm, &fix)?)))
             }
@@ -314,7 +344,7 @@ pub(super) fn instance_call(
             "getCurrentLocation" => {
                 check_any_perm(vm, LOCATION_PERMS)?;
                 let prov = opt_str_arg(vm, args, 0)?.unwrap_or_else(|| "gps".into());
-                let mut fix = vm.fw.vdev.location.current.clone();
+                let mut fix = current_fix(vm);
                 fix.provider = prov;
                 let loc = build_location_obj(vm, &fix)?;
                 if let Some(consumer) = args.last().and_then(|v| match v {
@@ -528,7 +558,7 @@ pub(super) fn instance_call(
         FUSED_CLIENT => match name {
             "getLastLocation" | "getCurrentLocation" => {
                 check_any_perm(vm, LOCATION_PERMS)?;
-                let mut fix = vm.fw.vdev.location.current.clone();
+                let mut fix = current_fix(vm);
                 fix.provider = "fused".into();
                 let loc = build_location_obj(vm, &fix)?;
                 Ok(Some(Value::Obj(completed_task(vm, Value::Obj(loc))?)))
@@ -579,52 +609,63 @@ pub(super) fn instance_call(
             "flushLocations" => Ok(Some(Value::Obj(completed_task(vm, Value::Null)?))),
             _ => Ok(None),
         },
-        GMS_TASK => match name {
-            "isComplete" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_complete", 1)))),
-            "isSuccessful" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_success", 1)))),
-            "isCanceled" => Ok(Some(Value::Int(0))),
-            "getResult" => Ok(Some(
-                get_field(vm, recv, "rd_result").unwrap_or(Value::Null),
-            )),
-            "getException" => Ok(Some(Value::Null)),
-            "addOnSuccessListener" => {
-                if get_int_field(vm, recv, "rd_success", 1) != 0 {
-                    if let Some(listener) = args.last().and_then(|v| match v {
-                        Value::Obj(r) => Some(*r),
-                        _ => None,
-                    }) {
-                        let res = get_field(vm, recv, "rd_result").unwrap_or(Value::Null);
-                        let _ = call_dex(
-                            vm,
-                            listener,
-                            "onSuccess",
-                            "(Ljava/lang/Object;)V",
-                            vec![res],
-                        )?;
-                    }
-                }
-                Ok(Some(Value::Obj(recv)))
+        GMS_TASK => {
+            // Só Tasks cunhadas pelo M10 (completed_task grava rd_* no
+            // heap). As Tasks do shim "sem GMS" (Apêndice E, gms.rs)
+            // NÃO têm esses campos — reclamá-las aqui fazia
+            // isComplete/isSuccessful devolverem os defaults 1/1,
+            // getResult null e listeners dispararem de imediato
+            // (daí a recursão fatal de um listener que se re-adiciona).
+            if get_field(vm, recv, "rd_complete").is_none() {
+                return Ok(None);
             }
-            "addOnCompleteListener" => {
-                if get_int_field(vm, recv, "rd_complete", 1) != 0 {
-                    if let Some(listener) = args.last().and_then(|v| match v {
-                        Value::Obj(r) => Some(*r),
-                        _ => None,
-                    }) {
-                        let _ = call_dex(
-                            vm,
-                            listener,
-                            "onComplete",
-                            "(Lcom/google/android/gms/tasks/Task;)V",
-                            vec![Value::Obj(recv)],
-                        )?;
+            match name {
+                "isComplete" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_complete", 1)))),
+                "isSuccessful" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_success", 1)))),
+                "isCanceled" => Ok(Some(Value::Int(0))),
+                "getResult" => Ok(Some(
+                    get_field(vm, recv, "rd_result").unwrap_or(Value::Null),
+                )),
+                "getException" => Ok(Some(Value::Null)),
+                "addOnSuccessListener" => {
+                    if get_int_field(vm, recv, "rd_success", 1) != 0 {
+                        if let Some(listener) = args.last().and_then(|v| match v {
+                            Value::Obj(r) => Some(*r),
+                            _ => None,
+                        }) {
+                            let res = get_field(vm, recv, "rd_result").unwrap_or(Value::Null);
+                            let _ = call_dex(
+                                vm,
+                                listener,
+                                "onSuccess",
+                                "(Ljava/lang/Object;)V",
+                                vec![res],
+                            )?;
+                        }
                     }
+                    Ok(Some(Value::Obj(recv)))
                 }
-                Ok(Some(Value::Obj(recv)))
+                "addOnCompleteListener" => {
+                    if get_int_field(vm, recv, "rd_complete", 1) != 0 {
+                        if let Some(listener) = args.last().and_then(|v| match v {
+                            Value::Obj(r) => Some(*r),
+                            _ => None,
+                        }) {
+                            let _ = call_dex(
+                                vm,
+                                listener,
+                                "onComplete",
+                                "(Lcom/google/android/gms/tasks/Task;)V",
+                                vec![Value::Obj(recv)],
+                            )?;
+                        }
+                    }
+                    Ok(Some(Value::Obj(recv)))
+                }
+                "addOnFailureListener" | "addOnCanceledListener" => Ok(Some(Value::Obj(recv))),
+                _ => Ok(None),
             }
-            "addOnFailureListener" | "addOnCanceledListener" => Ok(Some(Value::Obj(recv))),
-            _ => Ok(None),
-        },
+        }
         _ => Ok(None),
     }
 }
@@ -661,6 +702,19 @@ impl Engine {
             elapsed_ns,
         };
         self.fw.vdev.location.current = fix.clone();
+        // Espelho: `gms_set_location_fix` (host) e este método (agente) gravam
+        // o mesmo `gms.location_fix`, então vale a última escrita para todos os
+        // caminhos (issue #229: o fused client lia só o estado do M10).
+        self.fw.gms.location_fix = Some(crate::gms::FixCfg {
+            lat: fix.latitude,
+            lng: fix.longitude,
+            accuracy_m: fix.accuracy,
+            altitude_m: fix.altitude,
+            bearing_deg: fix.bearing,
+            speed_mps: fix.speed,
+            time_ms: fix.time_ms,
+            provider: fix.provider.clone(),
+        });
         self.m10_deliver_location_fix(&fix)
     }
 

@@ -58,6 +58,8 @@ const BAIS: &str = "Ljava/io/ByteArrayInputStream;";
 const WRITERS: [&str; 6] = [SW, OSW, BW, PW, PS, FW];
 const READERS: [&str; 4] = [SR, ISR, BR, FR];
 
+const MAX_STREAM_UNITS: usize = 16 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 enum Sink {
     Buffer,
@@ -68,11 +70,13 @@ enum Sink {
 #[derive(Debug, Clone)]
 struct WState {
     sink: Sink,
-    pending: String,
+    pending: Vec<u16>,
     /// StringWriter content (Sink::Buffer).
-    text: String,
+    text: Vec<u16>,
     autoflush: bool,
     closed: bool,
+    /// Erro sinalizado para `checkError()` (JDK: PrintWriter/PrintStream não lançam, #366).
+    error: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -117,17 +121,12 @@ pub(crate) fn gc_keys(out: &mut Vec<ObjRef>) {
 pub(crate) fn gc_entry(r: ObjRef, out: &mut impl std::fmt::Write) {
     WRITERS_ST.with(|m| {
         if let Some(v) = m.borrow().get(&r) {
-            let _ = write!(out, "|{v:?}");
+            let _ = write!(out, "|{:?}", v.sink);
         }
     });
     READERS_ST.with(|m| {
         if let Some(v) = m.borrow().get(&r) {
-            let _ = write!(out, "|{v:?}");
-        }
-    });
-    BYTES_ST.with(|m| {
-        if let Some(v) = m.borrow().get(&r) {
-            let _ = write!(out, "|{v:?}");
+            let _ = write!(out, "|{:?}", v.source);
         }
     });
 }
@@ -137,6 +136,14 @@ pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
     WRITERS_ST.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
     READERS_ST.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
     BYTES_ST.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
+}
+
+/// Issue #230: fronteira de `Engine` — estados de streams indexados por
+/// `ObjRef` morrem com o heap que os criou.
+pub(crate) fn reset_all() {
+    WRITERS_ST.with(|m| m.borrow_mut().clear());
+    READERS_ST.with(|m| m.borrow_mut().clear());
+    BYTES_ST.with(|m| m.borrow_mut().clear());
 }
 
 fn exc(class: &str, msg: impl Into<String>) -> VmExit {
@@ -189,53 +196,167 @@ fn bytes_of(vm: &Engine, v: Option<&Value>) -> Vec<u8> {
         _ => Vec::new(),
     }
 }
-fn slice<T: Clone>(all: &[T], off: i32, len: i32) -> Result<Vec<T>, VmExit> {
-    if off < 0 || len < 0 || off as usize + len as usize > all.len() {
-        return Err(exc(
-            "Ljava/lang/IndexOutOfBoundsException;",
-            format!("offset {off}, count {len}, length {}", all.len()),
-        ));
+fn require_char_array(vm: &Engine, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
+    let Some(Value::Obj(a)) = v else {
+        return Err(exc("Ljava/lang/NullPointerException;", "cbuf == null"));
+    };
+    if *a == 0 {
+        return Err(exc("Ljava/lang/NullPointerException;", "cbuf == null"));
     }
-    Ok(all[off as usize..(off + len) as usize].to_vec())
+    Ok(vm
+        .heap
+        .as_array_elems(*a)
+        .map(|(e, _)| e.iter().map(|x| x.as_int().unwrap_or(0) as u16).collect())
+        .unwrap_or_default())
 }
 
-/// Value printed by `print(x)` for the parameter type in `sig`.
-fn print_text(vm: &mut Engine, sig: &str, v: Option<&Value>) -> Result<String, VmExit> {
+fn require_byte_array(vm: &Engine, v: Option<&Value>) -> Result<Vec<u8>, VmExit> {
+    let Some(Value::Obj(a)) = v else {
+        return Err(exc("Ljava/lang/NullPointerException;", "b == null"));
+    };
+    if *a == 0 {
+        return Err(exc("Ljava/lang/NullPointerException;", "b == null"));
+    }
+    Ok(vm
+        .heap
+        .as_array_elems(*a)
+        .map(|(e, _)| e.iter().map(|x| x.as_int().unwrap_or(0) as u8).collect())
+        .unwrap_or_default())
+}
+
+fn require_non_null_string(vm: &mut Engine, v: Option<&Value>) -> Result<String, VmExit> {
+    let Some(Value::Obj(r)) = v else {
+        return Err(exc("Ljava/lang/NullPointerException;", "str == null"));
+    };
+    if *r == 0 {
+        return Err(exc("Ljava/lang/NullPointerException;", "str == null"));
+    }
+    match vm.heap.as_str(*r) {
+        Ok(s) => Ok(s.to_string()),
+        Err(_) => crate::intrinsics::object_to_string(vm, *r),
+    }
+}
+
+fn check_offset_len(cap: usize, off: i32, len: i32) -> Result<(usize, usize), VmExit> {
+    if off < 0 || len < 0 {
+        return Err(exc(
+            "Ljava/lang/IndexOutOfBoundsException;",
+            format!("offset {off}, count {len}, length {cap}"),
+        ));
+    }
+    let (uoff, ulen) = (off as usize, len as usize);
+    let end = uoff.checked_add(ulen).ok_or_else(|| {
+        exc(
+            "Ljava/lang/IndexOutOfBoundsException;",
+            format!("offset {off}, count {len}, length {cap}"),
+        )
+    })?;
+    if end > cap {
+        return Err(exc(
+            "Ljava/lang/IndexOutOfBoundsException;",
+            format!("offset {off}, count {len}, length {cap}"),
+        ));
+    }
+    Ok((uoff, ulen))
+}
+
+fn check_start_end(cap: usize, start: i32, end: i32) -> Result<(usize, usize), VmExit> {
+    if start < 0 || end < start || (end as usize) > cap {
+        return Err(exc(
+            "Ljava/lang/IndexOutOfBoundsException;",
+            format!("start {start}, end {end}, length {cap}"),
+        ));
+    }
+    Ok((start as usize, end as usize))
+}
+
+fn slice<T: Clone>(all: &[T], off: i32, len: i32) -> Result<Vec<T>, VmExit> {
+    let (uoff, ulen) = check_offset_len(all.len(), off, len)?;
+    Ok(all[uoff..uoff + ulen].to_vec())
+}
+
+/// `ByteArrayInputStream(buf, off, len)` na JDK: `count = min(off + len, buf.length)`,
+/// sem exceção por estouro (#366). Offsets negativos continuam IOOBE.
+fn clamp_slice<T: Clone>(all: &[T], off: i32, len: i32) -> Result<Vec<T>, VmExit> {
+    if off < 0 || len < 0 {
+        return slice(all, off, len);
+    }
+    let start = (off as usize).min(all.len());
+    let end = (off as usize).saturating_add(len as usize).min(all.len());
+    Ok(all[start..end].to_vec())
+}
+
+/// Value printed by `print(x)` for the parameter type in `sig`, as UTF-16 units
+/// so surrogate `char` arguments survive paired `print(char)` calls.
+fn print_units(vm: &mut Engine, sig: &str, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
     let p = sig.trim_start_matches('(').split(')').next().unwrap_or("");
     Ok(match (p, v) {
-        ("Z", Some(v)) => (v.as_int().unwrap_or(0) != 0).to_string(),
-        ("C", Some(v)) => char::from_u32(v.as_int().unwrap_or(0) as u32)
-            .map(String::from)
-            .unwrap_or_default(),
-        ("I", Some(v)) => v.as_int().unwrap_or(0).to_string(),
-        ("J", Some(Value::Long(l))) => l.to_string(),
-        ("F", Some(Value::Float(f))) => crate::numerics::java_double_to_string(*f as f64, true),
-        ("D", Some(Value::Double(d))) => crate::numerics::java_double_to_string(*d, false),
-        ("[C", v) => String::from_utf16_lossy(&chars_of(vm, v)),
-        ("", _) => String::new(),
-        (_, v) => text_of(vm, v)?,
+        ("Z", Some(v)) => (v.as_int().unwrap_or(0) != 0)
+            .to_string()
+            .encode_utf16()
+            .collect(),
+        ("C", Some(v)) => vec![(v.as_int().unwrap_or(0) as u32 & 0xffff) as u16],
+        ("I", Some(v)) => v.as_int().unwrap_or(0).to_string().encode_utf16().collect(),
+        ("J", Some(Value::Long(l))) => l.to_string().encode_utf16().collect(),
+        ("F", Some(Value::Float(f))) => crate::numerics::java_double_to_string(*f as f64, true)
+            .encode_utf16()
+            .collect(),
+        ("D", Some(Value::Double(d))) => crate::numerics::java_double_to_string(*d, false)
+            .encode_utf16()
+            .collect(),
+        ("[C", v) => require_char_array(vm, v)?,
+        ("", _) => Vec::new(),
+        (_, v) => text_of(vm, v)?.encode_utf16().collect(),
     })
 }
 
 // ── writers ─────────────────────────────────────────────────────────────
 
-fn wget(r: ObjRef) -> Option<WState> {
-    WRITERS_ST.with(|m| m.borrow().get(&r).cloned())
-}
 fn wput(r: ObjRef, st: WState) {
     WRITERS_ST.with(|m| m.borrow_mut().insert(r, st));
 }
+/// Leitura sem clonar o estado (o `text` pode ser grande). #366: clonar a cada
+/// `write` tornava a escrita O(N^2).
+fn wview<R>(r: ObjRef, f: impl FnOnce(&WState) -> R) -> Option<R> {
+    WRITERS_ST.with(|m| m.borrow().get(&r).map(f))
+}
+/// Mutação in-place do estado (sem clone e sem reinserir).
+fn wmod<R>(r: ObjRef, f: impl FnOnce(&mut WState) -> R) -> Option<R> {
+    WRITERS_ST.with(|m| m.borrow_mut().get_mut(&r).map(f))
+}
 
-fn flush_writer(vm: &mut Engine, recv: ObjRef, close: bool) -> Result<(), VmExit> {
-    let Some(mut st) = wget(recv) else {
+fn flush_writer(
+    vm: &mut Engine,
+    recv: ObjRef,
+    close: bool,
+    hold_trailing_high: bool,
+) -> Result<(), VmExit> {
+    let Some((sink, data)) = wmod(recv, |st| {
+        let units = if !close
+            && hold_trailing_high
+            && st
+                .pending
+                .last()
+                .is_some_and(|u| (0xD800..=0xDBFF).contains(u))
+        {
+            let keep = st.pending.pop();
+            let taken = std::mem::take(&mut st.pending);
+            if let Some(hi) = keep {
+                st.pending.push(hi);
+            }
+            taken
+        } else {
+            std::mem::take(&mut st.pending)
+        };
+        let data = String::from_utf16_lossy(&units);
+        if close {
+            st.closed = true;
+        }
+        (st.sink.clone(), data)
+    }) else {
         return Ok(());
     };
-    let data = std::mem::take(&mut st.pending);
-    if close {
-        st.closed = true;
-    }
-    wput(recv, st.clone());
-    match &st.sink {
+    match &sink {
         Sink::Buffer => {}
         Sink::Writer(w) => {
             if !data.is_empty() {
@@ -255,19 +376,42 @@ fn flush_writer(vm: &mut Engine, recv: ObjRef, close: bool) -> Result<(), VmExit
     Ok(())
 }
 
-fn write_text(recv: ObjRef, s: &str) -> Result<(), VmExit> {
-    let Some(mut st) = wget(recv) else {
-        return Ok(());
-    };
-    if st.closed {
-        return Err(exc("Ljava/io/IOException;", "Stream closed"));
-    }
-    match st.sink {
-        Sink::Buffer => st.text.push_str(s),
-        _ => st.pending.push_str(s),
-    }
-    wput(recv, st);
-    Ok(())
+fn write_units(vm: &Engine, recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
+    let (used, budget) = (vm.heap.used(), vm.heap.budget());
+    let res = wmod(recv, |st| {
+        if st.closed {
+            // JDK: escrita após close() não lança; vira checkError() (#366).
+            st.error = true;
+            return Ok(());
+        }
+        // O buffer vive no host (u16). Cobrar o tamanho resultante contra o
+        // orçamento do heap antes de crescer, como em SpannableStringBuilder (#366).
+        let is_buffer = matches!(st.sink, Sink::Buffer);
+        let cur = if is_buffer {
+            st.text.len()
+        } else {
+            st.pending.len()
+        };
+        let cost = (cur + units.len()).saturating_mul(2).saturating_add(32);
+        if used.saturating_add(cost) > budget {
+            return Err(exc(
+                "Ljava/lang/OutOfMemoryError;",
+                format!("writer buffer of {cost} bytes exceeds heap of {budget} bytes"),
+            ));
+        }
+        if is_buffer {
+            st.text.extend_from_slice(units);
+        } else {
+            st.pending.extend_from_slice(units);
+        }
+        Ok(())
+    });
+    res.unwrap_or(Ok(()))
+}
+
+fn write_text(vm: &Engine, recv: ObjRef, s: &str) -> Result<(), VmExit> {
+    let units: Vec<u16> = s.encode_utf16().collect();
+    write_units(vm, recv, &units)
 }
 
 /// Sink for a writer constructor's first argument.
@@ -280,6 +424,9 @@ fn sink_for(vm: &mut Engine, class: &str, args: &[Value], sig: &str) -> Result<S
     match class {
         SW => Ok(Sink::Buffer),
         FW => {
+            if obj(args, 0).is_none() {
+                return Err(exc("Ljava/lang/NullPointerException;", "file == null"));
+            }
             // FileWriter(File|String[, boolean append | Charset[, boolean]])
             let fos = vm
                 .heap
@@ -360,15 +507,16 @@ fn writer(
             recv,
             WState {
                 sink,
-                pending: String::new(),
-                text: String::new(),
+                pending: Vec::new(),
+                text: Vec::new(),
                 autoflush,
                 closed: false,
+                error: false,
             },
         );
         return Ok(Some(Value::Null));
     }
-    if wget(recv).is_none() {
+    if wview(recv, |_| ()).is_none() {
         return Ok(None);
     }
     let ret_self = sig.ends_with(")Ljava/io/Writer;")
@@ -377,50 +525,85 @@ fn writer(
         || sig.ends_with(")Ljava/io/StringWriter;")
         || sig.ends_with(")Ljava/lang/Appendable;");
     let out = match name {
-        "write" => {
-            let s = match sig {
-                "(I)V" => char::from_u32(int(args, 0) as u32 & 0xffff)
-                    .map(String::from)
-                    .unwrap_or_default(),
-                "([C)V" => String::from_utf16_lossy(&chars_of(vm, args.first())),
-                "([CII)V" => String::from_utf16_lossy(&slice(
-                    &chars_of(vm, args.first()),
-                    int(args, 1),
-                    int(args, 2),
-                )?),
-                "(Ljava/lang/String;II)V" => {
-                    let u: Vec<u16> = text_of(vm, args.first())?.encode_utf16().collect();
-                    String::from_utf16_lossy(&slice(&u, int(args, 1), int(args, 2))?)
-                }
-                _ => text_of(vm, args.first())?,
+        "write" if class == PS && (sig == "([B)V" || sig == "([BII)V") => {
+            let raw = if sig == "([B)V" {
+                require_byte_array(vm, args.first())?
+            } else {
+                let all = require_byte_array(vm, args.first())?;
+                slice(&all, int(args, 1), int(args, 2))?
             };
-            write_text(recv, &s)?;
+            flush_writer(vm, recv, false, false)?;
+            if let Some(os) = wview(recv, |w| match (&w.sink, w.closed) {
+                (Sink::Stream(os, _), false) => Some(*os),
+                _ => None,
+            })
+            .flatten()
+            {
+                let b = crate::jlstring::byte_array(vm, &raw)?;
+                vm.invoke_instance(os, "write", "([B)V", &[b])?;
+                vm.invoke_instance(os, "flush", "()V", &[])?;
+            }
+            Value::Null
+        }
+        "writeBytes" if class == PS => {
+            let raw = require_byte_array(vm, args.first())?;
+            flush_writer(vm, recv, false, false)?;
+            if let Some(os) = wview(recv, |w| match (&w.sink, w.closed) {
+                (Sink::Stream(os, _), false) => Some(*os),
+                _ => None,
+            })
+            .flatten()
+            {
+                let b = crate::jlstring::byte_array(vm, &raw)?;
+                vm.invoke_instance(os, "write", "([B)V", &[b])?;
+                vm.invoke_instance(os, "flush", "()V", &[])?;
+            }
+            Value::Null
+        }
+        "write" => {
+            let units: Vec<u16> = match sig {
+                "(I)V" => vec![(int(args, 0) as u32 & 0xffff) as u16],
+                "([C)V" => require_char_array(vm, args.first())?,
+                "([CII)V" => {
+                    let all = require_char_array(vm, args.first())?;
+                    slice(&all, int(args, 1), int(args, 2))?
+                }
+                "(Ljava/lang/String;II)V" => {
+                    let u: Vec<u16> = require_non_null_string(vm, args.first())?
+                        .encode_utf16()
+                        .collect();
+                    slice(&u, int(args, 1), int(args, 2))?
+                }
+                _ => require_non_null_string(vm, args.first())?
+                    .encode_utf16()
+                    .collect(),
+            };
+            write_units(vm, recv, &units)?;
             Value::Null
         }
         "append" => {
-            let s = match sig {
+            let units: Vec<u16> = match sig {
                 "(C)Ljava/io/Writer;"
                 | "(C)Ljava/io/PrintWriter;"
+                | "(C)Ljava/io/PrintStream;"
                 | "(C)Ljava/io/StringWriter;"
-                | "(C)Ljava/lang/Appendable;" => char::from_u32(int(args, 0) as u32)
-                    .map(String::from)
-                    .unwrap_or_default(),
+                | "(C)Ljava/lang/Appendable;" => vec![(int(args, 0) as u32 & 0xffff) as u16],
                 _ if args.len() == 3 => {
                     let u: Vec<u16> = text_of(vm, args.first())?.encode_utf16().collect();
-                    let (a, b) = (int(args, 1), int(args, 2));
-                    String::from_utf16_lossy(&slice(&u, a, b - a)?)
+                    let (a, b) = check_start_end(u.len(), int(args, 1), int(args, 2))?;
+                    u[a..b].to_vec()
                 }
-                _ => text_of(vm, args.first())?,
+                _ => text_of(vm, args.first())?.encode_utf16().collect(),
             };
-            write_text(recv, &s)?;
+            write_units(vm, recv, &units)?;
             Value::Obj(recv)
         }
         "print" | "println" => {
-            let mut s = print_text(vm, sig, args.first())?;
+            let mut units = print_units(vm, sig, args.first())?;
             if name == "println" {
-                s.push('\n');
+                units.push(b'\n' as u16);
             }
-            write_text(recv, &s)?;
+            write_units(vm, recv, &units)?;
             Value::Null
         }
         "printf" | "format" => {
@@ -430,7 +613,7 @@ fn writer(
             } else {
                 (0, 1)
             };
-            let fmt = text_of(vm, args.get(fi))?;
+            let fmt = require_non_null_string(vm, args.get(fi))?;
             let fargs: Vec<Value> = match args.get(ai) {
                 Some(Value::Obj(a)) => vm
                     .heap
@@ -440,32 +623,50 @@ fn writer(
                 _ => Vec::new(),
             };
             let s = crate::jlstring::java_format(vm, &fmt, &fargs, ('.', ','))?;
-            write_text(recv, &s)?;
+            write_text(vm, recv, &s)?;
             Value::Obj(recv)
         }
         "newLine" => {
-            write_text(recv, "\n")?;
+            write_text(vm, recv, "\n")?;
             Value::Null
         }
         "flush" => {
-            flush_writer(vm, recv, false)?;
+            flush_writer(vm, recv, false, false)?;
             Value::Null
         }
         "close" => {
-            if !wget(recv).is_some_and(|w| w.closed) {
-                flush_writer(vm, recv, true)?;
+            if class != SW && !wview(recv, |w| w.closed).unwrap_or(false) {
+                flush_writer(vm, recv, true, false)?;
             }
             Value::Null
         }
         "checkError" => {
-            flush_writer(vm, recv, false)?;
-            Value::Int(0)
+            flush_writer(vm, recv, false, false)?;
+            Value::Int(wview(recv, |w| w.error).unwrap_or(false) as i32)
         }
         "toString" if class == SW => {
-            let t = wget(recv).map(|w| w.text).unwrap_or_default();
+            let t = wview(recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
             jstr(vm, t)?
         }
-        "getEncoding" => match wget(recv).map(|w| w.sink) {
+        "getBuffer" if class == SW => {
+            let t = wview(recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
+            let sb = vm
+                .heap
+                .alloc_instance("Ljava/lang/StringBuffer;".to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            let s_val = jstr(vm, t)?;
+            let _ = crate::intrinsics::call_instance_intrinsic_mref(
+                vm,
+                "Ljava/lang/StringBuffer;",
+                "Ljava/lang/StringBuffer;",
+                "<init>",
+                "(Ljava/lang/String;)V",
+                sb,
+                &[s_val],
+            )?;
+            Value::Obj(sb)
+        }
+        "getEncoding" => match wview(recv, |w| w.sink.clone()) {
             Some(Sink::Stream(_, cs)) => jstr(vm, cs.replace('-', ""))?,
             _ => Value::Null,
         },
@@ -475,11 +676,12 @@ fn writer(
         && matches!(
             name,
             "write" | "append" | "print" | "println" | "printf" | "format" | "newLine"
-        );
+        )
+        && !matches!(sig, "([B)V" | "([BII)V");
     let printwriter_autoflush =
-        class == PW && name == "println" && wget(recv).is_some_and(|w| w.autoflush);
+        class == PW && name == "println" && wview(recv, |w| w.autoflush).unwrap_or(false);
     if stream_write || printwriter_autoflush {
-        flush_writer(vm, recv, false)?;
+        flush_writer(vm, recv, false, name != "println" && name != "newLine")?;
     }
     Ok(Some(if ret_self && matches!(out, Value::Null) {
         Value::Obj(recv)
@@ -517,12 +719,12 @@ fn load(vm: &mut Engine, recv: ObjRef) -> Result<RState, VmExit> {
                 ist2.pos = ist2.chars.len();
                 rput(inner, ist2);
             } else {
-                // DEX Reader: pull through read(char[],int,int).
+                // DEX Reader: pull through read(char[],int,int) reusing one buffer.
+                let arr = vm
+                    .heap
+                    .alloc_array_zeroed(ElemKind::Int, 4096, "[C")
+                    .map_err(crate::err::oom_throwable)?;
                 loop {
-                    let arr = vm
-                        .heap
-                        .alloc_array_zeroed(ElemKind::Int, 4096, "[C")
-                        .map_err(crate::err::oom_throwable)?;
                     let n = vm
                         .invoke_instance(
                             inner,
@@ -536,17 +738,34 @@ fn load(vm: &mut Engine, recv: ObjRef) -> Result<RState, VmExit> {
                         break;
                     }
                     let got = chars_of(vm, Some(&Value::Obj(arr)));
-                    st.chars.extend_from_slice(&got[..n as usize]);
+                    let take = (n as usize).min(got.len());
+                    if st
+                        .chars
+                        .len()
+                        .checked_add(take)
+                        .is_none_or(|total| total > MAX_STREAM_UNITS)
+                    {
+                        return Err(exc(
+                            "Ljava/io/IOException;",
+                            "Reader stream exceeds maximum buffered length",
+                        ));
+                    }
+                    st.chars.extend_from_slice(&got[..take]);
+                    if let Ok(elems) = vm.heap.array_elems_mut(arr) {
+                        for slot in elems.iter_mut().take(take) {
+                            *slot = Value::Int(0);
+                        }
+                    }
                 }
             }
         }
         Source::Stream(is, cs) => {
             let mut bytes = Vec::new();
+            let arr = vm
+                .heap
+                .alloc_array_zeroed(ElemKind::Int, 8192, "[B")
+                .map_err(crate::err::oom_throwable)?;
             loop {
-                let arr = vm
-                    .heap
-                    .alloc_array_zeroed(ElemKind::Int, 8192, "[B")
-                    .map_err(crate::err::oom_throwable)?;
                 let n = vm
                     .invoke_instance(
                         is,
@@ -560,7 +779,23 @@ fn load(vm: &mut Engine, recv: ObjRef) -> Result<RState, VmExit> {
                     break;
                 }
                 let got = bytes_of(vm, Some(&Value::Obj(arr)));
-                bytes.extend_from_slice(&got[..n as usize]);
+                let take = (n as usize).min(got.len());
+                if bytes
+                    .len()
+                    .checked_add(take)
+                    .is_none_or(|total| total > MAX_STREAM_UNITS)
+                {
+                    return Err(exc(
+                        "Ljava/io/IOException;",
+                        "InputStream exceeds maximum buffered length",
+                    ));
+                }
+                bytes.extend_from_slice(&got[..take]);
+                if let Ok(elems) = vm.heap.array_elems_mut(arr) {
+                    for slot in elems.iter_mut().take(take) {
+                        *slot = Value::Int(0);
+                    }
+                }
             }
             st.chars = crate::jlstring::decode(&bytes, &cs)
                 .encode_utf16()
@@ -584,6 +819,9 @@ fn reader(
         let source = match class {
             SR => Source::Text,
             FR => {
+                if obj(args, 0).is_none() {
+                    return Err(exc("Ljava/lang/NullPointerException;", "file == null"));
+                }
                 let fis = vm
                     .heap
                     .alloc_instance("Ljava/io/FileInputStream;".to_string(), Vec::new())
@@ -621,7 +859,12 @@ fn reader(
             }
         };
         let (chars, loaded) = match source {
-            Source::Text => (text_of(vm, args.first())?.encode_utf16().collect(), true),
+            Source::Text => (
+                require_non_null_string(vm, args.first())?
+                    .encode_utf16()
+                    .collect(),
+                true,
+            ),
             _ => (Vec::new(), false),
         };
         rput(
@@ -642,17 +885,31 @@ fn reader(
     }
     if name == "close" {
         if let Some(mut st) = rget(recv) {
-            st.closed = true;
-            let src = st.source.clone();
-            rput(recv, st);
-            match src {
-                Source::Reader(r) | Source::Stream(r, _) => {
-                    vm.invoke_instance(r, "close", "()V", &[])?;
+            if !st.closed {
+                st.closed = true;
+                let src = st.source.clone();
+                rput(recv, st);
+                match src {
+                    Source::Reader(r) | Source::Stream(r, _) => {
+                        vm.invoke_instance(r, "close", "()V", &[])?;
+                    }
+                    Source::Text => {}
                 }
-                Source::Text => {}
             }
         }
         return Ok(Some(Value::Null));
+    }
+    if name == "markSupported" {
+        return Ok(Some(Value::Int(1)));
+    }
+    if name == "getEncoding" {
+        return match rget(recv) {
+            Some(st) if !st.closed => match st.source {
+                Source::Stream(_, cs) => Ok(Some(jstr(vm, cs.replace('-', ""))?)),
+                _ => Ok(Some(Value::Null)),
+            },
+            _ => Ok(Some(Value::Null)),
+        };
     }
     let mut st = load(vm, recv)?;
     let n = st.chars.len();
@@ -677,11 +934,8 @@ fn reader(
             let (off, len) = if sig == "([C)I" {
                 (0, cap)
             } else {
-                (int(args, 1) as usize, int(args, 2) as usize)
+                check_offset_len(cap, int(args, 1), int(args, 2))?
             };
-            if off + len > cap {
-                return Err(exc("Ljava/lang/IndexOutOfBoundsException;", "read"));
-            }
             if len == 0 {
                 Value::Int(0)
             } else if st.pos >= n {
@@ -739,8 +993,13 @@ fn reader(
             st.pos += k;
             Value::Long(k as i64)
         }
-        ("markSupported", _) => Value::Int(1),
         ("mark", _) => {
+            if int(args, 0) < 0 {
+                return Err(exc(
+                    "Ljava/lang/IllegalArgumentException;",
+                    "Read-ahead limit < 0",
+                ));
+            }
             st.mark = st.pos;
             Value::Null
         }
@@ -748,10 +1007,6 @@ fn reader(
             st.pos = st.mark;
             Value::Null
         }
-        ("getEncoding", _) => match &st.source {
-            Source::Stream(_, cs) => jstr(vm, cs.replace('-', ""))?,
-            _ => Value::Null,
-        },
         _ => return Ok(None),
     };
     rput(recv, st);
@@ -776,6 +1031,27 @@ pub(crate) fn new_byte_input_stream(vm: &mut Engine, bytes: Vec<u8>) -> Result<V
     Ok(Value::Obj(r))
 }
 
+/// Acrescenta `data` ao buffer do BAOS in place. O buffer vive no host, então
+/// o crescimento é cobrado contra `heap_budget` antes (mesma regra de #369/#366).
+fn baos_append(vm: &Engine, recv: ObjRef, data: &[u8]) -> Result<(), VmExit> {
+    let (used, budget) = (vm.heap.used(), vm.heap.budget());
+    BYTES_ST.with(|m| {
+        let mut m = m.borrow_mut();
+        let Some(st) = m.get_mut(&recv) else {
+            return Ok(());
+        };
+        let cost = st.bytes.len().saturating_add(data.len()).saturating_add(32);
+        if used.saturating_add(cost) > budget {
+            return Err(exc(
+                "Ljava/lang/OutOfMemoryError;",
+                format!("ByteArrayOutputStream of {cost} bytes exceeds heap of {budget} bytes"),
+            ));
+        }
+        st.bytes.extend_from_slice(data);
+        Ok(())
+    })
+}
+
 fn bytes_stream(
     vm: &mut Engine,
     class: &str,
@@ -787,10 +1063,16 @@ fn bytes_stream(
     let get = || BYTES_ST.with(|m| m.borrow().get(&recv).cloned());
     let set = |st: BState| BYTES_ST.with(|m| m.borrow_mut().insert(recv, st));
     if name == "<init>" {
+        if class == BAOS && args.len() == 1 && int(args, 0) < 0 {
+            return Err(exc(
+                "Ljava/lang/IllegalArgumentException;",
+                format!("Negative initial size: {}", int(args, 0)),
+            ));
+        }
         let st = if class == BAIS {
-            let all = bytes_of(vm, args.first());
+            let all = require_byte_array(vm, args.first())?;
             let bytes = if args.len() == 3 {
-                slice(&all, int(args, 1), int(args, 2))?
+                clamp_slice(&all, int(args, 1), int(args, 2))?
             } else {
                 all
             };
@@ -805,24 +1087,36 @@ fn bytes_stream(
         set(st);
         return Ok(Some(Value::Null));
     }
+    // BAOS: escritas e `size()` mexem no buffer in place. Clonar o buffer a cada
+    // chamada tornava N escritas O(N^2) (#366).
+    if class == BAOS {
+        match (name, sig) {
+            ("write", "(I)V")
+            | ("write", "([B)V")
+            | ("write", "([BII)V")
+            | ("writeBytes", "([B)V") => {
+                let data: Vec<u8> = match sig {
+                    "(I)V" => vec![int(args, 0) as u8],
+                    "([BII)V" => {
+                        let all = require_byte_array(vm, args.first())?;
+                        slice(&all, int(args, 1), int(args, 2))?
+                    }
+                    _ => require_byte_array(vm, args.first())?,
+                };
+                baos_append(vm, recv, &data)?;
+                return Ok(Some(Value::Null));
+            }
+            ("size", _) => {
+                if let Some(n) = BYTES_ST.with(|m| m.borrow().get(&recv).map(|s| s.bytes.len())) {
+                    return Ok(Some(Value::Int(n as i32)));
+                }
+            }
+            _ => {}
+        }
+    }
     let Some(mut st) = get() else { return Ok(None) };
     let n = st.bytes.len();
     let out = match (class, name) {
-        (BAOS, "write") => {
-            match sig {
-                "(I)V" => st.bytes.push(int(args, 0) as u8),
-                "([B)V" => st.bytes.extend(bytes_of(vm, args.first())),
-                _ => {
-                    let all = bytes_of(vm, args.first());
-                    st.bytes.extend(slice(&all, int(args, 1), int(args, 2))?);
-                }
-            }
-            Value::Null
-        }
-        (BAOS, "writeBytes") => {
-            st.bytes.extend(bytes_of(vm, args.first()));
-            Value::Null
-        }
         (BAOS, "toByteArray") => crate::jlstring::byte_array(vm, &st.bytes)?,
         (BAOS, "toString") => {
             let cs = if args.is_empty() {
@@ -866,11 +1160,8 @@ fn bytes_stream(
                 let (off, len) = if sig == "([B)I" {
                     (0, cap)
                 } else {
-                    (int(args, 1) as usize, int(args, 2) as usize)
+                    check_offset_len(cap, int(args, 1), int(args, 2))?
                 };
-                if off + len > cap {
-                    return Err(exc("Ljava/lang/IndexOutOfBoundsException;", "read"));
-                }
                 if len == 0 {
                     Value::Int(0)
                 } else if st.pos >= n {
@@ -938,20 +1229,27 @@ fn dex_base(
             Ok(Some(Value::Null))
         }
         (WRITER, "write", "(Ljava/lang/String;)V")
+        | (WRITER, "write", "(Ljava/lang/String;II)V")
         | (WRITER, "write", "(I)V")
         | (WRITER, "append", _) => {
-            let s = if sig == "(I)V" {
-                char::from_u32(int(args, 0) as u32 & 0xffff)
-                    .map(String::from)
-                    .unwrap_or_default()
-            } else if sig.starts_with("(C)") {
-                char::from_u32(int(args, 0) as u32)
-                    .map(String::from)
-                    .unwrap_or_default()
+            let u: Vec<u16> = if sig == "(I)V" || sig.starts_with("(C)") {
+                vec![(int(args, 0) as u32 & 0xffff) as u16]
+            } else if name == "write" && sig == "(Ljava/lang/String;II)V" {
+                let all: Vec<u16> = require_non_null_string(vm, args.first())?
+                    .encode_utf16()
+                    .collect();
+                slice(&all, int(args, 1), int(args, 2))?
+            } else if name == "write" {
+                require_non_null_string(vm, args.first())?
+                    .encode_utf16()
+                    .collect()
+            } else if args.len() == 3 {
+                let all: Vec<u16> = text_of(vm, args.first())?.encode_utf16().collect();
+                let (a, b) = check_start_end(all.len(), int(args, 1), int(args, 2))?;
+                all[a..b].to_vec()
             } else {
-                text_of(vm, args.first())?
+                text_of(vm, args.first())?.encode_utf16().collect()
             };
-            let u: Vec<u16> = s.encode_utf16().collect();
             let arr = vm
                 .heap
                 .alloc_array(ElemKind::Int, u.len(), "[C")
@@ -973,7 +1271,7 @@ fn dex_base(
             }))
         }
         (WRITER, "write", "([C)V") => {
-            let len = chars_of(vm, args.first()).len() as i32;
+            let len = require_char_array(vm, args.first())?.len() as i32;
             vm.invoke_instance(
                 recv,
                 "write",
@@ -999,11 +1297,14 @@ fn dex_base(
             Ok(Some(Value::Int(if n <= 0 {
                 -1
             } else {
-                chars_of(vm, Some(&Value::Obj(arr)))[0] as i32
+                chars_of(vm, Some(&Value::Obj(arr)))
+                    .first()
+                    .copied()
+                    .unwrap_or(0) as i32
             })))
         }
         (READER, "read", "([C)I") => {
-            let len = chars_of(vm, args.first()).len() as i32;
+            let len = require_char_array(vm, args.first())?.len() as i32;
             Ok(Some(vm.invoke_instance(
                 recv,
                 "read",
@@ -1060,9 +1361,9 @@ fn buffered_output_stream(
         "write" => {
             let data = match sig {
                 "(I)V" => vec![int(args, 0) as u8],
-                "([B)V" => bytes_of(vm, args.first()),
+                "([B)V" => require_byte_array(vm, args.first())?,
                 _ => {
-                    let all = bytes_of(vm, args.first());
+                    let all = require_byte_array(vm, args.first())?;
                     slice(&all, int(args, 1), int(args, 2))?
                 }
             };

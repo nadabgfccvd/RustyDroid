@@ -16,6 +16,7 @@ use crate::axml::ComplexUnit;
 use crate::error::{RdError, RdResult};
 use crate::pool::StringPool;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub const RES_TABLE_TYPE: u16 = 0x0002;
@@ -31,6 +32,13 @@ const ENTRY_FLAG_COMPLEX: u16 = 0x0001;
 /// RSS em APKs hostis; ao estourar, o cache é reconstruído do zero (bounded,
 /// determinístico — só afeta QUANDO decodificar, nunca O QUÊ retornar).
 const ENTRY_CACHE_CAP: usize = 8192;
+
+/// Orçamento de materialização (issue #331 item 2), compartilhado entre pacotes
+/// de um mesmo `Arsc`: entradas + itens de bag, e bytes de strings clonadas.
+/// Lazy: é consumido no ACESSO (`entries_for`); ao estourar, as entradas
+/// restantes deixam de ser materializadas (resolve → `None`), sem pânico.
+const MAX_TOTAL_ARSC_ENTRIES: usize = 4_000_000; // entradas + itens de bag
+const MAX_TOTAL_ARSC_STRING_BYTES: usize = 128 * 1024 * 1024;
 
 #[inline]
 fn u16_at(d: &[u8], off: usize) -> RdResult<u16> {
@@ -57,7 +65,7 @@ pub struct ResConfigInfo {
 
 impl ResConfigInfo {
     pub fn is_default(&self) -> bool {
-        self.language.is_none() && self.density.map_or(true, |d| d == 0 || d == 160)
+        self.language.is_none() && self.density.is_none_or(|d| d == 0 || d == 160)
     }
     fn specificity(&self) -> u8 {
         let mut s = 0;
@@ -104,13 +112,48 @@ pub struct ResEntry {
 /// (e os mesmos guards) que o parse eager usava, garantindo paridade byte-a-byte.
 #[derive(Debug, Clone)]
 struct TypeChunkRef {
-    chunk_off: usize,
-    chunk_size: usize,
-    header_size: usize,
+    /// Fim absoluto do chunk (`p + csize`): todo guard de leitura usa este limite.
+    chunk_end: usize,
+    /// Início absoluto da tabela de offsets: `p + headerSize`.
+    table_start: usize,
+    /// Início absoluto das entradas: `p + entriesStart` (ou `table_start` se inválido).
+    entries_abs: usize,
     config: ResConfigInfo,
-    entry_count: usize,
     flags: u8,
-    entries_start: usize,
+}
+
+/// Orçamento compartilhado de materialização (ver `MAX_TOTAL_ARSC_*`).
+/// Atômico: `entries_for` é `&self`, e pacotes podem ser usados por threads.
+#[derive(Debug, Default)]
+struct ArscBudget {
+    entries: AtomicUsize,
+    string_bytes: AtomicUsize,
+}
+
+impl ArscBudget {
+    /// Cobra 1 entrada/item + os bytes da string clonada (se houver).
+    /// `false` = orçamento estourado: o chamador deixa de materializar.
+    fn charge(&self, string: Option<&str>) -> bool {
+        let entries_ok = self
+            .entries
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| {
+                c.checked_add(1).filter(|n| *n <= MAX_TOTAL_ARSC_ENTRIES)
+            })
+            .is_ok();
+        if !entries_ok {
+            return false;
+        }
+        match string {
+            None => true,
+            Some(s) => self
+                .string_bytes
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| {
+                    c.checked_add(s.len())
+                        .filter(|n| *n <= MAX_TOTAL_ARSC_STRING_BYTES)
+                })
+                .is_ok(),
+        }
+    }
 }
 
 /// Pacote com índice + materialização sob demanda (ADR 014). O `Clone` é
@@ -131,7 +174,11 @@ pub struct Package {
     /// busca por resid é binária. A ordem (resid, chunk_idx) reproduz a
     /// ordem de walk do eager — decisiva para o tie-breaking do `min_by_key`.
     chunks: Arc<Vec<TypeChunkRef>>,
-    pairs: Arc<Vec<(u32, u32)>>,
+    /// Ordenados por (resid, chunk_idx, slot): `slot` é o índice da tabela
+    /// (de onde o offset é lido na materialização). Ordem = ordem do walk eager.
+    pairs: Arc<Vec<(u32, u32, u32)>>,
+    /// Orçamento compartilhado pelo `Arsc` inteiro (Arc).
+    budget: Arc<ArscBudget>,
     /// Buffer do ARSC inteiro compartilhado (Arc) — Leis 2 e clones baratos.
     raw: Arc<Vec<u8>>,
     /// Cache de entradas materializadas por resid (cap `ENTRY_CACHE_CAP`;
@@ -155,6 +202,7 @@ impl Clone for Package {
             global: self.global.clone(),
             chunks: Arc::clone(&self.chunks),
             pairs: Arc::clone(&self.pairs),
+            budget: Arc::clone(&self.budget),
             raw: Arc::clone(&self.raw),
             cache: Mutex::new(BTreeMap::new()),
         }
@@ -191,6 +239,7 @@ impl Package {
             global: StringPool::default(),
             chunks: Arc::new(Vec::new()),
             pairs: Arc::new(Vec::new()),
+            budget: Arc::new(ArscBudget::default()),
             raw: Arc::new(Vec::new()),
             cache,
         }
@@ -209,30 +258,25 @@ impl Package {
                 return Some(Arc::clone(hit));
             }
         }
-        let start = self.pairs.partition_point(|(r, _)| *r < res_id);
-        let end = self.pairs.partition_point(|(r, _)| *r <= res_id);
+        let start = self.pairs.partition_point(|(r, _, _)| *r < res_id);
+        let end = self.pairs.partition_point(|(r, _, _)| *r <= res_id);
         if start == end {
             return None; // resid desconhecido (índice e cache vazios p/ ele)
         }
+        let data: &[u8] = &self.raw;
         let mut out: Vec<ResEntry> = Vec::new();
-        for &(_, ci) in &self.pairs[start..end] {
-            if let Some(r) = self.chunks.get(ci as usize) {
-                materialize_resid(&self.raw, r, res_id, &mut out);
+        for &(_, ci, slot) in &self.pairs[start..end] {
+            let Some(r) = self.chunks.get(ci as usize) else {
+                continue;
+            };
+            let rel = slot_rel(data, r, slot as usize);
+            if !materialize_slot(data, r, &self.global, &self.budget, rel, &mut out) {
+                break; // orçamento estourado: o resto deste resid fica de fora
             }
         }
-        // Pré-resolução de strings (idêntica ao eager): STRING simples →
-        // pool global; STRING de bag → pool global por item.
-        for e in out.iter_mut() {
-            if e.data_type == 3 && !e.complex {
-                e.string = self.global.get(e.data).map(str::to_owned);
-            }
-            if let Some(bag) = e.bag.as_mut() {
-                for v in bag.iter_mut() {
-                    if v.data_type == 3 {
-                        v.string = self.global.get(v.data).map(str::to_owned);
-                    }
-                }
-            }
+        if out.is_empty() {
+            // Eager: resid sem entradas empilhadas = ausente (None), não Some([]).
+            return None;
         }
         let arc = Arc::new(out);
         if let Ok(mut guard) = cache.lock() {
@@ -251,7 +295,7 @@ impl Package {
         // pairs já está ordenado por resid — unique preservando a ordem;
         // cache sintético (testes) contribui com chaves extras, re-ordenadas.
         let mut ids: Vec<u32> = Vec::with_capacity(self.pairs.len());
-        for &(r, _) in self.pairs.iter() {
+        for &(r, _, _) in self.pairs.iter() {
             if ids.last() != Some(&r) {
                 ids.push(r);
             }
@@ -370,13 +414,14 @@ impl Arsc {
         let data = &data[..file_size.min(data.len())];
         let package_count = u32_at(data, 8)?;
 
-        // pool global logo após o header (12 bytes)
-        let (global_strings, pool_used) = StringPool::parse_shared(&raw, 12)?;
+        let limit = file_size.min(raw.len());
+        // pool global logo após o header (12 bytes) — limitada ao file_size
+        let (global_strings, pool_used) = StringPool::parse_in(&raw, 12, limit)?;
         let mut p = 12 + pool_used as usize;
 
+        let budget = Arc::new(ArscBudget::default());
         let mut packages = Vec::new();
         let mut seen_packages = 0u32;
-        let limit = file_size.min(raw.len());
         while p + 8 <= limit && seen_packages < package_count {
             let ctype = u16_at(&raw, p)?;
             let cheader = u16_at(&raw, p + 2)? as usize;
@@ -402,6 +447,7 @@ impl Arsc {
                     csize,
                     pkg_header_size,
                     &global_strings,
+                    &budget,
                 )?);
                 seen_packages += 1;
             }
@@ -534,16 +580,33 @@ impl Arsc {
     }
 }
 
+/// Constrói o pacote: valida o header (issue #331/#246 — mesmos guards do eager)
+/// e indexa as entradas de tipo. Nada de entrada é materializado aqui (ADR 014).
 fn parse_package(
     raw: &Arc<Vec<u8>>,
     base: usize,
     size: usize,
     header_size: usize,
     global: &StringPool,
+    budget: &Arc<ArscBudget>,
 ) -> RdResult<Package> {
     let data: &[u8] = raw;
-    if base + 288 > data.len() {
-        return Err(RdError::parse("arsc: package chunk truncated (header)"));
+    // Issue #331 (item 3): o header de 288 bytes tem de caber no PRÓPRIO chunk.
+    if size < 288 || header_size < 288 {
+        return Err(RdError::parse(format!(
+            "arsc: package chunk too small (size {size}, header {header_size}, need 288)"
+        )));
+    }
+    if header_size > size {
+        return Err(RdError::parse(format!(
+            "arsc: package header {header_size} exceeds package chunk size {size}"
+        )));
+    }
+    let end = base
+        .checked_add(size)
+        .ok_or_else(|| RdError::parse("arsc: package offset overflow"))?;
+    if end > data.len() {
+        return Err(RdError::parse("arsc: package chunk truncated"));
     }
     let pkg_id = (u32_at(data, base + 8)? & 0xFF) as u8;
     let type_strings_off = u32_at(data, base + 268)? as usize;
@@ -560,105 +623,90 @@ fn parse_package(
     }
     let name = String::from_utf16_lossy(&name_units);
 
-    let (type_strings, _) = StringPool::parse_shared(raw, base + type_strings_off)?;
-    let (key_strings, _) = StringPool::parse_shared(raw, base + key_strings_off)?;
+    // Issue #246: as pools de tipo/chave são subchunks DO pacote — o limite de
+    // leitura é o fim do pacote, nunca os bytes de um pacote/chunk vizinho.
+    let type_abs = base
+        .checked_add(type_strings_off)
+        .ok_or_else(|| RdError::parse("arsc: type strings offset overflow"))?;
+    let key_abs = base
+        .checked_add(key_strings_off)
+        .ok_or_else(|| RdError::parse("arsc: key strings offset overflow"))?;
+    let (type_strings, _) = StringPool::parse_in(raw, type_abs, end)?;
+    let (key_strings, _) = StringPool::parse_in(raw, key_abs, end)?;
 
-    // ADR 014: índice leve em vez de materialização — o walk é o MESMO do
-    // eager (mesmos guards/breaks); por chunk de tipo guardamos a referência
-    // em `chunks` e os resids cobertos viram pares (resid, chunk_idx) em
-    // `pairs` (append O(1); sort único no fim; busca binária por resid).
+    // Walk idêntico ao eager (mesmos breaks e janelas), mas sem materializar.
     let mut chunks: Vec<TypeChunkRef> = Vec::new();
-    let mut pairs: Vec<(u32, u32)> = Vec::new();
-    // caminhar chunks internos a partir do fim do header real do pacote
-    let mut p = base + header_size;
-    let end = base + size;
+    let mut pairs: Vec<(u32, u32, u32)> = Vec::new();
+    let mut p = base
+        .checked_add(header_size)
+        .ok_or_else(|| RdError::parse("arsc: package header offset overflow"))?;
     while p + 8 <= end {
         let ctype = u16_at(data, p)?;
         let cheader = u16_at(data, p + 2)? as usize;
         let csize = u32_at(data, p + 4)? as usize;
+        let Some(chunk_end) = p.checked_add(csize) else {
+            break;
+        };
         // progresso garantido (chunk mínimo = 8 bytes) — endurece contra fuzz
-        if csize < 8 || csize < cheader || p + csize > end {
-            break; // chunk truncado: não fatal para o M0 — o que veio antes fica
+        if csize < 8 || csize < cheader || chunk_end > end {
+            break; // chunk truncado: não fatal — o que veio antes fica
         }
         if ctype == RES_TABLE_TYPE_CHUNK {
+            // issue #29: ResTable_type tem no mínimo 20 bytes de header
+            if cheader < 20 || csize < 20 {
+                break; // chunk malformado: não fatal — o que veio antes fica
+            }
             let type_id = data.get(p + 8).copied().unwrap_or(0);
             let flags = data.get(p + 9).copied().unwrap_or(0);
             let entry_count = u32_at(data, p + 12)? as usize;
             let entries_start = u32_at(data, p + 16)? as usize;
-
-            // issue #29: ResTable_type tem no mínimo 20 bytes de header
-            // (8 do ResChunk_header + id/res0/res1 + entryCount + entriesStart);
-            // cheader < 20 causava underflow `cheader - 20` (pânico em
-            // overflow-checks, config garbage em release)
-            if cheader < 20 {
-                break; // chunk malformado: não fatal — o que veio antes fica
-            }
             let config = parse_config(data, p + 20, cheader - 20)?;
 
+            // Issue #246: a tabela de offsets ocupa [header, entriesStart) DENTRO
+            // deste chunk. entryCount além dessa janela não lê chunks vizinhos.
+            let table_start = p + cheader;
+            let table_limit = if entries_start >= cheader && entries_start <= csize {
+                p + entries_start
+            } else {
+                table_start
+            };
+            let table_len = |width: usize| entry_count.min((table_limit - table_start) / width);
             let chunk_idx = chunks.len() as u32;
-            chunks.push(TypeChunkRef {
-                chunk_off: p,
-                chunk_size: csize,
-                header_size: cheader,
-                config,
-                entry_count,
-                flags,
-                entries_start,
-            });
+            let make_resid = |idx: usize| {
+                ((pkg_id as u32) << 24) | ((type_id as u32) << 16) | (idx as u32 & 0xFFFF)
+            };
 
             if flags & FLAG_SPARSE != 0 {
-                // ResTable_sparseTypeEntry: {idx u16, offset u16} — offset/4
-                let sparse_pairs = entry_count;
-                for i in 0..sparse_pairs {
-                    let o = p + cheader + i * 4;
-                    if o + 4 > data.len() {
-                        break;
-                    }
-                    let idx = u16_at(data, o)? as usize;
-                    let off4 = u16_at(data, o + 2)? as u32;
-                    if off4 == 0xFFFF {
-                        continue; // sem entrada (equivalente ao 0xFFFFFFFF do coletor)
-                    }
-                    let resid =
-                        ((pkg_id as u32) << 24) | ((type_id as u32) << 16) | (idx as u32 & 0xFFFF);
-                    pairs.push((resid, chunk_idx));
+                // ResTable_sparseTypeEntry: {idx u16, offset u16}; cada slot é um par.
+                for i in 0..table_len(4) {
+                    let idx = u16_at(data, table_start + i * 4)? as usize;
+                    pairs.push((make_resid(idx), chunk_idx, i as u32));
                 }
             } else if flags & FLAG_OFFSET16 != 0 {
-                for i in 0..entry_count {
-                    let o = p + cheader + i * 2;
-                    if o + 2 > data.len() {
-                        break;
-                    }
-                    let off = u16_at(data, o)? as u32;
-                    if off == 0xFFFF {
-                        continue;
-                    }
-                    let resid =
-                        ((pkg_id as u32) << 24) | ((type_id as u32) << 16) | (i as u32 & 0xFFFF);
-                    pairs.push((resid, chunk_idx));
+                for i in 0..table_len(2) {
+                    pairs.push((make_resid(i), chunk_idx, i as u32));
                 }
             } else {
-                for i in 0..entry_count {
-                    let o = p + cheader + i * 4;
-                    if o + 4 > data.len() {
-                        break;
+                for i in 0..table_len(4) {
+                    if u32_at(data, table_start + i * 4)? == 0xFFFF_FFFF {
+                        continue; // sem entrada
                     }
-                    let off = u32_at(data, o)?;
-                    if off == 0xFFFF_FFFF {
-                        continue;
-                    }
-                    let resid =
-                        ((pkg_id as u32) << 24) | ((type_id as u32) << 16) | (i as u32 & 0xFFFF);
-                    pairs.push((resid, chunk_idx));
+                    pairs.push((make_resid(i), chunk_idx, i as u32));
                 }
             }
+
+            chunks.push(TypeChunkRef {
+                chunk_end,
+                table_start,
+                entries_abs: table_limit,
+                config,
+                flags,
+            });
         }
-        p += csize;
+        p = chunk_end;
     }
 
-    // ordem determinística (Lei 4): (resid, chunk_idx) — chunk_idx é a ordem
-    // de walk, então o agrupamento por resid reproduz exatamente a ordem em
-    // que o eager empilhava as entradas (tie-breaking do min_by_key igual).
+    // Ordem determinística (Lei 4): (resid, chunk, slot) = ordem de walk do eager.
     pairs.sort_unstable();
 
     Ok(Package {
@@ -669,126 +717,129 @@ fn parse_package(
         global: global.clone(),
         chunks: Arc::new(chunks),
         pairs: Arc::new(pairs),
+        budget: Arc::clone(budget),
         raw: Arc::clone(raw),
         cache: Mutex::new(BTreeMap::new()),
     })
 }
 
-/// Materializa as entradas de `resid` presentes no chunk `r` (ADR 014).
-/// Porta 1:1 do coletor eager: mesmos endereços absolutos, mesmos guards
-/// (skip silencioso de entrada truncada), mesma ordem de push.
-fn materialize_resid(raw: &Arc<Vec<u8>>, r: &TypeChunkRef, resid: u32, out: &mut Vec<ResEntry>) {
-    let data: &[u8] = raw;
-    let p = r.chunk_off;
-    let csize = r.chunk_size;
-    let cheader = r.header_size;
-    let entries_abs = p + r.entries_start;
-    let idx = (resid & 0xFFFF) as usize;
-
-    let mut collect = |rel_off: u32| {
-        if rel_off == 0xFFFF_FFFF {
-            return;
-        }
-        let eoff = entries_abs + rel_off as usize;
-        if eoff + 8 > data.len() {
-            return; // entrada truncada: skip
-        }
-        let e_size = u16_at(data, eoff).unwrap_or(0) as usize;
-        let e_flags = u16_at(data, eoff + 2).unwrap_or(0);
-        let key_idx = u32_at(data, eoff + 4).unwrap_or(0);
-        let (data_type, ddata, complex, parent, bag) = if e_flags & ENTRY_FLAG_COMPLEX != 0 {
-            let parent = if e_size >= 16 && eoff + 16 <= p + csize {
-                let parent = u32_at(data, eoff + 8).unwrap_or(0);
-                (parent != 0).then_some(parent)
-            } else {
-                None
-            };
-            let map_count = if e_size >= 16 && eoff + 16 <= p + csize {
-                u32_at(data, eoff + 12).unwrap_or(0) as usize
-            } else {
-                usize::MAX
-            };
-            let maps_start = eoff.saturating_add(e_size);
-            let available = (p + csize).saturating_sub(maps_start) / 12;
-            let bag = if map_count <= 65_536 && map_count <= available {
-                let mut bag = Vec::with_capacity(map_count);
-                for i in 0..map_count {
-                    let m = maps_start + i * 12;
-                    let value_size = u16_at(data, m + 4).unwrap_or(0);
-                    if value_size < 8 {
-                        bag.clear();
-                        break;
-                    }
-                    let name = u32_at(data, m).unwrap_or(0);
-                    let dtype = *data.get(m + 7).unwrap_or(&0);
-                    let value = u32_at(data, m + 8).unwrap_or(0);
-                    bag.push(ResMapEntry {
-                        name,
-                        data_type: dtype,
-                        data: value,
-                        string: None, // resolvido abaixo (pool global não existe aqui)
-                    });
-                }
-                (bag.len() == map_count).then_some(bag)
-            } else {
-                None
-            };
-            (0u8, 0u32, true, parent, bag)
-        } else {
-            // Res_value após ResTable_entry (e_size bytes)
-            let Some(v) = eoff.checked_add(e_size) else {
-                return;
-            };
-            if v + 8 > p + csize || v + 8 > data.len() {
-                return;
-            }
-            let dtype = *data.get(v + 3).unwrap_or(&0);
-            let d = u32_at(data, v + 4).unwrap_or(0);
-            (dtype, d, false, None, None)
-        };
-        out.push(ResEntry {
-            config: r.config.clone(),
-            data_type,
-            data: ddata,
-            string: None, // pré-resolvido em entries_for (precisa da pool global)
-            complex,
-            parent,
-            bag,
-            key_idx,
-        });
-    };
-
+/// Offset relativo (×4, como o eager) do slot `slot` de um chunk de tipo.
+/// O slot já foi validado contra a janela no parse; `unwrap_or` é inalcançável.
+fn slot_rel(data: &[u8], r: &TypeChunkRef, slot: usize) -> u32 {
     if r.flags & FLAG_SPARSE != 0 {
-        // sparse: TODAS as entradas cujo idx casa (o eager processava cada par)
-        let pairs = r.entry_count;
-        for i in 0..pairs {
-            let o = p + cheader + i * 4;
-            if o + 4 > data.len() {
-                break;
-            }
-            let eidx = u16_at(data, o).unwrap_or(0) as usize;
-            let off4 = u16_at(data, o + 2).unwrap_or(0xFFFF) as u32;
-            if off4 == 0xFFFF {
-                continue;
-            }
-            if eidx == idx {
-                collect(off4 * 4);
-            }
-        }
+        // sparse: offset16 fica no 2º u16 do slot
+        u16_at(data, r.table_start + slot * 4 + 2).unwrap_or(0xFFFF) as u32 * 4
     } else if r.flags & FLAG_OFFSET16 != 0 {
-        let o = p + cheader + idx * 2;
-        if o + 2 <= data.len() {
-            let off = u16_at(data, o).unwrap_or(0xFFFF) as u32;
-            if off != 0xFFFF {
-                collect(off * 4);
-            }
-        }
+        u16_at(data, r.table_start + slot * 2).unwrap_or(0xFFFF) as u32 * 4
     } else {
-        let o = p + cheader + idx * 4;
-        if o + 4 <= data.len() {
-            collect(u32_at(data, o).unwrap_or(0xFFFF_FFFF));
-        }
+        u32_at(data, r.table_start + slot * 4).unwrap_or(0xFFFF_FFFF)
     }
+}
+
+/// Materializa UMA entrada (porta 1:1 do `collect` eager: mesmos guards,
+/// mesma pré-resolução de strings, mesma cobrança de orçamento).
+/// Retorna `false` se o orçamento estourou (o chamador para de materializar).
+fn materialize_slot(
+    data: &[u8],
+    r: &TypeChunkRef,
+    global: &StringPool,
+    budget: &ArscBudget,
+    rel_off: u32,
+    out: &mut Vec<ResEntry>,
+) -> bool {
+    if rel_off == 0xFFFF_FFFF {
+        return true;
+    }
+    let chunk_end = r.chunk_end;
+    let Some(eoff) = r.entries_abs.checked_add(rel_off as usize) else {
+        return true;
+    };
+    if eoff
+        .checked_add(8)
+        .is_none_or(|entry_end| entry_end > chunk_end)
+    {
+        return true; // entrada fora/truncada neste chunk: skip
+    }
+    let e_size = u16_at(data, eoff).unwrap_or(0) as usize;
+    let e_flags = u16_at(data, eoff + 2).unwrap_or(0);
+    let key_idx = u32_at(data, eoff + 4).unwrap_or(0);
+    let (data_type, ddata, complex, parent, bag) = if e_flags & ENTRY_FLAG_COMPLEX != 0 {
+        let parent = if e_size >= 16 && eoff + 16 <= chunk_end {
+            let parent = u32_at(data, eoff + 8).unwrap_or(0);
+            (parent != 0).then_some(parent)
+        } else {
+            None
+        };
+        let map_count = if e_size >= 16 && eoff + 16 <= chunk_end {
+            u32_at(data, eoff + 12).unwrap_or(0) as usize
+        } else {
+            usize::MAX
+        };
+        let maps_start = eoff.saturating_add(e_size);
+        let available = chunk_end.saturating_sub(maps_start) / 12;
+        let bag = if map_count <= 65_536 && map_count <= available {
+            let mut bag = Vec::with_capacity(map_count);
+            for i in 0..map_count {
+                let m = maps_start + i * 12;
+                let value_size = u16_at(data, m + 4).unwrap_or(0);
+                if value_size < 8 {
+                    bag.clear();
+                    break;
+                }
+                let name = u32_at(data, m).unwrap_or(0);
+                let dtype = *data.get(m + 7).unwrap_or(&0);
+                let value = u32_at(data, m + 8).unwrap_or(0);
+                let item_string = (dtype == 3)
+                    .then(|| global.get(value).map(str::to_owned))
+                    .flatten();
+                if !budget.charge(item_string.as_deref()) {
+                    return false;
+                }
+                bag.push(ResMapEntry {
+                    name,
+                    data_type: dtype,
+                    data: value,
+                    string: item_string,
+                });
+            }
+            (bag.len() == map_count).then_some(bag)
+        } else {
+            None
+        };
+        (0u8, 0u32, true, parent, bag)
+    } else {
+        // Res_value após ResTable_entry (e_size bytes)
+        let Some(v) = eoff.checked_add(e_size) else {
+            return true;
+        };
+        if v.checked_add(8)
+            .is_none_or(|value_end| value_end > chunk_end)
+        {
+            return true;
+        }
+        let dtype = *data.get(v + 3).unwrap_or(&0);
+        let d = u32_at(data, v + 4).unwrap_or(0);
+        (dtype, d, false, None, None)
+    };
+    let string = if data_type == 3 && !complex {
+        global.get(ddata).map(str::to_owned)
+    } else {
+        None
+    };
+    if !budget.charge(string.as_deref()) {
+        return false;
+    }
+    out.push(ResEntry {
+        config: r.config.clone(),
+        data_type,
+        data: ddata,
+        string,
+        complex,
+        parent,
+        bag,
+        key_idx,
+    });
+    true
 }
 
 /// ResTable_config — extrai locale/densidade/api sem reclamar de variações de tamanho.
@@ -1159,5 +1210,223 @@ mod tests {
         }
         // resid desconhecido → None honesto
         assert_eq!(arsc.resolve_string(0x7f01_0001), None);
+    }
+
+    /// arsc mínimo: pool global com UMA string UTF-8 de `slen` bytes e
+    /// um pacote cujo type chunk (OFFSET16) tem `count` entradas, TODAS
+    /// com `rel_off = 0` apontando para uma única entrada simples
+    /// (string idx 0) — cada entrada clona a string inteira.
+    fn aliased_string_arsc(count: u32, slen: usize) -> Vec<u8> {
+        fn varint2(v: usize) -> [u8; 2] {
+            [0x80 | ((v >> 8) as u8), (v & 0xFF) as u8]
+        }
+        // pool global UTF-8 (1 string grande)
+        let mut global = Vec::new();
+        global.extend_from_slice(&0x0001u16.to_le_bytes());
+        global.extend_from_slice(&28u16.to_le_bytes());
+        global.extend_from_slice(&0u32.to_le_bytes()); // size (patched)
+        global.extend_from_slice(&1u32.to_le_bytes());
+        global.extend_from_slice(&0u32.to_le_bytes());
+        global.extend_from_slice(&crate::pool::UTF8_FLAG.to_le_bytes());
+        global.extend_from_slice(&32u32.to_le_bytes()); // stringsStart = 28+4
+        global.extend_from_slice(&0u32.to_le_bytes());
+        global.extend_from_slice(&0u32.to_le_bytes()); // offset 0
+        global.extend(varint2(slen));
+        global.extend(varint2(slen));
+        global.extend(std::iter::repeat_n(b'A', slen));
+        global.push(0);
+        let gs = global.len() as u32;
+        global[4..8].copy_from_slice(&gs.to_le_bytes());
+
+        // type chunk: header 56 (20 + config zero), tabela OFFSET16 zeros
+        let cheader = 56usize;
+        let entries_start = cheader + count as usize * 2;
+        let mut tc = Vec::new();
+        tc.extend_from_slice(&RES_TABLE_TYPE_CHUNK.to_le_bytes());
+        tc.extend_from_slice(&(cheader as u16).to_le_bytes());
+        tc.extend_from_slice(&((entries_start + 16) as u32).to_le_bytes());
+        tc.push(1); // type id
+        tc.push(FLAG_OFFSET16);
+        tc.extend_from_slice(&0u16.to_le_bytes());
+        tc.extend_from_slice(&count.to_le_bytes());
+        tc.extend_from_slice(&(entries_start as u32).to_le_bytes());
+        tc.resize(cheader, 0); // config (zeros)
+        tc.extend(std::iter::repeat_n(0u8, count as usize * 2));
+        // ResTable_entry {size 8, flags 0, key 0} + Res_value {8, 0, 3, 0}
+        tc.extend_from_slice(&8u16.to_le_bytes());
+        tc.extend_from_slice(&0u16.to_le_bytes());
+        tc.extend_from_slice(&0u32.to_le_bytes());
+        tc.extend_from_slice(&8u16.to_le_bytes());
+        tc.push(0);
+        tc.push(3);
+        tc.extend_from_slice(&0u32.to_le_bytes());
+
+        // pacote: header 288 + pool vazio (tipos/chaves) + type chunk
+        let mut pkg = Vec::new();
+        pkg.extend_from_slice(&RES_TABLE_PACKAGE_TYPE.to_le_bytes());
+        pkg.extend_from_slice(&288u16.to_le_bytes());
+        pkg.extend_from_slice(&0u32.to_le_bytes()); // size (patched)
+        pkg.extend_from_slice(&0x7fu32.to_le_bytes()); // id
+        pkg.resize(288, 0);
+        pkg[268..272].copy_from_slice(&288u32.to_le_bytes()); // typeStrings
+        pkg[276..280].copy_from_slice(&288u32.to_le_bytes()); // keyStrings
+        pkg.extend(empty_global_pool());
+        pkg.extend_from_slice(&tc);
+        let ps = pkg.len() as u32;
+        pkg[4..8].copy_from_slice(&ps.to_le_bytes());
+
+        let mut d = Vec::new();
+        d.extend_from_slice(&RES_TABLE_TYPE.to_le_bytes());
+        d.extend_from_slice(&12u16.to_le_bytes());
+        d.extend_from_slice(&0u32.to_le_bytes()); // size (patched)
+        d.extend_from_slice(&1u32.to_le_bytes()); // packageCount
+        d.extend_from_slice(&global);
+        d.extend_from_slice(&pkg);
+        let total = d.len() as u32;
+        d[4..8].copy_from_slice(&total.to_le_bytes());
+        d
+    }
+
+    // ─── #246: a tabela/entradas de um ResTable_type ficam no próprio chunk ──
+
+    fn complex_entry_header(key_idx: u32) -> Vec<u8> {
+        let mut e = Vec::new();
+        e.extend_from_slice(&16u16.to_le_bytes()); // ResTable_entry size
+        e.extend_from_slice(&ENTRY_FLAG_COMPLEX.to_le_bytes());
+        e.extend_from_slice(&key_idx.to_le_bytes());
+        e.extend_from_slice(&0u32.to_le_bytes()); // parent
+        e.extend_from_slice(&0u32.to_le_bytes()); // count
+        e
+    }
+
+    fn dummy_chunk_with_complex(chunk_type: u16, key_idx: u32) -> Vec<u8> {
+        let mut c = Vec::new();
+        c.extend_from_slice(&chunk_type.to_le_bytes());
+        c.extend_from_slice(&8u16.to_le_bytes()); // headerSize
+        c.extend_from_slice(&24u32.to_le_bytes()); // 8 + complex header
+        c.extend(complex_entry_header(key_idx));
+        c
+    }
+
+    fn offset16_type_chunk(
+        type_id: u8,
+        entry_count: u32,
+        entries_start: u32,
+        offsets: &[u16],
+    ) -> Vec<u8> {
+        const CHEAD: usize = 56;
+        let mut c = Vec::new();
+        c.extend_from_slice(&RES_TABLE_TYPE_CHUNK.to_le_bytes());
+        c.extend_from_slice(&(CHEAD as u16).to_le_bytes());
+        c.extend_from_slice(&((CHEAD + offsets.len() * 2) as u32).to_le_bytes());
+        c.push(type_id);
+        c.push(FLAG_OFFSET16);
+        c.extend_from_slice(&0u16.to_le_bytes());
+        c.extend_from_slice(&entry_count.to_le_bytes());
+        c.extend_from_slice(&entries_start.to_le_bytes());
+        c.resize(CHEAD, 0); // ResTable_config zeros
+        for off in offsets {
+            c.extend_from_slice(&off.to_le_bytes());
+        }
+        c
+    }
+
+    fn package_with_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
+        let mut pkg = Vec::new();
+        pkg.extend_from_slice(&RES_TABLE_PACKAGE_TYPE.to_le_bytes());
+        pkg.extend_from_slice(&288u16.to_le_bytes());
+        pkg.extend_from_slice(&0u32.to_le_bytes()); // size (patched)
+        pkg.extend_from_slice(&0x7fu32.to_le_bytes()); // id
+        pkg.resize(288, 0);
+        pkg[268..272].copy_from_slice(&288u32.to_le_bytes()); // typeStrings
+        pkg[276..280].copy_from_slice(&288u32.to_le_bytes()); // keyStrings
+        pkg.extend(empty_global_pool());
+        for c in chunks {
+            pkg.extend_from_slice(c);
+        }
+        let size = pkg.len() as u32;
+        pkg[4..8].copy_from_slice(&size.to_le_bytes());
+        pkg
+    }
+
+    // ─── #331 (item 3) and #246 — ported to the lazy index (ADR 014) ─────────
+
+    #[test]
+    fn issue_331_aliased_entries_hit_materialization_budget() {
+        // ~40 KB de arquivo; sem orçamento, 5_000 clones de 30_000 B
+        // = 150 MB materializados. Lazy: o parse é estrutural e passa; o
+        // orçamento aparece no ACESSO — ao estourar, resolves viram None.
+        let d = aliased_string_arsc(5_000, 30_000);
+        let arsc = Arsc::parse(&d).expect("structural parse ok");
+        let pkg = &arsc.packages[0];
+        let mut materialized = 0usize;
+        for i in 0..5_000u32 {
+            if pkg.entries_for(0x7f01_0000 + i).is_some() {
+                materialized += 1;
+            }
+        }
+        assert!(materialized < 5_000, "budget never tripped");
+        assert!(
+            materialized * 30_000 <= 128 * 1024 * 1024,
+            "string bytes past the budget"
+        );
+        // E a versão pequena (10 entradas) continua válida.
+        let small = aliased_string_arsc(10, 30_000);
+        let arsc = Arsc::parse(&small).expect("arsc pequeno válido");
+        let s = arsc.resolve_string(0x7f01_0000).expect("string resolve");
+        assert_eq!(s.len(), 30_000);
+    }
+
+    #[test]
+    fn issue_246_type_tables_and_entries_cannot_cross_chunk_bounds() {
+        // Chunk 1 declares two OFFSET16 entries but its own size contains
+        // only the first table slot. The next word is the following chunk's
+        // type (0x0001); treating it as the second offset points into that
+        // sibling's payload, where a complex entry header is planted.
+        let table_chunk = offset16_type_chunk(1, 2, 62, &[0xFFFF]);
+        let sibling_payload_1 = dummy_chunk_with_complex(0x0001, 7);
+        // Chunk 2 has its table slot in-bounds, but the offset points past
+        // its end into the next sibling's planted complex entry header.
+        let entry_chunk = offset16_type_chunk(2, 1, 58, &[2]);
+        let sibling_payload_2 = dummy_chunk_with_complex(RES_TABLE_TYPE_SPEC, 8);
+        let data = package_with_chunks(&[
+            table_chunk,
+            sibling_payload_1,
+            entry_chunk,
+            sibling_payload_2,
+        ]);
+
+        let raw = Arc::new(data);
+        let budget = Arc::new(ArscBudget::default());
+        let pkg = parse_package(&raw, 0, raw.len(), 288, &StringPool::default(), &budget)
+            .expect("package with hostile type chunks still parses");
+        assert!(
+            pkg.entries_for(0x7f01_0001).is_none(),
+            "offset table read the sibling chunk header as an offset"
+        );
+        assert!(
+            pkg.entries_for(0x7f02_0000).is_none(),
+            "entry header was read from the sibling chunk"
+        );
+    }
+
+    #[test]
+    fn issue_246_package_string_pools_cannot_read_past_package_end() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&RES_TABLE_PACKAGE_TYPE.to_le_bytes());
+        data.extend_from_slice(&288u16.to_le_bytes());
+        data.extend_from_slice(&288u32.to_le_bytes()); // package size
+        data.extend_from_slice(&0x7fu32.to_le_bytes());
+        data.resize(288, 0);
+        data[268..272].copy_from_slice(&288u32.to_le_bytes());
+        data[276..280].copy_from_slice(&288u32.to_le_bytes());
+        // A perfectly valid empty pool, but entirely AFTER the package chunk.
+        data.extend(empty_global_pool());
+
+        let raw = Arc::new(data);
+        let budget = Arc::new(ArscBudget::default());
+        let err = parse_package(&raw, 0, 288, 288, &StringPool::default(), &budget)
+            .expect_err("package pools must live inside the package chunk");
+        assert_eq!(err.code, "PARSE_ERROR");
     }
 }

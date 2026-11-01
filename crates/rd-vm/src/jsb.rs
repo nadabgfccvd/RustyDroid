@@ -39,22 +39,53 @@ fn sioobe(msg: String) -> VmExit {
 }
 
 fn get(vm: &Engine, r: ObjRef) -> Vec<u16> {
-    match vm.heap.get_field(r, "buf") {
+    let mut u: Vec<u16> = match vm.heap.get_field(r, "buf") {
         Ok(Value::Obj(s)) => vm
             .heap
             .as_str(s)
             .map(|s| s.encode_utf16().collect())
             .unwrap_or_default(),
         _ => Vec::new(),
+    };
+    // A trailing high surrogate cannot live in the UTF-8 `buf`; it is kept in
+    // the `pend` field until its low surrogate arrives (#376).
+    if let Ok(Value::Int(h)) = vm.heap.get_field(r, "pend") {
+        if h != 0 {
+            u.push(h as u16);
+        }
+    }
+    u
+}
+/// Splits a trailing high surrogate off the units: `(text_part, pending_unit)`.
+/// `pending_unit` is 0 when there is none (#376).
+fn split_pending(u: &[u16]) -> (&[u16], i32) {
+    match u.last() {
+        Some(&last) if (0xD800..=0xDBFF).contains(&last) => (&u[..u.len() - 1], last as i32),
+        _ => (u, 0),
     }
 }
 fn set(vm: &mut Engine, r: ObjRef, u: &[u16]) -> Result<(), VmExit> {
-    // internal buffer growth: a budget overrun is VM_OOM (as with the former SB arms)
-    let s = vm.heap.alloc_string(String::from_utf16_lossy(u))?;
-    crate::err::put_field_result(vm.heap.put_field(r, "buf", Value::Obj(s)))
+    // internal buffer growth: a budget overrun is VM_OOM (Lei 1 / ROADMAP)
+    let (body, pend) = split_pending(u);
+    let s = vm.heap.alloc_string(String::from_utf16_lossy(body))?;
+    crate::err::put_field_result(vm.heap.put_field(r, "buf", Value::Obj(s)))?;
+    crate::err::put_field_result(vm.heap.put_field(r, "pend", Value::Int(pend)))
 }
 fn int(args: &[Value], i: usize) -> i32 {
     args.get(i).and_then(|v| v.as_int().ok()).unwrap_or(0)
+}
+
+/// Text argument that must not be null (`replace`, `indexOf`, `lastIndexOf`,
+/// `compareTo`): the JDK throws `NullPointerException`. `append`/`insert` keep
+/// `text_of`, where `null` means "null" (#376).
+fn required_text(vm: &mut Engine, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
+    match v {
+        None | Some(Value::Null) => Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/NullPointerException;",
+            "argument is null".to_string(),
+        ))),
+        _ => text_of(vm, v),
+    }
 }
 
 fn text_of(vm: &mut Engine, v: Option<&Value>) -> Result<Vec<u16>, VmExit> {
@@ -183,7 +214,17 @@ pub fn instance_intrinsic(
     let out: Value = match name {
         "<init>" => {
             let init = match ps.first().map(String::as_str) {
-                None | Some("I") => Vec::new(),
+                None => Vec::new(),
+                Some("I") => {
+                    let cap = int(args, 0);
+                    if cap < 0 {
+                        return Err(VmExit::Exception(Throwable::new(
+                            "Ljava/lang/NegativeArraySizeException;",
+                            format!("{cap}"),
+                        )));
+                    }
+                    Vec::new()
+                }
                 Some(_) => match args.first() {
                     Some(Value::Obj(_)) => text_of(vm, args.first())?,
                     _ => {
@@ -202,13 +243,13 @@ pub fn instance_intrinsic(
                 [p, i, j] if p == "[C" && i == "I" && j == "I" => {
                     let all = chars_of(vm, args.first())?;
                     let (o, n) = (int(args, 1), int(args, 2));
-                    if o < 0 || n < 0 || (o + n) as usize > all.len() {
+                    if o < 0 || n < 0 || (o as usize).saturating_add(n as usize) > all.len() {
                         return Err(VmExit::Exception(Throwable::new(
                             "Ljava/lang/IndexOutOfBoundsException;",
                             format!("offset {o}, count {n}, length {}", all.len()),
                         )));
                     }
-                    all[o as usize..(o + n) as usize].to_vec()
+                    all[o as usize..o as usize + n as usize].to_vec()
                 }
                 [_, i, j] if i == "I" && j == "I" => {
                     let all = text_of(vm, args.first())?;
@@ -234,14 +275,24 @@ pub fn instance_intrinsic(
             Value::Obj(recv)
         }
         "appendCodePoint" => {
-            let c = char::from_u32(int(args, 0) as u32).ok_or_else(|| {
-                VmExit::Exception(Throwable::new(
+            // Como a JDK: qualquer valor em 0..=0x10FFFF é aceito. Um surrogate
+            // isolado (0xD800..=0xDFFF) é anexado como uma unidade UTF-16; só
+            // valores fora do intervalo lançam IllegalArgumentException.
+            let cp = int(args, 0);
+            if !(0..=0x10FFFF).contains(&cp) {
+                return Err(VmExit::Exception(Throwable::new(
                     "Ljava/lang/IllegalArgumentException;",
-                    "Not a valid Unicode code point",
-                ))
-            })?;
-            let mut b = [0u16; 2];
-            u.extend_from_slice(c.encode_utf16(&mut b));
+                    format!("Not a valid Unicode code point: 0x{:X}", cp as u32),
+                )));
+            }
+            let cp = cp as u32;
+            if cp < 0x10000 {
+                u.push(cp as u16);
+            } else {
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                let mut b = [0u16; 2];
+                u.extend_from_slice(c.encode_utf16(&mut b));
+            }
             set(vm, recv, &u)?;
             Value::Obj(recv)
         }
@@ -255,9 +306,10 @@ pub fn instance_intrinsic(
                 [_, p, _, _] if p == "[C" => {
                     let all = chars_of(vm, args.get(1))?;
                     let (o, n) = (int(args, 2), int(args, 3));
-                    all.get(o.max(0) as usize..(o + n).max(0) as usize)
-                        .map(<[u16]>::to_vec)
-                        .ok_or_else(|| sioobe(format!("offset {o}, len {n}")))?
+                    if o < 0 || n < 0 || (o as usize).saturating_add(n as usize) > all.len() {
+                        return Err(sioobe(format!("offset {o}, len {n}")));
+                    }
+                    all[o as usize..o as usize + n as usize].to_vec()
                 }
                 [_, _, _, _] => {
                     let all = text_of(vm, args.get(1))?;
@@ -295,7 +347,7 @@ pub fn instance_intrinsic(
             if start < 0 || start as usize > len || start > end {
                 return Err(sioobe(format!("start {start}, end {end}, length {len}")));
             }
-            let add = text_of(vm, args.get(2))?;
+            let add = required_text(vm, args.get(2))?;
             u.splice(start as usize..end as usize, add);
             set(vm, recv, &u)?;
             Value::Obj(recv)
@@ -310,8 +362,28 @@ pub fn instance_intrinsic(
             if n < 0 {
                 return Err(sioobe(format!("String index out of range: {n}")));
             }
-            u.resize(n as usize, 0);
-            set(vm, recv, &u)?;
+            let target = n as usize;
+            if target > len {
+                let avail = vm.heap.budget().saturating_sub(vm.heap.used());
+                let needed = 32usize.saturating_add(target);
+                if needed > avail || target.saturating_mul(2) > vm.heap.budget() {
+                    return Err(VmExit::Exception(Throwable::new(
+                        "Ljava/lang/OutOfMemoryError;",
+                        format!(
+                            "StringBuilder.setLength({n}) exceeds heap budget ({avail} B remaining)"
+                        ),
+                    )));
+                }
+            }
+            u.resize(target, 0);
+            // setLength keeps its catchable OutOfMemoryError mapping.
+            let (body, pend) = split_pending(&u);
+            let s = vm
+                .heap
+                .alloc_string(String::from_utf16_lossy(body))
+                .map_err(crate::err::oom_throwable)?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "buf", Value::Obj(s)))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, "pend", Value::Int(pend)))?;
             Value::Null
         }
         "setCharAt" => {
@@ -335,11 +407,23 @@ pub fn instance_intrinsic(
             if i < 0 || i as usize >= len {
                 return Err(sioobe(format!("index {i},length {len}")));
             }
-            let s = String::from_utf16_lossy(&u[i as usize..]);
-            Value::Int(s.chars().next().map(|c| c as i32).unwrap_or(0))
+            // Como a JDK: par válido vira o code point; surrogate isolado vira o
+            // próprio valor da unidade (não U+FFFD).
+            let i = i as usize;
+            let hi = u[i] as u32;
+            let cp = match u.get(i + 1) {
+                Some(&lo)
+                    if (0xD800..0xDC00).contains(&hi)
+                        && (0xDC00..0xE000).contains(&(lo as u32)) =>
+                {
+                    ((hi - 0xD800) << 10) + (lo as u32 - 0xDC00) + 0x10000
+                }
+                _ => hi,
+            };
+            Value::Int(cp as i32)
         }
         "indexOf" | "lastIndexOf" => {
-            let needle = text_of(vm, args.first())?;
+            let needle = required_text(vm, args.first())?;
             if name == "indexOf" {
                 Value::Int(find(
                     &u,
@@ -379,17 +463,18 @@ pub fn instance_intrinsic(
                     "dst",
                 )));
             };
-            let off = int(args, 3).max(0) as usize;
+            let off = int(args, 3);
             let elems = vm
                 .heap
                 .array_elems_mut(*dst)
                 .map_err(|e| crate::err::vm_error("VM_TYPE_ERROR", e))?;
-            if off + (b - a) > elems.len() {
+            if off < 0 || (off as usize).saturating_add(b - a) > elems.len() {
                 return Err(VmExit::Exception(Throwable::new(
                     "Ljava/lang/ArrayIndexOutOfBoundsException;",
                     "getChars",
                 )));
             }
+            let off = off as usize;
             for (k, c) in u[a..b].iter().enumerate() {
                 elems[off + k] = Value::Int(*c as i32);
             }
@@ -404,7 +489,7 @@ pub fn instance_intrinsic(
             String::from_utf16_lossy(&u),
         )?),
         "compareTo" => {
-            let other = text_of(vm, args.first())?;
+            let other = required_text(vm, args.first())?;
             Value::Int(match u.cmp(&other) {
                 std::cmp::Ordering::Less => -1,
                 std::cmp::Ordering::Equal => 0,

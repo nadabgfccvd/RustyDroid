@@ -21,16 +21,18 @@ pub struct Framebuffer {
 }
 
 impl Framebuffer {
+    /// Portrait viewport (`VIEW_W` x `VIEW_H`).
     pub fn new(bg: Rgb) -> Self {
-        let mut px = Vec::with_capacity(VIEW_W * VIEW_H * 3);
-        for _ in 0..VIEW_W * VIEW_H {
+        Self::new_sized(bg, VIEW_W, VIEW_H)
+    }
+
+    /// Framebuffer of an arbitrary viewport, e.g. landscape `1440x720`.
+    pub fn new_sized(bg: Rgb, w: usize, h: usize) -> Self {
+        let mut px = Vec::with_capacity(w * h * 3);
+        for _ in 0..w * h {
             px.extend_from_slice(&[bg.0, bg.1, bg.2]);
         }
-        Framebuffer {
-            w: VIEW_W,
-            h: VIEW_H,
-            px,
-        }
+        Framebuffer { w, h, px }
     }
 
     pub fn pixel_mut(&mut self, x: i32, y: i32) -> Option<&mut [u8]> {
@@ -57,6 +59,9 @@ impl Framebuffer {
     }
 
     pub fn rect_border(&mut self, x: i32, y: i32, w: i32, h: i32, c: Rgb) {
+        if w <= 0 || h <= 0 {
+            return;
+        }
         self.rect(x, y, w, 1, c);
         self.rect(x, y.saturating_add(h.saturating_sub(1)), w, 1, c);
         self.rect(x, y, 1, h, c);
@@ -175,7 +180,12 @@ fn crc32(data: &[u8]) -> u32 {
 }
 
 pub fn render_snapshot(root: &UiNode) -> Framebuffer {
-    let mut fb = Framebuffer::new((0xF6, 0xF6, 0xF6)); // fundo da window
+    render_snapshot_sized(root, VIEW_W, VIEW_H)
+}
+
+/// Like [`render_snapshot`] but for a viewport of `w` x `h` px (landscape etc.).
+pub fn render_snapshot_sized(root: &UiNode, w: usize, h: usize) -> Framebuffer {
+    let mut fb = Framebuffer::new_sized((0xF6, 0xF6, 0xF6), w, h); // fundo da window
     paint(root, &mut fb, 0);
     fb
 }
@@ -229,6 +239,17 @@ mod tests {
             truncated: false,
             children: Vec::new(),
         }
+    }
+
+    #[test]
+    fn sized_snapshot_uses_requested_viewport() {
+        let root = node("android.widget.LinearLayout", "", (0, 0, 1440, 720));
+        let fb = render_snapshot_sized(&root, 1440, 720);
+        assert_eq!((fb.w, fb.h), (1440, 720));
+        assert_eq!(fb.px.len(), 1440 * 720 * 3);
+        // Portrait wrapper keeps the 720x1440 contract.
+        let p = render_snapshot(&root);
+        assert_eq!((p.w, p.h), (VIEW_W, VIEW_H));
     }
 
     #[test]
@@ -366,5 +387,16 @@ mod tests {
         root.children
             .push(node("C", "y", (i32::MAX, i32::MAX, i32::MAX, i32::MAX)));
         let _ = render_snapshot(&root);
+    }
+
+    #[test]
+    fn zero_or_negative_border_size_paints_nothing() {
+        let mut fb = Framebuffer::new((0xF6, 0xF6, 0xF6));
+        let before = fb.px.clone();
+        fb.rect_border(10, 20, 100, 0, (0xFF, 0, 0));
+        fb.rect_border(10, 20, 0, 100, (0xFF, 0, 0));
+        fb.rect_border(10, 20, -5, 100, (0xFF, 0, 0));
+        fb.rect_border(10, 20, 100, -5, (0xFF, 0, 0));
+        assert!(fb.px == before, "collapsed border must paint nothing");
     }
 }

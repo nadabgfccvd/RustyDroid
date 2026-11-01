@@ -5,6 +5,7 @@
 mod common;
 
 use common::*;
+use rd_vm::err::VmExit;
 use rd_vm::value::Value;
 use rd_vm::{Engine, ObjRef};
 
@@ -185,7 +186,7 @@ fn formatter_and_android_date_format_use_aosp_rounding_and_patterns() {
             "(Ljava/lang/CharSequence;J)Ljava/lang/CharSequence;",
             &[pattern, Value::Long(0)],
         ),
-        "Thu Jan 1 1970 12:00 AM UTC"
+        "Thu Jan 1 1970 12:00 AM +0000"
     );
     let order_pattern = text(&mut engine, "dd/MM/yyyy");
     let order_value = call_static(
@@ -232,9 +233,80 @@ fn formatter_and_android_date_format_use_aosp_rounding_and_patterns() {
             DATE_FORMAT,
             "is24HourFormat",
             "(Landroid/content/Context;)Z",
-            &[context],
+            std::slice::from_ref(&context),
         ),
         Value::Int(0)
+    );
+
+    // Deep audit (CTS parity): AOSP formats sizes through an ICU
+    // NumberFormat set to ROUND_HALF_UP, so exact decimal halves go
+    // up where Rust's half-even float formatting would go down.
+    assert_eq!(
+        call_static_string(
+            &mut engine,
+            FORMATTER,
+            "formatShortFileSize",
+            format_short_file_size,
+            &[context.clone(), Value::Long(12_500)],
+        ),
+        "13 kB"
+    );
+    assert_eq!(
+        call_static_string(
+            &mut engine,
+            FORMATTER,
+            "formatFileSize",
+            format_file_size,
+            &[context.clone(), Value::Long(1125)],
+        ),
+        "1.13 kB"
+    );
+    // AOSP computed roundedBytes with Math.round(float), i.e.
+    // floor(x + 0.5), so a negative half rounds toward zero.
+    let resources = Value::Obj(instance(&mut engine, "Landroid/content/res/Resources;"));
+    let negative = object(call_static(
+        &mut engine,
+        FORMATTER,
+        "formatBytes",
+        "(Landroid/content/res/Resources;JI)Landroid/text/format/Formatter$BytesResult;",
+        &[resources, Value::Long(-1125), Value::Int(2 | 4)],
+    ));
+    assert_eq!(
+        engine.heap.get_field(negative, "roundedBytes").unwrap(),
+        Value::Long(-1120)
+    );
+
+    // DateFormat: 'EEEE' is the wide weekday and single 'y' is the
+    // two-digit year; 'S' is not an Android designator and stays
+    // literal (AOSP has no millisecond letter here).
+    let pattern = text(&mut engine, "EEEE y S zz");
+    assert_eq!(
+        call_static_string(
+            &mut engine,
+            DATE_FORMAT,
+            "format",
+            "(Ljava/lang/CharSequence;J)Ljava/lang/CharSequence;",
+            &[pattern, Value::Long(0)],
+        ),
+        "Thursday 70 S UTC"
+    );
+    // AOSP's getDateFormatOrder resume offset skips the character
+    // immediately after a quoted run, so the 'd' here is never seen.
+    let skip_pattern = text(&mut engine, "'x'dMy");
+    let skip_value = call_static(
+        &mut engine,
+        DATE_FORMAT,
+        "getDateFormatOrder",
+        "(Ljava/lang/String;)[C",
+        &[skip_pattern],
+    );
+    assert_eq!(
+        array_values(&engine, &skip_value),
+        vec![
+            Value::Int('M' as i32),
+            Value::Int('y' as i32),
+            Value::Int(0)
+        ]
     );
 }
 
@@ -347,10 +419,50 @@ fn rfc822_tokenizer_parses_names_addresses_and_comments() {
             tokenizer,
             "findTokenStart",
             "(Ljava/lang/CharSequence;I)I",
-            &[token_text, Value::Int(len)],
+            &[token_text.clone(), Value::Int(len)],
         ),
         Value::Int(5)
     );
+
+    // Deep audit: AOSP cursor bounds. findTokenStart past the end
+    // walks into charAt(len + 1); findTokenEnd with a negative
+    // cursor indexes charAt(-1); a past-the-end findTokenEnd cursor
+    // is returned untouched, and a negative findTokenStart is 0.
+    let short = text(&mut engine, "a@b");
+    for (call_name, cursor) in [("findTokenStart", 99), ("findTokenEnd", -1)] {
+        match engine.invoke_instance(
+            tokenizer,
+            call_name,
+            "(Ljava/lang/CharSequence;I)I",
+            &[short.clone(), Value::Int(cursor)],
+        ) {
+            Err(rd_vm::err::VmExit::Exception(t)) => {
+                assert_eq!(t.class, "Ljava/lang/StringIndexOutOfBoundsException;")
+            }
+            other => panic!("expected StringIndexOutOfBoundsException, got {other:?}"),
+        }
+    }
+    assert_eq!(
+        call(
+            &mut engine,
+            tokenizer,
+            "findTokenEnd",
+            "(Ljava/lang/CharSequence;I)I",
+            &[short.clone(), Value::Int(99)],
+        ),
+        Value::Int(99)
+    );
+    assert_eq!(
+        call(
+            &mut engine,
+            tokenizer,
+            "findTokenStart",
+            "(Ljava/lang/CharSequence;I)I",
+            &[short, Value::Int(-1)],
+        ),
+        Value::Int(0)
+    );
+    let _ = token_text;
 }
 
 fn interpolation(
@@ -494,6 +606,18 @@ fn view_animation_interpolators_match_aosp_formulas() {
         ),
         1.0,
     );
+
+    // Deep audit: AccelerateDecelerate computes (input + 1) in float
+    // before widening for cos; one ULP above 0.25 the float sum
+    // rounds to exactly 1.25, changing the last bits of the result.
+    let exact = interpolation(
+        &mut engine,
+        "Landroid/view/animation/AccelerateDecelerateInterpolator;",
+        "()V",
+        &[],
+        f32::from_bits(0x3e80_0001),
+    );
+    assert_eq!(exact.to_bits(), 0x3e15_f61a);
 }
 
 fn account(engine: &mut Engine, name: &str, ty: &str) -> ObjRef {
@@ -709,4 +833,75 @@ fn account_manager_explicit_accounts_passwords_userdata_and_tokens() {
         &[],
     );
     assert_eq!(array_values(&engine, &after_remove).len(), 0);
+
+    // Deep audit: getUserData's cache recompute throws the service
+    // null-check IAEs (it does not quietly return null). AOSP checks
+    // the account first.
+    match engine.invoke_instance(
+        manager,
+        "getUserData",
+        "(Landroid/accounts/Account;Ljava/lang/String;)Ljava/lang/String;",
+        &[Value::Null, Value::Null],
+    ) {
+        Err(VmExit::Exception(t)) => {
+            assert_eq!(t.class, "Ljava/lang/IllegalArgumentException;")
+        }
+        other => panic!("expected IllegalArgumentException, got {other:?}"),
+    }
+    // setPasswordInternal deletes every cached auth token: after a
+    // password change, peekAuthToken must observe nothing.
+    let purge_account = account(&mut engine, "token-purge", "test.type");
+    call(
+        &mut engine,
+        manager,
+        "addAccountExplicitly",
+        "(Landroid/accounts/Account;Ljava/lang/String;Landroid/os/Bundle;)Z",
+        &[Value::Obj(purge_account), Value::Null, Value::Null],
+    );
+    let token_type = text(&mut engine, "oauth");
+    let token = text(&mut engine, "tok-1");
+    call(
+        &mut engine,
+        manager,
+        "setAuthToken",
+        "(Landroid/accounts/Account;Ljava/lang/String;Ljava/lang/String;)V",
+        &[Value::Obj(purge_account), token_type.clone(), token],
+    );
+    let new_password = text(&mut engine, "s3cret");
+    call(
+        &mut engine,
+        manager,
+        "setPassword",
+        "(Landroid/accounts/Account;Ljava/lang/String;)V",
+        &[Value::Obj(purge_account), new_password],
+    );
+    assert_eq!(
+        call(
+            &mut engine,
+            manager,
+            "peekAuthToken",
+            "(Landroid/accounts/Account;Ljava/lang/String;)Ljava/lang/String;",
+            &[Value::Obj(purge_account), token_type],
+        ),
+        Value::Null
+    );
+
+    // Deep audit: toSafeName walks UTF-16 code units, so a
+    // supplementary letter (a surrogate pair) is kept as-is instead
+    // of being replaced like a BMP letter or digit.
+    let bold_a = char::from_u32(0x1d56c).unwrap(); // supplementary letter
+    let mixed_source = format!("a{bold_a}@example.com");
+    let mixed_name = text(&mut engine, &mixed_source);
+    assert_eq!(text_of(&engine, &mixed_name), mixed_source);
+    let safe_name = call_static(
+        &mut engine,
+        ACCOUNT,
+        "toSafeName",
+        "(Ljava/lang/String;C)Ljava/lang/String;",
+        &[mixed_name, Value::Int('x' as i32)],
+    );
+    assert_eq!(
+        text_of(&engine, &safe_name),
+        format!("x{bold_a}@xxxxxxx.xxx")
+    );
 }

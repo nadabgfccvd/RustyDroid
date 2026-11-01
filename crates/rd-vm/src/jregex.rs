@@ -28,6 +28,14 @@ use crate::value::Value;
 
 const PATTERN: &str = "Ljava/util/regex/Pattern;";
 const MATCHER: &str = "Ljava/util/regex/Matcher;";
+const MATCH_RESULT: &str = "Ljava/util/regex/MatchResult;";
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Anchor {
+    None = 0,
+    Start = 1,
+    Full = 2,
+}
 
 #[derive(Debug, Default, Clone)]
 struct MState {
@@ -44,7 +52,7 @@ struct MState {
 }
 
 thread_local! {
-    static CACHE: RefCell<HashMap<(String, i32), fancy_regex::Regex>> = RefCell::new(HashMap::new());
+    static CACHE: RefCell<HashMap<(String, i32, u8), fancy_regex::Regex>> = RefCell::new(HashMap::new());
     static MATCHERS: RefCell<HashMap<ObjRef, MState>> = RefCell::new(HashMap::new());
 }
 
@@ -66,6 +74,13 @@ pub(crate) fn gc_entry(r: ObjRef, out: &mut impl std::fmt::Write) {
 /// GC: drop state of collected objects (slots are reused).
 pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
     MATCHERS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
+}
+
+/// Issue #230: fronteira de `Engine` — limpa só os matchers (indexados
+/// por `ObjRef`); o `CACHE` de regex compiladas é cache puro por
+/// (pattern, flags), válido entre engines, e fica.
+pub(crate) fn reset_all() {
+    MATCHERS.with(|m| m.borrow_mut().clear());
 }
 
 fn exc(class: &str, msg: impl Into<String>) -> VmExit {
@@ -156,15 +171,28 @@ pub(crate) fn translate(src: &str, flags: i32) -> String {
 }
 
 pub(crate) fn compile(src: &str, flags: i32) -> Result<fancy_regex::Regex, VmExit> {
+    compile_with_anchor(src, flags, Anchor::None)
+}
+
+fn compile_with_anchor(
+    src: &str,
+    flags: i32,
+    anchor: Anchor,
+) -> Result<fancy_regex::Regex, VmExit> {
     if src.len() > 64 * 1024 {
         return Err(exc(
             "Ljava/util/regex/PatternSyntaxException;",
             "pattern exceeds the 64 KiB host compilation limit",
         ));
     }
-    let key = (src.to_string(), flags);
+    let key = (src.to_string(), flags, anchor as u8);
     if let Some(r) = CACHE.with(|c| c.borrow().get(&key).cloned()) {
         return Ok(r);
+    }
+    if anchor != Anchor::None {
+        // Validate raw pattern syntax first so the newline fallback below only
+        // triggers when a valid `(?x)` trailing `#` comment swallowed `)`.
+        compile_with_anchor(src, flags, Anchor::None)?;
     }
     let t = translate(src, flags);
     let mut modes = String::new();
@@ -173,22 +201,34 @@ pub(crate) fn compile(src: &str, flags: i32) -> Result<fancy_regex::Regex, VmExi
             modes.push(mode);
         }
     }
-    let t = if modes.is_empty() {
+    let body = if modes.is_empty() {
         t
     } else {
         format!("(?{modes}){t}")
     };
-    let r = fancy_regex::RegexBuilder::new(&t)
-        .backtrack_limit(100_000)
-        .delegate_size_limit(1 << 20)
-        .delegate_dfa_size_limit(1 << 20)
-        .build()
-        .map_err(|e| {
-            exc(
-                "Ljava/util/regex/PatternSyntaxException;",
-                format!("{src}: not supported by RustyDroid's regex engine ({e})"),
-            )
-        })?;
+    let build = |pat: &str| -> Result<fancy_regex::Regex, Box<fancy_regex::Error>> {
+        fancy_regex::RegexBuilder::new(pat)
+            .backtrack_limit(100_000)
+            .delegate_size_limit(2 << 20)
+            .delegate_dfa_size_limit(2 << 20)
+            .build()
+            .map_err(Box::new)
+    };
+    let r = match anchor {
+        Anchor::None => build(&body),
+        Anchor::Start => {
+            build(&format!(r"\A(?:{body})")).or_else(|_| build(&format!("\\A(?:{body}\n)")))
+        }
+        Anchor::Full => {
+            build(&format!(r"\A(?:{body})\z")).or_else(|_| build(&format!("\\A(?:{body}\n)\\z")))
+        }
+    }
+    .map_err(|e| {
+        exc(
+            "Ljava/util/regex/PatternSyntaxException;",
+            format!("{src}: not supported by RustyDroid's regex engine ({e})"),
+        )
+    })?;
     CACHE.with(|c| {
         let mut c = c.borrow_mut();
         // Bound retained native compilation state across transient Java Patterns.
@@ -220,6 +260,10 @@ fn char_seq(vm: &mut Engine, v: Option<&Value>) -> Result<Option<String>, VmExit
         },
         _ => Ok(None),
     }
+}
+
+fn req_char_seq(vm: &mut Engine, v: Option<&Value>, ctx: &str) -> Result<String, VmExit> {
+    char_seq(vm, v)?.ok_or_else(|| exc("Ljava/lang/NullPointerException;", ctx))
 }
 
 fn jstr(vm: &mut Engine, s: impl Into<String>) -> Result<Value, VmExit> {
@@ -270,11 +314,23 @@ fn new_pattern(vm: &mut Engine, src: String, flags: i32) -> Result<Value, VmExit
     Ok(Value::Obj(r))
 }
 
+/// Cópia do `input` no heap guest (campo `input`), para que cada `Matcher`
+/// ou `MatchResult` pague pelo texto que guarda no host (#374 item 2b). O GC
+/// libera a cópia junto com o objeto dono.
+fn mirror_input(vm: &mut Engine, r: ObjRef, input: &str) -> Result<(), VmExit> {
+    let mirror = vm
+        .heap
+        .alloc_string(input.to_string())
+        .map_err(crate::err::oom_throwable)?;
+    crate::err::put_field_result(vm.heap.put_field(r, "input", Value::Obj(mirror)))
+}
+
 fn new_matcher(vm: &mut Engine, pattern: ObjRef, input: String) -> Result<Value, VmExit> {
     let r = vm
         .heap
         .alloc_instance(MATCHER.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
+    mirror_input(vm, r, &input)?;
     MATCHERS.with(|m| {
         m.borrow_mut().insert(
             r,
@@ -288,37 +344,86 @@ fn new_matcher(vm: &mut Engine, pattern: ObjRef, input: String) -> Result<Value,
     Ok(Value::Obj(r))
 }
 
+fn new_match_result(vm: &mut Engine, st: &MState) -> Result<Value, VmExit> {
+    let r = vm
+        .heap
+        .alloc_instance(MATCH_RESULT.to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    mirror_input(vm, r, &st.input)?;
+    let snap = MState {
+        pattern: st.pattern,
+        input: st.input.clone(),
+        groups: st.groups.clone(),
+        next: 0,
+        append: 0,
+        matched: st.matched,
+        hit_end: st.hit_end,
+    };
+    MATCHERS.with(|m| {
+        m.borrow_mut().insert(r, snap);
+    });
+    Ok(Value::Obj(r))
+}
+
 /// Java replacement string (`$1`, `${name}`, `\$`) expanded for a match.
-fn expand(rep: &str, caps: &fancy_regex::Captures<'_>) -> Result<String, VmExit> {
+/// Expands `$n`, `${name}` and `\x` in `rep`. `texts[i]` is group `i` of the match,
+/// `None` when the group did not participate (#374).
+fn expand(re: &fancy_regex::Regex, rep: &str, texts: &[Option<&str>]) -> Result<String, VmExit> {
     let mut out = String::new();
     let mut it = rep.chars().peekable();
     while let Some(c) = it.next() {
         match c {
             '\\' => {
-                if let Some(n) = it.next() {
-                    out.push(n);
-                }
+                let Some(n) = it.next() else {
+                    return Err(exc(
+                        "Ljava/lang/IllegalArgumentException;",
+                        "character to be escaped is missing",
+                    ));
+                };
+                out.push(n);
             }
             '$' => {
                 if it.peek() == Some(&'{') {
                     it.next();
                     let mut name = String::new();
+                    let mut closed = false;
                     for d in it.by_ref() {
                         if d == '}' {
+                            closed = true;
                             break;
                         }
                         name.push(d);
                     }
-                    out.push_str(caps.name(&name).map(|m| m.as_str()).unwrap_or(""));
+                    if !closed {
+                        return Err(exc(
+                            "Ljava/lang/IllegalArgumentException;",
+                            "named capturing group is missing trailing '}'",
+                        ));
+                    }
+                    if name.is_empty() {
+                        return Err(exc(
+                            "Ljava/lang/IllegalArgumentException;",
+                            "named capturing group has 0 length name",
+                        ));
+                    }
+                    let Some(idx) = re.capture_names().position(|c| c == Some(name.as_str()))
+                    else {
+                        return Err(exc(
+                            "Ljava/lang/IllegalArgumentException;",
+                            format!("No group with name <{name}>"),
+                        ));
+                    };
+                    out.push_str(texts.get(idx).copied().flatten().unwrap_or(""));
                 } else {
                     let mut num = String::new();
+                    let total_groups = re.captures_len();
                     while let Some(d) = it.peek().filter(|d| d.is_ascii_digit()) {
                         // Java takes the longest group number that exists.
                         let cand = format!("{num}{d}");
                         if num.is_empty()
                             || cand
                                 .parse::<usize>()
-                                .map(|g| g < caps.len())
+                                .map(|g| g < total_groups)
                                 .unwrap_or(false)
                         {
                             num.push(*d);
@@ -333,13 +438,13 @@ fn expand(rep: &str, caps: &fancy_regex::Captures<'_>) -> Result<String, VmExit>
                             "Illegal group reference",
                         )
                     })?;
-                    if g >= caps.len() {
+                    if g >= total_groups {
                         return Err(exc(
                             "Ljava/lang/IndexOutOfBoundsException;",
                             format!("No group {g}"),
                         ));
                     }
-                    out.push_str(caps.get(g).map(|m| m.as_str()).unwrap_or(""));
+                    out.push_str(texts.get(g).copied().flatten().unwrap_or(""));
                 }
             }
             c => out.push(c),
@@ -348,25 +453,53 @@ fn expand(rep: &str, caps: &fancy_regex::Captures<'_>) -> Result<String, VmExit>
     Ok(out)
 }
 
+/// Largest host string `replace` may build with the heap budget that is left.
+/// Mirrors `check_string_budget` (2 bytes per char plus a 32-byte header) (#374).
+pub(crate) fn output_cap(vm: &Engine) -> usize {
+    vm.heap
+        .budget()
+        .saturating_sub(vm.heap.used())
+        .saturating_sub(32)
+        / 2
+}
+
+fn check_out_cap(len: usize, cap: usize) -> Result<(), VmExit> {
+    if len > cap {
+        return Err(exc(
+            "Ljava/lang/OutOfMemoryError;",
+            format!("alocação de {len} bytes excede o heap disponível"),
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn replace(
     re: &fancy_regex::Regex,
     input: &str,
     rep: &str,
     all: bool,
+    cap: usize,
 ) -> Result<String, VmExit> {
     let mut out = String::new();
     let mut last = 0;
     for caps in re.captures_iter(input) {
         let caps = caps.map_err(runtime_error)?;
-        let m = caps.get(0).expect("group 0");
+        let Some(m) = caps.get(0) else {
+            continue;
+        };
         out.push_str(&input[last..m.start()]);
-        out.push_str(&expand(rep, &caps)?);
+        let texts: Vec<Option<&str>> = (0..re.captures_len())
+            .map(|i| caps.get(i).map(|g| g.as_str()))
+            .collect();
+        out.push_str(&expand(re, rep, &texts)?);
         last = m.end();
+        check_out_cap(out.len(), cap)?;
         if !all {
             break;
         }
     }
     out.push_str(&input[last..]);
+    check_out_cap(out.len(), cap)?;
     Ok(out)
 }
 
@@ -414,29 +547,35 @@ pub fn static_intrinsic(
     name: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if class == MATCHER && name == "quoteReplacement" {
+        // Escapes '\\' and '$' so the text is literal in a replacement (#374).
+        let s = req_char_seq(vm, args.first(), "quoteReplacement(null)")?;
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            if c == '\\' || c == '$' {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        return Ok(Some(jstr(vm, out)?));
+    }
     if class != PATTERN {
         return Ok(None);
     }
     Ok(Some(match name {
         "compile" => {
-            let Some(src) = char_seq(vm, args.first())? else {
-                return Err(exc(
-                    "Ljava/lang/NullPointerException;",
-                    "Pattern.compile(null)",
-                ));
-            };
+            let src = req_char_seq(vm, args.first(), "Pattern.compile(null)")?;
             let flags = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0);
             new_pattern(vm, src, flags)?
         }
         "quote" => {
-            let s = char_seq(vm, args.first())?.unwrap_or_default();
+            let s = req_char_seq(vm, args.first(), "Pattern.quote(null)")?;
             jstr(vm, format!("\\Q{}\\E", s.replace("\\E", "\\E\\\\E\\Q")))?
         }
         "matches" => {
-            let src = char_seq(vm, args.first())?.unwrap_or_default();
-            let input = char_seq(vm, args.get(1))?.unwrap_or_default();
-            let re = compile(&src, 0)?;
-            Value::Int(anchored_full(&re, &input, 0)?.is_some() as i32)
+            let src = req_char_seq(vm, args.first(), "Pattern.matches(null, input)")?;
+            let input = req_char_seq(vm, args.get(1), "Pattern.matches(regex, null)")?;
+            Value::Int(anchored_full(&src, 0, &input, 0)?.is_some() as i32)
         }
         _ => return Ok(None),
     }))
@@ -445,13 +584,14 @@ pub fn static_intrinsic(
 type GroupSpans = Vec<Option<(usize, usize)>>;
 
 fn anchored_full(
-    re: &fancy_regex::Regex,
+    src: &str,
+    flags: i32,
     input: &str,
     from: usize,
 ) -> Result<Option<GroupSpans>, VmExit> {
-    // Java matches(): the whole region must match; try leftmost-first, then
-    // an anchored rebuild so alternations like `a|ab` still match "ab".
-    let full = compile(&format!(r"\A(?:{})\z", re.as_str()), 0)?;
+    // Java matches(): the whole region must match; compile directly from `(src, flags)`
+    // so `Pattern.COMMENTS` (`#` without trailing `\n`) and patterns near 64 KiB work.
+    let full = compile_with_anchor(src, flags, Anchor::Full)?;
     let Some(caps) = full.captures(&input[from..]).map_err(runtime_error)? else {
         return Ok(None);
     };
@@ -460,6 +600,61 @@ fn anchored_full(
             .map(|i| caps.get(i).map(|m| (m.start() + from, m.end() + from)))
             .collect(),
     ))
+}
+
+fn query_match_result(
+    vm: &mut Engine,
+    st: &MState,
+    re: &fancy_regex::Regex,
+    name: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let no_match = || exc("Ljava/lang/IllegalStateException;", "No match found");
+    let group_idx = |vm: &mut Engine, st: &MState, a: Option<&Value>| -> Result<usize, VmExit> {
+        match a {
+            None => Ok(0),
+            Some(Value::Int(i)) => {
+                if *i < 0 || *i as usize >= st.groups.len().max(re.captures_len()) {
+                    return Err(exc(
+                        "Ljava/lang/IndexOutOfBoundsException;",
+                        format!("No group {i}"),
+                    ));
+                }
+                Ok(*i as usize)
+            }
+            other => {
+                let n = req_char_seq(vm, other, "Group name")?;
+                re.capture_names()
+                    .position(|c| c == Some(n.as_str()))
+                    .ok_or_else(|| {
+                        exc(
+                            "Ljava/lang/IllegalArgumentException;",
+                            format!("No group with name <{n}>"),
+                        )
+                    })
+            }
+        }
+    };
+    Ok(Some(match name {
+        "group" | "start" | "end" => {
+            if !st.matched {
+                return Err(no_match());
+            }
+            let g = group_idx(vm, st, args.first())?;
+            let span = st.groups.get(g).copied().flatten();
+            match (name, span) {
+                ("group", Some((s, e))) => jstr(vm, st.input[s..e].to_string())?,
+                ("group", None) => Value::Null,
+                ("start", Some((s, _))) => Value::Int(u16_of(&st.input, s)),
+                ("end", Some((_, e))) => Value::Int(u16_of(&st.input, e)),
+                _ => Value::Int(-1),
+            }
+        }
+        "groupCount" => Value::Int(re.captures_len() as i32 - 1),
+        "hashCode" => Value::Int(recv as i32),
+        _ => return Ok(None),
+    }))
 }
 
 pub fn instance_intrinsic(
@@ -473,13 +668,13 @@ pub fn instance_intrinsic(
         let (src, flags) = pattern_of(vm, recv);
         return Ok(Some(match name {
             "matcher" => {
-                let input = char_seq(vm, args.first())?.unwrap_or_default();
+                let input = req_char_seq(vm, args.first(), "Pattern.matcher(null)")?;
                 new_matcher(vm, recv, input)?
             }
             "pattern" | "toString" => jstr(vm, src)?,
             "flags" => Value::Int(flags),
             "split" | "splitAsStream" if name == "split" => {
-                let input = char_seq(vm, args.first())?.unwrap_or_default();
+                let input = req_char_seq(vm, args.first(), "Pattern.split(null)")?;
                 let limit = args.get(1).and_then(|v| v.as_int().ok()).unwrap_or(0);
                 let re = compile(&src, flags)?;
                 let parts = split(&re, &input, limit)?;
@@ -504,6 +699,30 @@ pub fn instance_intrinsic(
             _ => return Ok(None),
         }));
     }
+    if recv_class == MATCH_RESULT {
+        let Some(st) = MATCHERS.with(|m| m.borrow().get(&recv).cloned()) else {
+            return Ok(None);
+        };
+        let (src, flags) = pattern_of(vm, st.pattern);
+        let re = compile(&src, flags)?;
+        if name == "toString" {
+            let last = if st.matched {
+                st.groups
+                    .first()
+                    .copied()
+                    .flatten()
+                    .map(|(s, e)| &st.input[s..e])
+                    .unwrap_or("")
+            } else {
+                ""
+            };
+            return Ok(Some(jstr(
+                vm,
+                format!("java.util.regex.Matcher$ImmutableMatchResult[lastmatch={last}]"),
+            )?));
+        }
+        return query_match_result(vm, &st, &re, name, recv, args);
+    }
     if recv_class != MATCHER {
         return Ok(None);
     }
@@ -513,32 +732,7 @@ pub fn instance_intrinsic(
     let (src, flags) = pattern_of(vm, st.pattern);
     let re = compile(&src, flags)?;
     let no_match = || exc("Ljava/lang/IllegalStateException;", "No match found");
-    let group_idx = |vm: &mut Engine, st: &MState, a: Option<&Value>| -> Result<usize, VmExit> {
-        match a {
-            None => Ok(0),
-            Some(Value::Int(i)) => {
-                if *i < 0 || *i as usize >= st.groups.len().max(re.captures_len()) {
-                    return Err(exc(
-                        "Ljava/lang/IndexOutOfBoundsException;",
-                        format!("No group {i}"),
-                    ));
-                }
-                Ok(*i as usize)
-            }
-            other => {
-                let n = char_seq(vm, other)?.unwrap_or_default();
-                re.capture_names()
-                    .position(|c| c == Some(n.as_str()))
-                    .ok_or_else(|| {
-                        exc(
-                            "Ljava/lang/IllegalArgumentException;",
-                            format!("No group with name <{n}>"),
-                        )
-                    })
-            }
-        }
-    };
-    let set_caps = |st: &mut MState, caps: Option<fancy_regex::Captures<'_>>| match caps {
+    let set_caps = |st: &mut MState, caps: Option<fancy_regex::Captures<'_, String>>| match caps {
         Some(c) => {
             st.groups = (0..c.len())
                 .map(|i| c.get(i).map(|m| (m.start(), m.end())))
@@ -554,6 +748,9 @@ pub fn instance_intrinsic(
             st.hit_end = true;
         }
     };
+    if matches!(name, "group" | "start" | "end" | "groupCount") {
+        return query_match_result(vm, &st, &re, name, recv, args);
+    }
     let out = match name {
         "find" => {
             if let Some(Value::Int(i)) = args.first() {
@@ -580,9 +777,9 @@ pub fn instance_intrinsic(
         "matches" | "lookingAt" => {
             let input = st.input.clone();
             let groups = if name == "matches" {
-                anchored_full(&re, &input, 0)?
+                anchored_full(&src, flags, &input, 0)?
             } else {
-                let anchored = compile(&format!(r"\A(?:{})", re.as_str()), 0)?;
+                let anchored = compile_with_anchor(&src, flags, Anchor::Start)?;
                 anchored.captures(&input).map_err(runtime_error)?.map(|c| {
                     (0..c.len())
                         .map(|i| c.get(i).map(|m| (m.start(), m.end())))
@@ -602,32 +799,18 @@ pub fn instance_intrinsic(
             }
             Value::Int(st.matched as i32)
         }
-        "group" | "start" | "end" => {
-            if !st.matched {
-                return Err(no_match());
-            }
-            let g = group_idx(vm, &st, args.first())?;
-            let span = st.groups.get(g).copied().flatten();
-            match (name, span) {
-                ("group", Some((s, e))) => jstr(vm, st.input[s..e].to_string())?,
-                ("group", None) => Value::Null,
-                ("start", Some((s, _))) => Value::Int(u16_of(&st.input, s)),
-                ("end", Some((_, e))) => Value::Int(u16_of(&st.input, e)),
-                _ => Value::Int(-1),
-            }
-        }
-        "groupCount" => Value::Int(re.captures_len() as i32 - 1),
         "hitEnd" => Value::Int(st.hit_end as i32),
         "replaceAll" | "replaceFirst" => {
-            let rep = char_seq(vm, args.first())?.unwrap_or_default();
-            let r = replace(&re, &st.input, &rep, name == "replaceAll")?;
+            let rep = req_char_seq(vm, args.first(), "Matcher.replace(null)")?;
+            let cap = output_cap(vm);
+            let r = replace(&re, &st.input, &rep, name == "replaceAll", cap)?;
             st.next = 0;
             st.matched = false;
             jstr(vm, r)?
         }
         "reset" => {
             if let Some(a) = args.first() {
-                st.input = char_seq(vm, Some(a))?.unwrap_or_default();
+                st.input = req_char_seq(vm, Some(a), "Matcher.reset(null)")?;
             }
             st.next = 0;
             st.append = 0;
@@ -637,9 +820,15 @@ pub fn instance_intrinsic(
         }
         "pattern" => Value::Obj(st.pattern),
         "usePattern" => {
-            if let Some(Value::Obj(p)) = args.first() {
-                st.pattern = *p;
-            }
+            let Some(Value::Obj(p)) = args.first() else {
+                return Err(exc(
+                    "Ljava/lang/IllegalArgumentException;",
+                    "Pattern cannot be null",
+                ));
+            };
+            st.pattern = *p;
+            st.groups.clear();
+            st.matched = false;
             Value::Obj(recv)
         }
         "regionStart" => Value::Int(0),
@@ -654,17 +843,20 @@ pub fn instance_intrinsic(
             let text = if name == "appendTail" {
                 st.input[st.append..].to_string()
             } else {
+                let rep = req_char_seq(vm, args.get(1), "appendReplacement(sb, null)")?;
                 if !st.matched {
                     return Err(no_match());
                 }
-                let rep = char_seq(vm, args.get(1))?.unwrap_or_default();
                 let (s, e) = st.groups[0].unwrap_or((0, 0));
+                // Expand against the stored groups, not a new unanchored search:
+                // for `a|ab` the stored match is "ab" (#374).
                 let input = st.input.clone();
-                let caps = re
-                    .captures_from_pos(&input, s)
-                    .map_err(runtime_error)?
-                    .ok_or_else(no_match)?;
-                let t = format!("{}{}", &input[st.append..s], expand(&rep, &caps)?);
+                let texts: Vec<Option<&str>> = st
+                    .groups
+                    .iter()
+                    .map(|g| g.map(|(a, b)| &input[a..b]))
+                    .collect();
+                let t = format!("{}{}", &input[st.append..s], expand(&re, &rep, &texts)?);
                 st.append = e;
                 t
             };
@@ -682,7 +874,7 @@ pub fn instance_intrinsic(
                 Value::Obj(recv)
             }
         }
-        "toMatchResult" => Value::Obj(recv),
+        "toMatchResult" => new_match_result(vm, &st)?,
         "hashCode" => Value::Int(recv as i32),
         "toString" => jstr(
             vm,
@@ -726,8 +918,14 @@ mod tests {
     #[test]
     fn replacement_groups() {
         let re = compile(r"(\d+)-(\d+)", 0).unwrap();
-        assert_eq!(replace(&re, "1-2 3-4", "$2:$1", true).unwrap(), "2:1 4:3");
-        assert_eq!(replace(&re, "1-2 3-4", r"\$", false).unwrap(), "$ 3-4");
+        assert_eq!(
+            replace(&re, "1-2 3-4", "$2:$1", true, usize::MAX).unwrap(),
+            "2:1 4:3"
+        );
+        assert_eq!(
+            replace(&re, "1-2 3-4", r"\$", false, usize::MAX).unwrap(),
+            "$ 3-4"
+        );
     }
     #[test]
     fn utf16_offsets() {

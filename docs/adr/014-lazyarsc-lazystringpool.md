@@ -27,7 +27,13 @@ resids p/ `getIdentifier` e ferramentas de diagnóstico — cobertos por APIs no
    no documento) — offsets individuais ruins são rejeitados **no acesso**
    (`get → None`, falha memoizada): o eager falhava o parse inteiro na
    primeira string ruim; o lazy isola a string ruim (Lei 1 no nível
-   estrutural). `get(&self) -> Option<&str>` via `OnceLock` por slot
+   estrutural). **Port do `main` (#331/#246):** toda leitura de string fica
+   confinada à fatia do CHUNK do pool (`[chunk_off..chunk_off+chunkSize]`, nunca
+   cruza para o chunk vizinho); tamanho UTF-16 é checado em BYTES antes de
+   qualquer alocação; pools de pacote têm o limite no FIM DO PACOTE (não no
+   container); decodificação total é orçada em `MAX_POOL_DECODED_BYTES`
+   (128 MiB por pool, cobrada NO ACESSO — estourou → `None`).
+   `get(&self) -> Option<&str>` via `OnceLock` por slot
    (decodifica 1×, memoiza; `None` interno = malformada) com **alocação
    preguiçosa do vetor de slots** (pool nunca tocada não paga os 410k `OnceLock`).
    `len`/`is_empty` O(1); `iter` sob demanda; `Clone` compartilha o `Arc`
@@ -41,16 +47,27 @@ resids p/ `getIdentifier` e ferramentas de diagnóstico — cobertos por APIs no
    (mesmos guards/breaks); em vez de materializar, constrói:
    - `chunks: Vec<TypeChunkRef>` — referência leve por chunk de tipo
      (offsets absolutos + config parseada eager — configs são minúsculas);
-   - `pairs: Vec<(resid, chunk_idx)>` — **append O(1) durante o walk + um
+   - `pairs: Vec<(resid, chunk_idx, slot)>` — **append O(1) durante o walk + um
      `sort_unstable` no fim** (400k pares do torture: ~15 ms; BTreeMap com
-     clones por inserção custava ~60 ms). A ordem (resid, chunk_idx) reproduz
-     a ordem de walk do eager — decisiva para o tie-breaking do `min_by_key`
-     (Lei 4).
+     clones por inserção custava ~60 ms). `slot` é o índice da tabela de onde o
+     offset é lido na materialização (sparse: um par por slot, na ordem do
+     walk; dense/offset16: um par por índice). A ordem (resid, chunk_idx, slot)
+     reproduz a ordem de walk do eager — decisiva para o tie-breaking do
+     `min_by_key` (Lei 4).
+   - Walk e janelas idênticos ao eager (`main`): tabela no intervalo
+     `[headerSize, entriesStart)` do próprio chunk; `entryCount` além da janela
+     não lê vizinhos; `chunk_end` é o limite de todo guard de entrada.
 3. **Materialização sob demanda:** `entries_for(resid)` (pública —
    diagnóstico/testes) faz busca binária nos `pairs`, materializa as entradas
-   dos chunks daquele resid com a MESMA lógica do coletor eager (porta 1:1:
-   mesmos endereços, mesmos guards de truncamento, mesma pré-resolução de
-   strings pela pool global) e memoiza num cache `Mutex<BTreeMap>` **cap
+   dos slots daquele resid com a MESMA lógica do `collect` eager do `main`
+   (`materialize_slot`: mesmos endereços, mesmos guards de truncamento, mesma
+   pré-resolução de strings pela pool global). **Orçamento de materialização
+   movido do parse para o acesso:** `ArscBudget` (atômico, `Arc` compartilhado
+   por todos os pacotes do `Arsc`) cobra 1 entrada/item de bag + os bytes de
+   cada string clonada contra `MAX_TOTAL_ARSC_ENTRIES` (4.000.000) e
+   `MAX_TOTAL_ARSC_STRING_BYTES` (128 MiB). Ao estourar, as entradas restantes
+   não são materializadas. Resid sem entradas materializadas = `None` (igual ao
+   eager, que não empilhava). Resultados são memoizados num cache `Mutex<BTreeMap>` **cap
    8.192 resids com reset ao estourar** (bounded; muda QUANDO decodificar,
    nunca O QUÊ retornar). `resolve_string/name/value/style_attribute`
    inalterados (trocam só a origem das entradas).
@@ -65,8 +82,11 @@ resids p/ `getIdentifier` e ferramentas de diagnóstico — cobertos por APIs no
 
 - **Paridade:** harness eager-vs-lazy (eager vendorizado da main 87a4145 como
   referência) — números no cabeçalho; evidência reproduzível no PR.
-- **Testes:** rd-apk 31/31 (novos: lazy memoiza/clone/empty-string/malformed→
-  None/índice-resolve); rd-vm lib 132/132 + app_xml 25/25 + app 10/10 + m8
+- **Testes:** rd-apk 48/48 lib (novos: lazy memoiza/clone/empty-string/malformed→
+  None/índice-resolve; port do `main`: `issue_331_*` — aliasing/orçamento no acesso,
+  UTF-16 cruzando chunk → None, offset inválido near usize::MAX → erro tipado;
+  `issue_246_*` — tabela/entradas não cruzam chunk, pools do pacote não leem além
+  do pacote); rd-vm lib 132/132 + app_xml 25/25 + app 10/10 + m8
   13/13 + m9 8/8 + vm_exec 103/103; rd-framework 34/34; rd-agent 84/84;
   rd-cli perf_cli 3/3 (gate de perf) + app/inspect/engine/test/mcp_cli verdes.
 - **Qualidade:** `cargo fmt` limpo; `clippy --workspace --all-targets
@@ -90,7 +110,14 @@ memoizada por slot). Em resumo:
 | Header/contagens/tabela de offsets fora do documento | erro no parse | erro no parse (inalterado) |
 | String individual truncada/corrompida | erro no parse | `None` no acesso |
 | Entrada individual truncada | entrada pulada (parse ok) | entrada pulada (idêntico) |
+| UTF-16 cujo comprimento cruza o fim do chunk do pool | erro no parse (`PARSE_ERROR`) | `None` no acesso (string) |
+| Decodificação total de strings acima de 128 MiB por pool | erro no parse (`budget`) | strings seguintes `None` no acesso |
+| Entradas + bytes de strings acima de `MAX_TOTAL_ARSC_*` | erro no parse (`budget`) | entradas seguintes não materializadas (resolve → `None` / parcial) |
 
+Conhecido e aceito: o orçamento de materialização é cobrado de novo quando o
+cache de resids é reconstruído (cap 8.192). Um APK legítimo que varre mais
+resids que o cap pode gastar o orçamento em re-decodificação; o caso
+normal (resolve de um subconjunto) fica bem abaixo dos 4 M de entradas.
 Pools/APKs **válidos** têm comportamento idêntico (paridade medida: 0
 divergências em 36.771 checagens). A diferença só existe para input
 malformado — e o novo fuzz target (`arsc.rs` chama `resolve_*` sobre todos os

@@ -176,35 +176,41 @@ pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Resul
     if let Ok(HeapObj::Str(s)) = vm.heap.get(r) {
         return Ok(s.clone());
     }
-    let cls = vm.heap.class_of(r)?.to_string();
-    match call_instance_intrinsic(vm, &cls, "toString", "()Ljava/lang/String;", r, &[])? {
-        Some(Value::Obj(sref)) => Ok(vm.heap.as_str(sref)?.to_string()),
-        Some(Value::Null) => Ok("null".to_string()),
-        Some(_) => Err(crate::err::vm_error(
-            "INVALID_FORMAT",
-            format!("{cls}->toString() retornou não-string"),
-        )
-        .into()),
-        None => {
-            // classe declara toString no DEX: executa de verdade
-            if let Some((dex_idx, def, m)) =
-                vm.cp
-                    .resolve_method(&cls, "toString", "()Ljava/lang/String;")
-            {
-                match vm.call(dex_idx, def, &m, vec![Value::Obj(r)])? {
-                    Value::Obj(sref) => Ok(vm.heap.as_str(sref)?.to_string()),
-                    Value::Null => Ok("null".to_string()),
-                    _ => Err(crate::err::vm_error(
-                        "INVALID_FORMAT",
-                        format!("{cls}->toString() retornou não-string"),
-                    )
-                    .into()),
+    // Este caminho chama o intrínseco direto (sem `invoke_instance`), então a
+    // recursão de `toString` em estruturas cíclicas não passaria por nenhum
+    // guard de pilha e abortaria o processo — ver #394.
+    vm.check_native_stack()?;
+    crate::arrays::with_host_reentrant(vm, |vm| {
+        let cls = vm.heap.class_of(r)?.to_string();
+        match call_instance_intrinsic(vm, &cls, "toString", "()Ljava/lang/String;", r, &[])? {
+            Some(Value::Obj(sref)) => Ok(vm.heap.as_str(sref)?.to_string()),
+            Some(Value::Null) => Ok("null".to_string()),
+            Some(_) => Err(crate::err::vm_error(
+                "INVALID_FORMAT",
+                format!("{cls}->toString() retornou não-string"),
+            )
+            .into()),
+            None => {
+                // classe declara toString no DEX: executa de verdade
+                if let Some((dex_idx, def, m)) =
+                    vm.cp
+                        .resolve_method(&cls, "toString", "()Ljava/lang/String;")
+                {
+                    match vm.call(dex_idx, def, &m, vec![Value::Obj(r)])? {
+                        Value::Obj(sref) => Ok(vm.heap.as_str(sref)?.to_string()),
+                        Value::Null => Ok("null".to_string()),
+                        _ => Err(crate::err::vm_error(
+                            "INVALID_FORMAT",
+                            format!("{cls}->toString() retornou não-string"),
+                        )
+                        .into()),
+                    }
+                } else {
+                    Ok(default_to_string(&cls, r))
                 }
-            } else {
-                Ok(default_to_string(&cls, r))
             }
         }
-    }
+    })
 }
 
 /// Escreve no stdout/stderr do host. PrintStream Java NUNCA lança IOException
@@ -357,6 +363,10 @@ fn call_static_intrinsic_rooted(
     }
     // java.lang primitive wrappers (boxes.rs): valueOf/hashCode/compare/bits
     if let Some(v) = crate::boxes::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
+    // java.util.BitSet valueOf factories (jbitset.rs) — issue #293
+    if let Some(v) = crate::jbitset::static_intrinsic(vm, class, name, sig, args)? {
         return Ok(Some(v));
     }
     // Parcel.obtain / Binder identity statics (parcel.rs)
@@ -1136,58 +1146,10 @@ fn class_supported(name: &str, sig: &str) -> bool {
 /// BigDecimal.ZERO, …) through the same host hooks `sget` uses; cached in
 /// `vm.statics`.
 fn platform_static(vm: &mut Engine, owner: &str, field: &str) -> Result<Option<Value>, VmExit> {
-    let key = (owner.to_string(), field.to_string());
-    if let Some(v) = vm.statics.get(&key) {
-        return Ok(Some(v.clone()));
-    }
-    let v = match crate::android_build::host_static(vm, owner, field)? {
-        Some(v) => Some(v),
-        None => match crate::android_env::host_static(vm, owner, field)? {
-            Some(v) => Some(v),
-            None => match crate::boxes::host_static(vm, owner, field)? {
-                Some(v) => Some(v),
-                None => match crate::jbigdecimal::host_static(vm, owner, field)? {
-                    Some(v) => Some(v),
-                    None => match crate::jnormalizer::host_static(vm, owner, field)? {
-                        Some(v) => Some(v),
-                        None => {
-                            #[cfg(feature = "virtual-devices")]
-                            let m10_val = if vm.fw.vdev.virtual_hardware_enabled {
-                                crate::m10::host_static(vm, owner, field)?
-                            } else {
-                                None
-                            };
-                            #[cfg(not(feature = "virtual-devices"))]
-                            let m10_val: Option<Value> = None;
-                            match m10_val {
-                                Some(v) => Some(v),
-                                None => {
-                                    match crate::android_sysservices::host_static(vm, owner, field)?
-                                    {
-                                        Some(v) => Some(v),
-                                        None => {
-                                            match crate::android_stub_surfaces::host_static(
-                                                vm, owner, field,
-                                            )? {
-                                                Some(v) => Some(v),
-                                                None => crate::android_util::host_static(
-                                                    vm, owner, field,
-                                                )?,
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                },
-            },
-        },
-    };
-    if let Some(v) = &v {
-        vm.statics.insert(key, v.clone());
-    }
-    Ok(v)
+    // #330: MESMA fonte canônica que os opcodes `sget*` usam. Antes este
+    // caminho mantinha uma cadeia de providers própria e divergente, então a
+    // reflexão enxergava campos que o bytecode lia como 0/Null e vice-versa.
+    vm.resolve_host_static(owner, field)
 }
 
 /// Field descriptor for a host static value (reflection metadata).
@@ -2078,7 +2040,7 @@ fn atomic_ref_array_intrinsic(
             .map_err(crate::err::oom_throwable)?;
         vm.heap
             .array_elems_mut(array)?
-            .extend(std::iter::repeat(Value::Null).take(len));
+            .extend(std::iter::repeat_n(Value::Null, len));
         crate::err::put_field_result(vm.heap.put_field(recv, "elements", Value::Obj(array)))?;
         return Ok(Some(Value::Null));
     }
@@ -2709,8 +2671,20 @@ fn vector_intrinsic(
                     format!("negative Vector size {requested}"),
                 )));
             }
+            let req = requested as usize;
+            let cur_len = list_elems(vm, recv)?.len();
+            if req > cur_len {
+                let extra_bytes = (req - cur_len).saturating_mul(std::mem::size_of::<Value>());
+                let avail = vm.heap.budget().saturating_sub(vm.heap.used());
+                if extra_bytes > avail {
+                    return Err(VmExit::Exception(Throwable::new(
+                        "Ljava/lang/OutOfMemoryError;",
+                        format!("Vector.setSize({requested}) exceeds heap budget"),
+                    )));
+                }
+            }
             let elems = list_elems(vm, recv)?;
-            elems.resize(requested as usize, Value::Null);
+            elems.resize(req, Value::Null);
             Ok(Some(Value::Null))
         }
         ("copyInto", _) => {
@@ -2875,12 +2849,41 @@ fn map_touch_entry(vm: &mut Engine, recv: crate::heap::ObjRef, index: usize) -> 
     Ok(())
 }
 
-fn find_key(vm: &Engine, recv: crate::heap::ObjRef, key: &Value) -> Result<Option<usize>, VmExit> {
-    let Some(crate::framework::HostObj::Map { entries }) = vm.fw.objects.get(&recv) else {
+fn is_fast_value_eq(heap: &crate::heap::Heap, v: &Value) -> bool {
+    match v {
+        Value::Obj(r) => {
+            heap.as_str(*r).is_ok()
+                || heap
+                    .class_of(*r)
+                    .map(|c| crate::boxes::kind(c).is_some())
+                    .unwrap_or(false)
+        }
+        _ => true,
+    }
+}
+
+fn find_key(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    key: &Value,
+) -> Result<Option<usize>, VmExit> {
+    if is_fast_value_eq(&vm.heap, key) {
+        let Some(crate::framework::HostObj::Map { entries }) = vm.fw.objects.get(&recv) else {
+            return Ok(None);
+        };
+        for (i, (k, _)) in entries.iter().enumerate() {
+            if values_equal(&vm.heap, k, key)? {
+                return Ok(Some(i));
+            }
+        }
         return Ok(None);
+    }
+    let snapshot = match vm.fw.objects.get(&recv) {
+        Some(crate::framework::HostObj::Map { entries }) => entries.clone(),
+        _ => return Ok(None),
     };
-    for (i, (k, _)) in entries.iter().enumerate() {
-        if values_equal(&vm.heap, k, key)? {
+    for (i, (k, _)) in snapshot.iter().enumerate() {
+        if crate::arrays::obj_equals(vm, key, k)? {
             return Ok(Some(i));
         }
     }
@@ -2888,15 +2891,27 @@ fn find_key(vm: &Engine, recv: crate::heap::ObjRef, key: &Value) -> Result<Optio
 }
 
 fn find_elem(
-    vm: &Engine,
+    vm: &mut Engine,
     recv: crate::heap::ObjRef,
     target: &Value,
 ) -> Result<Option<usize>, VmExit> {
-    let Some(crate::framework::HostObj::List { elems }) = vm.fw.objects.get(&recv) else {
+    if is_fast_value_eq(&vm.heap, target) {
+        let Some(crate::framework::HostObj::List { elems }) = vm.fw.objects.get(&recv) else {
+            return Ok(None);
+        };
+        for (i, e) in elems.iter().enumerate() {
+            if values_equal(&vm.heap, e, target)? {
+                return Ok(Some(i));
+            }
+        }
         return Ok(None);
+    }
+    let snapshot = match vm.fw.objects.get(&recv) {
+        Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+        _ => return Ok(None),
     };
-    for (i, e) in elems.iter().enumerate() {
-        if values_equal(&vm.heap, e, target)? {
+    for (i, e) in snapshot.iter().enumerate() {
+        if crate::arrays::obj_equals(vm, target, e)? {
             return Ok(Some(i));
         }
     }
@@ -3228,15 +3243,27 @@ fn deque_supported(name: &str, sig: &str) -> bool {
 
 /// Última ocorrência de `target` (varredura reversa; igualdade Java).
 fn find_elem_last(
-    vm: &Engine,
+    vm: &mut Engine,
     recv: crate::heap::ObjRef,
     target: &Value,
 ) -> Result<Option<usize>, VmExit> {
-    let Some(crate::framework::HostObj::List { elems }) = vm.fw.objects.get(&recv) else {
+    if is_fast_value_eq(&vm.heap, target) {
+        let Some(crate::framework::HostObj::List { elems }) = vm.fw.objects.get(&recv) else {
+            return Ok(None);
+        };
+        for i in (0..elems.len()).rev() {
+            if values_equal(&vm.heap, &elems[i], target)? {
+                return Ok(Some(i));
+            }
+        }
         return Ok(None);
+    }
+    let snapshot = match vm.fw.objects.get(&recv) {
+        Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+        _ => return Ok(None),
     };
-    for i in (0..elems.len()).rev() {
-        if values_equal(&vm.heap, &elems[i], target)? {
+    for i in (0..snapshot.len()).rev() {
+        if crate::arrays::obj_equals(vm, target, &snapshot[i])? {
             return Ok(Some(i));
         }
     }
@@ -3432,7 +3459,7 @@ fn set_intrinsic(
             let mut out: Vec<Value> = Vec::new();
             'outer: for el in src_snapshot {
                 for x in &out {
-                    if values_equal(&vm.heap, x, &el)? {
+                    if crate::arrays::obj_equals(vm, &el, x)? {
                         continue 'outer;
                     }
                 }
@@ -3683,7 +3710,7 @@ fn map_intrinsic(
             let snapshot = map_entries(vm, recv)?.clone();
             let mut found = false;
             for (_, v) in &snapshot {
-                if values_equal(&vm.heap, v, &args[0])? {
+                if crate::arrays::obj_equals(vm, &args[0], v)? {
                     found = true;
                     break;
                 }
@@ -4134,22 +4161,33 @@ fn instance_intrinsic_dispatch(
     {
         return Ok(Some(v));
     }
-    // ClassLoader.loadClass (jlsystem.rs)
-    if let Some(v) = crate::jlsystem::class_loader_intrinsic(
-        vm,
+    // ClassLoader.loadClass (jlsystem.rs) — Issue #271: guarda de
+    // descritor ANTES de montar os argumentos. A forma anterior alocava
+    // um Vec<Value> via .concat() em TODA invoke que chegava aqui, só
+    // para class_loader_intrinsic devolver None fora destes 5
+    // descritores (os únicos que ela trata; subclasses não listadas
+    // também recebiam None — semântica preservada).
+    if matches!(
         mref_class,
-        name,
-        sig,
-        &[&[Value::Obj(recv)][..], args].concat()[if matches!(
-            mref_class,
-            "Ljava/lang/Class;" | "Ljava/lang/Package;"
-        ) {
-            0
-        } else {
-            1
-        }..],
-    )? {
-        return Ok(Some(v));
+        "Ljava/lang/Class;"
+            | "Ljava/lang/Package;"
+            | "Ljava/lang/ClassLoader;"
+            | "Ldalvik/system/BaseDexClassLoader;"
+            | "Ldalvik/system/PathClassLoader;"
+    ) {
+        let full;
+        let call_args: &[Value] =
+            if matches!(mref_class, "Ljava/lang/Class;" | "Ljava/lang/Package;") {
+                full = [&[Value::Obj(recv)][..], args].concat();
+                &full
+            } else {
+                args
+            };
+        if let Some(v) =
+            crate::jlsystem::class_loader_intrinsic(vm, mref_class, name, sig, call_args)?
+        {
+            return Ok(Some(v));
+        }
     }
     // java.io.File + Context directory getters (jfile.rs)
     if let Some(v) = crate::juuid::instance_intrinsic(vm, recv_class, name, recv, args)? {
@@ -4322,9 +4360,21 @@ fn instance_intrinsic_dispatch(
     // Stateless platform base defaults are only reached when no DEX override
     // exists. Otherwise an invoke-virtual whose symbolic owner is the base
     // class (e.g. DataSetObserver.onChanged) must dispatch to the guest method.
-    let dex_virtual_override = vm.cp.resolve_method(recv_class, name, sig).is_some();
-    if !dex_virtual_override {
-        if let Some(v) = crate::platform_base::instance_intrinsic(mref_class, name, sig) {
+    // issue #228: AbsSavedState/BaseSavedState state is consulted BEFORE that
+    // gate — the `super(Parcelable)` ctor is invoke-direct on the platform
+    // base while the receiver class declares its own <init> (the gate would
+    // otherwise hide the superState storage).
+    if let Some(v) = crate::platform_base::saved_state_instance(
+        vm, recv_class, mref_class, name, sig, recv, args,
+    )? {
+        return Ok(Some(v));
+    }
+    // Issue #271: o match de platform_base é quase grátis; só pagamos a
+    // resolução DEX completa quando ele realmente casa. Antes,
+    // resolve_method rodava em TODA chamada que chegava aqui (~40k
+    // resoluções desperdiçadas num cold launch típico).
+    if let Some(v) = crate::platform_base::instance_intrinsic(mref_class, name, sig) {
+        if vm.cp.resolve_method(recv_class, name, sig).is_none() {
             return Ok(Some(v));
         }
     }
@@ -4348,6 +4398,12 @@ fn instance_intrinsic_dispatch(
     // android.util sparse arrays / Size / Pair / Range / Rational (android_util.rs)
     if let Some(v) =
         crate::android_util::instance_intrinsic(vm, recv_class, mref_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
+    }
+    // java.util.BitSet (jbitset.rs) — JDK-fiel sobre heap longs
+    if let Some(v) =
+        crate::jbitset::instance_intrinsic(vm, recv_class, mref_class, name, sig, recv, args)?
     {
         return Ok(Some(v));
     }
@@ -5804,7 +5860,7 @@ mod utf16_optimization_tests {
                 state ^= state << 13;
                 state ^= state >> 7;
                 state ^= state << 17;
-                let value = if state % 3 == 0 {
+                let value = if state.is_multiple_of(3) {
                     (state % 128) as u32
                 } else {
                     (state % 0x110000) as u32
