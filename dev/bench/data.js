@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793548642985,
+  "lastUpdate": 1793549694194,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -755,6 +755,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 17362,
             "range": "± 82",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dcae791783c1099eb23bff6828706b43a68f5e34",
+          "message": "feat(engine-wasm): M11 S1b — bridge WasmBridge atrás de wasm-engine + golden de VM (#468)\n\n- rd-vm: feature `wasm-engine` (off por padrão) com `wasm_bridge.rs`:\n  `io.rustydroid.wasm.WasmBridge.call(String,String,int,int)I` lê\n  assets/<caminho> do APK, instancia do zero e invoca export(a,b) sob o\n  fuel máximo. Falhas viram IllegalStateException com código estável.\n- Caminhos hostis rejeitados com a mesma regra do AssetManager\n  (asset_path_is_hostile agora pub(crate)).\n- Golden de VM (tests/wasm_bridge.rs, 8 testes): retorno, wrap i32,\n  asset ausente, caminho hostil, export ausente, bytes inválidos, laço\n  infinito (FUEL_EXHAUSTED) e Activity.onCreate chamando a bridge via\n  launch_app. Módulos montados byte a byte no teste; nenhum .wasm binário.\n- Registro (`wasm` segue not_implemented) e CLI inalterados; APK golden\n  em golden/engines/wasm/ e rd test ficam para o próximo passo.\n- docs: m11-wasm.md (contrato congelado), ROADMAP M11, compat-matrix\n  (regenerada, só a linha do rd-engine-wasm), worklog.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T13:14:33-03:00",
+          "tree_id": "bdaf0ee9e5428227bcf8dc3f2992fdb026fbeded",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/dcae791783c1099eb23bff6828706b43a68f5e34"
+        },
+        "date": 1793549693791,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 16921,
+            "range": "± 144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 16882,
+            "range": "± 445",
             "unit": "ns/iter"
           }
         ]
