@@ -122,6 +122,22 @@ struct TypeChunkRef {
     flags: u8,
 }
 
+/// Soma `add` em `counter` se o resultado couber em `limit` (CAS, sem
+/// `fetch_update`/`try_update`: funciona em qualquer toolchain do MSRV ao stable).
+/// `false` = estouraria o limite; o contador fica como estava.
+pub(crate) fn try_add_capped(counter: &AtomicUsize, add: usize, limit: usize) -> bool {
+    let mut cur = counter.load(Ordering::Relaxed);
+    loop {
+        let Some(next) = cur.checked_add(add).filter(|n| *n <= limit) else {
+            return false;
+        };
+        match counter.compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return true,
+            Err(actual) => cur = actual,
+        }
+    }
+}
+
 /// Orçamento compartilhado de materialização (ver `MAX_TOTAL_ARSC_*`).
 /// Atômico: `entries_for` é `&self`, e pacotes podem ser usados por threads.
 #[derive(Debug, Default)]
@@ -134,24 +150,12 @@ impl ArscBudget {
     /// Cobra 1 entrada/item + os bytes da string clonada (se houver).
     /// `false` = orçamento estourado: o chamador deixa de materializar.
     fn charge(&self, string: Option<&str>) -> bool {
-        let entries_ok = self
-            .entries
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| {
-                c.checked_add(1).filter(|n| *n <= MAX_TOTAL_ARSC_ENTRIES)
-            })
-            .is_ok();
-        if !entries_ok {
+        if !try_add_capped(&self.entries, 1, MAX_TOTAL_ARSC_ENTRIES) {
             return false;
         }
         match string {
             None => true,
-            Some(s) => self
-                .string_bytes
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| {
-                    c.checked_add(s.len())
-                        .filter(|n| *n <= MAX_TOTAL_ARSC_STRING_BYTES)
-                })
-                .is_ok(),
+            Some(s) => try_add_capped(&self.string_bytes, s.len(), MAX_TOTAL_ARSC_STRING_BYTES),
         }
     }
 }

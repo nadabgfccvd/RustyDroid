@@ -14,8 +14,9 @@
 //! malformadas individuais também viram `None`. Erros estruturais do pool
 //! continuam `RdError` no parse (Lei 1).
 
+use crate::arsc::try_add_capped;
 use crate::error::{RdError, RdResult};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, OnceLock};
 
 pub const RES_STRING_POOL_TYPE: u16 = 0x0001;
@@ -204,8 +205,10 @@ impl StringPool {
             .get(p..end)
             .ok_or_else(|| RdError::parse("string pool: utf16 length out of bounds"))?;
         let units: Vec<u16> = raw
-            .chunks_exact(2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes(*b))
             .collect();
         Ok(String::from_utf16_lossy(&units))
     }
@@ -269,12 +272,9 @@ impl StringPool {
             Self::read_utf16(data, abs).ok()?
         };
         // Orçamento de decodificação (anti-aliasing): ao estourar, falha memoizada.
-        self.decoded
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| {
-                c.checked_add(s.len())
-                    .filter(|n| *n <= MAX_POOL_DECODED_BYTES)
-            })
-            .ok()?;
+        if !try_add_capped(&self.decoded, s.len(), MAX_POOL_DECODED_BYTES) {
+            return None;
+        }
         Some(s)
     }
 
