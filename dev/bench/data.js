@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793559059347,
+  "lastUpdate": 1793559432581,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1079,6 +1079,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3555,
             "range": "± 19",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "aa1f9451e7c9743e6298d4b287a637497e0111c4",
+          "message": "feat(cli): M11 S1b — suíte rd test sobre o APK WASM de demonstração (#471)\n\n- rd-agent e rd-cli: feature `wasm-engine` (propaga para rd-vm). Off por padrão.\n- golden/engines/wasm/: wasm-demo.apk (gerado por rd-testsupport::wasm_demo) e\n  suite.json (install → launch → assert_text \"5\" em io.rustydroid.wasmdemo:id/result).\n- rd-testsupport: ArscFix::with_package, para o nome do pacote do ARSC bater com o\n  manifest (o resource_id observado é `pkg:id/nome`).\n- rd-vm tests: teste de reprodutibilidade (APK commitado == gerado).\n- CI (job Rust (stable)): roda wasm_bridge, wasm_demo_golden e `rd test` com\n  wasm-engine. Antes, nenhum job rodava estes testes.\n\nO registro (`wasm` = not_implemented) não muda neste PR.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T15:50:40-03:00",
+          "tree_id": "c2a3a3c5300afbf19e8bc14e55a5ed4038d227f1",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/aa1f9451e7c9743e6298d4b287a637497e0111c4"
+        },
+        "date": 1793559432263,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2761,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2770,
+            "range": "± 49",
             "unit": "ns/iter"
           }
         ]
