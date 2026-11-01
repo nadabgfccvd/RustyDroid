@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793573719135,
+  "lastUpdate": 1793576233783,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1331,6 +1331,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3286,
             "range": "± 65",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "18516357ff88c166c61527925d9a9c2397f34d09",
+          "message": "fix(vm): folga de 1 MiB no orçamento de pilha nativa (#469) (#476)\n\nO orçamento de `enter_stack_frame`/`check_native_stack` era `livre - 512 KiB`\nquando a VMA da pilha se funde com um mapeamento rw vizinho acima dela: o\nteto `half_vma` deixa de limitar e sobram 512 KiB para o último salto\nhost→host antes da próxima checagem. Com a reserva de 1 MiB, o orçamento\nmantém ≥ 1 MiB de folga abaixo dele. Na VMA exata de 2 MiB o teto `half_vma`\n(1 MiB) continua valendo, então a profundidade legítima não muda.\n\nTeste novo: `two_mib_thread_budget_keeps_one_mib_headroom_469` (unit).\n\nValidação: `cargo test -p rd-ndk -p rd-vm --features native` (exit 0),\nclippy `-D warnings` em rd-vm, `stack_overflow_313` 40/40 em loop.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T20:36:45-03:00",
+          "tree_id": "8c688443002f67ba3f343390d148ae26ed77749a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/18516357ff88c166c61527925d9a9c2397f34d09"
+        },
+        "date": 1793576232939,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3500,
+            "range": "± 510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3673,
+            "range": "± 833",
             "unit": "ns/iter"
           }
         ]
