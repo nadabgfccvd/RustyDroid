@@ -2144,7 +2144,7 @@ fn compute_gesture_obb(vm: &mut Engine, original: &[f32]) -> Result<Value, VmExi
     // Java Float.MIN_VALUE is the smallest positive subnormal, not -MAX.
     let mut max_x = f32::from_bits(1);
     let mut max_y = f32::from_bits(1);
-    for pair in points.chunks_exact(2) {
+    for pair in points.as_chunks::<2>().0.iter() {
         if pair[0] < min_x {
             min_x = pair[0];
         }
