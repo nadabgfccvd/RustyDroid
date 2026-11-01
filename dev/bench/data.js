@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793549694194,
+  "lastUpdate": 1793551251082,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -791,6 +791,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 16882,
             "range": "± 445",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e9f2c20d52b092c7b8c98c5c78d7f6f97d92a65f",
+          "message": "build(vm): fancy-regex 0.20 port (supersedes #444) (#464)\n\n* chore(deps)(deps): bump fancy-regex from 0.13.0 to 0.20.0\n\nBumps [fancy-regex](https://github.com/fancy-regex/fancy-regex) from 0.13.0 to 0.20.0.\n- [Release notes](https://github.com/fancy-regex/fancy-regex/releases)\n- [Changelog](https://github.com/fancy-regex/fancy-regex/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/fancy-regex/fancy-regex/compare/0.13.0...0.20.0)\n\n---\nupdated-dependencies:\n- dependency-name: fancy-regex\n  dependency-version: 0.20.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\n\n* build(vm): fancy-regex 0.20 port (supersedes #444)\n\n- jregex.rs: fancy_regex::Captures now takes a type parameter. The set_caps\n  closure uses Captures<'_, String>, matching captures_from_pos(&input, ...).\n- tests/regex_lookaround.rs: 0.20 memoizes '(?=a)(a+)+b'. On 2000 'a's with no\n  'b' the correct answer is false, and the old test expected the backtrack error.\n  The test now uses '(?=a)((a|aa)+)+\\1c' on 40 'a's, which still returns\n  REGEX_RUNTIME. The test keeps its original intent: a limit overrun must be a\n  structured error, not a false.\n\nfancy-regex 0.20.0 declares rust-version 1.66, within the 1.76 MSRV.\n\n---------\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T13:40:19-03:00",
+          "tree_id": "d0c5bca35bb3181c153324715abe094aaed2a952",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e9f2c20d52b092c7b8c98c5c78d7f6f97d92a65f"
+        },
+        "date": 1793551250507,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 11116,
+            "range": "± 132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 10926,
+            "range": "± 91",
             "unit": "ns/iter"
           }
         ]
