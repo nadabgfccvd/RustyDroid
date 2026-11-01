@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793563582936,
+  "lastUpdate": 1793573719135,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1295,6 +1295,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3337,
             "range": "± 252",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d228a62b4eaa2e252130d05becd606b461c31b1d",
+          "message": "docs(target-apps): política de aquisição, Lucky Patcher em andamento, GMS último (#475)\n\nDecisões do dono (2026-11-01): APKs só para teste interno, nunca commitados\n(ficam fora do git, por caminho em variável de ambiente). Lucky Patcher: prosseguir.\nSuporte a Google Play Services fica como um dos últimos itens.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T19:54:58-03:00",
+          "tree_id": "a9d8f655a15bbf3f1d1167aafba56d27142cb00b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/d228a62b4eaa2e252130d05becd606b461c31b1d"
+        },
+        "date": 1793573718580,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3313,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3286,
+            "range": "± 65",
             "unit": "ns/iter"
           }
         ]
