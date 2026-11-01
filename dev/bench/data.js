@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793534354505,
+  "lastUpdate": 1793535269770,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -251,6 +251,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 16861,
             "range": "± 572",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1568b46edc7e77fc6c3e837df91b9e00f41ff12f",
+          "message": "docs(worklog): record two durable pitfalls (#454)\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T09:14:12-03:00",
+          "tree_id": "85d1e22233df2e87d986b5fca41ed305a254a696",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/1568b46edc7e77fc6c3e837df91b9e00f41ff12f"
+        },
+        "date": 1793535269177,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 9820,
+            "range": "± 222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 9656,
+            "range": "± 168",
             "unit": "ns/iter"
           }
         ]
