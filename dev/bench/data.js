@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793555116339,
+  "lastUpdate": 1793557490315,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1007,6 +1007,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3560,
             "range": "± 17",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "80b4d72874355b6805d92c1e58f4947eb1b7f330",
+          "message": "feat(vm): M11 S1b — APK de demonstração do engine WASM (golden) (#470)\n\nGolden de APK de verdade para o bridge io.rustydroid.wasm.WasmBridge (ADR 013\n§9–10): classes.dex e assets/demo.wasm são lidos do ZIP, a Activity chama o\nbridge em onCreate e o TextView `result` precisa mostrar \"5\" (add(2, 3)).\n\n- rd-testsupport::wasm_demo: gera APK, DEX e módulo WASM de forma determinística.\n- rd-vm tests/wasm_demo_golden.rs (feature wasm-engine): launch_app + getText.\n- golden/engines/wasm/README.md: como reproduzir e o que ainda falta.\n- docs: m11-wasm.md, ROADMAP (M11 parcial), worklog (ruído do gate de bench).\n\nPendente (S1b restante): suíte `rd test`, propagação da feature até rd-cli e\nligação no registro. `wasm` segue not_implemented.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T15:24:23-03:00",
+          "tree_id": "955276e4ee249ac7ed31f20415f9611ff6d8d058",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/80b4d72874355b6805d92c1e58f4947eb1b7f330"
+        },
+        "date": 1793557489678,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3286,
+            "range": "± 273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3220,
+            "range": "± 22",
             "unit": "ns/iter"
           }
         ]
