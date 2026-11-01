@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793562828182,
+  "lastUpdate": 1793563582936,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1259,6 +1259,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2862,
             "range": "± 37",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5b7afaffea3fe81ae2035c2ba44efc0fb9afe43d",
+          "message": "docs: registra 17 apps alvo ponta a ponta (docs/target-apps.md) (#474)\n\nRequisito do dono: lista de apps que devem rodar de ponta a ponta no RustyDroid.\nCada item tem origem, bloqueios com referência ao roadmap e status real\n(nenhum verificado como funcionando). Registra a política de aquisição (só OSS\ndo F-Droid é baixado; APK proprietário exige decisão do dono) e as decisões\npendentes: Lucky Patcher, GMS e apps \"a escolher\".\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T17:05:52-03:00",
+          "tree_id": "0ccf6a111462df6d7c685e84fd0f94f6733f5fbe",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5b7afaffea3fe81ae2035c2ba44efc0fb9afe43d"
+        },
+        "date": 1793563582231,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3293,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3337,
+            "range": "± 252",
             "unit": "ns/iter"
           }
         ]
