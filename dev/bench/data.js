@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793562314528,
+  "lastUpdate": 1793562828182,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1223,6 +1223,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2757,
             "range": "± 10",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "803781ad838030008249bbccad07b694e1e575ff",
+          "message": "docs(adr): ADR 020 — M11 S2 React Native, estratégia proposta (#473)\n\nProposta para o slice S2 do M11 (LANG-05): opções de engine JS (embutida em\nRust com bundle de texto, intérprete de Hermes bytecode, Hermes nativo via\ncaminho ELF/JNI, ou adiar para Mono), recomendação de spike com medição antes\nde qualquer dependência nova, critério de \"rodar\" com evidência e os limites\nainda não resolvidos. Nenhum código de execução de RN nesta mudança.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T16:53:30-03:00",
+          "tree_id": "fd3643c858117def5cc75febd8a93802be357cae",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/803781ad838030008249bbccad07b694e1e575ff"
+        },
+        "date": 1793562827858,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2836,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2862,
+            "range": "± 37",
             "unit": "ns/iter"
           }
         ]
