@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793554789293,
+  "lastUpdate": 1793554822970,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -899,6 +899,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3563,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "19f2261425cc9bfd7a9ff2dbf129dfed068812ea",
+          "message": "ci(deps)(deps): bump actions/configure-pages from 5.0.0 to 6.0.0\n\nBumps [actions/configure-pages](https://github.com/actions/configure-pages) from 5.0.0 to 6.0.0.\n- [Release notes](https://github.com/actions/configure-pages/releases)\n- [Commits](https://github.com/actions/configure-pages/compare/983d7736d9b0ae728b81ab479565c72886d7745b...45bfe0192ca1faeb007ade9deae92b16b8254a0d)\n\n---\nupdated-dependencies:\n- dependency-name: actions/configure-pages\n  dependency-version: 6.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-01T14:39:39-03:00",
+          "tree_id": "5d4c4380e6832a6c341d46edd08503163273f4cf",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/19f2261425cc9bfd7a9ff2dbf129dfed068812ea"
+        },
+        "date": 1793554822420,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1821,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1804,
+            "range": "± 16",
             "unit": "ns/iter"
           }
         ]
