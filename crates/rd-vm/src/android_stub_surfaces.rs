@@ -33197,6 +33197,9 @@ fn p41_dream_instance(
     Ok(Some(value))
 }
 
+// NaN: as comparações explícitas são falsas para NaN, como no AOSP;
+// `contains` mudaria a semântica. Por isso o lint é aceito aqui.
+#[allow(clippy::manual_range_contains)]
 fn p41_chooser_instance(
     vm: &mut Engine,
     class: &str,
@@ -33298,7 +33301,7 @@ fn p41_chooser_instance(
             put(vm, recv, "mTitle", p41_arg(args, 0))?;
             put(vm, recv, "mIcon", p41_arg(args, 1))?;
             let score = farg(args, 2);
-            if !(0.0..=1.0).contains(&score) {
+            if score > 1.0 || score < 0.0 {
                 return Err(iae(format!(
                     "Score {} out of range; must be between 0.0f and 1.0f",
                     crate::repr::java_float(score)
@@ -38404,6 +38407,9 @@ fn p35c_location_convert_to_string(coordinate: f64, output_type: i32) -> Result<
     Ok(result)
 }
 
+// NaN: as comparações explícitas são falsas para NaN, como no AOSP;
+// `contains` mudaria a semântica. Por isso o lint é aceito aqui.
+#[allow(clippy::manual_range_contains)]
 fn p35c_location_convert_from_string(input: &str) -> Result<f64, VmExit> {
     let Some(first) = input.chars().next() else {
         return Err(throw("Ljava/lang/StringIndexOutOfBoundsException;", ""));
@@ -38443,13 +38449,13 @@ fn p35c_location_convert_from_string(input: &str) -> Result<f64, VmExit> {
     if deg < 0 || (deg > 179 && !is_negative_180) {
         return Err(iae(format!("coordinate={coordinate}")));
     }
-    if !(0.0..60.0).contains(&minutes) || (sec_present && minutes > 59.0) {
+    if minutes < 0.0 || minutes >= 60.0 || (sec_present && minutes > 59.0) {
         return Err(iae(format!("coordinate={coordinate}")));
     }
     // Written as AOSP's two comparisons, not a range-contains check:
     // both comparisons are false for NaN, so a NaN seconds token is
     // accepted and yields a NaN coordinate.
-    if !(0.0..60.0).contains(&seconds) {
+    if seconds < 0.0 || seconds >= 60.0 {
         return Err(iae(format!("coordinate={coordinate}")));
     }
     let value = (deg as f64 * 3600.0 + minutes * 60.0 + seconds) / 3600.0;
