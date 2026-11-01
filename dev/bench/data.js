@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793576233783,
+  "lastUpdate": 1793577071645,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1367,6 +1367,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3673,
             "range": "± 833",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "05f05d408be573b7d5400f2ce4865f3f51367471",
+          "message": "perf(rd-apk): LazyArsc + LazyStringPool (ADR 014) (#206)\n\n* perf(rd-apk): LazyArsc + LazyStringPool — on-demand ARSC decode (ADR 014)\n\nImplements ADR 014 (ADR 008 'Resources' pillar) with measured evidence:\n\n- LazyStringPool (pool.rs): document behind one Arc<Vec<u8>>; pools are\n  logical regions (parse_shared: zero copies per pool on the ARSC path);\n  per-slot OnceLock cache with LAZY slot allocation; O(1) offsets-table\n  validation (per-offset rejection deferred to access: get -> None,\n  memoized — eager failed the whole parse on the first bad string);\n  get/len/is_empty/iter API compatible; AXML pools get lazy for free.\n- LazyArsc (arsc.rs): parse_owned(Vec) zero-extra-copy path (Apk::open);\n  whole-buffer Arc (Law 2; O(1) Arsc/Package clones); per-package walk\n  unchanged (same guards/breaks) building chunks: Vec<TypeChunkRef> +\n  pairs: Vec<(resid, chunk_idx)> (append + single sort — measured 4x\n  faster than BTreeMap-with-clones at 400k pairs); entries materialize\n  on demand per resid (1:1 port of the eager collector: same absolute\n  addresses, same truncation guards, same string pre-resolution) with\n  a bounded cache (cap 8192, reset on overflow — changes WHEN decode\n  happens, never WHAT is returned; Law 4).\n- New APIs: Package::resource_ids() (getIdentifier path), entries_for\n  (per-resid snapshot, pub), entries_snapshot() (diagnostics), synthetic\n  (tests). Package.entries field removed (audited: no external consumers\n  beyond the mechanical adaptations included here: lib.rs 1 line,\n  android_res.rs 3 lines, app_xml.rs test, 2 examples).\n\nMeasured (release, isolated Arsc::parse bench, APK-Tester v1.0.2):\n- torture-huge-arsc (40.9 MB ARSC, 410k strings, ~400k pairs):\n  parse 137.95 -> 32.34 ms (4.3x; ~550 -> ~130 ms emulated at moto-e5\n  factor); bench-process VmHWM 383 -> 137 MB (-64%).\n- Typical APKs: sub-ms before and after (never worse than eager).\n- PARITY: 56/56 suite APKs (32 engines + sdk ladder + parser-torture +\n  flagship-classic with 1,851 resids) — 36,771 resolve_string/name/value\n  checks over the union of resids vs the vendored eager reference (main\n  87a4145): ZERO divergences. Single documented index difference: one\n  truncated-entry resid (eager never inserted; lazy indexes; both\n  resolve None).\n\nGates: rd-apk 31/31; rd-vm lib 132/132 + app_xml 25/25 + app 10/10 +\nm8 13/13 + m9 8/8 + vm_exec 103/103; rd-framework 34/34; rd-agent\n84/84; rd-cli perf_cli 3/3 (perf gate) + app/inspect/engine/test/mcp\ngreen; fmt clean; clippy --workspace --all-targets -D warnings clean;\nMSRV 1.76 (std only, no new deps); unsafe_code forbid intact.\n\n[LOCK] rd-apk/src/arsc.rs + pool.rs (Z-Agent, per PR-Agent endorsement;\nArenaAgent transfer pending — no other files touched beyond the listed\nmechanical adaptations).\n\nAuthor: Z-Agent (LazyArsc front)\n\n* fuzz+docs: review deltas for #206 — resolve-based fuzzing + explicit Law 1 semantics\n\nPR #206 review (PR-Agent) requested two deltas; both addressed:\n\n1. fuzz_targets/arsc.rs now exercises the LAZY paths, not only the parse:\n   resolve_string/resolve_name/resolve_value over every resid of every\n   package (resource_ids bounded by input size). Covers on-demand string\n   decode (memoized None for malformed), complex bags and reference\n   chains — the ADR 014 fuzz requirement.\n\n2. ADR 014 gains an explicit 'Mudança de semântica de erro (Lei 1)'\n   section with a before/after table: malformed individual string used to\n   fail the whole parse (eager); now it is None at access (parse still\n   fails on header/offsets-table level errors). Valid APKs: identical\n   behavior (measured 0 divergences in 36,771 checks).\n\nAuthor: Z-Agent (LazyArsc front)\n\n* refactor(arsc): per-instance entry cache is a plain Mutex (drop redundant OnceLock)\n\nMutex::new(BTreeMap::new()) does not allocate, so wrapping it in OnceLock\nbought no laziness. The cache is owned by each Package (never global);\npoisoned lock still means 'skip cache, re-decode', never a panic.\n\nAI-assisted (PR-Agent).\n\n* rd-apk: clippy-clean budget counters and UTF-16 reader (#206)\n\nCI's stable toolchain flags fetch_update (renamed to try_update) and\nchunks_exact with a constant size. Budgets now use a small compare_exchange\nhelper (try_add_capped), which works from the MSRV to stable, and the UTF-16\nreader uses as_chunks::<2>(). Behaviour unchanged: rd-apk 48/48 lib.\n\n---------\n\nCo-authored-by: Z-Agent <z-agent@users.noreply.github.com>\nCo-authored-by: PR-Agent <pr-agent@users.noreply.github.com>\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T20:50:50-03:00",
+          "tree_id": "8f1c14b7d17cc8616f9937e5542f849d90ca3eb8",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/05f05d408be573b7d5400f2ce4865f3f51367471"
+        },
+        "date": 1793577070907,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3562,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3588,
+            "range": "± 104",
             "unit": "ns/iter"
           }
         ]
