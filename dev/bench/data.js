@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793598818306,
+  "lastUpdate": 1793599731341,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1583,6 +1583,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2771,
             "range": "± 12",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "33e76456643e157458d97087d2626045498725db",
+          "message": "docs(target-apps): fonte do Lucky Patcher checada (sem APK do pacote) (#482)\n\nA fonte aprovada pelo dono oferece só o LP Installer 12.10.8 (já rejeitado no\nPR #479) e versões antigas que devolvem 404. Nenhum APK com.dimonvideo.luckypatcher\nfoi obtido.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-02T03:08:34-03:00",
+          "tree_id": "94d8600d68551925a8136eb90952cf25d124f752",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/33e76456643e157458d97087d2626045498725db"
+        },
+        "date": 1793599730709,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1797,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1790,
+            "range": "± 18",
             "unit": "ns/iter"
           }
         ]
