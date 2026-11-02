@@ -535,7 +535,7 @@ fn call_m8_instance_rooted(
     if mref_class == ROOM_BUILDER || recv_class == ROOM_BUILDER {
         return room_builder(vm, name, sig, recv, args);
     }
-    if mref_class.contains("Landroidx/work/") && (name == "<init>" || name == "build") {
+    if is_work_request_builder(mref_class) || is_work_request_builder(&recv_class) {
         // WorkRequest$Builder.build -> WorkRequest host com worker class do builder
         if name == "build" {
             let worker = vm
@@ -2114,6 +2114,15 @@ fn file_host(
 }
 
 // ── OkHttp shim ─────────────────────────────────────────────────────────
+/// Builders de `WorkRequest` (OneTime/Periodic/base) que o shim M8 modela.
+/// `Configuration$Builder` e outros builders androidx.work rodam o DEX real:
+/// engolir o `build()` deles devolvia um WorkRequest no lugar de Configuration
+/// (F-Droid: `WorkManagerImplExtKt.createWorkManager$default` falhava em
+/// `Configuration.getTaskExecutor` com receptor WorkRequest).
+fn is_work_request_builder(cls: &str) -> bool {
+    cls.starts_with("Landroidx/work/") && cls.contains("WorkRequest") && cls.contains("$Builder")
+}
+
 /// Classes OkHttp que o shim M8 modela (Request/OkHttpClient/Call/Response/body).
 /// Qualquer outra `Lokhttp3/*` (ex.: `ConnectionSpec$Builder`) executa o DEX real.
 fn is_modeled_okhttp(cls: &str) -> bool {
@@ -2696,5 +2705,30 @@ mod okhttp_scope_tests {
         assert!(!is_modeled_okhttp("Lokhttp3/ConnectionSpec$Builder;"));
         assert!(!is_modeled_okhttp("Lokhttp3/ConnectionSpec;"));
         assert!(!is_modeled_okhttp("Lokhttp3/CipherSuite;"));
+    }
+}
+
+#[cfg(test)]
+mod work_builder_scope_tests {
+    use super::is_work_request_builder;
+
+    /// Regressão F-Droid: o shim de WorkRequest$Builder não pode capturar o
+    /// Configuration$Builder (o build() dele tem de ser o DEX real).
+    #[test]
+    fn shim_claims_only_workrequest_builders() {
+        assert!(is_work_request_builder(
+            "Landroidx/work/OneTimeWorkRequest$Builder;"
+        ));
+        assert!(is_work_request_builder(
+            "Landroidx/work/PeriodicWorkRequest$Builder;"
+        ));
+        assert!(is_work_request_builder(
+            "Landroidx/work/WorkRequest$Builder;"
+        ));
+        assert!(!is_work_request_builder(
+            "Landroidx/work/Configuration$Builder;"
+        ));
+        assert!(!is_work_request_builder("Landroidx/work/Configuration;"));
+        assert!(!is_work_request_builder("Lorg/fdroid/App;"));
     }
 }
