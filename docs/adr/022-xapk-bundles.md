@@ -19,7 +19,8 @@ Muitos apps chegam como XAPK: um ZIP com `manifest.json` e vários APKs (um `bas
 ## Consequências
 
 - O inventário de `content` do `inspect` (contagens de DEX, libs e assets) continua sendo o do split base. Os totais por split aparecem no bloco `bundle`.
-- `rd dex disasm` e `rd test` operam só sobre o split base. Os DEX dos splits de feature ainda não são desmontados. Isso é uma limitação conhecida, não um comportamento silencioso: está documentada no módulo e no CHANGELOG.
+- `rd dex disasm` lê os DEX de todos os splits. O split base vem primeiro, porque `--class` usa o primeiro dex que contém a classe. Cada dex leva o id do split como prefixo do nome.
+- `rd test` e a instalação ainda operam só sobre o split base. Isso é uma limitação conhecida, não um comportamento silencioso: está documentada no módulo, no CHANGELOG e no ROADMAP.
 - Um XAPK é lido inteiro na memória, como um APK comum abaixo de 512 MB. Bundles maiores que isso não usam o modo paginado de ADR 008 nesta versão.
 - A instalação de XAPK não está coberta por esta decisão.
 

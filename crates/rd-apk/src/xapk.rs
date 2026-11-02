@@ -6,9 +6,8 @@
 //! devolve; os demais ficam em [`Xapk::splits`] e participam do inventário
 //! de `rd inspect --json` via [`Xapk::split_summaries`].
 //!
-//! Limitação atual: o `rd dex disasm` e o `rd test` operam sobre o APK base.
-//! Os DEX de splits de feature ficam disponíveis por [`Xapk::splits`], mas
-//! ainda não são desmontados pelo CLI.
+//! Limitação atual: `rd dex disasm` cobre os DEX de todos os splits (ver
+//! `rd-cli`), mas `rd test` e a instalação ainda operam só sobre o APK base.
 
 use crate::zip::Zip;
 use crate::{Apk, RdError, RdResult};

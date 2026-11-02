@@ -801,6 +801,20 @@ fn load_dex_files(path: &Path) -> Result<Vec<(String, Dex)>, RdError> {
         return Ok(vec![("classes.dex".into(), d)]);
     }
     let apk = open_apk(path)?;
+    // XAPK: DEX de todos os splits. O split base vem primeiro, porque `--class`
+    // usa o primeiro dex que contém a classe. Cada nome leva o id do split.
+    if let Some(b) = detect_bundle(path)? {
+        let mut out = Vec::new();
+        let order =
+            std::iter::once(b.base_index).chain((0..b.splits.len()).filter(|i| *i != b.base_index));
+        for i in order {
+            let split = &b.splits[i];
+            for (name, d) in dexes_of_apk(&split.apk)? {
+                out.push((format!("{}:{name}", split.id), d));
+            }
+        }
+        return Ok(out);
+    }
     dexes_of_apk(&apk)
 }
 
