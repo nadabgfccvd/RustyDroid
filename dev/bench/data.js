@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793594823703,
+  "lastUpdate": 1793598818306,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1547,6 +1547,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2765,
             "range": "± 11",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5b6a1db4455d5a7bd29fa9ffbc3f3007feb47814",
+          "message": "rd-vm: OnBackAnimationCallback <: OnBackInvokedCallback (launch VolumeScroll) (#481)\n\nAPI 34: OnBackAnimationCallback estende OnBackInvokedCallback. Sem essa aresta\nna tabela builtin_interfaces, o check-cast da classe anônima do AndroidX\n(OnBackPressedDispatcher$Api34Impl) lançava ClassCastException no launch do\nVolumeScroll 1.0.2.\n\nTeste: on_back_animation_callback_is_an_on_back_invoked_callback.\ndocs/target-apps.md: candidatos e blockers medidos de Auto-clicker (Klick'r)\ne Auto-scroll (VolumeScroll). Próximo bloqueio comum: Context.getDrawable(I).\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-02T02:53:10-03:00",
+          "tree_id": "285b2e68412accdfceadc271b7da2346cfcb27de",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5b6a1db4455d5a7bd29fa9ffbc3f3007feb47814"
+        },
+        "date": 1793598817357,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2770,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2771,
+            "range": "± 12",
             "unit": "ns/iter"
           }
         ]
