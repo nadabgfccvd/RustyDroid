@@ -630,6 +630,10 @@ pub fn instance_intrinsic(
             let p = meta(vm).package;
             jstr(vm, &p)?
         }
+        // Estado de componente/app não é modelado: set é no-op (void) e o get
+        // devolve COMPONENT_ENABLED_STATE_DEFAULT (0), como um app sem overrides.
+        "setComponentEnabledSetting" | "setApplicationEnabledSetting" => Value::Null,
+        "getComponentEnabledSetting" | "getApplicationEnabledSetting" => Value::Int(0),
         "isInstantApp" | "isSafeMode" => Value::Int(0),
         "checkPermission" => Value::Int(0), // PERMISSION_GRANTED; runtime grants are modelled elsewhere
         "getInstallerPackageName" => Value::Null,
