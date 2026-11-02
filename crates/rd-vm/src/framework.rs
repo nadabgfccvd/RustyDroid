@@ -3003,6 +3003,12 @@ fn call_host_static_rooted(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match (class, name) {
+        // Application.getProcessName() é ESTÁTICO (API 28+). O processo principal
+        // sem `android:process` tem o nome do pacote.
+        (APPLICATION, "getProcessName") => {
+            let s = vm.fw.package_name.clone();
+            Ok(Some(Value::Obj(intrinsics::alloc_string(vm, s)?)))
+        }
         ("Landroid/view/PointerIcon;", "getSystemIcon")
             if _sig == "(Landroid/content/Context;I)Landroid/view/PointerIcon;" =>
         {
