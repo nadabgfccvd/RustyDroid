@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `SharedPreferencesImpl` is now a subtype of `SharedPreferences` (checkcast on the F-Droid cold start).
+- **VM, okhttp shim (F-Droid cold start):** the `<init>` shim for `Lokhttp3/*` applies only to classes that are modeled (`is_modeled_okhttp`), so `ConnectionSpec$Builder` keeps its real fields instead of returning null.
+- **VM, reflection:** `Class.getEnclosingClass` and `Class.getDeclaringClass` answer named member classes (`Outer$Inner` → `Outer`) from the class name. `getEnclosingMethod` and `getEnclosingConstructor` return null: the EnclosingMethod attribute is not modeled yet.
+- **VM, collections:** `LinkedHashMap.<init>(IFZ)` runs when the receiver is a DEX subclass, not only the host map class.
+- **VM, dispatch:** `invoke-super` whose target is an interface default method starts the lookup in that interface (ktor `HttpClientEngineBase.install`). Regression test: `crates/rd-vm/tests/invoke_super_interface.rs`.
+- **Android host:** static `Application.getProcessName()` returns the package name. `PackageManager` component and application enabled-state setters are accepted as no-ops, and their getters return `COMPONENT_ENABLED_STATE_DEFAULT`.
 - **`rd-dex` 32x decoding:** `move/16`, `move-wide/16` and `move-object/16` were decoded as
   2 code units instead of 3, misaligning the rest of the method. The interpreter and JIT
   had the same size bug. Added a regression test.
