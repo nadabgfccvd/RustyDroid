@@ -522,7 +522,10 @@ fn call_m8_instance_rooted(
         return content_values(vm, name, recv, args);
     }
     // ── OkHttp ──────────────────────────────────────────────────────────
-    if mref_class.starts_with("Lokhttp3/") || recv_class.starts_with("Lokhttp3/") {
+    // Só as classes modeladas pelo shim. Antes, todo `Lokhttp3/*` passava aqui
+    // e `<init>`/`build`/... eram engolidos (ex.: ConnectionSpec$Builder não
+    // rodava o construtor real; o F-Droid caía em ExceptionInInitializerError).
+    if is_modeled_okhttp(mref_class) || is_modeled_okhttp(&recv_class) {
         return okhttp(vm, mref_class, name, sig, recv, args);
     }
     // ── WorkManager / Room builder ──────────────────────────────────────
@@ -2111,6 +2114,15 @@ fn file_host(
 }
 
 // ── OkHttp shim ─────────────────────────────────────────────────────────
+/// Classes OkHttp que o shim M8 modela (Request/OkHttpClient/Call/Response/body).
+/// Qualquer outra `Lokhttp3/*` (ex.: `ConnectionSpec$Builder`) executa o DEX real.
+fn is_modeled_okhttp(cls: &str) -> bool {
+    matches!(
+        cls,
+        OK_CLIENT | OK_REQUEST | OK_REQ_BUILDER | OK_CALL | OK_RESPONSE | OK_BODY
+    )
+}
+
 fn okhttp(
     vm: &mut Engine,
     _mref: &str,
@@ -2664,5 +2676,25 @@ fn room_builder(
         | "openHelperFactory"
         | "setJournalMode" => Ok(Some(Value::Obj(recv))),
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod okhttp_scope_tests {
+    use super::*;
+
+    /// Regressão F-Droid: o shim não pode engolir o construtor/`build` de
+    /// classes OkHttp que não modela (ConnectionSpec$Builder roda o DEX real).
+    #[test]
+    fn shim_only_claims_modeled_okhttp_classes() {
+        assert!(is_modeled_okhttp(OK_CLIENT));
+        assert!(is_modeled_okhttp(OK_REQUEST));
+        assert!(is_modeled_okhttp(OK_REQ_BUILDER));
+        assert!(is_modeled_okhttp(OK_CALL));
+        assert!(is_modeled_okhttp(OK_RESPONSE));
+        assert!(is_modeled_okhttp(OK_BODY));
+        assert!(!is_modeled_okhttp("Lokhttp3/ConnectionSpec$Builder;"));
+        assert!(!is_modeled_okhttp("Lokhttp3/ConnectionSpec;"));
+        assert!(!is_modeled_okhttp("Lokhttp3/CipherSuite;"));
     }
 }
