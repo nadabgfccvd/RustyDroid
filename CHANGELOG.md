@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **M4 renderer (ADR 019 accepted):** `rd app shot` paints with `tiny-skia` (anti-aliased paths) and shapes text with `rustybuzz` over the bundled DejaVu Sans (`crates/rd-render/assets/`). Golden lock `golden/screens/trivial-app.png` (`tests/golden_screenshot.rs`, regression only, not Android fidelity).
+- **XAPK bundles (ADR 022):** inspect, base split, OBB listing, and dex disasm across splits.
 - **XAPK bundles (`rd-apk::xapk`):** a `.xapk` (ZIP with `manifest.json`, no root
   `AndroidManifest.xml`) opens as its `base` split. `rd inspect` (text and `--json`) lists
   every split, its dex/lib counts and ABIs, and the OBB expansions. Missing split files and
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `SharedPreferencesImpl` is now a subtype of `SharedPreferences` (checkcast on the F-Droid cold start).
 - **`rd-dex` 32x decoding:** `move/16`, `move-wide/16` and `move-object/16` were decoded as
   2 code units instead of 3, misaligning the rest of the method. The interpreter and JIT
   had the same size bug. Added a regression test.

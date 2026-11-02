@@ -1,6 +1,6 @@
 # ADR 019 — Renderer M4: tiny-skia + shaping (spec) vs. rasterizador próprio atual
 
-- **Status:** Proposto (2026-10) — aguarda decisão do mantenedor. Até lá, a decisão vigente continua sendo a da spec, e o M4 permanece ⚠️ parcial.
+- **Status:** Aceito (2026-11-02) — opção 1 (adotar `tiny-skia` + `rustybuzz`, como a spec já fixa). Implementado na M4 deste ciclo (`crates/rd-render/src/canvas.rs`). A pré-condição de MSRV abaixo foi resolvida: o workspace declara MSRV 1.97 (`rust-version` no `Cargo.toml`), não mais 1.76.
 
 ## Contexto
 
@@ -27,3 +27,25 @@ Restrição a verificar antes de qualquer adoção: o workspace é MSRV 1.76 (`r
 - Até a decisão, README e spec não podem afirmar que o renderer usa `tiny-skia` como se estivesse ativo. O README foi corrigido nesse sentido na mesma mudança que criou este ADR.
 - Golden screenshots devem vir de APK real e de uma referência Android, com tolerância de pixel documentada; a opção escolhida define como essa referência é produzida.
 - O M4 só volta a ✅ quando houver: (a) renderização de texto com fonte real ou ADR aprovado que a dispense; (b) golden de ≥5 APKs reais comparados a referência; (c) seleção de recursos por `DeviceConfig`.
+
+## Decisão (2026-11-02)
+
+- **Escolhida: opção 1.** A spec já fixa `tiny-skia` e `rustybuzz`
+  ("DECISÕES TÉCNICAS JÁ TOMADAS"); o ADR só existia para justificar um desvio.
+  Nenhum desvio foi aprovado, então a opção 3 (híbrido) não se aplica.
+- **MSRV:** o workspace está em 1.97 (CI `rust-msrv`). `tiny-skia` 0.11.4 e
+  `rustybuzz` 0.20.1 não declaram `rust-version`, e compilam no toolchain
+  local (estável recente). O job MSRV do CI confirma a compatibilidade com 1.97.
+- **Dependências:** `tiny-skia` (BSD-3-Clause, `default-features = false`,
+  features `std` e `simd`) e `rustybuzz` (MIT). Fonte embutida: DejaVu Sans
+  2.37 em `crates/rd-render/assets/`, com a licença original.
+- **Escopo entregue:** retângulos e bordas por caminho do tiny-skia; texto
+  com shaping real (rustybuzz: kerning, advances) e contornos preenchidos
+  com anti-aliasing. Ainda NÃO entregue: bidi/RTL, quebra de linha, fallback
+  de fontes e fidelidade Roboto/Skia do Android (ver ADR 019 Consequências).
+- **Golden:** `golden/screens/trivial-app.png` trava regressão do `rd app shot`
+  sobre o APK `trivial`. Não é referência Android. O M4 continua ⚠️ até
+  existirem golden de ≥5 APKs reais e a seleção por `DeviceConfig`.
+- **Processo:** ADR e código entram no mesmo PR. Isto infringe a ordem
+  "ADR antes do código" do CONTRIBUTING; o PR declara isso. Se o mantenedor
+  rejeitar a opção 1, o código pode ser revertido sem afetar o restante.
