@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793659744631,
+  "lastUpdate": 1793660540098,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1799,6 +1799,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2764,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5bda69f82a3e62b90fcdb87e3ead0e6800d0de4",
+          "message": "refactor(agent): extract RunningApp from AgentSession (#489)\n\nMoves the per-app execution state (engine, engine_package,\nnative_engine, activity, pending_snapshot, screen, ui_epoch) into a\nRunningApp struct owned by AgentSession as `running`. This is step 2 of\nADR 023 (layering stage 1) and is behavior-preserving: no tool, result\nor field semantics change. Tests that inspect the state read\n`s.running.*`.\n\nValidated: cargo test -p rd-agent (95 + 2 + 3 passed), clippy with\n-D warnings for the workspace, fmt.\n\nAI usage: refactor written with AI assistance using mechanical\nrename plus compiler-guided fixes; the rename was checked against each\ncompile error and the full rd-agent test suite.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-02T20:01:50-03:00",
+          "tree_id": "c04cff569fc4deb8ae709196274012b9e824940f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e5bda69f82a3e62b90fcdb87e3ead0e6800d0de4"
+        },
+        "date": 1793660539450,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1720,
+            "range": "± 25",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1729,
+            "range": "± 25",
             "unit": "ns/iter"
           }
         ]
