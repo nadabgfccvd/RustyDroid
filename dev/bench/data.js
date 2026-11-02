@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793650297083,
+  "lastUpdate": 1793655157544,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1655,6 +1655,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3237,
             "range": "± 17",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f94a3e0cd698d232c0e489e420de1a895c7fbbdc",
+          "message": "feat(rd-render): M4 — tiny-skia + shaping rustybuzz, golden de screenshot e fix SharedPreferencesImpl (#484)\n\n* docs(adr): ADR 019 aceito — tiny-skia + rustybuzz (M4)\n\nA spec já fixa tiny-skia e rustybuzz; a pré-condição de MSRV (1.76) não\nvale mais: o workspace está em 1.97. Escopo e limites documentados: sem\nbidi/RTL, sem fidelidade Android. Golden de regressão, não de referência.\n\n* fix(rd-vm): SharedPreferencesImpl é subtipo de SharedPreferences\n\ncheckcast SharedPreferences sobre o impl do host lançava\nClassCastException no cold start do F-Droid. Teste de regressão em\nclasspath::tests.\n\n* feat(rd-render): snapshot com tiny-skia e shaping rustybuzz (M4)\n\nRetângulos e bordas por caminho do tiny-skia; texto shaped pelo rustybuzz\nsobre DejaVu Sans embutida (assets/, com licença). O atlas de 32 px da\nCanvas da VM não muda.\n\n* test(rd-cli): golden de screenshot trivial-app (regressão, não Android)\n\nTrava o PNG de 'rd app shot' e o APK fixture contra golden/screens/.\nAtualização explícita com RD_UPDATE_GOLDEN=1.\n\n* docs(changelog): M4 tiny-skia, golden e fix SharedPreferencesImpl\n\n---------\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-02T18:32:11-03:00",
+          "tree_id": "6f0a5c7097be103a2fd8f623b9334aebeefd5a2e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f94a3e0cd698d232c0e489e420de1a895c7fbbdc"
+        },
+        "date": 1793655157107,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3435,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3395,
+            "range": "± 35",
             "unit": "ns/iter"
           }
         ]
