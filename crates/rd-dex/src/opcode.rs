@@ -57,14 +57,14 @@ impl Format {
             | Format::F22b
             | Format::F22t
             | Format::F22s
-            | Format::F22c
-            | Format::F32x => 2,
+            | Format::F22c => 2,
             Format::F30t
             | Format::F31i
             | Format::F31t
             | Format::F31c
             | Format::F35c
-            | Format::F3rc => 3,
+            | Format::F3rc
+            | Format::F32x => 3,
             // 45cc/4rcc = 4 units (primeiro dígito do nome = tamanho):
             // AG|op, BBBB (method), FEDC (regs), HHHH (proto)
             Format::F45cc | Format::F4rcc => 4,

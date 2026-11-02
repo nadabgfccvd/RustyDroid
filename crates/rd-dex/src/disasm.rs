@@ -1041,7 +1041,8 @@ impl<'a> MethodRender<'a> {
                 }
                 Ok(ts.to_string())
             }
-            0x52..=0x5e => self.field_ref(idx as u32, out),
+            // iget/iput family: 0x52 (iget) .. 0x5f (iput-short), inclusive.
+            0x52..=0x5f => self.field_ref(idx as u32, out),
             _ => Ok(format!("index@{idx}")),
         }
     }
@@ -1095,6 +1096,7 @@ impl<'a> MethodRender<'a> {
                 format!("{name} {}", lab(&self.labels.goto, GOTO, t))
             }
             Kind::RegReg16(a, b) => format!("{name} {}, {}", self.r(*a), self.r(*b)),
+            Kind::RegReg32(a, b) => format!("{name} {}, {}", self.r(*a), self.r(*b)),
             Kind::RegBranch16(a, off) => {
                 let t = (addr as i64 + *off as i64) as u32;
                 format!("{name} {}, {}", self.r(*a), lab(&self.labels.cond, COND, t))
