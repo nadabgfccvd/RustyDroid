@@ -141,6 +141,8 @@ pub struct ClassE {
     pub instances: Vec<(String, String)>,
     pub directs: Vec<MethodSlot>,
     pub virtuals: Vec<MethodSlot>,
+    /// access_flags do class_def (default ACC_PUBLIC; 0x0200 = interface).
+    pub access: u32,
 }
 
 #[derive(Default)]
@@ -240,8 +242,14 @@ impl DexBuilder {
             instances: Vec::new(),
             directs: Vec::new(),
             virtuals: Vec::new(),
+            access: 0x1,
         });
         self.classes.len() - 1
+    }
+
+    /// Define as flags de acesso do class_def (ex.: 0x0200 para interface).
+    pub fn set_access(&mut self, cls: usize, access: u32) {
+        self.classes[cls].access = access;
     }
 
     pub fn static_field(&mut self, cls: usize, name: &str, ftype: &str, init: SVal) {
@@ -605,7 +613,7 @@ impl DexBuilder {
             // layout real do class_def_item: class_idx@0, access_flags@4,
             // superclass_idx@8 (o fix antigo escrevia sup em access_flags —
             // super era lida como o primeiro tipo do DEX, "V")
-            out[base + 4..base + 8].copy_from_slice(&0x1u32.to_le_bytes()); // ACC_PUBLIC
+            out[base + 4..base + 8].copy_from_slice(&c.access.to_le_bytes());
             out[base + 8..base + 12]
                 .copy_from_slice(&(self.type_idx_cached(&c.sup) as u32).to_le_bytes());
             // interfaces_off @12, source_file_idx @16, annotations_off @20 → 0

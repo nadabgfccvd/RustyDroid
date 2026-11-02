@@ -1892,7 +1892,17 @@ fn resolve_or_run_host_invoke(
     }
 
     // classe inicial da resolução
-    let start_class = if is_super {
+    let start_class = if is_super
+        && vm
+            .cp
+            .find_class(&mref.class)
+            .is_some_and(|(_, def)| def.access_flags & 0x0200 != 0)
+    {
+        // invoke-super sobre método de INTERFACE (default method, ex.: ktor
+        // HttpClientEngineBase.install → HttpClientEngine): a busca começa na
+        // própria interface. Antes subia para Object e falhava (NOT_FOUND).
+        mref.class.clone()
+    } else if is_super {
         // Semântica DEX (Dalvik): invoke-super inicia a busca na SUPER da
         // classe que DECLARA o método em execução (defining class) — não em
         // `super(mref.class)`. Bug corrigido (M8, 36º gap): antes resolvia a
