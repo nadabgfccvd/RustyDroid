@@ -73,6 +73,19 @@ fn is_anonymous(d: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
+/// `Lpkg/Outer$Inner;` → `Lpkg/Outer;` (só para membros nomeados).
+fn enclosing_by_name(d: &str) -> Option<String> {
+    if is_anonymous(d) || is_local(d) {
+        return None;
+    }
+    let inner = d.strip_suffix(';')?;
+    let (outer, _) = inner.rsplit_once('$')?;
+    if outer.is_empty() || outer.ends_with('/') {
+        return None;
+    }
+    Some(format!("{outer};"))
+}
+
 fn is_local(d: &str) -> bool {
     let s = last_segment(d);
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
@@ -125,6 +138,18 @@ pub(crate) fn instance_intrinsic(
                 && !d.starts_with('['))),
         ("isEnum", "()Z") => b(access_flags(vm, &d).is_some_and(|f| f & ACC_ENUM != 0)
             && vm.cp.superclass_of(&d).as_deref() == Some("Ljava/lang/Enum;")),
+        // EnclosingMethod (atributo do classfile) não é modelado: null, como
+        // para classes não-locais/anônimas em qualquer VM sem o atributo.
+        ("getEnclosingMethod", "()Ljava/lang/reflect/Method;") => Value::Null,
+        ("getEnclosingConstructor", "()Ljava/lang/reflect/Constructor;") => Value::Null,
+        // Dono pelo nome (`Outer$Inner`); classes anônimas/locais têm
+        // dono via atributo, que não é modelado → null.
+        ("getEnclosingClass" | "getDeclaringClass", "()Ljava/lang/Class;") => {
+            match enclosing_by_name(&d) {
+                Some(outer) => Value::Obj(vm.class_object_for(&outer)?),
+                None => Value::Null,
+            }
+        }
         ("isAnonymousClass", "()Z") => b(is_anonymous(&d)),
         ("isLocalClass", "()Z") => b(is_local(&d)),
         ("isMemberClass", "()Z") => {
@@ -274,5 +299,25 @@ mod tests {
         assert!(is_local("Lcom/x/A$1Local;"));
         assert!(is_primitive("I"));
         assert!(!is_primitive("[I"));
+    }
+}
+
+#[cfg(test)]
+mod enclosing_tests {
+    use super::enclosing_by_name;
+
+    #[test]
+    fn named_member_class_has_name_derived_enclosing_class() {
+        assert_eq!(
+            enclosing_by_name("Lokhttp3/ConnectionSpec$Builder;").as_deref(),
+            Some("Lokhttp3/ConnectionSpec;")
+        );
+        assert_eq!(enclosing_by_name("Lokhttp3/ConnectionSpec;"), None);
+    }
+
+    #[test]
+    fn anonymous_and_local_classes_have_no_name_derived_enclosing_class() {
+        assert_eq!(enclosing_by_name("Lfoo/Bar$1;"), None);
+        assert_eq!(enclosing_by_name("Lfoo/Bar$1Local;"), None);
     }
 }
