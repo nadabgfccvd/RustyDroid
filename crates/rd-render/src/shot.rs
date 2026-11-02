@@ -6,6 +6,7 @@
 //! (None/Sub/Up) e deflate rápido pelo flate2 puro-Rust já usado no rd-apk
 //! (antes: blocos STORED, ~3,1 MB por tela). Mesmo input → mesmos bytes.
 
+use crate::canvas::Canvas;
 use rd_vm::framework::{UiNode, Vis};
 
 pub const VIEW_W: usize = 720;
@@ -185,12 +186,16 @@ pub fn render_snapshot(root: &UiNode) -> Framebuffer {
 
 /// Like [`render_snapshot`] but for a viewport of `w` x `h` px (landscape etc.).
 pub fn render_snapshot_sized(root: &UiNode, w: usize, h: usize) -> Framebuffer {
-    let mut fb = Framebuffer::new_sized((0xF6, 0xF6, 0xF6), w, h); // fundo da window
-    paint(root, &mut fb, 0);
-    fb
+    // M4: canvas tiny-skia (caminhos anti-aliased) + texto shaped (rustybuzz).
+    // Dimensão inválida para um Pixmap (0 ou gigante) → framebuffer vazio.
+    let Some(mut cv) = Canvas::new((0xF6, 0xF6, 0xF6), w, h) else {
+        return Framebuffer::new_sized((0xF6, 0xF6, 0xF6), w, h);
+    };
+    paint(root, &mut cv, 0);
+    cv.into_framebuffer()
 }
 
-fn paint(n: &UiNode, fb: &mut Framebuffer, depth: usize) {
+fn paint(n: &UiNode, fb: &mut Canvas, depth: usize) {
     // mesmo cap do dump (issue #40)
     if depth > 512 {
         return;
@@ -208,14 +213,13 @@ fn paint(n: &UiNode, fb: &mut Framebuffer, depth: usize) {
     } else {
         (0xE8, 0xE8, 0xE8)
     };
-    fb.rect(x, y, w, h, color);
+    fb.fill_rect(x, y, w, h, color);
     if n.clickable {
         fb.rect_border(x, y, w, h, (0x60, 0x60, 0x60));
     }
     if !n.text.is_empty() {
         // issue #62: offsets/centralização saturados (bounds hostis)
-        let ty = y.saturating_add(h.saturating_sub(18).max(0) / 2);
-        fb.text(x.saturating_add(4), ty, &n.text, (0x1B, 0x1B, 0x1B));
+        fb.text_in_box(x.saturating_add(4), y, h, &n.text, (0x1B, 0x1B, 0x1B));
     }
     for c in &n.children {
         paint(c, fb, depth + 1);

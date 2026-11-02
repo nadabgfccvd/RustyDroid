@@ -44,6 +44,9 @@ toml = "0.8"
 
 # compressão ZIP (APK) — backend puro Rust (miniz_oxide), sem toolchain C
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+# M4: rasterização vetorial (retângulos/texto) e shaping do snapshot.
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd"] }
+rustybuzz = "0.20.1"
 
 # java.util.regex / String.split|replaceAll|replaceFirst (rd-vm jlstring.rs)
 regex = { version = "1.10", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
