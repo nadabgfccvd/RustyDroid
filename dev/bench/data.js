@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793579690546,
+  "lastUpdate": 1793593467962,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1475,6 +1475,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3213,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "efdb3940b67f736a8ebb4a790192904f3fa8a704",
+          "message": "docs(target-apps): instalador do Lucky Patcher verificado; app real ainda não obtido (#479)\n\n* docs(target-apps): APK do Lucky Patcher de chelpus.com rejeitado (package ru.aaaaabar.installer)\n\n* docs(target-apps): instalador do Lucky Patcher verificado; app real ainda não obtido\n\n---------\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-02T01:24:07-03:00",
+          "tree_id": "f2beee81fccbb1fbf50abf777d8550545c1d0fcd",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/efdb3940b67f736a8ebb4a790192904f3fa8a704"
+        },
+        "date": 1793593467045,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3493,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3496,
+            "range": "± 15",
             "unit": "ns/iter"
           }
         ]
