@@ -1037,6 +1037,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Ljava/lang/Object;",
         ]),
         "Landroid/content/ContextWrapper;" => Some(CONTEXT),
+        // F-Droid cold start: checkcast SharedPreferences on the host impl
+        // (AOSP: `SharedPreferencesImpl implements SharedPreferences`).
+        "Landroid/content/SharedPreferencesImpl;" => {
+            Some(&["Landroid/content/SharedPreferences;", "Ljava/lang/Object;"])
+        }
         "Landroid/view/ContextThemeWrapper;" => Some(&[
             "Landroid/content/ContextWrapper;",
             "Landroid/content/Context;",
@@ -3218,6 +3223,25 @@ fn is_shadowed_platform_stub(descriptor: &str, access_flags: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shared_prefs_impl_is_a_shared_prefs() {
+        // Regressão F-Droid (`rd app shot`): checkcast SharedPreferences sobre
+        // o impl do host lançava ClassCastException.
+        let cp = Classpath::default();
+        assert!(cp.is_subtype(
+            "Landroid/content/SharedPreferencesImpl;",
+            "Landroid/content/SharedPreferences;"
+        ));
+        assert!(cp.is_subtype(
+            "Landroid/content/SharedPreferencesImpl;",
+            "Ljava/lang/Object;"
+        ));
+        assert!(!cp.is_subtype(
+            "Landroid/content/SharedPreferences;",
+            "Landroid/content/SharedPreferencesImpl;"
+        ));
+    }
+
     use super::*;
     fn legacy_interface_closure(cp: &Classpath, start: &str, sup: &str) -> bool {
         let mut queue = cp.interfaces_of(start);
