@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793593467962,
+  "lastUpdate": 1793594823703,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1511,6 +1511,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3496,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "db99a7f59d0e156a73439c2ab3460ae5362dad68",
+          "message": "rd-vm: SdkExtensions.getExtensionVersion e ArrayDeque.descendingIterator (#480)\n\n- SdkExtensions.getExtensionVersion(I)I responde 0 (extensão não fornecida pelo\n  dispositivo virtual). Destrava a inicialização do KeePassDX 4.5.6.\n- ArrayDeque.descendingIterator()Ljava/util/Iterator; devolve um snapshot\n  invertido, somente leitura. Destrava OnBackPressedDispatcher do KeePassDX.\n- Testes: sdk_extensions_host_static_reports_no_extension (app.rs) e\n  array_deque_descending_iterator_walks_back_to_front (vm_exec.rs).\n- docs/target-apps.md: launch medido de Gallery, Contacts e KeePassDX.\n  Nenhum app verificado como funcionando; Context.getDrawable(I) é o próximo\n  bloqueio comum.\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-02T01:46:46-03:00",
+          "tree_id": "a23934c3ffcc1faf23c2851d36fb420bd08314b9",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/db99a7f59d0e156a73439c2ab3460ae5362dad68"
+        },
+        "date": 1793594823385,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2761,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2765,
+            "range": "± 11",
             "unit": "ns/iter"
           }
         ]
