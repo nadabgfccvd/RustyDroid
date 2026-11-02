@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793655157544,
+  "lastUpdate": 1793659205494,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1691,6 +1691,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3395,
             "range": "± 35",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dfdae976d098ea5016fe99cf36e4856d269ec5b2",
+          "message": "docs(adr): ADR 023 revisa ADR 001 para múltiplas sessões por processo (#485)\n\nEtapa 1 do layering (ADR 021, opção A) exige N engines no mesmo processo.\nA ADR 001 fixava uma sessão por processo; esta revisão define o modelo,\no isolamento entre sessões, o engine_id, o orçamento de RSS do processo\n(ADR 015) e a ordem: refactor de RunningApp antes de tools novas.\n\nDocs-only. Deve ser mergeada antes de qualquer código de layering.\n\nAI usage: rascunho gerado com apoio de IA e revisado contra os trechos\ncitados de mcp.rs, ADR 015, ADR 017 e ADR 021.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-02T19:39:44-03:00",
+          "tree_id": "995bd462d12eee73ae21bce6384672987b40bf35",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/dfdae976d098ea5016fe99cf36e4856d269ec5b2"
+        },
+        "date": 1793659205097,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3231,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3221,
+            "range": "± 17",
             "unit": "ns/iter"
           }
         ]
