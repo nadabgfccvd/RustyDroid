@@ -788,8 +788,12 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   fluxo de instalação, tratando o conjunto de splits como um único app. Status
   (2026-11-02): **parcial** — `rd inspect` (texto e `--json`) e `Apk::open` leem o
   bundle e usam o split `base`; splits e OBB aparecem no inspect; `rd dex disasm`
-  cobre os DEX de todos os splits. Pendentes: `rd test` sobre todos os splits e o
-  fluxo de instalação.
+  cobre os DEX de todos os splits. Instalação (`install` do agente): todos os splits
+  são parseados e validados, o split `base` é instalado, e a resposta traz `bundle.splits`
+  com o resumo de cada um. Limite honesto: a execução usa só o base; o DEX e as libs
+  nativas dos demais splits ainda não são carregados (`base_only_execution: true`).
+  Pendente: merge de splits de feature e de config na execução. `rd test` sobre o
+  XAPK: ver resultado na seção de validação do bloco 2.
   Decisão em [ADR 022](adr/022-xapk-bundles.md).
 - **Layering de APKs.** Permitir executar mais de um APK ao mesmo tempo, com um
   APK por cima do outro. Caso de uso citado pelo dono: um jogo clicker e um
