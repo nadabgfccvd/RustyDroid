@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **XAPK bundles (`rd-apk::xapk`):** a `.xapk` (ZIP with `manifest.json`, no root
+  `AndroidManifest.xml`) opens as its `base` split. `rd inspect` (text and `--json`) lists
+  every split, its dex/lib counts and ABIs, and the OBB expansions. Missing split files and
+  a bundle without a base split are reported as structured errors. Dex disassembly and
+  `rd dex disasm` covers the DEX of every split. `rd test` and installation still cover the base split only.
+- **M1 differential gate (`scripts/dex_baksmali_diff.py`):** versioned comparison of
+  `rd dex disasm` against baksmali 2.5.2 (jar pinned by SHA-256). Runs per method on every
+  golden APK in `nightly-compat.yml`; the gate fails on any opcode-sequence divergence.
+  Golden corpus: F-Droid client, NewPipe, Tasks (296,907 methods, all identical).
+
+### Fixed
+
+- **`rd-dex` 32x decoding:** `move/16`, `move-wide/16` and `move-object/16` were decoded as
+  2 code units instead of 3, misaligning the rest of the method. The interpreter and JIT
+  had the same size bug. Added a regression test.
+- **`rd-dex` field names:** `iput-short` (0x5f) printed as `index@N` instead of the field
+  reference, because the iget/iput range stopped at 0x5e.
+
 - **M10 Virtual Devices (`#201`, [ADR 011](./docs/adr/011-m10-virtual-devices.md), [`docs/m10.md`](./docs/m10.md)):**
   Programmable deterministic virtual camera (synthetic RGBA frames + Camera2/CameraX shims),
   GPS/Location (NMEA + GPX/waypoints), sensors (accelerometer, gyroscope, light, proximity,

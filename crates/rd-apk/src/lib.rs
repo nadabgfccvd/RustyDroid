@@ -10,6 +10,7 @@ pub mod manifest;
 pub mod paged;
 pub mod pool;
 pub mod signing;
+pub mod xapk;
 pub mod zip;
 
 pub use error::{RdError, RdResult};
@@ -89,6 +90,10 @@ impl Apk {
     }
 
     fn from_zip(zip: Zip, file_size_bytes: u64) -> RdResult<Apk> {
+        // XAPK (bundle de splits): abre o split base. Ver `xapk::Xapk`.
+        if xapk::is_bundle(&zip) {
+            return Ok(xapk::Xapk::from_zip(&zip)?.into_base());
+        }
         // 1. AndroidManifest.xml (binário)
         let manifest_entry = "AndroidManifest.xml";
         let manifest_bytes = zip.read(manifest_entry)?;
@@ -269,7 +274,7 @@ mod tests {
 
     /// AXML mínimo `<manifest package="…"/>` (só o que `manifest::build`
     /// exige). Pool: 0:"manifest" 1:"package" 2:<package>.
-    fn minimal_manifest_axml(package: &str) -> Vec<u8> {
+    pub(crate) fn minimal_manifest_axml(package: &str) -> Vec<u8> {
         fn utf16(s: &str) -> Vec<u8> {
             let mut v = Vec::new();
             v.extend((s.len() as u16).to_le_bytes());
@@ -346,7 +351,7 @@ mod tests {
     }
 
     /// ZIP STORED mínimo multi-entrada (mesma receita dos testes do zip).
-    fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    pub(crate) fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         use crate::zip::{crc32, CD_ENTRY_SIG, EOCD_SIG, LOCAL_HEADER_SIG};
         let mut v = Vec::new();
         let mut central = Vec::new();

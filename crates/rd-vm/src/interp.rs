@@ -274,10 +274,14 @@ pub(crate) fn exec_frame(
                 regs[*a as usize] = regs[*b as usize].clone();
             }
             0x02 | 0x03 | 0x08 | 0x09 => {
-                let Kind::RegReg16(a, b) = &insn.kind else {
-                    return bad_kind(insn);
+                // move/from16 (22x), move/16 (32x), move-object/from16 (22x),
+                // move-object/16 (32x): 32x uses a 16-bit AAAA destination.
+                let (a, b) = match &insn.kind {
+                    Kind::RegReg16(a, b) => (*a as usize, *b as usize),
+                    Kind::RegReg32(a, b) => (*a as usize, *b as usize),
+                    _ => return bad_kind(insn),
                 };
-                regs[*a as usize] = regs[*b as usize].clone();
+                regs[a] = regs[b].clone();
             }
             0x04 => {
                 // move-wide (12x): copia o par (valor + WideHi)
@@ -289,11 +293,13 @@ pub(crate) fn exec_frame(
             }
             0x05 | 0x06 => {
                 // move-wide/from16 (22x), move-wide/16 (32x)
-                let Kind::RegReg16(a, b) = &insn.kind else {
-                    return bad_kind(insn);
+                let (a, b) = match &insn.kind {
+                    Kind::RegReg16(a, b) => (*a as usize, *b as usize),
+                    Kind::RegReg32(a, b) => (*a as usize, *b as usize),
+                    _ => return bad_kind(insn),
                 };
-                regs[*a as usize] = regs[*b as usize].clone();
-                regs[*a as usize + 1] = Value::WideHi;
+                regs[a] = regs[b].clone();
+                regs[a + 1] = Value::WideHi;
             }
 
             // ── move-result / move-exception (0A..0D) ───────────────────────

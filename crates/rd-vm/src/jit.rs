@@ -1121,17 +1121,26 @@ fn lower_method(
                 let s = *state.get(*b as usize)?;
                 vm_write_single(state, *a as usize, s)
             }
-            (Kind::RegReg16(a, b), 0x02 | 0x03) => {
+            (Kind::RegReg16(a, b), 0x02) => {
+                let s = *state.get(*b as usize)?;
+                vm_write_single(state, *a as usize, s)
+            }
+            (Kind::RegReg32(a, b), 0x03) => {
                 let s = *state.get(*b as usize)?;
                 vm_write_single(state, *a as usize, s)
             }
             (Kind::Regs(a, _), 0x04) => vm_write_wide(state, *a as usize),
-            (Kind::RegReg16(a, _), 0x05 | 0x06) => vm_write_wide(state, *a as usize),
+            (Kind::RegReg16(a, _), 0x05) => vm_write_wide(state, *a as usize),
+            (Kind::RegReg32(a, _), 0x06) => vm_write_wide(state, *a as usize),
             (Kind::Regs(a, b), 0x07) => {
                 let s = *state.get(*b as usize)?;
                 vm_write_single(state, *a as usize, s)
             }
-            (Kind::RegReg16(a, b), 0x08 | 0x09) => {
+            (Kind::RegReg16(a, b), 0x08) => {
+                let s = *state.get(*b as usize)?;
+                vm_write_single(state, *a as usize, s)
+            }
+            (Kind::RegReg32(a, b), 0x09) => {
                 let s = *state.get(*b as usize)?;
                 vm_write_single(state, *a as usize, s)
             }
@@ -1258,7 +1267,23 @@ fn lower_method(
                         });
                     }
                 }
-                (Kind::RegReg16(a, b), 0x02 | 0x03) => {
+                (Kind::RegReg16(a, b), 0x02) => {
+                    if matches!(
+                        st.get(*b as usize),
+                        Some(VmSlot::Ref | VmSlot::ArrI32(_) | VmSlot::ArrI64)
+                    ) {
+                        insts.push(JitInst::MoveRef {
+                            dst: *a as usize,
+                            src: *b as usize,
+                        });
+                    } else {
+                        insts.push(JitInst::Move32 {
+                            dst: *a as usize,
+                            src: *b as usize,
+                        });
+                    }
+                }
+                (Kind::RegReg32(a, b), 0x03) => {
                     if matches!(
                         st.get(*b as usize),
                         Some(VmSlot::Ref | VmSlot::ArrI32(_) | VmSlot::ArrI64)
@@ -1278,7 +1303,11 @@ fn lower_method(
                     dst: *a as usize,
                     src: *b as usize,
                 }),
-                (Kind::RegReg16(a, b), 0x05 | 0x06) => insts.push(JitInst::Move64 {
+                (Kind::RegReg16(a, b), 0x05) => insts.push(JitInst::Move64 {
+                    dst: *a as usize,
+                    src: *b as usize,
+                }),
+                (Kind::RegReg32(a, b), 0x06) => insts.push(JitInst::Move64 {
                     dst: *a as usize,
                     src: *b as usize,
                 }),
@@ -1286,7 +1315,11 @@ fn lower_method(
                     dst: *a as usize,
                     src: *b as usize,
                 }),
-                (Kind::RegReg16(a, b), 0x08 | 0x09) => insts.push(JitInst::MoveRef {
+                (Kind::RegReg16(a, b), 0x08) => insts.push(JitInst::MoveRef {
+                    dst: *a as usize,
+                    src: *b as usize,
+                }),
+                (Kind::RegReg32(a, b), 0x09) => insts.push(JitInst::MoveRef {
                     dst: *a as usize,
                     src: *b as usize,
                 }),

@@ -136,7 +136,7 @@ $ rd inspect golden-apks/org.fdroid.fdroid.apk
 package            org.fdroid.fdroid  v2.0.2 (2000052)
 label              F-Droid (resolved @0x7f110045)
 SDK                min 24 · target 37 · compile 37
-api floor          ⚠ BELOW_FLOOR(minSdk=24, floor=26) — inspect ok; execução responde erro estruturado
+api floor          OK (≥ 9)
 signing            v1, v2, v3
 permissions (31 declaradas; tabela: 175 permissões)
   auto-granted: 14 · runtime-pending: 7 · special: 5 · denied-system: 0 · unknown: 0 · not requested: 3 · app-defined: 2

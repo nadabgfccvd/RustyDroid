@@ -75,19 +75,25 @@ crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).
 
 ## ⚠️ M1 parcial — rd-dex (2026-10)
 
-> **Auditoria (2026-10):** o DoD do M1 exige fuzz 24 h sem crash e comparação versionada com baksmali. A campanha de 24 h nunca foi executada e o comparador não está versionado. Até lá, M1 é ⚠️ parcial.
+> **Auditoria (2026-10):** o DoD do M1 exige fuzz 24 h sem crash e comparação versionada com baksmali. A campanha de 24 h nunca foi executada. Até lá, M1 é ⚠️ parcial.
+>
+> **2026-11-02:** comparação versionada em `scripts/dex_baksmali_diff.py` (baksmali 2.5.2 fixado por SHA-256), rodada no nightly-compat sobre os 3 APKs golden. Resultado: **idêntico nos 3 APKs** (ver item 2). Dois defeitos reais do `rd dex disasm` foram encontrados e corrigidos pelo comparador: formato 32x decodificado com 2 code units em vez de 3 (`move/16`, `move-wide/16`, `move-object/16`, que desalinhava o resto do método) e a faixa de `iput-short` (0x5f) fora da faixa de campo.
 
 1. ✅ Parser DEX 100% (header, maps, strings MUTF-8, types, protos, fields,
    methods, classes, code items, debug info, annotations, call sites,
    method handles) — **45.643 classes dos 3 APKs golden renderizam sem
    falha (0 pulos)**.
-2. ✅ Disassembler smali fiel (alvo baksmali 2.5.2): **24.913 classes
-   comparadas por método — 100% idênticas na sequência de instruções**
-   (comparador differential: `/tmp/compare.py`, artefato de validação).
+2. ✅ Disassembler smali fiel (alvo baksmali 2.5.2): comparação versionada
+   em `scripts/dex_baksmali_diff.py`. Resultado com o binário de 2026-11-02:
+   - F-Droid 2.0.x: 24.528 classes, 129.151 métodos — 100% idênticos (opcodes e operandos);
+   - NewPipe: 10.671 classes, 65.538 métodos — 100% idênticos;
+   - Tasks: 25.595 classes, 102.218 métodos — 100% idênticos.
+   Total: 60.794 classes e 296.907 métodos, 0 divergências em classes ou métodos.
 3. ✅ Fuzz targets (`cargo-fuzz`): `zip`, `axml`, `arsc`, `apk_full`, `dex`;
    CI compila os targets em nightly (execução 24h fora do CI — ver
    `docs/FUZZING.md`).
-4. Gate de saída: idêntico ao baksmali nos 3 APKs ✅; fuzz 24h sem crash —
+4. Gate de saída: idêntico ao baksmali nos 3 APKs ✅ (comparador versionado,
+   rodando no nightly-compat); fuzz 24h sem crash —
    smoke local limpo, campanha 24h pendente de runner dedicado (não bloqueia
    M2; parsers são fuzz-hardened por construção, Lei nº 1).
 
@@ -772,3 +778,21 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   password manager, auto-clicker, auto-scroll, contatos).
 - Suporte a Google Play Services (GMS): **um dos últimos itens**, depois dos golden
   flows dos demais apps.
+
+## Objetivos adicionais do dono (2026-11-02)
+
+- **Suporte a XAPK.** Aceitar arquivos `.xapk` (bundle com `manifest.json` e os
+  APKs de split, além de OBB quando existir) em `rd inspect`, `rd dex disasm` e no
+  fluxo de instalação, tratando o conjunto de splits como um único app. Status
+  (2026-11-02): **parcial** — `rd inspect` (texto e `--json`) e `Apk::open` leem o
+  bundle e usam o split `base`; splits e OBB aparecem no inspect; `rd dex disasm`
+  cobre os DEX de todos os splits. Pendentes: `rd test` sobre todos os splits e o
+  fluxo de instalação.
+  Decisão em [ADR 022](adr/022-xapk-bundles.md).
+- **Layering de APKs.** Permitir executar mais de um APK ao mesmo tempo, com um
+  APK por cima do outro. Caso de uso citado pelo dono: um jogo clicker e um
+  auto-clicker rodando simultaneamente. Status: não iniciado; exige decisão de
+  design (isolamento de processo e de dados, compartilhamento de tela e de
+  eventos de toque, e o que acontece com permissões e serviços de cada camada).
+  Status (2026-11-02): proposta em [ADR 021](adr/021-apk-layering.md), aguardando
+  decisão do dono sobre a primeira etapa.

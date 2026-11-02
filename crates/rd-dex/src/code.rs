@@ -33,8 +33,10 @@ pub enum Kind {
     Branch8(i8),
     /// 20t — branch de 16 bits com sinal.
     Branch16(i16),
-    /// 22x/32x — vAA, vBBBB.
+    /// 22x — vAA, vBBBB (2 code units).
     RegReg16(u8, u16),
+    /// 32x — vAAAA, vBBBB (3 code units: op, AAAA, BBBB).
+    RegReg32(u16, u16),
     /// 21t — vAA, +BBBB.
     RegBranch16(u8, i16),
     /// 21s — vAA, #+BBBB.
@@ -139,6 +141,11 @@ impl Insn {
             // + vBBBB de 16 bits — a distinção fica no `fmt` (Lei 2).
             Kind::RegReg16(a, b) => {
                 units.push(op | ((*a as u16) << 8));
+                units.push(*b);
+            }
+            Kind::RegReg32(a, b) => {
+                units.push(op);
+                units.push(*a);
                 units.push(*b);
             }
             Kind::RegBranch16(a, off) => {
@@ -568,9 +575,16 @@ pub fn decode_at(insns: &[u16], addr: usize) -> RdResult<(Insn, u16)> {
             let u = unit(1)?;
             Ok((mk(2, Kind::Branch16(u as i16)), 2))
         }
-        Format::F22x | Format::F32x => {
+        Format::F22x => {
             let u = unit(1)?;
             Ok((mk(2, Kind::RegReg16(b1 as u8, u)), 2))
+        }
+        Format::F32x => {
+            // 32x = op | 00, AAAA, BBBB: the destination is a full 16-bit
+            // register and the pad byte of unit 0 is ignored.
+            let a = unit(1)?;
+            let b = unit(2)?;
+            Ok((mk(3, Kind::RegReg32(a, b)), 3))
         }
         Format::F21t => {
             let u = unit(1)?;
@@ -804,7 +818,13 @@ fn validate_registers(instructions: &[(usize, Insn)], registers_size: u16) -> Rd
             Kind::RegLit4(a, _) => chk(addr, op, *a as u32, false)?, // const/4 narrow
             Kind::Reg(a) => chk(addr, op, *a as u32, wide_name(name))?, // return-wide, move-result-wide
             Kind::RegReg16(a, b) => {
-                // 22x/32x: move-wide/from16 e move-wide/16 — ambos wide
+                // 22x: move-wide/from16 — ambos wide
+                let w = wide_name(name);
+                chk(addr, op, *a as u32, w)?;
+                chk(addr, op, *b as u32, w)?;
+            }
+            Kind::RegReg32(a, b) => {
+                // 32x: move/16, move-wide/16, move-object/16
                 let w = wide_name(name);
                 chk(addr, op, *a as u32, w)?;
                 chk(addr, op, *b as u32, w)?;
@@ -1119,6 +1139,22 @@ mod tests {
     }
 
     #[test]
+    fn move_16_family_is_three_code_units() {
+        // move/16 v256, v15 = 03 00, 0100 (AAAA), 000f (BBBB): 3 units, not 2.
+        // Regressão: antes o decoder lia 2 units e tratava 000f como `return v0`.
+        let insns = [0x0003u16, 0x0100, 0x000f, 0x000e];
+        let (i, size) = decode_at(&insns, 0).unwrap();
+        assert_eq!(size, 3);
+        assert_eq!(i.kind, Kind::RegReg32(256, 15));
+        assert_eq!(i.encode(), insns[..3].to_vec());
+        let (next, _) = decode_at(&insns, 3).unwrap();
+        assert_eq!(
+            next.opcode, 0x0e,
+            "a instrução seguinte deve ser return-void"
+        );
+    }
+
+    #[test]
     fn all_256_opcodes_decode_without_panic() {
         for op in 0..=255u16 {
             // stream de 5 units (suficiente p/ o maior formato, 51l). O byte1:
@@ -1127,7 +1163,7 @@ mod tests {
             let fmt = info(op as u8).format;
             let unit0 = match fmt {
                 // byte alto é 00 por spec nesses formatos (o encode o descarta)
-                Format::F10x | Format::F20t | Format::F30t => op,
+                Format::F10x | Format::F20t | Format::F30t | Format::F32x => op,
                 _ => op | 0x0100,
             };
             let insns = [unit0, 0x0000, 0x0000, 0x0000, 0x0000];
