@@ -28,7 +28,7 @@ RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android O
 - 📦 **Parses** the APK (ZIP, binary `AndroidManifest.xml`, `resources.arsc`, `classes.dex`)
 - ⚙️ **Executes** Dalvik bytecode in a **Rust VM** (interpreter → Cranelift JIT later)
 - 🧩 **Implements** `android.*` framework APIs natively in Rust
-- 🎨 **Renders** the UI in software: headless PNG today (own rasterizer, pre-rendered DejaVu Sans atlas, no shaping); tiny-skia + shaping are the spec target, pending [ADR 019](docs/adr/019-renderer-tiny-skia-pendente.md)
+- 🎨 **Renders** the UI in software: headless PNG via `tiny-skia` (anti-aliased paths) with `rustybuzz` text shaping over the bundled DejaVu Sans; no bidi/RTL yet, not Android-fidelity (see [ADR 019](docs/adr/019-renderer-tiny-skia-pendente.md))
 - 🤖 **Drives everything through MCP** — built for AI agents from day one
 
 ### Why it's different

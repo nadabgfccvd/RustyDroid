@@ -13,7 +13,7 @@
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⚠️ **parcial** — fuzz 24 h nunca executado; comparador não versionado |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — dump/screenshot ativos; sem `tiny-skia` nem shaping (ADR 019); sem golden de referência Android |
+| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); faltam golden de ≥5 APKs reais com referência Android, bidi e seleção por `DeviceConfig`; F-Droid ainda não sobe (ver abaixo) |
 | M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (provas e2e usam APK sintético, não APK real do corpus) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ✅ **implementado (2026-10)** |
 | M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial (2026-10)** — `rd perf` + gate de CI no app trivial (estimativa); golden pendente |
@@ -170,7 +170,7 @@ certos); configs específicas (land/locale/density) selecionáveis.
 
 ## ⚠️ M4 parcial (2026-10) — rd-render
 
-> **Auditoria (ver ADR 019):** o DoD diz "tiny-skia desenha" e a spec fixa `tiny-skia` + `rustybuzz`. Nenhum dos dois está nas dependências; o texto usa um atlas DejaVu Sans pré-rasterizado (32 px), sem shaping nem bidi. Não há ADR aprovado que substitua a decisão, e não há golden de referência Android.
+> **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). Continua sem bidi/RTL e sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
 
 
 1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
@@ -181,7 +181,9 @@ certos); configs específicas (land/locale/density) selecionáveis.
    RGB 720×1440) + painter por classe/estado (contêiner/texto/botão/borda de
    clickable; INVISIBLE não pinta a subárvore) + encoder PNG sem
    dependências (zlib STORED + crc32/adler32 próprios). Texto com atlas
-   DejaVu Sans pré-rasterizado (32 px, `scripts/gen_glyph_atlas.py`), sem shaping nem bidi (shaping real: ADR 019; o Android real usa skia).
+   DejaVu Sans com shaping `rustybuzz` e raster `tiny-skia` (M4 de 2026-11-02, ADR 019). O atlas de `rd-vm` continua só para a Canvas da VM. Sem bidi; o Android real usa skia.
+
+   **F-Droid (`rd app shot golden-apks/org.fdroid.fdroid.apk`) ainda não sobe.** Achados: (a) `SharedPreferencesImpl` não era subtipo de `SharedPreferences` (corrigido nesta rodada, `classpath::builtin_hierarchy`, com teste); (b) próximo bloqueio: `ExceptionInInitializerError` em `okhttp3.ConnectionSpec$Builder.cipherSuites` (\"no cipher suites for cleartext connections\") durante o `<clinit>` de `ConnectionSpec`. O smali mostra o `cipherSuites(String...)` lançando incondicionalmente quando `tls=false`, então o defeito pode estar no caminho de chamada da VM. Não investigado até o fim. NewPipe: `Collections.binarySearch` fora do escopo do M2. Tasks: `entry …` (IO). Por isso o golden usa o fixture `trivial` em vez de um APK real.
 3. ✅ **CLI**: `rd app dump <apk>` (uiautomator XML | `--text` | `--json`) e
    `rd app shot <apk> --out FILE.png`; ações de script `xml` e `shot FILE`.
 4. ✅ Testes e2e contra fixture real: ids/bounds/clickable/text na árvore;
