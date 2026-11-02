@@ -1337,7 +1337,11 @@ impl AgentSession {
         }
         // ADR 009 (opt-in RD_SNAPSHOT=on): paged fast install when a
         // content-keyed snapshot exists — no whole-file read at all.
-        if snapshot_enabled() {
+        // XAPK nunca usa o atalho de snapshot: ele só conhece APK único.
+        let is_xapk = apk_file
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("xapk"));
+        if snapshot_enabled() && !is_xapk {
             if let Some(res) = self.try_install_snapshot(&apk_file)? {
                 return Ok(res);
             }
@@ -1353,8 +1357,9 @@ impl AgentSession {
         })?;
         phase("install_fs_read", t_read);
         let t_open = std::time::Instant::now();
-        let apk =
-            Apk::from_bytes(bytes).map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
+        // XAPK: todos os splits são validados; o base é o APK instalado.
+        let (apk, bundle_splits) = Apk::from_bytes_with_splits(bytes)
+            .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
         phase("install_apk_from_bytes", t_open);
         // piso de API é contrato (ADR 016: 9): instalação recusa com erro tipado
         if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } = apk.floor_status() {
@@ -1406,6 +1411,13 @@ impl AgentSession {
             "installed_count": self.installed.len(),
             "runtime_pending": self.find_installed(&package).map(|a| a.perms.pending_runtime().len()).unwrap_or(0),
             "runtime_special": self.find_installed(&package).map(|a| a.perms.pending_special().len()).unwrap_or(0),
+            "bundle": bundle_splits.as_ref().map(|splits| serde_json::json!({
+                "format": "xapk",
+                "splits": splits,
+                // Execução usa só o split base; os demais são validados, mas o
+                // DEX e as libs nativas deles ainda não são carregados (ADR 022).
+                "base_only_execution": true,
+            })),
         })))
     }
 
@@ -5342,6 +5354,53 @@ mod tests {
         let (v, err) = call(s, "install", serde_json::json!({"apk": apk}));
         assert!(!err, "install {apk}: {v}");
         v
+    }
+
+    /// XAPK com split base + split de config. Os dois são APKs válidos.
+    fn xapk_bundle_write(config_bytes: Vec<u8>) -> String {
+        let base = std::fs::read(fixture_apk_path()).expect("apk base do fixture");
+        let manifest = serde_json::json!({
+            "xapk_version": 2,
+            "package_name": "com.test.mcp",
+            "split_apks": [
+                {"file": "base.apk", "id": "base"},
+                {"file": "config.arm64.apk", "id": "config.arm64"}
+            ],
+        });
+        let mut zip = rd_testsupport::apkfix::ZipFix::new();
+        zip.add("manifest.json", serde_json::to_vec(&manifest).unwrap());
+        zip.add("base.apk", base);
+        zip.add("config.arm64.apk", config_bytes);
+        fixture_apk_write(zip.build())
+    }
+
+    #[test]
+    fn install_xapk_validates_all_splits_and_runs_the_base() {
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let config = std::fs::read(fixture_apk_path()).expect("apk de config do fixture");
+        let path = xapk_bundle_write(config);
+        let mut s = AgentSession::new();
+        let v = install_ok(&mut s, &path);
+        assert_eq!(v["bundle"]["format"], "xapk", "{v}");
+        assert_eq!(
+            v["bundle"]["splits"].as_array().map(Vec::len),
+            Some(2),
+            "{v}"
+        );
+        assert_eq!(v["bundle"]["base_only_execution"], true, "{v}");
+        let (info, err) = call(&mut s, "app_info", serde_json::json!({}));
+        assert!(!err, "app_info após XAPK: {info}");
+    }
+
+    #[test]
+    fn install_xapk_with_invalid_split_fails_closed() {
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let path = xapk_bundle_write(b"not-an-apk".to_vec());
+        let mut s = AgentSession::new();
+        let (v, err) = call(&mut s, "install", serde_json::json!({"apk": path}));
+        assert!(err, "split inválido não pode instalar: {v}");
+        let (info, err) = call(&mut s, "app_info", serde_json::json!({}));
+        assert!(err, "falha de instalação não deixa app registrado: {info}");
     }
 
     fn launch_ok(s: &mut AgentSession, args: serde_json::Value) -> serde_json::Value {

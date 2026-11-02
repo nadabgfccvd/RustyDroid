@@ -83,6 +83,22 @@ impl Apk {
         Self::from_bytes(data)
     }
 
+    /// Parseia um APK ou XAPK já em memória e devolve também o resumo de
+    /// cada split quando a entrada é um bundle. Todos os splits são parseados
+    /// (um split inválido falha a instalação); o APK devolvido é o base.
+    pub fn from_bytes_with_splits(
+        data: Vec<u8>,
+    ) -> RdResult<(Apk, Option<Vec<xapk::SplitSummary>>)> {
+        let file_size_bytes = data.len() as u64;
+        let zip = Zip::parse(data)?;
+        if xapk::is_bundle(&zip) {
+            let bundle = xapk::Xapk::from_zip(&zip)?;
+            let summaries = bundle.split_summaries();
+            return Ok((bundle.into_base(), Some(summaries)));
+        }
+        Ok((Self::from_zip(zip, file_size_bytes)?, None))
+    }
+
     /// Parseia um APK já em memória.
     pub fn from_bytes(data: Vec<u8>) -> RdResult<Apk> {
         let file_size_bytes = data.len() as u64;

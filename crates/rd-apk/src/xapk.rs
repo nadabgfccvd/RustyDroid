@@ -248,6 +248,37 @@ mod tests {
     }
 
     #[test]
+    fn install_path_reports_every_split_and_uses_base() {
+        let mf = manifest_json(
+            &[
+                ("config.arm64.apk", "config.arm64"),
+                ("com.example.game.apk", "base"),
+                ("feature.apk", "feature.levels"),
+            ],
+            &[],
+        );
+        let bytes = bundle(&[
+            ("manifest.json", mf),
+            ("config.arm64.apk", apk_for("com.example.game")),
+            ("com.example.game.apk", apk_for("com.example.game")),
+            ("feature.apk", apk_for("com.example.game")),
+        ]);
+        let (apk, splits) = Apk::from_bytes_with_splits(bytes).unwrap();
+        assert_eq!(apk.manifest.package, "com.example.game");
+        let splits = splits.expect("bundle must report its splits");
+        assert_eq!(splits.len(), 3);
+        assert_eq!(splits.iter().filter(|s| s.base).count(), 1);
+        assert!(splits.iter().any(|s| s.id == "feature.levels" && !s.base));
+    }
+
+    #[test]
+    fn plain_apk_reports_no_splits() {
+        let (apk, splits) = Apk::from_bytes_with_splits(apk_for("com.example.plain")).unwrap();
+        assert_eq!(apk.manifest.package, "com.example.plain");
+        assert!(splits.is_none());
+    }
+
+    #[test]
     fn base_is_selected_by_id_not_by_position() {
         let mf = manifest_json(
             &[("config.xxhdpi.apk", "config.xxhdpi"), ("app.apk", "base")],
