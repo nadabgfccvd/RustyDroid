@@ -40,7 +40,7 @@ Para cada app, o DoD é reproduzível a partir do repositório, no formato do M6
 | 4 | Plants vs. Zombies 1 | Play Store (proprietário) | jogo com render GPU; licenciamento e serviços Google | ⬜ não iniciado |
 | 5 | Brave | Play Store (proprietário) | mesmo caso do Chrome (Chromium) | ⬜ não iniciado |
 | 6 | Opera GX | Play Store (proprietário) | mesmo caso do Chrome (Chromium) | ⬜ não iniciado |
-| 7 | Lucky Patcher | fora da Play Store (APK de terceiro) | altera licença e pacotes de outros apps; pede privilégios (package manager, acesso a outros pacotes) que o RustyDroid não expõe. **Bloqueio de aquisição:** as páginas encontradas (luckypatchers.app, .co, .br) são sites de terceiros, e o download aponta para um host de terceiros; não há checksum nem assinatura do desenvolvedor para conferir. Nenhum APK foi baixado nem commitado (GH-05). | 🟠 em andamento; aquisição **não verificada**, nenhum launch. Próximo passo: o dono fornece o APK (com SHA-256 conferido) ou aprova uma fonte específica |
+| 7 | Lucky Patcher | fora da Play Store (APK de terceiro) | altera licença e pacotes de outros apps; pede privilégios (package manager, acesso a outros pacotes) que o RustyDroid não expõe. **APK testado e rejeitado:** `LuckyPatchers.com_Official_Installer_12.10.8.apk` de `chelpus.com` (12.583.706 bytes, SHA-256 `173d45974a49cf1be45bc8d634dc7402feb238aa658c382752ebf82043cb354d`). `rd inspect --json` mostra package `ru.aaaaabar.installer` (o Lucky Patcher é `com.dimonvideo.luckypatcher`), assinado só com o certificado genérico "Android Debug", com `ACCESS_SUPERUSER` e assets `xposed_init`/`testkey`. Trata-se de um instalador repackaged, não do app do desenvolvedor. Não foi executado nem commitado (GH-05). | 🟠 em andamento; **aquisição não verificada**, nenhum launch. Próximo passo: o dono fornece o APK `com.dimonvideo.luckypatcher` com SHA-256 conferido, ou aprova uma fonte específica |
 | 8 | Um clone de GTA | Play Store (a escolher) | jogo 3D com render GPU; tamanho de APK e de dados; escolha do app pendente | ⬜ app a escolher |
 | 9 | Photo manager | a escolher (candidato OSS: galeria do F-Droid, a confirmar) | MediaStore e ContentProvider; decodificação de imagem; file I/O | ⬜ app a escolher |
 | 10 | Password manager | a escolher (candidato OSS: KeePassDX, F-Droid, a confirmar) | Autofill framework; Android Keystore; criptografia; SQLite | ⬜ app a escolher |
@@ -69,7 +69,7 @@ Legenda: ⬜ não iniciado · 🟡 parcial, com evidência · ⛔ bloqueado por 
 
 ## Próximos passos
 
-1. Lucky Patcher: aquisição do APK bloqueada pela verificação de origem (ver linha 7). Aguarda o dono fornecer o APK com SHA-256 ou aprovar a fonte; depois, primeiro launch.
+1. Lucky Patcher: o APK de `chelpus.com` foi rejeitado (package e assinatura não batem; ver linha 7). Falta o APK `com.dimonvideo.luckypatcher`. Aguarda o dono fornecer o APK com SHA-256 ou aprovar a fonte; depois, primeiro launch.
 2. Dono escolhe os apps concretos para os itens "a escolher".
 3. Para cada app com APK acessível, criar o golden flow (suíte `rd test`) e registrar
    o status com evidência.
