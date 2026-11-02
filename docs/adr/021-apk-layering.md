@@ -10,6 +10,20 @@ O dono pediu que dois APKs rodem ao mesmo tempo, com um por cima do outro. O cas
 
 Hoje o RustyDroid executa um app por vez: `launch` inicia um pacote, e `tap`, `swipe` e `input` atuam sobre ele. Não há um conceito de sessão múltipla nem de camada de entrada compartilhada. Esta ADR só decide o caminho; a implementação depende da escolha abaixo e não está nesta entrega.
 
+## Achado durante a escolha da opção A (2026-11-02)
+
+O dono escolheu a opção A, etapa 1 (sessões múltiplas). Ao ler `crates/rd-agent/src/mcp.rs`, a etapa 1 conflita com duas regras documentadas:
+
+- `AgentSession` documenta que o engine é de **um app por vez** (`engine: Option<Engine>`, `engine_package`), e a sessão é **uma por processo** (ADR 001).
+- Os campos de execução (`engine`, `engine_package`, `native_engine`, `activity`, `pending_snapshot`, `screen`, `ui_epoch`) estão todos no mesmo struct.
+
+Portanto a etapa 1 não é só "adicionar tools". Ela exige uma nova regra: um processo com N engines, cada um com seu package, e tools que recebem um `engine_id`. Isso muda o modelo de sessão e exige um ADR que revise o ADR 001 antes de qualquer código. Esta ADR fica como proposta até esse ADR existir.
+
+Próximos passos propostos:
+1. Escrever ADR (revisão do ADR 001) definindo o modelo de N engines por processo, com o limite de memória do Moto E5 (ADR 015) por engine.
+2. Extrair o estado de execução de `AgentSession` para uma struct `RunningApp`, sem mudar comportamento (refactor coberto pelos testes existentes do `mcp.rs`).
+3. Adicionar `session_launch`, `session_list` e `session_tap` com o roteamento de toque entre engines.
+
 ## Opções
 
 **A. Duas sessões com camada de entrada compartilhada (recomendada).**
