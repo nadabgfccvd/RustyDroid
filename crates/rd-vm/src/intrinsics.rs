@@ -4951,6 +4951,12 @@ fn instance_intrinsic_dispatch(
         (c, name, sig) if c == UNMODIFIABLE_MAP && map_supported(name, sig) => {
             map_intrinsic(vm, recv, name, sig, args)
         }
+        // Subclasse DEX de LinkedHashMap (ex.: LRU caches): o `<init>` direto
+        // referencia LinkedHashMap, mas o receptor é a subclasse. Constrói o
+        // estado host do mapa mesmo assim (antes: NOT_FOUND).
+        (_, "<init>", sig) if mref_class == LINKED_MAP && map_supported("<init>", sig) => {
+            map_intrinsic(vm, recv, "<init>", sig, args)
+        }
         (c, name, sig)
             if (c == HASH_MAP
                 || c == WEAK_MAP
