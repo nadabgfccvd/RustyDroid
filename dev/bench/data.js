@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793660540098,
+  "lastUpdate": 1793660698808,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1835,6 +1835,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1729,
             "range": "± 25",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "22ad2836da814274e3011807144a9171b2395225",
+          "message": "fix(rd-vm): scope the WorkRequest builder shim to WorkRequest builders (#490)\n\nThe M8 shim claimed every androidx.work class for `<init>` and `build`.\nSo Configuration$Builder.build() returned a WorkRequest instead of a\nConfiguration. On the F-Droid cold start, WorkManagerImplExtKt.\ncreateWorkManager$default then called Configuration.getTaskExecutor on a\nWorkRequest receiver and failed with NOT_FOUND. The same over-broad\nclaim turned Configuration$Builder.<init> into a no-op.\n\nThe shim now applies only to WorkRequest builders (base, OneTime,\nPeriodic). Other androidx.work classes run the real DEX.\n\nValidated: unit test shim_claims_only_workrequest_builders; clippy\n-D warnings for rd-vm; rd app shot on the F-Droid APK moves past\ngetTaskExecutor and now stops at JobScheduler.forNamespace (next gap).\n\nAI usage: diagnosis and fix written with AI assistance from the VM trace\nand the disassembly of WorkManagerImplExtKt in classes.dex; the\nregression test was checked against the real builder class names.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-02T20:04:29-03:00",
+          "tree_id": "4e05536f95c5755075748ad637569555b86e066b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/22ad2836da814274e3011807144a9171b2395225"
+        },
+        "date": 1793660693574,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3263,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3247,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
