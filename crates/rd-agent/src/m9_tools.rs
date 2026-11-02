@@ -22,7 +22,7 @@ impl AgentSession {
     }
     fn tool_m9(&mut self,name:&str,args:&serde_json::Map<String,serde_json::Value>)->Result<ToolResult,RdError>{
         if name=="native_state" {
-            let selected=self.native_engine.clone();
+            let selected=self.running.native_engine.clone();
             let e=self.require_engine()?;
             #[cfg(feature="native")]
             {let mut report=e.native_report();report["selected_engine"]=serde_json::json!(selected);return Ok(ToolResult::json(&report));}
