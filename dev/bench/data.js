@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793659205494,
+  "lastUpdate": 1793659243338,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1727,6 +1727,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3221,
             "range": "± 17",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9e74d75ced34c93c0d43883187f400a38342edc1",
+          "message": "feat(agent): instala XAPK sobre todos os splits (base executa) (#487)\n\n* feat(agent): install XAPK bundles over all splits\n\n`install` now parses every split of an .xapk and installs its base split.\nThe response carries `bundle.splits` (id, file, base, dex, native libs,\nabis) and `base_only_execution: true`, because DEX and native libs of the\nother splits are not loaded into the VM yet. An invalid split fails the\ninstall and leaves no app registered. XAPK never takes the snapshot\nshortcut, which only knows single APKs.\n\nRegression: rd-apk install_path_reports_every_split_and_uses_base and\nthe rd-agent tests install_xapk_validates_all_splits_and_runs_the_base and\ninstall_xapk_with_invalid_split_fails_closed.\n\nAI usage: code and tests written with AI assistance; the fixture-based\nsuite was validated with `rd test` on a real two-split XAPK built from\nthe golden NewPipe and Tasks APKs.\n\n* docs: record XAPK install status and split limits\n\nROADMAP: XAPK install over splits is done, with the honest limit that\nexecution is base-only. CHANGELOG: entry for the install change.\n\n---------\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-02T19:39:50-03:00",
+          "tree_id": "759b5a70fae9e1cecc5752819d7b691d9a0a4614",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9e74d75ced34c93c0d43883187f400a38342edc1"
+        },
+        "date": 1793659242871,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3207,
+            "range": "± 58",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3195,
+            "range": "± 15",
             "unit": "ns/iter"
           }
         ]
