@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793659243338,
+  "lastUpdate": 1793659744631,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1763,6 +1763,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3195,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "409b4deb049cf4da81acb2ebe951ec30cf228244",
+          "message": "docs(roadmap): layering etapa 1 aceita, ADR 023 mergeada (#488)\n\nAtualiza o status de layering: dono escolheu a etapa 1 (sessões), ADR 023\nrevisa ADR 001 e está mergeada. Código da etapa 1 ainda não iniciado.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-02T19:48:33-03:00",
+          "tree_id": "55891f8570a2c6ba38663fdf4c3c283eb0027254",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/409b4deb049cf4da81acb2ebe951ec30cf228244"
+        },
+        "date": 1793659743120,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2779,
+            "range": "± 120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2764,
+            "range": "± 20",
             "unit": "ns/iter"
           }
         ]
