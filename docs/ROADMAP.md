@@ -800,5 +800,7 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   auto-clicker rodando simultaneamente. Status: não iniciado; exige decisão de
   design (isolamento de processo e de dados, compartilhamento de tela e de
   eventos de toque, e o que acontece com permissões e serviços de cada camada).
-  Status (2026-11-02): proposta em [ADR 021](adr/021-apk-layering.md), aguardando
-  decisão do dono sobre a primeira etapa.
+  Status (2026-11-02): proposta em [ADR 021](adr/021-apk-layering.md). O dono escolheu a
+  etapa 1 (sessões com roteamento de entrada). A revisão do ADR 001 que ela exige está
+  aceita em [ADR 023](adr/023-revisa-adr-001-multiplas-sessoes.md) (mergeada). Código da
+  etapa 1 (refactor `RunningApp`, `engine_id`, `session_launch`) ainda não iniciado.
