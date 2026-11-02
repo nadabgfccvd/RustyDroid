@@ -1,0 +1,89 @@
+name: fuzz-m1-campaign (temporary 4.8 h campaign, not for merge)
+
+on:
+  push:
+    branches: [fuzz/m1-campaign]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-m1-campaign
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  FUZZ_SECONDS: "17400"
+
+jobs:
+  campaign:
+    name: fuzz ${{ matrix.target }} (4.8 h)
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: rd-apk-fuzz
+            crate_dir: crates/rd-apk
+            target: zip
+          - package: rd-apk-fuzz
+            crate_dir: crates/rd-apk
+            target: axml
+          - package: rd-apk-fuzz
+            crate_dir: crates/rd-apk
+            target: arsc
+          - package: rd-apk-fuzz
+            crate_dir: crates/rd-apk
+            target: apk_full
+          - package: rd-dex-fuzz
+            crate_dir: crates/rd-dex
+            target: dex
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable @ 2026-10-25
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: ${{ matrix.crate_dir }}/fuzz -> target
+      - name: Install cargo-fuzz (pinned)
+        run: cargo install cargo-fuzz --locked --version 0.13.2
+      - name: Build target
+        working-directory: ${{ matrix.crate_dir }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo +nightly fuzz build "$TARGET"
+      - name: Campaign run (libFuzzer, no early stop on findings)
+        working-directory: ${{ matrix.crate_dir }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -o pipefail
+          cargo +nightly fuzz run "$TARGET" -- -max_total_time="$FUZZ_SECONDS" -rss_limit_mb=2048 -ignore_crashes=1 -print_final_stats=1 2>&1 | tee "/tmp/$TARGET.log" | tail -n 40 || true
+          echo "--- final stats ---"
+          grep -E "Done |stat::" "/tmp/$TARGET.log" | tail -n 5 || true
+      - name: Record crashes and corpus size
+        if: always()
+        env:
+          TARGET: ${{ matrix.target }}
+          CRATE_DIR: ${{ matrix.crate_dir }}
+        run: |
+          set +e
+          a="$CRATE_DIR/fuzz/artifacts/$TARGET"
+          n=$(find "$a" -type f -name 'crash-*' 2>/dev/null | wc -l)
+          o=$(find "$a" -type f \( -name 'oom-*' -o -name 'timeout-*' \) 2>/dev/null | wc -l)
+          c=$(find "$CRATE_DIR/fuzz/corpus/$TARGET" -type f 2>/dev/null | wc -l)
+          echo "target=$TARGET crashes=$n oom_timeout=$o corpus_entries=$c"
+          cp "/tmp/$TARGET.log" "/tmp/$TARGET-run.log" 2>/dev/null
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: fuzz-m1-${{ matrix.target }}
+          path: |
+            /tmp/${{ matrix.target }}.log
+            ${{ matrix.crate_dir }}/fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 7
