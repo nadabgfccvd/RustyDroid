@@ -304,11 +304,11 @@ impl AgentSession {
     /// Present a stored snapshot frame: live viewer + resource
     /// subscribers + cached PNG for `screenshot`, without an engine.
     fn present_snapshot(&mut self, pending: PendingSnapshot) {
-        self.screen.version = self.screen.version.saturating_add(1);
-        let v = self.screen.version;
-        self.screen.png = Some((v, pending.loaded.png.clone()));
-        self.screen.dirty = true;
-        if let Some(live) = self.screen.live.clone() {
+        self.running.screen.version = self.running.screen.version.saturating_add(1);
+        let v = self.running.screen.version;
+        self.running.screen.png = Some((v, pending.loaded.png.clone()));
+        self.running.screen.dirty = true;
+        if let Some(live) = self.running.screen.live.clone() {
             let mut st: serde_json::Value = serde_json::from_str(&pending.loaded.observe_json)
                 .unwrap_or_else(|_| serde_json::json!({}));
             st["version"] = serde_json::json!(v);
@@ -325,17 +325,17 @@ impl AgentSession {
             }
             live.changed.notify_all();
         }
-        if !self.screen.subs.is_empty() {
-            self.screen.notified = v;
-            for uri in self.screen.subs.clone() {
-                self.screen.pending.push(serde_json::json!({
+        if !self.running.screen.subs.is_empty() {
+            self.running.screen.notified = v;
+            for uri in self.running.screen.subs.clone() {
+                self.running.screen.pending.push(serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "notifications/resources/updated",
                     "params": {"uri": uri, "version": v},
                 }));
             }
         }
-        self.pending_snapshot = Some(pending);
+        self.running.pending_snapshot = Some(pending);
     }
 
     /// Capture after a REAL cold launch: first frame PNG + observe model,
@@ -370,8 +370,8 @@ impl AgentSession {
         let pz = rd_apk::paged::PagedZip::open(&source_path)?;
         let key = apk_fingerprint(&pz, &manifest_bytes);
         let png = self.screen_png()?;
-        let v = self.screen.version;
-        let (observe_json, observe_text) = match self.screen.snap.as_ref() {
+        let v = self.running.screen.version;
+        let (observe_json, observe_text) = match self.running.screen.snap.as_ref() {
             Some(snap) => (snap.to_json(v, false).to_string(), snap.to_text(v)),
             None => (String::new(), String::new()),
         };
@@ -395,7 +395,7 @@ impl AgentSession {
     fn materialize_snapshot(&mut self) -> Result<(), RdError> {
         let t0 = std::time::Instant::now();
         let pending = self
-            .pending_snapshot
+            .running.pending_snapshot
             .take()
             .ok_or_else(|| agent_error("NOT_RUNNING", "no snapshot to materialize", None))?;
         let r = self.cold_launch(&pending.package, &pending.activity, None)?;

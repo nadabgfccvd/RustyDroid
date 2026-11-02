@@ -388,6 +388,37 @@ impl InstalledApp {
     }
 }
 
+/// Estado de execução de UM app dentro de uma sessão (ADR 023): engine,
+/// package/activity em execução, snapshot pendente e estado de tela.
+/// Extraído de `AgentSession` sem mudança de comportamento.
+pub struct RunningApp {
+    engine: Option<Engine>,
+    /// package do app EM EXECUÇÃO (o engine é de UM app por vez).
+    engine_package: Option<String>,
+    native_engine: Option<String>,
+    activity: Option<String>,
+    /// ADR 009: snapshot frame presented but engine not yet materialized.
+    pending_snapshot: Option<PendingSnapshot>,
+    /// Round 6: cached screen model / PNG per frame version, resource
+    /// subscriptions, pending notifications and the live viewer.
+    screen: ScreenState,
+    ui_epoch: u64,
+}
+
+impl RunningApp {
+    fn empty() -> Self {
+        RunningApp {
+            engine: None,
+            engine_package: None,
+            native_engine: None,
+            activity: None,
+            pending_snapshot: None,
+            screen: ScreenState::default(),
+            ui_epoch: 0,
+        }
+    }
+}
+
 /// Estado do "dispositivo" headless: registro de apps instalados, app
 /// ativo, app EM EXECUÇÃO (engine), permissões, device profile. Uma sessão
 /// por processo (ADR 001) — isolamento entre sessões é por processo, e o
@@ -400,15 +431,10 @@ pub struct AgentSession {
     installed: Vec<InstalledApp>,
     /// package ativo (último install/launch bem-sucedido).
     active: Option<String>,
-    engine: Option<Engine>,
-    /// package do app EM EXECUÇÃO (o engine é de UM app por vez).
-    engine_package: Option<String>,
-    native_engine: Option<String>,
-    activity: Option<String>,
+    /// Estado de execução do app (ADR 023 etapa 2: isolado para N sessões).
+    running: RunningApp,
     /// System.out do app (issue #55: buffer da sessão, tool `logs` lê).
     logs: Arc<Mutex<Vec<u8>>>,
-    /// ADR 009: snapshot frame presented but engine not yet materialized.
-    pending_snapshot: Option<PendingSnapshot>,
     /// Issue #259: pacotes cujo estado visível ao guest pode divergir
     /// de um install pristine NESTA sessão (engine já rodou, grants
     /// mudaram). O fingerprint do snapshot só enxerga o APK — servir
@@ -418,8 +444,6 @@ pub struct AgentSession {
     behavior: SwitchTable,
     /// Round 6: cached screen model / PNG per frame version, resource
     /// subscriptions, pending notifications and the live viewer.
-    screen: ScreenState,
-    ui_epoch: u64,
     log_generation: u64,
     tool_error_count: u64,
     last_tool_error: Option<LastToolError>,
@@ -458,17 +482,11 @@ impl AgentSession {
             roots,
             installed: Vec::new(),
             active: None,
-            engine: None,
-            engine_package: None,
-            native_engine: None,
-            activity: None,
+            running: RunningApp::empty(),
             logs,
-            pending_snapshot: None,
             snapshot_dirty: std::collections::HashSet::new(),
             devices: DeviceTable::embedded().expect("devices.toml embutido parseia"),
             behavior: SwitchTable::embedded().expect("behavior-switches.toml embutido parseia"),
-            screen: ScreenState::default(),
-            ui_epoch: 0,
             log_generation: 0,
             tool_error_count: 0,
             last_tool_error: None,
@@ -509,12 +527,12 @@ impl AgentSession {
         // ADR 009: first engine-requiring tool after a snapshot launch
         // runs the real cold launch now (disclosed via launch result
         // `materialized: false`).
-        if self.engine.is_none() && self.pending_snapshot.is_some() {
+        if self.running.engine.is_none() && self.running.pending_snapshot.is_some() {
             self.materialize_snapshot()?;
         }
-        let running = self.engine.is_some();
+        let running = self.running.engine.is_some();
         if running {
-            Ok(self.engine.as_mut().expect("engine"))
+            Ok(self.running.engine.as_mut().expect("engine"))
         } else {
             Err(agent_error(
                 "NOT_RUNNING",
@@ -525,22 +543,23 @@ impl AgentSession {
     }
 
     fn current_activity(&self) -> Option<&str> {
-        self.engine
+        self.running
+            .engine
             .as_ref()
             .and_then(|e| e.fw.current_activity.and_then(|r| e.heap.class_of(r).ok()))
-            .or(self.activity.as_deref())
+            .or(self.running.activity.as_deref())
     }
 
     /// Mata o engine se o app em execução é `package`. Devolve se matou.
     /// (remove/clear/install do MESMO package: Android mata o app — nunca
     /// deixa estado inconsistente.)
     fn kill_engine_if_running(&mut self, package: &str) -> bool {
-        if self.engine_package.as_deref() == Some(package) {
-            self.engine = None;
-            self.pending_snapshot = None;
-            self.engine_package = None;
-            self.native_engine = None;
-            self.activity = None;
+        if self.running.engine_package.as_deref() == Some(package) {
+            self.running.engine = None;
+            self.running.pending_snapshot = None;
+            self.running.engine_package = None;
+            self.running.native_engine = None;
+            self.running.activity = None;
             // Issue #230: o heap morreu aqui — o estado host indexado por
             // ObjRef nas thread_locals do rd-vm morre junto, para o
             // próximo Engine (mesma thread) não herdar fantasmas.
@@ -1032,7 +1051,7 @@ impl AgentSession {
         }
         // Fuel limits one operation, not the lifetime of a healthy MCP session.
         // Total fuel remains observable; loops still exhaust a per-tool budget.
-        if let Some(eng) = self.engine.as_mut().filter(|_| !diagnostic) {
+        if let Some(eng) = self.running.engine.as_mut().filter(|_| !diagnostic) {
             eng.reset_fuel_window();
         }
         let args = args.as_object().cloned().unwrap_or_default();
@@ -1230,7 +1249,7 @@ impl AgentSession {
             "behavior_switches" => self.tool_behavior_switches(),
             "runtime_health" => {
                 if args.get("gc").and_then(|v| v.as_bool()) == Some(true) {
-                    if let Some(eng) = self.engine.as_mut() {
+                    if let Some(eng) = self.running.engine.as_mut() {
                         eng.gc();
                     }
                 }
@@ -1281,7 +1300,7 @@ impl AgentSession {
         }
         // safe point for the collector: no interpreter frame is live between
         // tool calls (see rd-vm gc.rs); adaptive threshold, RD_GC=off disables
-        if let Some(eng) = self.engine.as_mut() {
+        if let Some(eng) = self.running.engine.as_mut() {
             if let Some(st) = eng.maybe_gc() {
                 let line = format!(
                     "I/RdGc: freed {} objects / {} KB in {:.1} ms (live {}, heap {} -> {} KB)\n",
@@ -1531,8 +1550,8 @@ impl AgentSession {
             eprintln!("{report}");
         }
         if r.is_ok() {
-            self.pending_snapshot = None;
-            self.engine = Some(eng);
+            self.running.pending_snapshot = None;
+            self.running.engine = Some(eng);
         }
         Ok(r)
     }
@@ -1556,8 +1575,8 @@ impl AgentSession {
             )
         })?;
         let selected_engine = engine.map(str::to_string).or_else(|| {
-            if self.engine_package.as_deref() == Some(pkg.as_str()) {
-                self.native_engine.clone()
+            if self.running.engine_package.as_deref() == Some(pkg.as_str()) {
+                self.running.native_engine.clone()
             } else {
                 None
             }
@@ -1641,43 +1660,48 @@ impl AgentSession {
         // Caminho frio (Engine novo, com parse dos DEX) só quando o package
         // não está rodando. Falha no warm não derruba o app (mesma regra da
         // issue #82).
-        let warm = self.engine.is_some()
-            && self.engine_package.as_deref() == Some(package_out.as_str())
-            && self.native_engine == selected_engine;
+        let warm = self.running.engine.is_some()
+            && self.running.engine_package.as_deref() == Some(package_out.as_str())
+            && self.running.native_engine == selected_engine;
         // Issue #259: lançar um pacote DIFERENTE abandona qualquer
         // frame de snapshot apresentado — ele nunca pode ser servido
         // ou materializado para o novo alvo, nem se este launch falhar.
         if self
+            .running
             .pending_snapshot
             .as_ref()
             .is_some_and(|p| p.package != package_out)
         {
-            self.pending_snapshot = None;
+            self.running.pending_snapshot = None;
         }
         // ADR 009 (opt-in): present a stored first frame immediately; the
         // engine materializes lazily on the first engine-requiring tool.
         // Only when no other engine is live (a cold launch would replace
         // it) and no native engine was selected.
-        let snapshot_present: Option<Result<u32, VmExit>> =
-            if !warm && self.engine.is_none() && selected_engine.is_none() && snapshot_enabled() {
-                match self.snapshot_for_launch(
-                    &package_out,
-                    &desc,
-                    snap_key.as_deref(),
-                    snap_source.as_deref(),
-                ) {
-                    Some(pending) => {
-                        self.present_snapshot(pending);
-                        Some(Ok(0))
-                    }
-                    None => None,
+        let snapshot_present: Option<Result<u32, VmExit>> = if !warm
+            && self.running.engine.is_none()
+            && selected_engine.is_none()
+            && snapshot_enabled()
+        {
+            match self.snapshot_for_launch(
+                &package_out,
+                &desc,
+                snap_key.as_deref(),
+                snap_source.as_deref(),
+            ) {
+                Some(pending) => {
+                    self.present_snapshot(pending);
+                    Some(Ok(0))
                 }
-            } else {
-                None
-            };
+                None => None,
+            }
+        } else {
+            None
+        };
         let used_snapshot = snapshot_present.is_some();
         let launch_result = if warm {
             let eng = self
+                .running
                 .engine
                 .as_mut()
                 .expect("engine presente: warm verificado acima");
@@ -1705,9 +1729,9 @@ impl AgentSession {
                 _ => rd,
             }
         })?;
-        self.engine_package = Some(package_out.clone());
-        self.native_engine = selected_engine.clone();
-        self.activity = Some(desc.clone());
+        self.running.engine_package = Some(package_out.clone());
+        self.running.native_engine = selected_engine.clone();
+        self.running.activity = Some(desc.clone());
         self.active = Some(package_out.clone());
         // ADR 009: a REAL cold launch captures the snapshot for future
         // processes (install-time precomputation). Failure is disclosed
@@ -1727,7 +1751,7 @@ impl AgentSession {
         }
         let mut out = serde_json::json!({
             "launched": true,
-            "native_engine": self.native_engine,
+            "native_engine": self.running.native_engine,
             "session_id": self.session_id,
             "activity": desc,
             "package": package_out,
@@ -1918,6 +1942,7 @@ impl AgentSession {
             .view_tree()
             .ok_or_else(|| agent_error("INVALID_FORMAT", "sem activity/window para dump", None))?;
         let package = self
+            .running
             .engine_package
             .clone()
             .or_else(|| self.active.clone())
@@ -1939,8 +1964,8 @@ impl AgentSession {
         // ADR 009: a presented-but-unmaterialized snapshot serves its
         // stored frame directly (byte-identical to the live frame under
         // Law 4 determinism) instead of forcing materialization.
-        if self.engine.is_none() {
-            if let Some(pending) = &self.pending_snapshot {
+        if self.running.engine.is_none() {
+            if let Some(pending) = &self.running.pending_snapshot {
                 let png = pending.loaded.png.clone();
                 return match path {
                     Some(p) if !p.is_empty() => {
@@ -1974,7 +1999,7 @@ impl AgentSession {
         // recorded once per frame version and the PNG cached until app code
         // runs again (round 6) — repeated screenshots are free.
         let png = self.screen_png()?;
-        let draw_warning = self.screen.draw_error.clone();
+        let draw_warning = self.running.screen.draw_error.clone();
         match path {
             Some(p) if !p.is_empty() => {
                 // Controle M5: escrita de arquivo SÓ dentro do sandbox
@@ -2162,7 +2187,7 @@ impl AgentSession {
                     "version_name": a.version_name,
                     "version_code": a.version_code,
                     "active": self.active.as_deref() == Some(a.package.as_str()),
-                    "running": self.engine_package.as_deref() == Some(a.package.as_str()),
+                    "running": self.running.engine_package.as_deref() == Some(a.package.as_str()),
                 })
             })
             .collect();
@@ -2292,7 +2317,7 @@ impl AgentSession {
             self.mark_snapshot_dirty(&p);
         }
         // keep the running engine's grant set in sync (perms.rs)
-        if self.engine_package == self.active {
+        if self.running.engine_package == self.active {
             let granted: Option<Vec<String>> = self.active.as_ref().and_then(|p| {
                 self.installed.iter().find(|a| &a.package == p).map(|a| {
                     a.perms
@@ -2303,15 +2328,15 @@ impl AgentSession {
                         .collect()
                 })
             });
-            if let (Some(e), Some(g)) = (self.engine.as_mut(), granted) {
+            if let (Some(e), Some(g)) = (self.running.engine.as_mut(), granted) {
                 e.set_granted_permissions(g);
             }
         }
         #[cfg(feature = "advanced-components")]
         if permission == "android.permission.POST_NOTIFICATIONS"
-            && self.engine_package == self.active
+            && self.running.engine_package == self.active
         {
-            if let Some(e) = self.engine.as_mut() {
+            if let Some(e) = self.running.engine.as_mut() {
                 e.m9_set_notification_permission(st.is_granted());
             }
         }
@@ -2372,15 +2397,15 @@ impl AgentSession {
             "session_id": self.session_id,
             "installed_count": self.installed.len(),
             "active_package": self.active,
-            "running": self.engine.is_some(),
-            "running_package": self.engine_package,
+            "running": self.running.engine.is_some(),
+            "running_package": self.running.engine_package,
             "logs_bytes": logs_bytes,
             "logs_available": logs_available,
         });
-        match self.engine.as_ref() {
+        match self.running.engine.as_ref() {
             Some(eng) => {
                 v["activity"] = serde_json::json!(self.current_activity());
-                v["native_engine"] = serde_json::json!(self.native_engine);
+                v["native_engine"] = serde_json::json!(self.running.native_engine);
                 v["finished"] = serde_json::json!(eng.activity_is_finished());
                 v["clock_ms"] = serde_json::json!(eng.fw.clock());
                 v["heap_used_bytes"] = serde_json::json!(eng.heap_used());
@@ -2723,7 +2748,7 @@ impl AgentSession {
     /// em nível de método do app em uso — instrumentação no interpretador
     /// (rd-vm), não análise estática. NOT_RUNNING sem app lançado.
     fn tool_coverage(&mut self) -> Result<ToolResult, RdError> {
-        let pkg = self.engine_package.clone();
+        let pkg = self.running.engine_package.clone();
         let eng = self.require_engine()?;
         let snap = eng.coverage_snapshot();
         // pct com 1 casa decimal; 0 métodos (app sem corpos DEX) → 0.0
@@ -3252,6 +3277,7 @@ fn handle_single(
                 "sessionId": session.session_id,
             });
             if let Some(pkg) = session
+                .running
                 .engine_package
                 .as_deref()
                 .or(session.active.as_deref())
@@ -3845,16 +3871,16 @@ mod tests {
                     "NOT_IMPLEMENTED"
                 }
             );
-            assert!(s.engine.is_none());
-            assert!(s.native_engine.is_none());
+            assert!(s.running.engine.is_none());
+            assert!(s.running.native_engine.is_none());
         }
         let launched = launch_ok(&mut s, serde_json::json!({}));
         assert_eq!(launched["native_engine"], serde_json::Value::Null);
         let (v, failed) = call(&mut s, "launch", serde_json::json!({"engine":"flutter"}));
         assert!(failed);
         assert_eq!(v["code"], "NOT_IMPLEMENTED");
-        assert!(s.engine.is_some());
-        assert!(s.native_engine.is_none());
+        assert!(s.running.engine.is_some());
+        assert!(s.running.native_engine.is_none());
         let _ = std::fs::remove_file(path);
     }
 
@@ -3899,7 +3925,7 @@ mod tests {
         assert_eq!(v["engines"]["registered_engines"], 28);
         assert_eq!(v["engines"]["execution_claimed"], false);
         assert!(
-            s.engine.is_none(),
+            s.running.engine.is_none(),
             "static detection must never create a process"
         );
         assert_eq!(
@@ -3923,7 +3949,7 @@ mod tests {
         assert_eq!(info["engines"]["analysis_status"], "not_analyzed");
         assert_eq!(info["engines"]["error"]["code"], "DETECTION_LIMIT");
         assert_eq!(info["engines"]["execution_claimed"], false);
-        assert!(session.engine.is_none());
+        assert!(session.running.engine.is_none());
         let _ = std::fs::remove_file(apk_path);
     }
 
@@ -5472,19 +5498,22 @@ mod tests {
             .snapshot_for_launch("com.test.mcp", &activity, Some(&key), None)
             .expect("presentable snapshot");
         s2.present_snapshot(pending);
-        assert!(s2.engine.is_none(), "present must not materialize");
+        assert!(s2.running.engine.is_none(), "present must not materialize");
         let shot = s2.call_tool("screenshot", &serde_json::json!({}));
         assert!(!shot.is_error);
         match &shot.content[0] {
             ToolContent::Image { mime, .. } => assert_eq!(*mime, "image/png"),
             _ => panic!("screenshot from snapshot is an image"),
         }
-        assert!(s2.engine.is_none(), "screenshot must not materialize");
+        assert!(
+            s2.running.engine.is_none(),
+            "screenshot must not materialize"
+        );
         {
             let _eng = s2.require_engine().expect("materialize on demand");
         }
-        assert!(s2.pending_snapshot.is_none());
-        assert!(s2.engine.is_some());
+        assert!(s2.running.pending_snapshot.is_none());
+        assert!(s2.running.engine.is_some());
         let (v, err) = call(&mut s2, "tap", serde_json::json!({"x": 10, "y": 10}));
         assert!(!err, "tap after materialization: {v}");
         std::env::remove_var("RD_SNAPSHOT_DIR");
@@ -5527,17 +5556,20 @@ mod tests {
             .snapshot_for_launch("com.test.mcp", &activity, Some(&key), None)
             .expect("presentable snapshot");
         s2.present_snapshot(pending);
-        assert!(s2.engine.is_none(), "present must not materialize");
+        assert!(s2.running.engine.is_none(), "present must not materialize");
 
         let (obs, err) = call(&mut s2, "observe", serde_json::json!({}));
         assert!(!err, "observe text: {obs}");
-        assert!(s2.engine.is_none(), "observe must not materialize");
-        assert!(s2.pending_snapshot.is_some());
+        assert!(s2.running.engine.is_none(), "observe must not materialize");
+        assert!(s2.running.pending_snapshot.is_some());
         let (obsj, err) = call(&mut s2, "observe", serde_json::json!({"format": "json"}));
         assert!(!err, "observe json: {obsj}");
         assert_eq!(obsj["snapshot"], true);
         assert!(obsj["texts"].is_array());
-        assert!(s2.engine.is_none(), "observe json must not materialize");
+        assert!(
+            s2.running.engine.is_none(),
+            "observe json must not materialize"
+        );
 
         std::env::remove_var("RD_SNAPSHOT_DIR");
         let _ = std::fs::remove_dir_all(&snap_root);

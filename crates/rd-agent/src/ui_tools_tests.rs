@@ -180,7 +180,7 @@ fn structured_wait_checks_immediately_and_does_not_overshoot_virtual_budget() {
         assert_eq!(v["condition_met"], want);
         assert_eq!(v["waited_ms"], elapsed);
     }
-    let clock = s.engine.as_ref().unwrap().fw.clock();
+    let clock = s.running.engine.as_ref().unwrap().fw.clock();
     for args in [
         serde_json::json!({"text":"x","step_ms":0}),
         serde_json::json!({"text":"x","timeout_ms":60001}),
@@ -189,7 +189,7 @@ fn structured_wait_checks_immediately_and_does_not_overshoot_virtual_budget() {
         let (v, e) = call(&mut s, "wait_for_view", args);
         assert!(e);
         assert_eq!(v["code"], "LIMIT_EXCEEDED");
-        assert_eq!(s.engine.as_ref().unwrap().fw.clock(), clock);
+        assert_eq!(s.running.engine.as_ref().unwrap().fw.clock(), clock);
     }
     std::fs::remove_file(apk).unwrap();
 }
@@ -212,7 +212,7 @@ fn malformed_legacy_ui_arguments_fail_before_any_app_code() {
         let (v, e) = call(&mut s, tool, args);
         assert!(e, "{v}");
         assert_eq!(v["code"], "INVALID_FORMAT");
-        assert!(s.engine.is_none());
+        assert!(s.running.engine.is_none());
     }
 }
 
@@ -232,7 +232,7 @@ fn structured_tap_rejects_ambiguity_same_metadata_occlusion_and_disabled_targets
             .is_error
     );
     let (original, other, parent) = {
-        let e = s.engine.as_mut().unwrap();
+        let e = s.running.engine.as_mut().unwrap();
         let original =
             e.fw.objects
                 .iter()
@@ -261,7 +261,7 @@ fn structured_tap_rejects_ambiguity_same_metadata_occlusion_and_disabled_targets
     // Same id, class, text and bounds are NOT sufficient identity: the
     // selector can distinguish by clickable, so the hit guard must too.
     if let Some(HostObj::View { click_method, .. }) =
-        s.engine.as_mut().unwrap().fw.objects.get_mut(&original)
+        s.running.engine.as_mut().unwrap().fw.objects.get_mut(&original)
     {
         *click_method = Some("must_not_run".into());
     }
@@ -272,18 +272,18 @@ fn structured_tap_rejects_ambiguity_same_metadata_occlusion_and_disabled_targets
     );
     assert!(error, "{v}");
     assert_eq!(v["code"], "TARGET_OCCLUDED");
-    if let Some(HostObj::View { text, .. }) = s.engine.as_mut().unwrap().fw.objects.get_mut(&other)
+    if let Some(HostObj::View { text, .. }) = s.running.engine.as_mut().unwrap().fw.objects.get_mut(&other)
     {
         *text = "occluder".into();
     }
     let (v, error) = call(&mut s, "tap_view", serde_json::json!({"text":"Olá do MCP"}));
     assert!(error);
     assert_eq!(v["code"], "TARGET_OCCLUDED");
-    if let Some(HostObj::View { vis, .. }) = s.engine.as_mut().unwrap().fw.objects.get_mut(&other) {
+    if let Some(HostObj::View { vis, .. }) = s.running.engine.as_mut().unwrap().fw.objects.get_mut(&other) {
         *vis = Vis::Gone;
     }
     if let Some(HostObj::View { enabled, .. }) =
-        s.engine.as_mut().unwrap().fw.objects.get_mut(&original)
+        s.running.engine.as_mut().unwrap().fw.objects.get_mut(&original)
     {
         *enabled = false;
     }
@@ -292,7 +292,7 @@ fn structured_tap_rejects_ambiguity_same_metadata_occlusion_and_disabled_targets
     assert_eq!(v["code"], "VIEW_NOT_INTERACTABLE");
     // Keep the manually-added host object reachable while checking its tree.
     assert!(
-        matches!(s.engine.as_ref().unwrap().fw.get(parent),Some(HostObj::View{children,..}) if children.contains(&other))
+        matches!(s.running.engine.as_ref().unwrap().fw.get(parent),Some(HostObj::View{children,..}) if children.contains(&other))
     );
     std::fs::remove_file(apk).unwrap();
 }
@@ -308,7 +308,7 @@ fn structured_zero_timeout_respects_zero_wait_policy_without_advancing_time() {
     );
     assert!(!s.call_tool("launch", &serde_json::json!({})).is_error);
     s.policy.max_wait_ms = 0;
-    let before = s.engine.as_ref().unwrap().fw.clock();
+    let before = s.running.engine.as_ref().unwrap().fw.clock();
     let (v, error) = call(
         &mut s,
         "wait_for_view",
@@ -317,7 +317,7 @@ fn structured_zero_timeout_respects_zero_wait_policy_without_advancing_time() {
     assert!(!error, "{v}");
     assert_eq!(v["condition_met"], true);
     assert_eq!(v["polls"], 1);
-    assert_eq!(s.engine.as_ref().unwrap().fw.clock(), before);
+    assert_eq!(s.running.engine.as_ref().unwrap().fw.clock(), before);
     std::fs::remove_file(apk).unwrap();
 }
 
@@ -428,7 +428,7 @@ fn structured_wait_observes_guest_runnable_visibility_change_on_virtual_clock() 
             .is_error
     );
     assert!(!s.call_tool("launch", &serde_json::json!({})).is_error);
-    let engine = s.engine.as_mut().unwrap();
+    let engine = s.running.engine.as_mut().unwrap();
     let target = engine
         .fw
         .objects
@@ -446,7 +446,7 @@ fn structured_wait_observes_guest_runnable_visibility_change_on_virtual_clock() 
         )
         .unwrap();
     assert_eq!(
-        s.engine.as_ref().unwrap().looper_pending(),
+        s.running.engine.as_ref().unwrap().looper_pending(),
         1,
         "guest setup must enqueue exactly one Runnable"
     );
@@ -460,6 +460,6 @@ fn structured_wait_observes_guest_runnable_visibility_change_on_virtual_clock() 
     assert_eq!(v["present"], false);
     assert_eq!(v["waited_ms"], 100);
     assert_eq!(v["polls"], 3);
-    assert_eq!(s.engine.as_ref().unwrap().fw.clock(), 100);
+    assert_eq!(s.running.engine.as_ref().unwrap().fw.clock(), 100);
     std::fs::remove_file(apk).unwrap();
 }

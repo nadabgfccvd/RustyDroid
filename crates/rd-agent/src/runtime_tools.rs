@@ -121,14 +121,14 @@ impl AgentSession {
                 .map(|s| bounded_diagnostic(s, 4096, &mut truncated)),
             module_id: bounded_diagnostic(&error.module_id, 128, &mut truncated),
             running_package: self
-                .engine_package
+                .running.engine_package
                 .as_deref()
                 .map(|s| bounded_diagnostic(s, 256, &mut truncated)),
             active_package: self
                 .active
                 .as_deref()
                 .map(|s| bounded_diagnostic(s, 256, &mut truncated)),
-            clock_ms: self.engine.as_ref().map(|e| e.fw.clock()),
+            clock_ms: self.running.engine.as_ref().map(|e| e.fw.clock()),
             truncated,
         };
         self.last_tool_error = Some(snapshot);
@@ -145,9 +145,9 @@ impl AgentSession {
             "session_id":self.session_id,"server":SERVER_NAME,"version":SERVER_VERSION,
             "protocol_version":PROTOCOL_VERSION,"transport":"stdio","tool_count":tool_defs().len(),
             "installed_count":self.installed.len(),"active_package":self.active,
-            "running":self.engine.is_some(),"running_package":self.engine_package,
-            "native_engine":self.native_engine,"activity":self.current_activity(),
-            "clock_ms":self.engine.as_ref().map(|e|e.fw.clock()),
+            "running":self.running.engine.is_some(),"running_package":self.running.engine_package,
+            "native_engine":self.running.native_engine,"activity":self.current_activity(),
+            "clock_ms":self.running.engine.as_ref().map(|e|e.fw.clock()),
             "capabilities":{"host_view_selectors":true,"incremental_logs":true,"typed_error_snapshot":true,
                 "native_engines_compiled":cfg!(feature="native-engines"),"jit_compiled":cfg!(feature="jit"),
                 "advanced_components_compiled":cfg!(feature="advanced-components")},

@@ -118,8 +118,8 @@ fn session_info_is_available_without_app_and_does_not_expose_sandbox_paths() {
     assert!(!v
         .to_string()
         .contains(std::env::current_dir().unwrap().to_str().unwrap()));
-    assert!(s.engine.is_none());
-    assert_eq!(s.ui_epoch, 0);
+    assert!(s.running.engine.is_none());
+    assert_eq!(s.running.ui_epoch, 0);
 }
 
 #[test]
@@ -182,9 +182,9 @@ fn error_snapshot_bounds_unicode_context_without_changing_the_original_wire_erro
 fn isolated_panic_retains_context_and_diagnostics_survive_a_poisoned_log_buffer() {
     let _guard = SESSION_LOCK.lock().unwrap();
     let mut s = AgentSession::new();
-    s.engine = Some(Engine::new(vec![], VmConfig::default()));
-    s.engine_package = Some("p".into());
-    s.native_engine = Some("c-ndk".into());
+    s.running.engine = Some(Engine::new(vec![], VmConfig::default()));
+    s.running.engine_package = Some("p".into());
+    s.running.native_engine = Some("c-ndk".into());
     let logs = s.logs.clone();
     let _ = std::thread::spawn(move || {
         let _guard = logs.lock().unwrap();
@@ -193,8 +193,8 @@ fn isolated_panic_retains_context_and_diagnostics_survive_a_poisoned_log_buffer(
     .join();
     let result = s.call_tool_isolated("logs", &serde_json::json!({}));
     assert!(result.is_error);
-    assert!(s.engine.is_none());
-    assert!(s.native_engine.is_none());
+    assert!(s.running.engine.is_none());
+    assert!(s.running.native_engine.is_none());
     let (v, e) = call(&mut s, "last_error", serde_json::json!({}));
     assert!(!e, "{v}");
     assert_eq!(v["error"]["code"], "INTERNAL_PANIC");
@@ -257,7 +257,7 @@ fn runtime_diagnostics_preserve_ui_revision_clock_fuel_and_gc_state() {
         serde_json::json!({"text":"Olá do MCP"}),
     );
     assert!(!e);
-    let engine = s.engine.as_ref().unwrap();
+    let engine = s.running.engine.as_ref().unwrap();
     let clock = engine.fw.clock();
     let fuel = engine.fuel_used();
     let gc = serde_json::to_value(engine.gc_stats()).unwrap();
@@ -265,7 +265,7 @@ fn runtime_diagnostics_preserve_ui_revision_clock_fuel_and_gc_state() {
         let (v, e) = call(&mut s, tool, serde_json::json!({}));
         assert!(!e, "{v}");
     }
-    let engine = s.engine.as_ref().unwrap();
+    let engine = s.running.engine.as_ref().unwrap();
     assert_eq!(engine.fw.clock(), clock);
     assert_eq!(engine.fuel_used(), fuel);
     assert_eq!(serde_json::to_value(engine.gc_stats()).unwrap(), gc);

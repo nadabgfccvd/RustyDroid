@@ -140,7 +140,7 @@ impl AgentSession {
 
     #[cfg(any(feature = "advanced-components", feature = "virtual-devices"))]
     fn m10_snapshot_json(&mut self) -> serde_json::Value {
-        let Some(e) = self.engine.as_mut() else {
+        let Some(e) = self.running.engine.as_mut() else {
             return serde_json::Value::Null;
         };
         let clip = e.m10_get_clipboard().ok().flatten();
@@ -524,8 +524,8 @@ impl AgentSession {
             }
         }
         // `device_profile` is in `READ_ONLY_TOOLS` for `{}`; invalidate cached screen on mutations.
-        self.ui_epoch = self.ui_epoch.saturating_add(1);
-        self.screen.dirty = true;
+        self.running.ui_epoch = self.running.ui_epoch.saturating_add(1);
+        self.running.screen.dirty = true;
         let snap = self.m10_snapshot_json();
         Ok(ToolResult::json(&serde_json::json!({
             "action": action,

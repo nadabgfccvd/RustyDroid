@@ -281,9 +281,9 @@ impl AgentSession {
         Ok(query_roots(
             &tree,
             q,
-            self.ui_epoch,
+            self.running.ui_epoch,
             &self.session_id,
-            self.engine_package.as_deref(),
+            self.running.engine_package.as_deref(),
         ))
     }
     fn tool_find_views(
@@ -294,7 +294,7 @@ impl AgentSession {
         let m = self.view_matches(&q)?;
         Ok(ToolResult::json(
             &serde_json::json!({"matches":m.nodes.iter().map(node_json).collect::<Vec<_>>(),"total":m.total,
-            "returned":m.nodes.len(),"truncated":m.truncated,"has_more":m.total>m.nodes.len() || m.truncated,"total_is_exact":!m.truncated,"tree_token":m.token,"revision":self.ui_epoch,"source":"host_view_tree"}),
+            "returned":m.nodes.len(),"truncated":m.truncated,"has_more":m.total>m.nodes.len() || m.truncated,"total_is_exact":!m.truncated,"tree_token":m.token,"revision":self.running.ui_epoch,"source":"host_view_tree"}),
         ))
     }
     fn tool_tap_view(

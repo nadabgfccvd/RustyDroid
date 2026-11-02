@@ -295,12 +295,12 @@ impl AgentSession {
 
     /// Estado pós-panic de runtime: o app morreu; a sessão continua.
     fn teardown_after_panic(&mut self, name: &str, msg: &str) {
-        self.engine = None;
-        self.engine_package = None;
-        self.native_engine = None;
-        self.activity = None;
-        self.screen.snap = None;
-        self.screen.dirty = true;
+        self.running.engine = None;
+        self.running.engine_package = None;
+        self.running.native_engine = None;
+        self.running.activity = None;
+        self.running.screen.snap = None;
+        self.running.screen.dirty = true;
         self.logs
             .lock()
             .map(|mut l| {
@@ -353,11 +353,11 @@ impl AgentSession {
 
     /// Re-records one frame when the screen is dirty and rebuilds the model.
     fn screen_refresh(&mut self) -> Result<(), RdError> {
-        if !self.screen.dirty && self.screen.snap.is_some() {
+        if !self.running.screen.dirty && self.running.screen.snap.is_some() {
             return Ok(());
         }
         let t0 = std::time::Instant::now();
-        let activity = self.activity.clone().unwrap_or_default();
+        let activity = self.running.activity.clone().unwrap_or_default();
         let eng = self.require_engine()?;
         let finished = eng.activity_is_finished();
         let mut draw_error = None;
@@ -432,7 +432,7 @@ impl AgentSession {
             hs.finish()
         };
         if let Some(msg) = &draw_error {
-            if self.screen.draw_error.as_deref() != Some(msg) {
+            if self.running.screen.draw_error.as_deref() != Some(msg) {
                 // Issue #317: log é best-effort — buffer envenenado não
                 // pode transformar um erro de desenho em panic.
                 self.logs
@@ -445,12 +445,12 @@ impl AgentSession {
                     .ok();
             }
         }
-        self.screen.draw_error = draw_error;
-        let changed = self.screen.snap.as_ref().map(|s| s.fingerprint) != Some(fingerprint);
+        self.running.screen.draw_error = draw_error;
+        let changed = self.running.screen.snap.as_ref().map(|s| s.fingerprint) != Some(fingerprint);
         if changed {
-            self.screen.version += 1;
+            self.running.screen.version += 1;
         }
-        self.screen.snap = Some(ScreenSnap {
+        self.running.screen.snap = Some(ScreenSnap {
             model,
             host_texts,
             host_targets,
@@ -460,7 +460,7 @@ impl AgentSession {
             record_ms: t0.elapsed().as_secs_f64() * 1000.0,
             fingerprint,
         });
-        self.screen.dirty = false;
+        self.running.screen.dirty = false;
         Ok(())
     }
 
@@ -469,8 +469,8 @@ impl AgentSession {
         let t_refresh = std::time::Instant::now();
         self.screen_refresh()?;
         phase("screen_refresh", t_refresh);
-        let v = self.screen.version;
-        if let Some((pv, png)) = &self.screen.png {
+        let v = self.running.screen.version;
+        if let Some((pv, png)) = &self.running.screen.png {
             if *pv == v {
                 return Ok(png.clone());
             }
@@ -492,7 +492,7 @@ impl AgentSession {
         let t_png = std::time::Instant::now();
         let png = Arc::new(fb.to_png());
         phase("png_encode", t_png);
-        self.screen.png = Some((v, png.clone()));
+        self.running.screen.png = Some((v, png.clone()));
         Ok(png)
     }
 
@@ -500,11 +500,11 @@ impl AgentSession {
     /// optional `observe: true` argument appends the screen summary.
     fn screen_post_tool(&mut self, name: &str, args: &serde_json::Map<String, serde_json::Value>, out: &mut ToolResult) {
         if !READ_ONLY_TOOLS.contains(&name) {
-            self.ui_epoch = self.ui_epoch.saturating_add(1);
-            self.screen.dirty = true;
+            self.running.ui_epoch = self.running.ui_epoch.saturating_add(1);
+            self.running.screen.dirty = true;
         }
         let wants = args.get("observe").and_then(|v| v.as_bool()).unwrap_or(false);
-        if wants && !out.is_error && OBSERVE_AFTER_TOOLS.contains(&name) && self.engine.is_some() {
+        if wants && !out.is_error && OBSERVE_AFTER_TOOLS.contains(&name) && self.running.engine.is_some() {
             match self.screen_refresh() {
                 Ok(()) => {
                     let s = self.observe_text(true);
@@ -517,8 +517,8 @@ impl AgentSession {
 
     /// Text summary + diff against the previous observation.
     fn observe_text(&mut self, diff: bool) -> String {
-        let v = self.screen.version;
-        let Some(snap) = self.screen.snap.as_ref() else {
+        let v = self.running.screen.version;
+        let Some(snap) = self.running.screen.snap.as_ref() else {
             return "sem frame".into();
         };
         let mut s = snap.to_text(v);
@@ -526,16 +526,16 @@ impl AgentSession {
         if diff {
             s.push_str(&self.diff_line(&cur));
         }
-        if let Some(e) = &self.screen.draw_error {
+        if let Some(e) = &self.running.screen.draw_error {
             s.push_str(&format!("!! draw pass failed: {}\n", e.lines().next().unwrap_or("")));
         }
-        self.screen.observed = Some((v, cur));
+        self.running.screen.observed = Some((v, cur));
         s
     }
 
     fn diff_line(&self, cur: &[String]) -> String {
-        match &self.screen.observed {
-            Some((pv, _)) if *pv == self.screen.version => "-- unchanged since last observe\n".into(),
+        match &self.running.screen.observed {
+            Some((pv, _)) if *pv == self.running.screen.version => "-- unchanged since last observe\n".into(),
             Some((pv, prev)) => {
                 let added: Vec<&String> = cur.iter().filter(|t| !prev.contains(t)).collect();
                 let removed: Vec<&String> = prev.iter().filter(|t| !cur.contains(t)).collect();
@@ -558,15 +558,15 @@ impl AgentSession {
         args: &serde_json::Map<String, serde_json::Value>,
         t0: std::time::Instant,
     ) -> Option<Result<ToolResult, RdError>> {
-        if self.engine.is_some() {
+        if self.running.engine.is_some() {
             return None;
         }
-        let pending = self.pending_snapshot.as_ref()?;
+        let pending = self.running.pending_snapshot.as_ref()?;
         let stored_text = pending.loaded.observe_text.clone();
         let stored_json = pending.loaded.observe_json.clone();
         let format = args.get("format").and_then(|v| v.as_str()).unwrap_or("text");
         let diff = args.get("diff").and_then(|v| v.as_bool()).unwrap_or(true);
-        let v = self.screen.version;
+        let v = self.running.screen.version;
         let mut j: serde_json::Value =
             serde_json::from_str(&stored_json).unwrap_or_else(|_| serde_json::json!({}));
         let cur: Vec<String> = j["texts"]
@@ -582,7 +582,7 @@ impl AgentSession {
                 j["version"] = serde_json::json!(v);
                 j["snapshot"] = serde_json::json!(true);
                 if diff {
-                    if let Some((pv, prev)) = &self.screen.observed {
+                    if let Some((pv, prev)) = &self.running.screen.observed {
                         j["changed"] = serde_json::json!(*pv != v);
                         j["since"] = serde_json::json!(pv);
                         j["added"] = serde_json::json!(
@@ -610,7 +610,7 @@ impl AgentSession {
                 Some("use format \"text\" (compacto, default) ou \"json\""),
             )),
         };
-        self.screen.observed = Some((v, cur));
+        self.running.screen.observed = Some((v, cur));
         Some(out)
     }
 
@@ -625,26 +625,26 @@ impl AgentSession {
         match format {
             "json" => {
                 let boxes = args.get("boxes").and_then(|v| v.as_bool()).unwrap_or(false);
-                let v = self.screen.version;
+                let v = self.running.screen.version;
                 // Issue #317: invariante quebrada vira erro tipado.
-                let snap = self.screen.snap.as_ref().ok_or_else(|| {
+                let snap = self.running.screen.snap.as_ref().ok_or_else(|| {
                     agent_error("NOT_RUNNING", "sem frame de tela disponível", None)
                 })?;
                 let mut j = snap.to_json(v, boxes);
                 let cur: Vec<String> = snap.texts().iter().map(|t| t.text.clone()).collect();
                 if diff {
-                    if let Some((pv, prev)) = &self.screen.observed {
+                    if let Some((pv, prev)) = &self.running.screen.observed {
                         j["changed"] = serde_json::json!(*pv != v);
                         j["since"] = serde_json::json!(pv);
                         j["added"] = serde_json::json!(cur.iter().filter(|t| !prev.contains(t)).collect::<Vec<_>>());
                         j["removed"] = serde_json::json!(prev.iter().filter(|t| !cur.contains(t)).collect::<Vec<_>>());
                     }
                 }
-                if let Some(e) = &self.screen.draw_error {
+                if let Some(e) = &self.running.screen.draw_error {
                     j["draw_error"] = serde_json::json!(e);
                 }
                 j["observe_ms"] = serde_json::json!((t0.elapsed().as_secs_f64() * 10000.0).round() / 10.0);
-                self.screen.observed = Some((v, cur));
+                self.running.screen.observed = Some((v, cur));
                 Ok(ToolResult::json(&j))
             }
             "text" => Ok(ToolResult::text(self.observe_text(diff))),
@@ -669,7 +669,7 @@ impl AgentSession {
         let nth = args.get("nth").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         self.screen_refresh()?;
         // Issue #317: invariante quebrada vira erro tipado.
-        let snap = self.screen.snap.as_ref().ok_or_else(|| {
+        let snap = self.running.screen.snap.as_ref().ok_or_else(|| {
             agent_error("NOT_RUNNING", "sem frame de tela disponível", None)
         })?;
         let w = norm(want);
@@ -741,7 +741,7 @@ impl AgentSession {
                 self.screen_refresh().map_err(err)?;
                 // Issue #317: nada de `expect` em caminho de servidor —
                 // se o refresh não produziu frame, o read falha tipado.
-                let Some(snap) = self.screen.snap.as_ref() else {
+                let Some(snap) = self.running.screen.snap.as_ref() else {
                     return Err(err(agent_error(
                         "NOT_RUNNING",
                         "sem frame de tela disponível — lance um app primeiro",
@@ -749,19 +749,19 @@ impl AgentSession {
                     )));
                 };
                 serde_json::json!({"uri": uri, "mimeType": "application/json",
-                    "text": snap.to_json(self.screen.version, true).to_string()})
+                    "text": snap.to_json(self.running.screen.version, true).to_string()})
             }
             RES_SCREEN_TXT => {
                 self.screen_refresh().map_err(err)?;
                 // Issue #317: sem `expect` em caminho de servidor.
-                let Some(snap) = self.screen.snap.as_ref() else {
+                let Some(snap) = self.running.screen.snap.as_ref() else {
                     return Err(err(agent_error(
                         "NOT_RUNNING",
                         "sem frame de tela disponível — lance um app primeiro",
                         None,
                     )));
                 };
-                serde_json::json!({"uri": uri, "mimeType": "text/plain", "text": snap.to_text(self.screen.version)})
+                serde_json::json!({"uri": uri, "mimeType": "text/plain", "text": snap.to_text(self.running.screen.version)})
             }
             RES_SCREEN_PNG => {
                 let png = self.screen_png().map_err(err)?;
@@ -788,9 +788,9 @@ impl AgentSession {
             return Err((-32602, format!("resource '{uri}' não é assinável ({RES_SCREEN}, {RES_SCREEN_TXT}, {RES_SCREEN_PNG})")));
         }
         if on {
-            self.screen.subs.insert(uri.to_string());
+            self.running.screen.subs.insert(uri.to_string());
         } else {
-            self.screen.subs.remove(uri);
+            self.running.screen.subs.remove(uri);
         }
         Ok(())
     }
@@ -798,17 +798,17 @@ impl AgentSession {
     /// After a `tools/call`: when someone watches the screen (subscribers or
     /// the live viewer), re-observe and push updates if the content changed.
     fn screen_after_call(&mut self, tool: &str, ms: f64) {
-        self.screen.last_tool = tool.to_string();
-        self.screen.last_tool_ms = ms;
-        let watched = !self.screen.subs.is_empty() || self.screen.live.is_some();
-        if !watched || self.engine.is_none() || self.screen_refresh().is_err() {
+        self.running.screen.last_tool = tool.to_string();
+        self.running.screen.last_tool_ms = ms;
+        let watched = !self.running.screen.subs.is_empty() || self.running.screen.live.is_some();
+        if !watched || self.running.engine.is_none() || self.screen_refresh().is_err() {
             return;
         }
-        let v = self.screen.version;
-        if v != self.screen.notified {
-            self.screen.notified = v;
-            for uri in self.screen.subs.clone() {
-                self.screen.pending.push(serde_json::json!({
+        let v = self.running.screen.version;
+        if v != self.running.screen.notified {
+            self.running.screen.notified = v;
+            for uri in self.running.screen.subs.clone() {
+                self.running.screen.pending.push(serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "notifications/resources/updated",
                     "params": {"uri": uri, "version": v},
@@ -819,24 +819,24 @@ impl AgentSession {
     }
 
     fn live_publish(&mut self) {
-        let Some(live) = self.screen.live.clone() else {
+        let Some(live) = self.running.screen.live.clone() else {
             return;
         };
-        let v = self.screen.version;
+        let v = self.running.screen.version;
         let png = if live.inner.lock().map(|g| g.version == v && !g.png.is_empty()).unwrap_or(false) {
             None
         } else {
             self.screen_png().ok()
         };
-        let Some(snap) = self.screen.snap.as_ref() else {
+        let Some(snap) = self.running.screen.snap.as_ref() else {
             return;
         };
         let mut st = snap.to_json(v, false);
         st["text"] = serde_json::json!(snap.to_text(v));
-        st["last_tool"] = serde_json::json!(self.screen.last_tool);
-        st["last_tool_ms"] = serde_json::json!((self.screen.last_tool_ms * 10.0).round() / 10.0);
-        st["package"] = serde_json::json!(self.engine_package);
-        st["draw_error"] = serde_json::json!(self.screen.draw_error);
+        st["last_tool"] = serde_json::json!(self.running.screen.last_tool);
+        st["last_tool_ms"] = serde_json::json!((self.running.screen.last_tool_ms * 10.0).round() / 10.0);
+        st["package"] = serde_json::json!(self.running.engine_package);
+        st["draw_error"] = serde_json::json!(self.running.screen.draw_error);
         if let Ok(mut g) = live.inner.lock() {
             g.version = v;
             g.state = st.to_string();
@@ -849,7 +849,7 @@ impl AgentSession {
 
     /// Notifications produced since the last call (serve loop drains them).
     pub fn take_notifications(&mut self) -> Vec<serde_json::Value> {
-        std::mem::take(&mut self.screen.pending)
+        std::mem::take(&mut self.running.screen.pending)
     }
 
     /// Starts the live viewer HTTP server on `addr` (e.g. `0.0.0.0:7878`).
@@ -863,7 +863,7 @@ impl AgentSession {
         if let Ok(mut g) = shared.inner.lock() {
             g.state = serde_json::json!({"version": 0, "text": "aguardando o primeiro frame (install + launch)…"}).to_string();
         }
-        self.screen.live = Some(shared.clone());
+        self.running.screen.live = Some(shared.clone());
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let sh = shared.clone();
@@ -963,7 +963,7 @@ cx.strokeRect(b[0],b[1],b[2]-b[0],b[3]-b[1]);}}
 document.getElementById('ov').onchange=draw;
 async function loop(){for(;;){try{const r=await fetch('state.json?since='+v,{cache:'no-store'});const s=await r.json();
 if(s.version!==v){v=s.version;st=s;img.src='frame.png?v='+v;
-document.getElementById('ver').textContent='frame v'+v;document.getElementById('pkg').textContent=(s.package||'-')+(s.activity?' · '+s.activity:'');
+document.getElementById('ver').textContent='frame v'+v;document.getElementById('pkg').textContent=(s.package||'-')+(s.running.activity?' · '+s.running.activity:'');
 document.getElementById('tool').textContent=s.last_tool?('last: '+s.last_tool+' '+s.last_tool_ms+' ms'):'-';
 document.getElementById('txt').textContent=s.text||'';document.getElementById('err').textContent=s.draw_error?('draw pass failed: '+s.draw_error):'';draw();}}
 catch(e){await new Promise(r=>setTimeout(r,1000));}}}
