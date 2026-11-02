@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793577836961,
+  "lastUpdate": 1793579690546,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1439,6 +1439,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3223,
             "range": "± 35",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "56f72895ed18f1a04d089eaf35c90c1a90b479e1",
+          "message": "fix(ndk): rejeitar AVX (VEX/EVEX) no worker Unicorn — falha fechada (#400) (#478)\n\n* fix(ndk): rejeitar instruções AVX (VEX/EVEX) no worker Unicorn (#400)\n\nO Unicorn 2.1.4 executa código VEX/EVEX de forma errada (floor(5.5)+0.25 virou\n0.25 no CI, #393). Agora o worker falha fechado com NOT_IMPLEMENTED ao encontrar\num prefixo VEX (C4/C5) ou EVEX (62), depois dos prefixos legados e REX, em vez de\ndevolver um valor errado em silêncio.\n\n- golden/native/build.sh gera x86_64-avx2.so (-march=x86-64-v3) como fixture\n  negativa; as fixtures de referência continuam em -march=x86-64.\n- Teste avx_encoded_guest_code_is_rejected_fail_closed_400: controle positivo\n  (baseline = 5.75) e rejeição da fixture AVX.\n- Causa raiz (Unicorn) não corrigida; limite documentado em docs/m9.md.\n\nValidação: cargo test -p rd-ndk -p rd-vm --features native (exit 0),\nclippy -p rd-ndk --features native --all-targets -D warnings, cargo fmt --check.\n\n* test(vm): fixtures JNI em C fixados em x86-64 (baseline) — CI usava v3/VEX (#400)\n\nRunners Ubuntu 26.04 têm x86-64-v3 como padrão do gcc; o worker agora rejeita\nVEX/EVEX com NOT_IMPLEMENTED. jni_318 e gc_host_and_jni compilam C sem -march,\nentão falhavam só no CI. Mesmo pin de golden/native/build.sh.\nReproduzido localmente com -march=x86-64-v3 (jni_318: NOT_IMPLEMENTED) e\nverificado com o pin (7/7 e 4/4).\n\n---------\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-01T21:34:32-03:00",
+          "tree_id": "26db9a13ea31d761325c6fac5cc8e9a8ef871f59",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/56f72895ed18f1a04d089eaf35c90c1a90b479e1"
+        },
+        "date": 1793579690038,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3218,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3213,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
