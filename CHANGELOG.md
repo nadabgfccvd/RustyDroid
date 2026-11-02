@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **XAPK bundles (`rd-apk::xapk`):** a `.xapk` (ZIP with `manifest.json`, no root
+  `AndroidManifest.xml`) opens as its `base` split. `rd inspect` (text and `--json`) lists
+  every split, its dex/lib counts and ABIs, and the OBB expansions. Missing split files and
+  a bundle without a base split are reported as structured errors. Dex disassembly and
+  installation still cover the base split only.
 - **M1 differential gate (`scripts/dex_baksmali_diff.py`):** versioned comparison of
   `rd dex disasm` against baksmali 2.5.2 (jar pinned by SHA-256). Runs per method on every
   golden APK in `nightly-compat.yml`; the gate fails on any opcode-sequence divergence.

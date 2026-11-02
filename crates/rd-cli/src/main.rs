@@ -717,6 +717,57 @@ fn open_apk(path: &Path) -> Result<Apk, RdError> {
     Apk::open(path)
 }
 
+/// XAPK (bundle de splits): `Some` quando o arquivo é um bundle; o APK base
+/// já foi aberto por `open_apk`. Ver `rd_apk::xapk`.
+fn detect_bundle(path: &Path) -> Result<Option<rd_apk::xapk::Xapk>, RdError> {
+    let zip = rd_apk::zip::Zip::open(path)?;
+    if rd_apk::xapk::is_bundle(&zip) {
+        Ok(Some(rd_apk::xapk::Xapk::from_zip(&zip)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn render_bundle_lines(b: &rd_apk::xapk::Xapk) -> String {
+    let mut s = String::new();
+    let splits = b.splits.len();
+    s.push_str(&format!(
+        "bundle             XAPK · package {} · {} split(s): base + {} · {} OBB\n",
+        b.manifest.package_name,
+        splits,
+        splits.saturating_sub(1),
+        b.obbs.len()
+    ));
+    for sp in b.split_summaries() {
+        let abis = if sp.abis.is_empty() {
+            String::new()
+        } else {
+            format!(" · abis {}", sp.abis.join(","))
+        };
+        s.push_str(&format!(
+            "  split {:<12} {}  (dex {} · lib {}{abis})\n",
+            sp.id, sp.file, sp.dex_files, sp.native_libs
+        ));
+    }
+    for o in &b.obbs {
+        s.push_str(&format!("  obb {o}\n"));
+    }
+    s
+}
+
+fn bundle_json(b: &rd_apk::xapk::Xapk) -> Result<serde_json::Value, RdError> {
+    let manifest = serde_json::to_value(&b.manifest)
+        .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?;
+    let splits = serde_json::to_value(b.split_summaries())
+        .map_err(|e| RdError::new("INTERNAL", e.to_string(), "rd-cli"))?;
+    Ok(serde_json::json!({
+        "format": "xapk",
+        "manifest": manifest,
+        "splits": splits,
+        "obbs": b.obbs,
+    }))
+}
+
 // ─── dex (M1) ───────────────────────────────────────────────────────────────
 
 /// Converte o RdError do rd-dex para o contrato do binário (mesma forma).
@@ -789,6 +840,7 @@ fn map_size(dex: &Dex, want: rd_dex::MapType) -> u32 {
 
 fn cmd_inspect(path: &Path, json: bool, device: Option<&str>, dd: &DataDir) -> Result<(), RdError> {
     let apk = open_apk(path)?;
+    let bundle = detect_bundle(path)?;
     let table = load_permissions(dd)?;
     let engine = PermissionEngine::install(&apk.manifest, table);
 
@@ -824,6 +876,9 @@ fn cmd_inspect(path: &Path, json: bool, device: Option<&str>, dd: &DataDir) -> R
                 perms.insert(name.clone(), serde_json::Value::Object(o));
             }
             map.insert("permissions_state".into(), serde_json::Value::Object(perms));
+            if let Some(b) = &bundle {
+                map.insert("bundle".into(), bundle_json(b)?);
+            }
             map.insert(
                 "engines".into(),
                 serde_json::json!(engines::load_registry(dd)?.detect_for_inspection(&apk)?),
@@ -859,6 +914,9 @@ fn cmd_inspect(path: &Path, json: bool, device: Option<&str>, dd: &DataDir) -> R
     out.push_str(&format!("RustyDroid inspect — {file}\n"));
     out.push_str(&"=".repeat(64));
     out.push('\n');
+    if let Some(b) = &bundle {
+        out.push_str(&render_bundle_lines(b));
+    }
 
     out.push_str(&format!(
         "package            {}  v{} ({})\n",

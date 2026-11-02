@@ -783,8 +783,10 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
 
 - **Suporte a XAPK.** Aceitar arquivos `.xapk` (bundle com `manifest.json` e os
   APKs de split, além de OBB quando existir) em `rd inspect`, `rd dex disasm` e no
-  fluxo de instalação, tratando o conjunto de splits como um único app. Status:
-  não iniciado.
+  fluxo de instalação, tratando o conjunto de splits como um único app. Status
+  (2026-11-02): **parcial** — `rd inspect` (texto e `--json`) e `Apk::open` leem o
+  bundle e usam o split `base`; splits e OBB aparecem no inspect. Pendentes:
+  `rd dex disasm` e `rd test` sobre todos os splits, e o fluxo de instalação.
 - **Layering de APKs.** Permitir executar mais de um APK ao mesmo tempo, com um
   APK por cima do outro. Caso de uso citado pelo dono: um jogo clicker e um
   auto-clicker rodando simultaneamente. Status: não iniciado; exige decisão de
