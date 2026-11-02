@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793599731341,
+  "lastUpdate": 1793650297083,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1619,6 +1619,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1790,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ca03090a5776b8362fea071b64c333aea726c974",
+          "message": "fix(rd-dex): 32x decoding and iput-short names; versioned baksmali diff (M1); XAPK bundles; ADR 021/022 (#483)\n\nFive commits: M1 differential gate vs baksmali 2.5.2 (nightly), rd-dex 32x and iput-short fixes, README inspect example, XAPK bundle support (inspect + dex disasm over splits), ADR 021 (proposed) and ADR 022. CI: all 10 jobs green on 0e8c8cc.",
+          "timestamp": "2026-11-02T17:11:16-03:00",
+          "tree_id": "96a996750934ff8671131ca23d58bf34f7d630e1",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/ca03090a5776b8362fea071b64c333aea726c974"
+        },
+        "date": 1793650296169,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3236,
+            "range": "± 36",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3237,
+            "range": "± 17",
             "unit": "ns/iter"
           }
         ]
