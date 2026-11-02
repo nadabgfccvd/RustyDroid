@@ -787,6 +787,7 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   (2026-11-02): **parcial** — `rd inspect` (texto e `--json`) e `Apk::open` leem o
   bundle e usam o split `base`; splits e OBB aparecem no inspect. Pendentes:
   `rd dex disasm` e `rd test` sobre todos os splits, e o fluxo de instalação.
+  Decisão em [ADR 022](adr/022-xapk-bundles.md).
 - **Layering de APKs.** Permitir executar mais de um APK ao mesmo tempo, com um
   APK por cima do outro. Caso de uso citado pelo dono: um jogo clicker e um
   auto-clicker rodando simultaneamente. Status: não iniciado; exige decisão de
