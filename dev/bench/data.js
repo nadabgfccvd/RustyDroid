@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793701746178,
+  "lastUpdate": 1793702454933,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2231,6 +2231,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3411,
             "range": "± 264",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bb7fd5b997570adf8271d6ab91aa61feda0d2146",
+          "message": "docs(adr): ADR 025 step 1 spike result — stopped at the coroutine decision point (#501)\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T07:40:11-03:00",
+          "tree_id": "5f0b720428df95a2c3d57f8f9b4b841c8f9516fb",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/bb7fd5b997570adf8271d6ab91aa61feda0d2146"
+        },
+        "date": 1793702454202,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3281,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3288,
+            "range": "± 21",
             "unit": "ns/iter"
           }
         ]
