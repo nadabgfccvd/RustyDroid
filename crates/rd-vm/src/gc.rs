@@ -294,9 +294,9 @@ impl Engine {
         let mut side_keys: Vec<ObjRef> = Vec::new();
         let mut module_keys: Vec<ObjRef> = Vec::new();
         let mut ephem_keys: Vec<ObjRef> = Vec::new();
-        crate::jregex::gc_keys(&mut module_keys);
-        crate::android_spannable::gc_keys(&mut module_keys);
-        crate::jio_chars::gc_keys(&mut module_keys);
+        crate::jregex::gc_keys(&self.fw.regex, &mut module_keys);
+        crate::android_spannable::gc_keys(&self.fw.spannable, &mut module_keys);
+        crate::jio_chars::gc_keys(&self.fw.io_chars, &mut module_keys);
         host_ephemerons::collect_ephemeron_keys(&self.fw, &mut ephem_keys);
         // #304: `Engine.sparse` (android.util.SparseArray) is an engine-level
         // ephemeron map: it lives outside `fw`, so `collect_ephemeron_keys`
@@ -447,9 +447,9 @@ impl Engine {
             }
             if side & 2 != 0 {
                 let mut scanner = RefScanner::new(n, |x| cand.push(x));
-                crate::jregex::gc_entry(r, &mut scanner);
-                crate::android_spannable::gc_entry(r, &mut scanner);
-                crate::jio_chars::gc_entry(r, &mut scanner);
+                crate::jregex::gc_entry(&self.fw.regex, r, &mut scanner);
+                crate::android_spannable::gc_entry(&self.fw.spannable, r, &mut scanner);
+                crate::jio_chars::gc_entry(&self.fw.io_chars, r, &mut scanner);
                 scanner.finish();
             }
             if let Some(g) = self.gfx.objs.get(&r) {
@@ -549,13 +549,13 @@ impl Engine {
             cleared_weak += native.purge_dead_weak(&alive);
         }
         let alive_ref = |r: ObjRef| alive(&r);
-        crate::jregex::gc_purge(&alive_ref);
-        crate::android_spannable::gc_purge(&alive_ref);
-        crate::jio_chars::gc_purge(&alive_ref);
-        crate::xml_res::gc_purge(&alive_ref);
-        crate::jrandom::gc_purge(&alive_ref);
-        crate::android_uri::gc_purge(&alive_ref);
-        crate::jannotations::gc_purge(&alive_ref);
+        crate::jregex::gc_purge(&mut self.fw.regex, &alive_ref);
+        crate::android_spannable::gc_purge(&mut self.fw.spannable, &alive_ref);
+        crate::jio_chars::gc_purge(&mut self.fw.io_chars, &alive_ref);
+        crate::xml_res::gc_purge(&mut self.fw.xml, &alive_ref);
+        crate::jrandom::gc_purge(&mut self.fw.random, &alive_ref);
+        crate::android_uri::gc_purge(&mut self.fw.uri, &alive_ref);
+        crate::jannotations::gc_purge(&mut self.fw.annotations, &alive_ref);
         #[cfg(feature = "virtual-devices")]
         self.fw.vdev.gc_purge(&alive);
         if std::env::var_os("RD_GC_TRACE").is_some() {

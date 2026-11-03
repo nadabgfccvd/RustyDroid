@@ -25,7 +25,6 @@ use rd_dex::annotations::{
     EncodedAnnotation, EncodedValue, Visibility,
 };
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 
 use crate::engine::Engine;
@@ -33,21 +32,18 @@ use crate::err::{Throwable, VmExit};
 use crate::heap::{ElemKind, ObjRef};
 use crate::value::Value;
 
-thread_local! {
-    /// Live annotation instances (cheap gate for instance dispatch).
-    static INSTANCES: RefCell<HashSet<ObjRef>> = RefCell::new(HashSet::new());
+/// Estado de anotações de um engine (ADR 024, passo 2). Vive em `HostState`:
+/// dois engines no mesmo thread não compartilham instâncias. Um objeto de um
+/// heap antigo nunca é despachado como anotação de outro engine (#230).
+#[derive(Debug, Default)]
+pub(crate) struct Tables {
+    /// Instâncias vivas de anotação (gate barato do dispatch de instância).
+    pub(crate) instances: HashSet<ObjRef>,
 }
 
 /// GC: drop state of collected objects (slots are reused).
-pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    INSTANCES.with(|m| m.borrow_mut().retain(|k| alive(*k)));
-}
-
-/// Issue #230: fronteira de `Engine` — sem isto, um objeto qualquer do
-/// próximo `Engine` que reutilize o mesmo `ObjRef` seria despachado
-/// como se fosse uma instância de anotação do heap anterior.
-pub(crate) fn reset_all() {
-    INSTANCES.with(|m| m.borrow_mut().clear());
+pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    t.instances.retain(|k| alive(*k));
 }
 
 /// Runtime annotations of `desc` as (dex index, annotation).
@@ -237,7 +233,7 @@ fn instance(vm: &mut Engine, di: usize, a: &EncodedAnnotation) -> Result<ObjRef,
         .heap
         .alloc_instance(ty, fields)
         .map_err(crate::err::oom_throwable)?;
-    INSTANCES.with(|s| s.borrow_mut().insert(r));
+    vm.fw.annotations.instances.insert(r);
     Ok(r)
 }
 
@@ -395,7 +391,7 @@ pub fn instance_intrinsic(
     recv: ObjRef,
 ) -> Result<Option<Value>, VmExit> {
     if !sig.starts_with("()")
-        || !INSTANCES.with(|s| s.borrow().contains(&recv))
+        || !vm.fw.annotations.instances.contains(&recv)
         || !matches!(vm.heap.get_field(recv, "rd_annotation"), Ok(Value::Int(1)))
     {
         return Ok(None);
@@ -422,16 +418,17 @@ pub fn instance_intrinsic(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
+    /// #230 / ADR 024: instâncias de anotação são do engine. Um `ObjRef` marcado
+    /// em um engine não aparece no seguinte, mesmo no mesmo thread.
     #[test]
-    fn host_reset_clears_instances_from_previous_engine() {
-        INSTANCES.with(|s| s.borrow_mut().insert(4242));
-        assert!(INSTANCES.with(|s| s.borrow().contains(&4242)));
-        crate::reset_host_thread_state();
+    fn annotation_instances_belong_to_their_engine() {
+        let mut first = crate::engine::Engine::new(vec![], crate::VmConfig::default());
+        first.fw.annotations.instances.insert(4242);
+        assert!(first.fw.annotations.instances.contains(&4242));
+        let second = crate::engine::Engine::new(vec![], crate::VmConfig::default());
         assert!(
-            !INSTANCES.with(|s| s.borrow().contains(&4242)),
-            "#230: ObjRef de heap morto não pode seguir marcado como instância de anotação"
+            !second.fw.annotations.instances.contains(&4242),
+            "#230: ObjRef de heap de outro engine não pode seguir marcado como instância"
         );
     }
 }

@@ -77,6 +77,7 @@ crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).
 
 > **Auditoria (2026-10):** o DoD do M1 exige fuzz 24 h sem crash e comparação versionada com baksmali. A campanha de 24 h nunca foi executada. Até lá, M1 é ⚠️ parcial.
 > **Smoke de fuzz (2026-11-03):** `scripts/fuzz-campaign.sh` recusou rodar os 5 targets em paralelo (RAM disponível 1,35 GB; o script pede 1 worker por target). Rodei os targets em sequência com `cargo +nightly fuzz run <t> -- -max_total_time=90 -rss_limit_mb=1024`: `apk_full` 2.273.145 execuções, `zip` 2.590.518, `axml` 250.033, `arsc` 80.440, `dex` 3.128.108. Pico de RSS 365–525 MB. **0 crashes, 0 artefatos.** Isso é smoke de 7,5 min no total, não a campanha de 24 h, que segue pendente.
+> **Campanha longa de fuzz (2026-11-03, bloco 4):** 5 targets em sequência, 900 s cada (`/home/user/logs/fuzz-long.sh`, ~75 min). Todos saíram com rc=0, 0 crashes, 0 artefatos, ~72 M execuções (apk_full 45,6 M; zip 4,9 M; axml 0,28 M; arsc 0,76 M; dex 21,6 M). Pico de RSS ≤ 539 MB. Isto **não** é a campanha de 24 h do M1; ela continua pendente.
 >
 > **2026-11-02:** comparação versionada em `scripts/dex_baksmali_diff.py` (baksmali 2.5.2 fixado por SHA-256), rodada no nightly-compat sobre os 3 APKs golden. Resultado: **idêntico nos 3 APKs** (ver item 2). Dois defeitos reais do `rd dex disasm` foram encontrados e corrigidos pelo comparador: formato 32x decodificado com 2 code units em vez de 3 (`move/16`, `move-wide/16`, `move-object/16`, que desalinhava o resto do método) e a faixa de `iput-short` (0x5f) fora da faixa de campo.
 
@@ -808,3 +809,8 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   etapa 1 (sessões com roteamento de entrada). A revisão do ADR 001 que ela exige está
   aceita em [ADR 023](adr/023-revisa-adr-001-multiplas-sessoes.md) (mergeada). Código da
   etapa 1 (refactor `RunningApp`, `engine_id`, `session_launch`) ainda não iniciado.
+  Pré-requisito da etapa 1 (ADR 024, em andamento): o estado host indexado por `ObjRef`
+  e o destino do System.out saem do thread-local e vão para `HostState`. Passo 1
+  (System.out por engine) mergeado em #495. Passo 2 (tabelas de spannable, regex, URI,
+  XML, io-chars, anotações e seeds de Random) feito, com teste de dois engines
+  intercalados. Passos 3 (contadores e RNG de UUID) e 4 (VFS) pendentes.
