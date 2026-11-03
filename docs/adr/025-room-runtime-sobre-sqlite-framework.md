@@ -1,6 +1,6 @@
 # ADR 025 — Runtime do Room no VM: `init` real sobre o SQLite de framework
 
-- **Status:** proposto (aceito quando mergeado, precedente ADR 008)
+- **Status:** aceito na etapa 1 (caminho A1, mergeado com este PR; precedente ADR 008). Etapas seguintes pendentes.
 - **Data:** 2026-11-03 · **Escopo:** `crates/rd-vm/src/m8.rs` (`room_builder`), `crates/rd-vm/src/jsqlite.rs` (SQLite host, ADR 005) e `crates/rd-vm/src/jfile.rs` (VFS), roteamento de `RoomDatabase` no VM
 - **Relacionados:** ADR 003 (M8, host de compatibilidade), ADR 005 (SQLite em subprocesso), ADR 024 (estado por engine), F-Droid como golden de WorkManager/Room (`golden-apks/org.fdroid.fdroid.apk`)
 - **Ordem:** ADR antes de código (CONTRIBUTING). Este PR é só documentação.
@@ -94,3 +94,24 @@ A regra 2 desta ADR manda parar quando a etapa 1 exigir coroutines além do que 
 - **B. Modelar `RoomConnectionManager` no host** (contingência desta ADR). Exige ADR própria, conforme o item 2 da decisão.
 
 Recomendação de quem escreveu o spike: A1 com um limite de passos. Se a cadeia passar de uns poucos intrínsecos de coroutines, abrir a ADR de B. O spike não altera código de biblioteca do Room, e cada intrínseco fica isolado em `intrinsics.rs`.
+
+## Resultado da etapa 1 (caminho A1, 2026-11-03)
+
+O dono mandou seguir todos os passos. Executado A1, com limite de passos. Nenhum intrínseco de coroutines foi necessário, e a contingência B não foi acionada.
+
+**Causa real do ponto de parada do spike.** O spike passava `queryCoroutineContext = EmptyCoroutineContext` ao `DatabaseConfiguration`. No Room, esse campo é `null` quando o builder não recebe contexto, e é esse `null` que leva `RoomDatabase.init` ao `queryExecutor`. Com um contexto não nulo, o init entra no ramo do dispatcher. Ali `EmptyCoroutineContext.get(Key)` devolve `const/4 0` como objeto, que o VM guarda como `Int(0)`, e o `invoke-virtual getClass` falha com NPE. O NPE não vinha do `JobSupport`. O campo `$FU` do `JobSupport` foi lido 313 vezes no trace e nunca veio nulo.
+
+**Cadeia do F-Droid (`rd app run --trace`), uma causa por passo:**
+
+1. `RoomDatabase.init` com `queryCoroutineContext` nulo, como o Room faz por padrão (`m8.rs`, `room_init`).
+2. `WorkRequest$Builder`: os setters fluentes (`setConstraints`, ...) devolviam null, e o `build()` seguinte falhava. Agora devolvem o próprio builder quando o retorno é `*$Builder;` (`sig_returns_builder`).
+3. `PeriodicWorkRequest$Builder.build()` devolvia `WorkRequest`, e o app faz `check-cast` para `PeriodicWorkRequest`. Agora devolve o subtipo (`work_request_product`).
+4. `NotificationChannel.setGroup(null)` falhava. No Android, `null` é válido e remove o grupo (`m9/notifications.rs`).
+5. `NotificationChannel.setShowBadge`, `canShowBadge`, `setLightColor`, `getLightColor` não existiam. Agora existem, com `show_badge` padrão `true`, como no Android. `setSound`, `setVibrationPattern` e `setConversationId` aceitam o argumento e não guardam estado, porque o host não toca áudio nem vibra.
+
+**Estado depois da etapa 1.** `App.onCreate` do F-Droid roda até o fim. O WorkManager enfileira o trabalho periódico de repositório, com o `WorkDatabase` (Room) inicializado de verdade sobre o SQLite de framework. A falha seguinte é de Compose (`AbstractComposeView.ensureCompositionCreated`, "Required value was null"), na tela de entrada. Isso está fora do escopo do ADR 025 e fica como próxima frente.
+
+**Regressão.** `crates/rd-cli/tests/fdroid_oncreate_e2e.rs` falha se `App.onCreate`, o lateinit do Room ou o `scheduleOrCancel` voltarem a lançar exceção. Os testes unitários de `m8.rs` cobrem os helpers de builder.
+
+**Limites desta etapa.** Não foi medida invalidação de tabelas nem transação do Room sobre o VM. Layering (ADR 021, etapa 1 "sessions") não foi iniciado.
+

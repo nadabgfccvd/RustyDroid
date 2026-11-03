@@ -363,6 +363,11 @@ fn call_m8_static_rooted(
             };
             let dbname = sarg(vm, args, 2)?.unwrap_or_else(|| ":memory:".into());
             let r = alloc(vm, ROOM_BUILDER)?;
+            // ADR 025, etapa 1: o Context fica num campo do próprio builder
+            // (rastreado pelo GC), não num mapa lateral sem raiz.
+            if let Some(ctx @ Value::Obj(_)) = args.first() {
+                room_set(vm, r, ROOM_CONTEXT_FIELD, ctx.clone())?;
+            }
             vm.fw.m8.room_builders.insert(r, (dbcls, dbname));
             Ok(Some(Value::Obj(r)))
         }
@@ -550,10 +555,23 @@ fn call_m8_instance_rooted(
                     }
                 })
                 .unwrap_or_default();
-            let r = alloc(vm, "Landroidx/work/WorkRequest;")?;
+            // O build() do builder concreto devolve o subtipo (o app faz
+            // check-cast para PeriodicWorkRequest / OneTimeWorkRequest).
+            let product = work_request_product(if is_work_request_builder(&recv_class) {
+                &recv_class
+            } else {
+                mref_class
+            });
+            let r = alloc(vm, product)?;
             let ws = intrinsics::alloc_string(vm, worker)?;
             let _ = vm.heap.put_field(r, "m8_worker", Value::Obj(ws));
             return Ok(Some(Value::Obj(r)));
+        }
+        // Setters fluentes (`setConstraints`, `addTag`, ...) devolvem o próprio
+        // builder, como no DEX real (`Builder<B, W>` retorna `B`). Devolver
+        // null aqui quebrava a cadeia `builder.setX(..).build()`.
+        if sig_returns_builder(sig) {
+            return Ok(Some(Value::Obj(recv)));
         }
         return Ok(Some(Value::Null));
     }
@@ -2658,12 +2676,83 @@ fn work_manager(
         _ => Ok(None),
     }
 }
+/// ADR 025, etapa 1: classe de configuração do Room no DEX do app.
+const ROOM_CONFIG: &str = "Landroidx/room/DatabaseConfiguration;";
+/// Helper de framework que o `RoomDatabase.Builder` padrão usa.
+const ROOM_FRAMEWORK_FACTORY: &str =
+    "Landroidx/sqlite/db/framework/FrameworkSQLiteOpenHelperFactory;";
+const ROOM_CONTEXT_FIELD: &str = "m8_room_context";
+const ROOM_FACTORY_FIELD: &str = "m8_room_factory";
+
+fn room_set(vm: &mut Engine, obj: ObjRef, field: &str, v: Value) -> Result<(), VmExit> {
+    vm.heap.put_field(obj, field, v).map_err(|e| {
+        crate::err::VmExit::Exception(crate::err::Throwable::new(
+            "Ljava/lang/IllegalStateException;",
+            format!("campo {field} do Room: {e:?}"),
+        ))
+    })
+}
+
+/// ADR 025, etapa 1: monta um `DatabaseConfiguration` real (campos gravados
+/// pelo nome, sem o construtor de 20 parâmetros) e chama `init` na DB do app.
+/// Os campos que o builder não modela ficam com o padrão do Room.
+fn room_init(vm: &mut Engine, db: ObjRef, builder: ObjRef, name: &str) -> Result<(), VmExit> {
+    let cfg = vm.new_dex_instance_pub(ROOM_CONFIG)?;
+    let context = vm
+        .heap
+        .get_field(builder, ROOM_CONTEXT_FIELD)
+        .unwrap_or(Value::Null);
+    let factory = match vm.heap.get_field(builder, ROOM_FACTORY_FIELD) {
+        Ok(f @ Value::Obj(_)) => f,
+        _ => Value::Obj(vm.new_dex_instance_pub(ROOM_FRAMEWORK_FACTORY)?),
+    };
+    let name_v = astr(vm, name.to_string())?;
+    let callbacks = crate::collections::new_list(vm, "Ljava/util/ArrayList;", Vec::new())?;
+    room_set(vm, cfg, "context", context)?;
+    room_set(vm, cfg, "name", name_v)?;
+    room_set(vm, cfg, "sqliteOpenHelperFactory", factory)?;
+    room_set(vm, cfg, "callbacks", callbacks)?;
+    // Listas e conjuntos que o Room sempre recebe do builder (vazios por padrão).
+    for field in ["autoMigrationSpecs", "typeConverters"] {
+        let list = crate::collections::new_list(vm, "Ljava/util/ArrayList;", Vec::new())?;
+        room_set(vm, cfg, field, list)?;
+    }
+    let not_required = crate::collections::new_list(vm, "Ljava/util/HashSet;", Vec::new())?;
+    room_set(vm, cfg, "migrationNotRequiredFrom", not_required)?;
+    let migrations =
+        Value::Obj(vm.new_dex_instance_pub("Landroidx/room/RoomDatabase$MigrationContainer;")?);
+    room_set(vm, cfg, "migrationContainer", migrations)?;
+    // Executores do Room: o builder padrão usa um pool de threads. O host já
+    // modela `Executors` (intrínseco); o pool é o mesmo do app.
+    let executor = vm.invoke_static(
+        "Ljava/util/concurrent/Executors;",
+        "newFixedThreadPool",
+        "(I)Ljava/util/concurrent/ExecutorService;",
+        &[Value::Int(1)],
+    )?;
+    room_set(vm, cfg, "queryExecutor", executor.clone())?;
+    room_set(vm, cfg, "transactionExecutor", executor)?;
+    // `queryCoroutineContext` fica nulo, como no Room quando o builder não
+    // recebe um contexto: `RoomDatabase.init` então usa o `queryExecutor`.
+    // Um `EmptyCoroutineContext` aqui leva o init ao ramo de dispatcher, onde
+    // `get(Key)` devolve null e o VM quebra no getClass.
+    room_set(vm, cfg, "allowMainThreadQueries", Value::Int(1))?;
+    room_set(vm, cfg, "preparedStatementCacheSize", Value::Int(10))?;
+    vm.invoke_instance(
+        db,
+        "init",
+        "(Landroidx/room/DatabaseConfiguration;)V",
+        &[Value::Obj(cfg)],
+    )?;
+    Ok(())
+}
+
 fn room_builder(
     vm: &mut Engine,
     name: &str,
     _sig: &str,
     recv: ObjRef,
-    _args: &[Value],
+    args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match name {
         "build" => {
@@ -2690,8 +2779,21 @@ fn room_builder(
             } else {
                 alloc(vm, &dbcls)?
             };
+            // ADR 025, etapa 1: o `init` real do Room roda sobre a DB do app.
+            // Sem ele, `connectionManager` fica nulo e o primeiro getter lança
+            // `lateinit property connectionManager has not been initialized`.
+            if target == room_impl_descriptor(&dbcls) && vm.cp.find_class(ROOM_CONFIG).is_some() {
+                room_init(vm, r, recv, &dbname)?;
+            }
             vm.fw.m8.db_by_obj.insert(r, dbname);
             Ok(Some(Value::Obj(r)))
+        }
+        // ADR 025, etapa 1: a fábrica do helper vira campo do builder.
+        "openHelperFactory" => {
+            if let Some(f @ Value::Obj(_)) = args.first() {
+                room_set(vm, recv, ROOM_FACTORY_FIELD, f.clone())?;
+            }
+            Ok(Some(Value::Obj(recv)))
         }
         // builder fluente: tudo devolve this
         "allowMainThreadQueries"
@@ -2700,7 +2802,6 @@ fn room_builder(
         | "fallbackToDestructiveMigration"
         | "setQueryExecutor"
         | "setTransactionExecutor"
-        | "openHelperFactory"
         | "setJournalMode" => Ok(Some(Value::Obj(recv))),
         _ => Ok(None),
     }
@@ -2726,6 +2827,25 @@ mod okhttp_scope_tests {
     }
 }
 
+/// Tipo produzido pelo `build()` de cada builder de WorkRequest.
+fn work_request_product(builder: &str) -> &'static str {
+    if builder.starts_with("Landroidx/work/PeriodicWorkRequest$Builder") {
+        "Landroidx/work/PeriodicWorkRequest;"
+    } else if builder.starts_with("Landroidx/work/OneTimeWorkRequest$Builder") {
+        "Landroidx/work/OneTimeWorkRequest;"
+    } else {
+        "Landroidx/work/WorkRequest;"
+    }
+}
+
+/// `true` quando o retorno do descritor é um builder (`...$Builder;`), caso em
+/// que o método fluente devolve o próprio receptor.
+fn sig_returns_builder(sig: &str) -> bool {
+    sig.rsplit(')')
+        .next()
+        .is_some_and(|ret| ret.starts_with('L') && ret.ends_with("$Builder;"))
+}
+
 #[cfg(test)]
 mod work_builder_scope_tests {
     use super::is_work_request_builder;
@@ -2748,6 +2868,36 @@ mod work_builder_scope_tests {
         ));
         assert!(!is_work_request_builder("Landroidx/work/Configuration;"));
         assert!(!is_work_request_builder("Lorg/fdroid/App;"));
+    }
+
+    /// Setters fluentes devolvem o builder; `void` não devolve nada.
+    #[test]
+    fn fluent_setters_return_the_builder_descriptor() {
+        assert!(super::sig_returns_builder(
+            "(Landroidx/work/Constraints;)Landroidx/work/WorkRequest$Builder;"
+        ));
+        assert!(super::sig_returns_builder(
+            "(Ljava/lang/String;)Landroidx/work/PeriodicWorkRequest$Builder;"
+        ));
+        assert!(!super::sig_returns_builder("(Ljava/lang/String;)V"));
+        assert!(!super::sig_returns_builder("()Landroidx/work/WorkRequest;"));
+    }
+
+    /// `build()` devolve o subtipo do builder, para o check-cast do app.
+    #[test]
+    fn build_returns_the_builder_product_type() {
+        assert_eq!(
+            super::work_request_product("Landroidx/work/PeriodicWorkRequest$Builder;"),
+            "Landroidx/work/PeriodicWorkRequest;"
+        );
+        assert_eq!(
+            super::work_request_product("Landroidx/work/OneTimeWorkRequest$Builder;"),
+            "Landroidx/work/OneTimeWorkRequest;"
+        );
+        assert_eq!(
+            super::work_request_product("Landroidx/work/WorkRequest$Builder;"),
+            "Landroidx/work/WorkRequest;"
+        );
     }
 }
 
