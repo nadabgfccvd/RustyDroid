@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793707672112,
+  "lastUpdate": 1793707702793,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2447,6 +2447,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3143,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "839a3a3bea06a5e58b3ae1b75dc56864d86286ac",
+          "message": "feat(res): ARSC array resources + TypedArray.getTextArray (#507)\n\nArsc::resolve_array decodes aapt/aapt2 array item naming and follows the parent chain; TypedArray.getTextArray materializes the CharSequence[] (string/int/bool/float items, references dereferenced). NewPipe now finishes App.onCreate.",
+          "timestamp": "2026-11-03T09:07:47-03:00",
+          "tree_id": "d18b12a55be9b3e55529a250bfc4159a3e5ed2ef",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/839a3a3bea06a5e58b3ae1b75dc56864d86286ac"
+        },
+        "date": 1793707702311,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2768,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2776,
+            "range": "± 41",
             "unit": "ns/iter"
           }
         ]
