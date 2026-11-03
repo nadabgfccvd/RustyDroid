@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793699318867,
+  "lastUpdate": 1793701131579,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2159,6 +2159,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1945,
             "range": "± 359",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e983e028fd9f893f8db62e365150ddb17a7b2f1c",
+          "message": "refactor(rd-vm): VFS belongs to the session, not the thread (ADR 024, step 4) (#499)\n\nThe jfile virtual filesystem was a thread_local. Every Engine on a thread\nshared it, and AgentSession::new reset it. This moves it into a session\nhandle:\n\n- `jfile::VfsHandle` (Arc<Mutex<Vfs>>), default `HostState.vfs`.\n- `Engine::set_vfs(handle)` links an engine to its session's disk.\n- `AgentSession` owns a handle, creates it with `VfsHandle::new()` and\n  links every engine it creates to it. `reset_vfs` is removed.\n- `clear_package_data(&handle, pkg)` clears only that package in that\n  session.\n- Free helpers (`os_*`, `read_bytes`, `write_bytes`, `touch`,\n  `mkdirs_pub`, `delete_file`, ...) take an explicit `&VfsHandle`.\n\nRelaunch semantics are kept: a new Engine on the same handle sees the\nfiles written earlier (ADR 017 item 5). Two sessions do not see each\nother's files.\n\nTests:\n- jfile: sessions_do_not_share_files, package_clear_in_one_session_leaves_others_alone,\n  relaunch_in_same_session_keeps_files (two real Engines, one session;\n  a third engine on another session sees nothing).\n- m8: sqlite_named_database_persists_across_engine_launches and\n  shared_preferences_named_stores_persist_across_engine_launches now\n  launch their two engines in one session (`engine_in`). Assertions are\n  unchanged.\n\nADR 024 step 4 is marked done; ADR 017 gets a supersession note for item 4.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T07:18:19-03:00",
+          "tree_id": "49051e2ba2e67b517286770bebb26528f7de7767",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e983e028fd9f893f8db62e365150ddb17a7b2f1c"
+        },
+        "date": 1793701131011,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2759,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2758,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
