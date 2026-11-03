@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793705837441,
+  "lastUpdate": 1793706337253,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2303,6 +2303,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3192,
             "range": "± 17",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "66e256445759360a422a363e344f7e41a476f46f",
+          "message": "feat(rd-vm): ADR 025 etapa 1 — Room init real sobre o SQLite de framework (#503)\n\n- Novo E2E `rd_test_runs_two_scenarios_over_an_xapk_bundle_with_split_dex`:\n  bundle com base e split de feature (DEX próprio); cenário 1 instala, lança\n  e confere a tela; cenário 2 reinstala o mesmo bundle e confere a tela.\n- ADR 022: DEX de splits entra na execução; libs nativas de split ficam\n  base-only por decisão, declaradas por `native_libs_pending` /\n  `base_only_execution`. Corrige a consequência que dizia que install e\n  `rd test` operavam só no split base.\n- ROADMAP: status do XAPK atualizado.\n\nAI usage: teste e docs escritos com apoio de IA; o teste foi executado localmente\n(`cargo test -p rd-cli --test test_cli`, 5 passed).\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T08:45:16-03:00",
+          "tree_id": "73e03d938a4ba0e389ccf0d53d6b8cccb8a7eb60",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/66e256445759360a422a363e344f7e41a476f46f"
+        },
+        "date": 1793706336343,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2763,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2761,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
