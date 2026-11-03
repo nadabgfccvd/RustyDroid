@@ -90,7 +90,7 @@ fn fixture() -> DexBuilder {
         holder,
         "casInt",
         "I",
-        vec![UNSAFE.into(), TARGET.into()],
+        vec![UNSAFE, TARGET],
         ACC_PUBLIC | ACC_STATIC,
         Some(b.code(13, 2, 0, cas)),
     );
@@ -108,7 +108,7 @@ fn fixture() -> DexBuilder {
         holder,
         "putInt3",
         "V",
-        vec![UNSAFE.into(), TARGET.into(), "I".into()],
+        vec![UNSAFE, TARGET, "I"],
         ACC_PUBLIC | ACC_STATIC,
         Some(b.code(14, 3, 0, put)),
     );
@@ -131,7 +131,7 @@ fn fixture() -> DexBuilder {
         holder,
         "casArray",
         "I",
-        vec![UNSAFE.into(), "[I".into()],
+        vec![UNSAFE, "[I"],
         ACC_PUBLIC | ACC_STATIC,
         Some(b.code(13, 2, 0, arr)),
     );
