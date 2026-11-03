@@ -118,6 +118,8 @@ const ABSTRACT_COLLECTION_CTORS: [&str; 8] = [
     "Ljava/util/AbstractQueue;",
 ];
 
+const ENUM_SET: &str = "Ljava/util/EnumSet;";
+
 const ARRAY_LIST: &str = "Ljava/util/ArrayList;";
 const LINKED_LIST: &str = "Ljava/util/LinkedList;";
 const VECTOR: &str = "Ljava/util/Vector;";
@@ -305,6 +307,11 @@ fn call_static_intrinsic_rooted(
     sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if class == ENUM_SET {
+        if let Some(value) = enum_set_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
     if class == crate::resbundle::RESOURCE_BUNDLE {
         if let Some(value) = crate::resbundle::static_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -1133,6 +1140,62 @@ fn map_mutation_supported(name: &str, sig: &str) -> bool {
 
 /// (name, sig) de wrappers sincronizados de `Collections` (M8): identidade —
 /// a VM é single-threaded, nada a sincronizar.
+/// `java.util.EnumSet`: o modelo host é um `Set` ordenado (`HostObj::List`), o
+/// mesmo usado por `HashSet`/`LinkedHashSet` — `of(...)` é a fábrica que APKs
+/// reais usam para conjuntos de tamanho fixo.
+fn enum_set_intrinsic(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let arity = match (name, sig) {
+        ("of", "(Ljava/lang/Enum;)Ljava/util/EnumSet;") => 1,
+        ("of", "(Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;") => 2,
+        (
+            "of",
+            "(Ljava/lang/Enum;Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;",
+        ) => 3,
+        (
+            "of",
+            "(Ljava/lang/Enum;Ljava/lang/Enum;Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;",
+        ) => 4,
+        (
+            "of",
+            "(Ljava/lang/Enum;Ljava/lang/Enum;Ljava/lang/Enum;Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;",
+        ) => 5,
+        _ => 0,
+    };
+    if arity == 0 {
+        return Ok(None);
+    }
+    let mut elems: Vec<Value> = Vec::with_capacity(arity);
+    for value in args.iter().take(arity) {
+        if matches!(value, Value::Null | Value::Int(0)) {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet.of element null",
+            )));
+        }
+        // Java: duplicata em `EnumSet.of` é IllegalArgumentException.
+        if elems.contains(value) {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalArgumentException;",
+                "duplicate element in EnumSet.of",
+            )));
+        }
+        elems.push(value.clone());
+    }
+    let set = vm
+        .heap
+        .alloc_instance(ENUM_SET.to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    vm.fw
+        .objects
+        .insert(set, crate::framework::HostObj::List { elems });
+    Ok(Some(Value::Obj(set)))
+}
+
 fn collections_sync_wrapper(name: &str, sig: &str) -> bool {
     matches!(
         (name, sig),
