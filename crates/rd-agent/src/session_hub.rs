@@ -13,6 +13,57 @@ pub const DEFAULT_MAX_SESSIONS: usize = 2;
 /// Tools que a camada de sessões atende. Não passam por `AgentSession`.
 const SESSION_TOOLS: [&str; 3] = ["session_open", "session_list", "session_close"];
 
+/// Tools que injetam entrada no app: toque, gesto, texto, tecla e lote (que
+/// pode conter toques). Todas passam pelo `InputRouter` (ADR 023, decisão 3).
+const INPUT_TOOLS: [&str; 7] = ["tap", "swipe", "tap_view", "tap_text", "type_text", "key", "batch"];
+
+/// Quantos eventos de entrada o roteador guarda (os mais recentes).
+const INPUT_LOG_CAP: usize = 256;
+
+/// Um evento de entrada roteado: a sessão de destino e se o app aceitou.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputEvent {
+    pub seq: u64,
+    pub session_id: String,
+    pub tool: String,
+    pub accepted: bool,
+}
+
+/// Roteador de entrada do hub (ADR 023, decisão 3). Toda entrada injetada num
+/// app passa por aqui e fica registrada com a sessão de destino, na ordem em
+/// que chegou. Não é o roteador do M10: o M10 não tem roteador de entrada.
+#[derive(Default)]
+pub struct InputRouter {
+    seq: u64,
+    log: std::collections::VecDeque<InputEvent>,
+}
+
+impl InputRouter {
+    fn record(&mut self, session_id: &str, tool: &str, accepted: bool) -> u64 {
+        self.seq += 1;
+        if self.log.len() == INPUT_LOG_CAP {
+            self.log.pop_front();
+        }
+        self.log.push_back(InputEvent {
+            seq: self.seq,
+            session_id: session_id.to_string(),
+            tool: tool.to_string(),
+            accepted,
+        });
+        self.seq
+    }
+
+    /// Eventos guardados, do mais antigo para o mais recente.
+    pub fn events(&self) -> impl Iterator<Item = &InputEvent> {
+        self.log.iter()
+    }
+
+    /// Número de sequência do último evento roteado para esta sessão.
+    pub fn last_seq_for(&self, session_id: &str) -> Option<u64> {
+        self.log.iter().rev().find(|e| e.session_id == session_id).map(|e| e.seq)
+    }
+}
+
 fn max_sessions_from_env() -> usize {
     std::env::var("RD_MCP_MAX_SESSIONS")
         .ok()
@@ -21,10 +72,26 @@ fn max_sessions_from_env() -> usize {
         .clamp(1, 8)
 }
 
+/// Orçamento de heap de uma sessão, em bytes (ADR 023, decisão 5).
+///
+/// O teto é o do processo (`ram_process_cap_mb`, ADR 015) dividido por N
+/// sessões, e o resultado nunca passa do heap do app (`ram_app_heap_mb`). Como
+/// cada sessão recebe no máximo `teto / N` (com arredondamento para baixo),
+/// a soma dos orçamentos de N sessões nunca passa do teto do processo.
+pub fn session_heap_budget_bytes(process_cap_mb: u32, app_heap_mb: u32, max_sessions: usize) -> usize {
+    let share_mb = u64::from(process_cap_mb) / max_sessions.max(1) as u64;
+    let mb = share_mb.min(u64::from(app_heap_mb));
+    (mb * 1024 * 1024) as usize
+}
+
 /// Conjunto de sessões de app do processo. A posição 0 é a sessão padrão.
 pub struct SessionHub {
     sessions: Vec<AgentSession>,
     max_sessions: usize,
+    /// Orçamento de heap de cada sessão deste hub (bytes).
+    heap_budget: usize,
+    /// Roteador de entrada: registra toda entrada injetada (ADR 023, decisão 3).
+    pub input: InputRouter,
 }
 
 impl Default for SessionHub {
@@ -40,9 +107,19 @@ impl SessionHub {
     }
 
     pub fn with_limit(max_sessions: usize) -> Self {
+        let max_sessions = max_sessions.clamp(1, 8);
+        // Perfil de piso de hardware (moto-e5): o mesmo que `rd perf` mede.
+        let floor = DeviceTable::embedded()
+            .and_then(|t| t.hardware_floor().map(|p| (p.ram_process_cap_mb, p.ram_app_heap_mb)))
+            .expect("devices.toml embutido tem o piso de hardware");
+        let heap_budget = session_heap_budget_bytes(floor.0, floor.1, max_sessions);
+        let mut first = AgentSession::new();
+        first.set_heap_budget(heap_budget);
         SessionHub {
-            sessions: vec![AgentSession::new()],
-            max_sessions: max_sessions.clamp(1, 8),
+            sessions: vec![first],
+            max_sessions,
+            heap_budget,
+            input: InputRouter::default(),
         }
     }
 
@@ -72,6 +149,7 @@ impl SessionHub {
             ));
         }
         let mut s = AgentSession::new();
+        s.set_heap_budget(self.heap_budget);
         // o id sai do relógio; o sufixo garante unicidade dentro do processo
         s.session_id = format!("{}-{}", s.session_id, self.sessions.len());
         let id = s.session_id.clone();
@@ -100,6 +178,7 @@ impl SessionHub {
                 "default": i == 0,
                 "active_package": s.active,
                 "running_package": s.running.engine_package,
+                "last_input_seq": self.input.last_seq_for(&s.session_id),
             })).collect::<Vec<_>>(),
         })
     }
@@ -195,6 +274,14 @@ fn handle_single_hub(hub: &mut SessionHub, msg: serde_json::Value) -> Option<Res
     let mut routed = msg;
     if let Some(p) = routed.get_mut("params").and_then(|p| p.as_object_mut()) {
         p.insert("arguments".into(), args);
+    }
+    if INPUT_TOOLS.contains(&name.as_str()) {
+        // A entrada passa pelo roteador: o evento fica com a sessão de destino.
+        let target_id = hub.sessions[target].session_id.clone();
+        let out = handle_single(&mut hub.sessions[target], routed);
+        let accepted = matches!(&out, Some(Ok(v)) if !v["result"]["isError"].as_bool().unwrap_or(true));
+        hub.input.record(&target_id, &name, accepted);
+        return out;
     }
     handle_single(&mut hub.sessions[target], routed)
 }
@@ -476,5 +563,196 @@ mod session_hub_tests {
         let mut bare = AgentSession::new();
         let r = bare.call_tool("session_open", &serde_json::json!({}));
         assert!(r.is_error, "sessão avulsa não abre sessões");
+    }
+
+    #[test]
+    fn heap_budget_splits_the_process_cap_and_never_exceeds_it() {
+        const MB: usize = 1024 * 1024;
+        // moto-e5: teto 1024 MB, heap do app 256 MB.
+        assert_eq!(session_heap_budget_bytes(1024, 256, 1), 256 * MB);
+        assert_eq!(session_heap_budget_bytes(1024, 256, 2), 256 * MB, "min(teto/N, heap do app)");
+        assert_eq!(session_heap_budget_bytes(1024, 256, 5), 204 * MB, "teto/N arredonda para baixo");
+        assert_eq!(session_heap_budget_bytes(256, 256, 2), 128 * MB, "teto/N quando o teto é o limite");
+        for n in 1..=8usize {
+            let budget = session_heap_budget_bytes(1024, 256, n);
+            assert!(budget * n <= 1024 * MB, "N={n}: soma dos orçamentos passa do teto");
+        }
+    }
+
+    #[test]
+    fn sessions_report_the_heap_budget_they_were_given() {
+        let _guard = crate::mcp::tests::SESSION_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut hub = SessionHub::with_limit(4);
+        let default_id = hub.default_id().to_string();
+        let second = payload(&rpc(&mut hub, "tools/call", "session_open", serde_json::json!({})))["engine_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        for id in [&default_id, &second] {
+            let info = payload(&rpc(&mut hub, "tools/call", "session_info", serde_json::json!({"engine_id": id})));
+            // 1024 MB / 4 sessões = 256 MB, igual ao heap do app
+            assert_eq!(info["memory"]["heap_budget_mb"], 256, "{info}");
+        }
+        // com 8 sessões o teto por sessão cai abaixo do heap do app
+        let mut wide = SessionHub::with_limit(8);
+        let info = payload(&rpc(&mut wide, "tools/call", "session_info", serde_json::json!({})));
+        assert_eq!(info["memory"]["heap_budget_mb"], 128, "{info}");
+    }
+
+    #[test]
+    fn a_session_over_its_heap_budget_fails_closed_without_touching_the_other() {
+        let _guard = crate::mcp::tests::SESSION_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut hub = SessionHub::with_limit(2);
+        let default_id = hub.default_id().to_string();
+        let second = payload(&rpc(&mut hub, "tools/call", "session_open", serde_json::json!({})))["engine_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let apk = crate::mcp::tests::fixture_apk_path();
+        for id in [&default_id, &second] {
+            let r = rpc(&mut hub, "tools/call", "install", serde_json::json!({"apk": apk, "engine_id": id}));
+            assert!(!is_error(&r), "install em {id}: {r}");
+        }
+        // Orçamento zero na sessão 2: a primeira alocação do app passa do limite,
+        // então o launch falha fechado. (Um orçamento de 1 KB não basta para
+        // falhar: o app de fixture cabe nele.)
+        hub.sessions[1].set_heap_budget(0);
+        let launched = rpc(&mut hub, "tools/call", "launch", serde_json::json!({"engine_id": second}));
+        assert!(is_error(&launched), "launch com orçamento zero devia falhar: {launched}");
+        // A sessão padrão, com o orçamento normal, continua de pé.
+        let ok = rpc(&mut hub, "tools/call", "launch", serde_json::json!({"engine_id": default_id}));
+        assert!(!is_error(&ok), "sessão padrão com orçamento normal: {ok}");
+        std::fs::remove_file(apk).ok();
+    }
+
+    #[test]
+    fn two_apps_run_at_once_and_interleaved_touches_reach_only_their_own_session() {
+        let _guard = crate::mcp::tests::SESSION_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut hub = SessionHub::with_limit(2);
+        let a = hub.default_id().to_string();
+        let b = payload(&rpc(&mut hub, "tools/call", "session_open", serde_json::json!({})))["engine_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let apk = crate::mcp::tests::fixture_apk_path();
+        for id in [&a, &b] {
+            assert!(!is_error(&rpc(&mut hub, "tools/call", "install", serde_json::json!({"apk": apk, "engine_id": id}))));
+            assert!(!is_error(&rpc(&mut hub, "tools/call", "launch", serde_json::json!({"engine_id": id}))));
+        }
+        let find = |hub: &mut SessionHub, id: &str| {
+            let v = payload(&rpc(
+                hub,
+                "tools/call",
+                "find_views",
+                serde_json::json!({"resource_id": "com.test:id/tv", "engine_id": id}),
+            ));
+            assert_eq!(v["total"], 1, "{v}");
+            v["tree_token"].as_str().unwrap().to_string()
+        };
+        let tap = |hub: &mut SessionHub, id: &str, token: &str| {
+            rpc(
+                hub,
+                "tools/call",
+                "tap_view",
+                serde_json::json!({"resource_id": "com.test:id/tv", "expected_token": token, "engine_id": id}),
+            )
+        };
+        let token_a = find(&mut hub, &a);
+
+        // O token de uma sessão não age sobre a outra.
+        let cross = tap(&mut hub, &b, &token_a);
+        assert!(is_error(&cross), "token da sessão A aceito na B: {cross}");
+        // A recusa pode observar a árvore de B de novo; a linha de base é tirada depois dela.
+        let token_b = find(&mut hub, &b);
+
+        // Toques intercalados: cada um cai na sessão pedida.
+        let t1 = tap(&mut hub, &a, &token_a);
+        assert!(!is_error(&t1), "{t1}");
+        assert_eq!(t1["result"]["sessionId"], a.as_str());
+        // a sessão B não mudou com o toque em A: o token dela continua válido
+        let token_b2 = find(&mut hub, &b);
+        assert_eq!(token_b2, token_b, "toque na sessão A mudou a árvore da sessão B");
+        let t2 = tap(&mut hub, &b, &token_b2);
+        assert!(!is_error(&t2), "{t2}");
+        assert_eq!(t2["result"]["sessionId"], b.as_str());
+        // o token antigo da sessão A agora está velho (o toque anterior mudou a revisão)
+        let stale = tap(&mut hub, &a, &token_a);
+        assert!(is_error(&stale), "token antigo da A ainda aceito: {stale}");
+        let token_a2 = find(&mut hub, &a);
+        let t3 = tap(&mut hub, &a, &token_a2);
+        assert!(!is_error(&t3), "{t3}");
+        std::fs::remove_file(apk).ok();
+    }
+
+    #[test]
+    fn input_router_records_each_touch_in_order_with_its_session() {
+        let _guard = crate::mcp::tests::SESSION_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut hub = SessionHub::with_limit(2);
+        let a = hub.default_id().to_string();
+        let b = payload(&rpc(&mut hub, "tools/call", "session_open", serde_json::json!({})))["engine_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let apk = crate::mcp::tests::fixture_apk_path();
+        for id in [&a, &b] {
+            assert!(!is_error(&rpc(&mut hub, "tools/call", "install", serde_json::json!({"apk": apk, "engine_id": id}))));
+            assert!(!is_error(&rpc(&mut hub, "tools/call", "launch", serde_json::json!({"engine_id": id}))));
+        }
+        let token = |hub: &mut SessionHub, id: &str| {
+            payload(&rpc(
+                hub,
+                "tools/call",
+                "find_views",
+                serde_json::json!({"resource_id": "com.test:id/tv", "engine_id": id}),
+            ))["tree_token"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let tap = |hub: &mut SessionHub, id: &str, t: &str| {
+            rpc(
+                hub,
+                "tools/call",
+                "tap_view",
+                serde_json::json!({"resource_id": "com.test:id/tv", "expected_token": t, "engine_id": id}),
+            )
+        };
+        let ta = token(&mut hub, &a);
+        let tb = token(&mut hub, &b);
+        assert!(!is_error(&tap(&mut hub, &a, &ta)));
+        assert!(!is_error(&tap(&mut hub, &b, &tb)));
+        // token antigo: recusado pelo app, e o roteador registra a tentativa como não aceita
+        assert!(is_error(&tap(&mut hub, &a, &ta)));
+
+        let events: Vec<InputEvent> = hub.input.events().cloned().collect();
+        let got: Vec<(&str, bool)> = events
+            .iter()
+            .map(|e| (e.session_id.as_str(), e.accepted))
+            .collect();
+        assert_eq!(got, vec![(a.as_str(), true), (b.as_str(), true), (a.as_str(), false)], "{events:?}");
+        assert!(events.windows(2).all(|w| w[0].seq < w[1].seq), "sequência fora de ordem: {events:?}");
+        // session_list expõe o último evento de cada sessão
+        let listed = payload(&rpc(&mut hub, "tools/call", "session_list", serde_json::json!({})));
+        let seq_of = |id: &str| {
+            listed["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["engine_id"] == id)
+                .unwrap()["last_input_seq"]
+                .as_u64()
+                .unwrap()
+        };
+        assert_eq!(seq_of(&a), events[2].seq);
+        assert_eq!(seq_of(&b), events[1].seq);
+        std::fs::remove_file(apk).ok();
     }
 }
