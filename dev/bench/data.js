@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793702454933,
+  "lastUpdate": 1793705837441,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2267,6 +2267,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3288,
             "range": "± 21",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5d9c0818fa980dfe5d8c59bc32a3ce714e44315e",
+          "message": "feat(rd-vm): ADR 025 etapa 1 — Room init real sobre o SQLite de framework (#502)\n\nApp.onCreate do F-Droid passa a rodar até o fim: o WorkDatabase (Room)\nexecuta RoomDatabase.init de verdade, e o WorkManager enfileira o trabalho\nperiódico de repositório.\n\n- room_init: queryCoroutineContext fica nulo, como no Room quando o builder\n  não recebe contexto. Com EmptyCoroutineContext, o init entrava no ramo de\n  dispatcher, e get(Key) devolvia const/4 0 (Int(0) no VM) -> NPE em getClass.\n- WorkRequest$Builder: setters fluentes devolvem o builder (sig_returns_builder);\n  build() de PeriodicWorkRequest/OneTimeWorkRequest devolve o subtipo.\n- NotificationChannel: setGroup(null) é válido; setShowBadge/canShowBadge e\n  setLightColor/getLightColor modelados; setSound/setVibrationPattern/\n  setConversationId aceitam o argumento sem efeito (sem áudio/vibração no host).\n- Intrínseco kotlin Reflection.getOrCreateKotlinClass -> ClassReference, como\n  o stdlib faz sem kotlin-reflect.\n- Caminho A1 do ADR 025 executado; nenhum intrínseco de coroutines foi\n  necessário (JobSupport roda, $FU não é nulo). Contingência B não acionada.\n\nTestes: unitários em m8 (sig_returns_builder, work_request_product) e\ncrates/rd-cli/tests/fdroid_oncreate_e2e.rs (regressão do onCreate; pula sem\no APK golden, como readme_inspect).\n\nAI usage: código e docs escritos com apoio de IA (Agent Mode), revisados\npelos testes listados acima.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T08:36:58-03:00",
+          "tree_id": "dde7396d08998c6c86af7d2c7e5f1de295e65a58",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5d9c0818fa980dfe5d8c59bc32a3ce714e44315e"
+        },
+        "date": 1793705837053,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3211,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3192,
+            "range": "± 17",
             "unit": "ns/iter"
           }
         ]
