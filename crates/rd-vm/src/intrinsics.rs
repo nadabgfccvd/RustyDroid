@@ -821,7 +821,7 @@ fn call_static_intrinsic_rooted(
         // M8: Thread statics — VM single-threaded: UMA thread sintética
         // "main"; sleep/yield operam sobre o relógio virtual (≡ SystemClock).
         ("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;") => {
-            Ok(Some(Value::Obj(vm.main_thread_obj()?)))
+            Ok(Some(Value::Obj(crate::threads::current_thread(vm)?)))
         }
         ("Ljava/lang/Thread;", "sleep", "(J)V") | ("Ljava/lang/Thread;", "sleep", "(JI)V") => {
             let ms = match args.first() {
@@ -4913,7 +4913,12 @@ fn instance_intrinsic_dispatch(
                 || mref_class == EXECUTOR)
                 && exec_supported(name, sig) =>
         {
-            exec_intrinsic(vm, recv, name, sig, args)
+            // Task de Executor roda inline, mas fora do main thread (Room/WorkManager
+            // checam isso): conta a profundidade para `currentThread`/`myLooper`.
+            vm.fw.inline_task_depth += 1;
+            let r = exec_intrinsic(vm, recv, name, sig, args);
+            vm.fw.inline_task_depth -= 1;
+            r
         }
         (c, name, sig) if (c == FUTURE || mref_class == FUTURE) && future_supported(name, sig) => {
             future_intrinsic(vm, recv, name)

@@ -1214,6 +1214,7 @@ pub(crate) fn instance_intrinsic(
             | "getMainLooper"
             | "getBaseContext"
             | "isRestricted"
+            | "isDeviceProtectedStorage"
             | "getAttributionTag"
             | "getAttributionSource"
             | "getAssets"
@@ -1278,6 +1279,8 @@ pub(crate) fn instance_intrinsic(
         // (not a ContextWrapper, so unwrap loops terminate)
         ("getBaseContext", _) => Value::Obj(crate::intrinsics::context_impl(vm)?),
         ("isRestricted", _) => Value::Int(0),
+        // App comum: o contexto não é o de armazenamento protegido do device.
+        ("isDeviceProtectedStorage", _) => Value::Int(0),
         ("getAttributionTag", _) => Value::Null,
         ("getAttributionSource", "()Landroid/content/AttributionSource;") => {
             match get(vm, recv, "mAttributionSource") {

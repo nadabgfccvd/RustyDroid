@@ -2114,6 +2114,12 @@ fn file_host(
 }
 
 // ── OkHttp shim ─────────────────────────────────────────────────────────
+/// Descritor da classe gerada pelo Room para uma DB abstrata:
+/// `Lpkg/DB;` -> `Lpkg/DB_Impl;`.
+fn room_impl_descriptor(dbcls: &str) -> String {
+    format!("{}_Impl;", dbcls.trim_end_matches(';'))
+}
+
 /// Builders de `WorkRequest` (OneTime/Periodic/base) que o shim M8 modela.
 /// `Configuration$Builder` e outros builders androidx.work rodam o DEX real:
 /// engolir o `build()` deles devolvia um WorkRequest no lugar de Configuration
@@ -2567,10 +2573,13 @@ fn uri_instance(
 fn job_scheduler(
     vm: &mut Engine,
     name: &str,
-    _recv: ObjRef,
+    recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match name {
+        // API 34+: visão de namespace do mesmo scheduler. A fila de jobs ainda é
+        // uma só (isolamento por namespace não é modelado); devolve o próprio receptor.
+        "forNamespace" => Ok(Some(Value::Obj(recv))),
         "schedule" => {
             // JobInfo.getId via field ou arg objeto — registra 0 se ilegível.
             vm.fw.m8.scheduled_jobs.push(0);
@@ -2666,9 +2675,18 @@ fn room_builder(
                 .cloned()
                 .unwrap_or_else(|| ("Landroidx/room/RoomDatabase;".into(), ":memory:".into()));
             vm.fw.m8.databases.entry(dbname.clone()).or_default();
+            // Room gera `<DB>_Impl` (subclasse concreta da DB abstrata): é ela que
+            // o build() instancia, como o Room real faz. Sem ela, DAOs abstratos
+            // (ex.: WorkDatabase.systemIdInfoDao) ficariam sem corpo.
+            let impl_cls = room_impl_descriptor(&dbcls);
+            let target = if vm.cp.find_class(&impl_cls).is_some() {
+                impl_cls
+            } else {
+                dbcls.clone()
+            };
             // Instância da DB do app se existir no DEX; senão RoomDatabase host.
-            let r = if vm.cp.find_class(&dbcls).is_some() {
-                vm.new_dex_instance_pub(&dbcls)?
+            let r = if vm.cp.find_class(&target).is_some() {
+                vm.new_dex_instance_pub(&target)?
             } else {
                 alloc(vm, &dbcls)?
             };
@@ -2730,5 +2748,19 @@ mod work_builder_scope_tests {
         ));
         assert!(!is_work_request_builder("Landroidx/work/Configuration;"));
         assert!(!is_work_request_builder("Lorg/fdroid/App;"));
+    }
+}
+
+#[cfg(test)]
+mod room_impl_tests {
+    use super::room_impl_descriptor;
+
+    #[test]
+    fn generated_room_impl_name_follows_the_db_class() {
+        assert_eq!(
+            room_impl_descriptor("Landroidx/work/impl/WorkDatabase;"),
+            "Landroidx/work/impl/WorkDatabase_Impl;"
+        );
+        assert_eq!(room_impl_descriptor("Lorg/app/Db;"), "Lorg/app/Db_Impl;");
     }
 }
