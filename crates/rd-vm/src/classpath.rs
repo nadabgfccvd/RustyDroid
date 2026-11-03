@@ -1603,6 +1603,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // EnumSet: `EnumSet.of(A, B, …)` é como o framework monta conjuntos de
         // flags (ex.: `Notification.FLAG_*`? não: `EnumSet.of(...)` de enums do
         // próprio app, visto no NewPipe dentro de `NotificationChannel`).
+        "Ljava/util/EnumMap;" => Some(&["Ljava/util/AbstractMap;", "Ljava/lang/Object;"]),
         "Ljava/util/EnumSet;" => Some(&[
             "Ljava/util/AbstractSet;",
             "Ljava/util/AbstractCollection;",
@@ -2729,6 +2730,7 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         ]),
         "Ljava/util/AbstractList;" | "Ljava/util/AbstractSequentialList;" => Some(LIST_IFACES),
         "Ljava/util/AbstractMap;" => Some(MAP_IFACES),
+        "Ljava/util/EnumMap;" => Some(MAP_IFACES),
         "Ljava/util/HashMap;" => Some(&[
             "Ljava/util/Map;",
             "Ljava/lang/Cloneable;",

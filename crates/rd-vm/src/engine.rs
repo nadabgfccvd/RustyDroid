@@ -1050,6 +1050,9 @@ impl Engine {
                 Ok(())
             }
             Err(e) => {
+                if std::env::var_os("RD_TRACE_CLINIT").is_some() {
+                    eprintln!("[clinit-fail] {class}: {e:?}");
+                }
                 self.clinit_failed.insert(class.to_string());
                 // issue #41 (JLS 12.4.2): se a falha VEIO da superclasse (o erro
                 // já está embrulhado em EIIE/NCDFE), propaga o erro ORIGINAL —
