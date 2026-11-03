@@ -412,6 +412,14 @@ fn it(v: Option<&Value>) -> i32 {
         _ => 0,
     }
 }
+/// `long` argument of a packed-colour call (`Color.pack` family).
+fn it_long(v: Option<&Value>) -> i64 {
+    match v {
+        Some(Value::Long(l)) => *l,
+        Some(Value::Int(i)) => i64::from(*i),
+        _ => 0,
+    }
+}
 fn obj(v: Option<&Value>) -> Option<ObjRef> {
     match v {
         Some(Value::Obj(r)) => Some(*r),
@@ -1264,6 +1272,31 @@ pub(crate) fn static_intrinsic(
                     let q = |i: usize| (fl(a(i)).clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
                     Value::Int(((q(0) << 24) | (q(1) << 16) | (q(2) << 8) | q(3)) as i32)
                 }
+                // AOSP `Color.pack(int)`: colour-space id in the high 32 bits,
+                // ARGB in the low 32 bits. sRGB is id 0, so a packed sRGB colour
+                // is just its unsigned ARGB value.
+                ("pack", "(I)J") => Value::Long(c as i64),
+                ("colorSpace", "(J)") | ("colorSpace", _) if sig.starts_with("(J)") => {
+                    crate::android_colorspace::get(vm, ((it_long(a(0)) as u64) >> 32) as usize)?
+                }
+                ("isSrgb", _) if sig.starts_with("(J)") => {
+                    Value::Int(i32::from(((it_long(a(0)) as u64) >> 32) == 0))
+                }
+                ("isWideGamut", _) if sig.starts_with("(J)") => {
+                    Value::Int(i32::from(((it_long(a(0)) as u64) >> 32) != 0))
+                }
+                ("alpha", _) if sig.starts_with("(J)") => {
+                    Value::Int(((it_long(a(0)) as u64 >> 24) & 0xFF) as i32)
+                }
+                ("red", _) if sig.starts_with("(J)") => {
+                    Value::Int(((it_long(a(0)) as u64 >> 16) & 0xFF) as i32)
+                }
+                ("green", _) if sig.starts_with("(J)") => {
+                    Value::Int(((it_long(a(0)) as u64 >> 8) & 0xFF) as i32)
+                }
+                ("blue", _) if sig.starts_with("(J)") => {
+                    Value::Int((it_long(a(0)) as u64 & 0xFF) as i32)
+                }
                 ("parseColor", _) => {
                     let s = cs_text(vm, a(0).unwrap_or(&Value::Null))?;
                     let h = s.trim_start_matches('#');
@@ -2043,14 +2076,18 @@ fn paint_method(
         "setColor" => {
             p.argb = match a(0) {
                 Some(Value::Long(l)) => {
-                    // packed ColorLong (sRGB variant): ARGB in the high 32 bits
-                    ((*l as u64) >> 32) as u32
+                    // AOSP packed colour long: sRGB id in the high 32 bits, ARGB
+                    // in the low 32 bits.
+                    (*l as u64 & 0xFFFF_FFFF) as u32
                 }
                 v => it(v) as u32,
             };
             Value::Null
         }
         "getColor" => Value::Int(p.argb as i32),
+        // `Paint.getColorLong()`: the colour packed with its colour-space id
+        // (sRGB = 0). Compose reads it to build a `Color(long)`.
+        "getColorLong" => Value::Long(i64::from(p.argb)),
         "setAlpha" => {
             p.argb = (p.argb & 0x00FF_FFFF) | ((it(a(0)).clamp(0, 255) as u32) << 24);
             Value::Null
@@ -4485,6 +4522,110 @@ mod tests {
         assert!(w > 80.0 && w < 200.0, "{w}");
         assert!(ascent(14.0) < 0.0 && descent(14.0) > 0.0);
         assert!(atlas().map.contains_key(&('ã' as u32)));
+    }
+
+    /// `Paint.getColorLong()`/`Paint.setColor(long)` and `Color.pack` share the
+    /// AOSP packing: colour-space id (sRGB = 0) high, ARGB low. Compose reads a
+    /// paint's colour back through the long form, so the two must agree.
+    #[test]
+    fn paint_color_long_round_trips_through_a_packed_color() {
+        let mut vm = Engine::new(Vec::new(), crate::engine::VmConfig::default());
+        let paint = vm
+            .heap
+            .alloc_instance("Landroid/graphics/Paint;".to_string(), Vec::new())
+            .unwrap();
+        // Paints only carry graphics state once their constructor ran.
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "<init>",
+            "()V",
+            paint,
+            &[],
+        )
+        .unwrap();
+        let argb = 0x8040_20C0u32 as i32;
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "setColor",
+            "(I)V",
+            paint,
+            &[Value::Int(argb)],
+        )
+        .unwrap();
+        let packed = match instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "getColorLong",
+            "()J",
+            paint,
+            &[],
+        )
+        .unwrap()
+        {
+            Some(Value::Long(l)) => l,
+            other => panic!("getColorLong returned {other:?}"),
+        };
+        assert_eq!(packed as u32 as i32, argb, "low 32 bits carry the ARGB");
+        assert_eq!(packed >> 32, 0, "sRGB id is 0");
+        // `Paint.setColor(long)` reads the ARGB back out of the packed value.
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "setColor",
+            "(J)V",
+            paint,
+            &[Value::Long(packed)],
+        )
+        .unwrap();
+        let back = match instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "getColor",
+            "()I",
+            paint,
+            &[],
+        )
+        .unwrap()
+        {
+            Some(Value::Int(i)) => i,
+            other => panic!("getColor returned {other:?}"),
+        };
+        assert_eq!(back, argb);
+        // `Color.pack(int)` is the same packing, and `Color.colorSpace(long)`
+        // reports sRGB for it.
+        let packed2 = match static_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Color;",
+            "pack",
+            "(I)J",
+            &[Value::Int(argb)],
+        )
+        .unwrap()
+        {
+            Some(Value::Long(l)) => l,
+            other => panic!("Color.pack returned {other:?}"),
+        };
+        assert_eq!(packed2, packed);
+        let cs = match static_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Color;",
+            "colorSpace",
+            "(J)Landroid/graphics/ColorSpace;",
+            &[Value::Long(packed)],
+        )
+        .unwrap()
+        {
+            Some(Value::Obj(_)) => true,
+            other => panic!("Color.colorSpace returned {other:?}"),
+        };
+        assert!(cs);
     }
 
     #[test]
