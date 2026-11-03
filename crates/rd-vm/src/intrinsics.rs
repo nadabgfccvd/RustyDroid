@@ -76,7 +76,7 @@ const HASH_MAP: &str = "Ljava/util/HashMap;";
 /// `Collections.unmodifiableMap` — mutações → UOE, leituras delegam.
 const UNMODIFIABLE_MAP: &str = "Ljava/util/Collections$UnmodifiableMap;";
 /// M8 (41º gap real): idem para `Collections.singletonList`.
-const SINGLETON_LIST: &str = "Ljava/util/Collections$SingletonList;";
+pub(crate) const SINGLETON_LIST: &str = "Ljava/util/Collections$SingletonList;";
 /// M8 (43º gap real): idem para `Collections.unmodifiableSet`.
 const UNMODIFIABLE_SET: &str = "Ljava/util/Collections$UnmodifiableSet;";
 const WEAK_MAP: &str = "Ljava/util/WeakHashMap;";
@@ -4027,6 +4027,11 @@ fn instance_intrinsic_dispatch(
         {
             return Ok(Some(v));
         }
+    }
+    // java.util.Collections reverse comparators (collections.rs).
+    if let Some(v) = crate::collections::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
     }
     // java.security.Permission / java.lang.RuntimePermission.
     if let Some(v) =
