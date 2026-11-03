@@ -445,6 +445,9 @@ pub struct AgentSession {
     /// ou gravar frame para estes pacotes quebraria o determinismo.
     snapshot_dirty: std::collections::HashSet<String>,
     devices: DeviceTable,
+    /// Orçamento de heap desta sessão em bytes (ADR 023, decisão 5). Quem
+    /// define é o `SessionHub`; sem hub vale o padrão do VM.
+    heap_budget: usize,
     behavior: SwitchTable,
     /// Round 6: cached screen model / PNG per frame version, resource
     /// subscriptions, pending notifications and the live viewer.
@@ -489,11 +492,18 @@ impl AgentSession {
             vfs,
             snapshot_dirty: std::collections::HashSet::new(),
             devices: DeviceTable::embedded().expect("devices.toml embutido parseia"),
+            heap_budget: rd_vm::VmConfig::default().heap_budget,
             behavior: SwitchTable::embedded().expect("behavior-switches.toml embutido parseia"),
             log_generation: 0,
             tool_error_count: 0,
             last_tool_error: None,
         }
+    }
+
+    /// Orçamento de heap da sessão (ADR 023, decisão 5). Vale para os próximos
+    /// `launch`; um app já rodando mantém o orçamento com que foi criado.
+    pub fn set_heap_budget(&mut self, bytes: usize) {
+        self.heap_budget = bytes;
     }
 
     /// Ajusta a política pós-construção (testes e embedders — o server
@@ -1572,7 +1582,11 @@ impl AgentSession {
             let dexes = dexes_of_apk(&resources)?;
             phase("dex_mount_total", t_mount);
             let t_new = std::time::Instant::now();
-            let mut e = Engine::new(dexes, VmConfig::default());
+            let config = VmConfig {
+                heap_budget: self.heap_budget,
+                ..VmConfig::default()
+            };
+            let mut e = Engine::new(dexes, config);
             phase("engine_new", t_new);
             e.set_resources_arc(resources);
             e

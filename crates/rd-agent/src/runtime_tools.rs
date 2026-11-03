@@ -156,6 +156,7 @@ impl AgentSession {
                 "view_snapshot_nodes":UI_QUERY_NODE_CAP,"find_result_count":UI_QUERY_RESULT_CAP,"view_wait_steps":1000,
                 "log_tail_bytes":LOG_TAIL_MAX_BYTES},
             "logs":{"generation":self.log_generation,"bytes":log_bytes,"available":log_bytes.is_some()},
+            "memory":{"heap_budget_mb":self.heap_budget / (1024 * 1024)},
             "tool_error_count":self.tool_error_count
         })))
     }
