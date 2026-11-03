@@ -132,6 +132,7 @@ fn is_main(vm: &Engine, t: ObjRef) -> bool {
 pub(crate) fn current_thread(vm: &mut Engine) -> Result<ObjRef, VmExit> {
     match vm.threads.current {
         Some(t) => Ok(t),
+        None if vm.fw.inline_task_depth > 0 => vm.worker_thread_obj(),
         None => vm.main_thread_obj(),
     }
 }

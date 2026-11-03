@@ -8529,3 +8529,107 @@ fn service_loader_descobre_provider_de_meta_inf_services() {
         "ctor do provider rodou antes do provider ausente falhar"
     );
 }
+
+/// Room/WorkManager recusam acesso ao banco na main thread (`Looper.myLooper()
+/// == getMainLooper()`). Uma task de Executor roda inline no host, então
+/// `Looper.myLooper()` precisa devolver null dentro dela e o Looper principal
+/// fora dela. Regressão do bloqueio "Cannot access database on the main thread".
+#[test]
+fn executor_inline_task_has_no_looper_outside_main_thread() {
+    use rd_vm::intrinsics::{call_instance_intrinsic, call_static_intrinsic};
+    use rd_vm::value::Value;
+    const EXECUTORS: &str = "Ljava/util/concurrent/Executors;";
+    const SVC: &str = "Ljava/util/concurrent/ExecutorService;";
+    const LOOPER: &str = "Landroid/os/Looper;";
+
+    // LProbe.run(): probe = Looper.myLooper()
+    let mut b = DexBuilder::new();
+    let probe = b.class("LProbe;", "Ljava/lang/Object;");
+    let _ = b.field_idx("LProbe;", "Ljava/lang/Object;", "looper");
+    b.static_field(probe, "looper", "Ljava/lang/Object;", SVal::Int(0));
+    let f_looper = b.find_field("LProbe;", "Ljava/lang/Object;", "looper") as u16;
+    let p_looper = b.proto_idx(LOOPER, vec![]);
+    let my_looper = b.method_idx(LOOPER, p_looper, "myLooper");
+    b.direct(
+        probe,
+        "run",
+        "V",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, {
+            let mut u = op35c(0x71, 0, my_looper, [0; 5]); // invoke-static myLooper
+            u.extend(op11x(0x0C, 0)); // move-result-object v0
+            u.extend(op21c(0x69, 0, f_looper)); // sput-object v0, looper
+            u.extend(op10x(0x0E)); // return-void
+            u
+        })),
+    );
+
+    // probe()V estático, mesmo corpo: mede fora do executor.
+    b.direct(
+        probe,
+        "probe",
+        "V",
+        vec![],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(1, 0, 0, {
+            let mut u = op35c(0x71, 0, my_looper, [0; 5]);
+            u.extend(op11x(0x0C, 0));
+            u.extend(op21c(0x69, 0, f_looper));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+
+    let mut e = engine_of(&b);
+    let looper_of = |e: &Engine| {
+        e.statics
+            .get(&("LProbe;".to_string(), "looper".to_string()))
+            .cloned()
+    };
+
+    // Fora de qualquer executor: o Looper principal existe.
+    e.invoke_static("LProbe;", "probe", "()V", &[]).unwrap();
+    assert!(
+        matches!(looper_of(&e), Some(Value::Obj(_))),
+        "main thread should have a Looper"
+    );
+
+    let ex = match call_static_intrinsic(
+        &mut e,
+        EXECUTORS,
+        "newSingleThreadExecutor",
+        "()Ljava/util/concurrent/ExecutorService;",
+        &[],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(r)) => r,
+        other => panic!("executor: {other:?}"),
+    };
+    let probe_inst = e
+        .heap
+        .alloc_instance("LProbe;".to_string(), vec![])
+        .unwrap();
+    call_instance_intrinsic(
+        &mut e,
+        SVC,
+        "execute",
+        "(Ljava/lang/Runnable;)V",
+        ex,
+        &[Value::Obj(probe_inst)],
+    )
+    .unwrap();
+    assert_eq!(
+        looper_of(&e),
+        Some(Value::Null),
+        "inline executor task must not see the main Looper"
+    );
+
+    // Depois da task a thread volta a ser a principal.
+    e.invoke_static("LProbe;", "probe", "()V", &[]).unwrap();
+    assert!(
+        matches!(looper_of(&e), Some(Value::Obj(_))),
+        "main Looper must return after the task"
+    );
+}

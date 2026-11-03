@@ -960,6 +960,12 @@ pub struct HostState {
     main_looper: Option<ObjRef>,
     /// M8: thread "main" sintética (VM single-threaded — ver `THREAD`)
     pub(crate) main_thread: Option<ObjRef>,
+    /// Thread sintética de trabalho: `Thread.currentThread()` enquanto uma task
+    /// de Executor roda inline (ver `inline_task_depth`). Fora do main thread,
+    /// como em Android para trabalho de background (ex.: checagem do Room).
+    pub(crate) worker_thread: Option<ObjRef>,
+    /// Profundidade de tasks de Executor executando inline (0 = main thread).
+    pub(crate) inline_task_depth: u32,
     /// M8: objetos `Class` canônicos por descritor (getClass devolve sempre a
     /// mesma referência para a mesma classe — identidade como na JVM).
     class_objs: HashMap<String, ObjRef>,
@@ -1274,6 +1280,16 @@ impl Engine {
                 ))
             })?;
         self.fw.main_thread = Some(r);
+        Ok(r)
+    }
+
+    /// Thread de trabalho sintética usada enquanto uma task de Executor roda inline.
+    pub(crate) fn worker_thread_obj(&mut self) -> Result<ObjRef, VmExit> {
+        if let Some(t) = self.fw.worker_thread {
+            return Ok(t);
+        }
+        let r = self.heap.alloc_instance(THREAD.to_string(), Vec::new())?;
+        self.fw.worker_thread = Some(r);
         Ok(r)
     }
 
@@ -3069,9 +3085,13 @@ fn call_host_static_rooted(
             // not grant Android 11+ all-files access to the app by default.
             Ok(Some(Value::Int(0)))
         }
-        (LOOPER, "getMainLooper") | (LOOPER, "myLooper") => {
-            Ok(Some(Value::Obj(vm.main_looper_obj()?)))
-        }
+        (LOOPER, "getMainLooper") => Ok(Some(Value::Obj(vm.main_looper_obj()?))),
+        // Fora do main thread (task de Executor inline) não há Looper preparado.
+        (LOOPER, "myLooper") => Ok(Some(if vm.fw.inline_task_depth > 0 {
+            Value::Null
+        } else {
+            Value::Obj(vm.main_looper_obj()?)
+        })),
         (LOOPER, "loop") => {
             vm.drain_looper()?;
             Ok(Some(Value::Null))
