@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793689679586,
+  "lastUpdate": 1793690325796,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1979,6 +1979,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3193,
             "range": "± 16",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75b4775a13006e7dbebcfaf2eaa9934d2cdb1a73",
+          "message": "docs(roadmap): M1 fuzz smoke result and F-Droid Room blocker (2026-11-03) (#494)\n\n- M1: 90 s smoke per target (5 targets, run sequentially because the\n  parallel script refused with 1.35 GB free RAM): 8.3 M executions,\n  0 crashes. The 24 h campaign is still not run.\n- F-Droid: WorkManager Room path advanced (#492); next blocker is\n  RoomDatabase.connectionManager, which needs a host SQLite driver\n  decision (ADR before code).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-03T04:18:26-03:00",
+          "tree_id": "c25c0d5e0906f7d9381115fdf6197255ef4f1212",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/75b4775a13006e7dbebcfaf2eaa9934d2cdb1a73"
+        },
+        "date": 1793690325143,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1852,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1830,
+            "range": "± 20",
             "unit": "ns/iter"
           }
         ]
