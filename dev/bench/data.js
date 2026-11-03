@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793690325796,
+  "lastUpdate": 1793692388637,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2015,6 +2015,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1830,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cb0f2a4d66fc883238499ae0da4cd482f3f42675",
+          "message": "refactor(rd-vm): System.out destination lives in the engine (ADR 024, step 1) (#495)\n\nThe System.out destination was a process-global static, so sessions\nsharing a process could write into each other's buffers. It now lives in\nHostState: Engine::set_app_stdout sets it per engine. The static becomes the\ndefault that only seeds Engine::new (set_default_app_stdout, used by the CLI\nand the native registry). The agent sets each session's log buffer on every\nengine it creates, native or DEX.\n\nRegression test: system_out_is_per_engine_not_process_global (two engines\nin one thread, each with its own buffer). Verified: making host_print ignore\nthe engine mode fails the test.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-03T04:52:35-03:00",
+          "tree_id": "d6d2a8087bd524353f13dc9d78c96e6ece64674c",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/cb0f2a4d66fc883238499ae0da4cd482f3f42675"
+        },
+        "date": 1793692388072,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3556,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3557,
+            "range": "± 16",
             "unit": "ns/iter"
           }
         ]
