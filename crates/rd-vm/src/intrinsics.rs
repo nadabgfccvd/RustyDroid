@@ -215,7 +215,7 @@ pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Resul
 
 /// Escreve no stdout/stderr do host. PrintStream Java NUNCA lança IOException
 /// (spec de java.io.PrintStream) — engolir falha de E/S é a semântica correta.
-pub(crate) fn host_print(fd: i32, s: &str) {
+pub(crate) fn host_print(vm: &Engine, fd: i32, s: &str) {
     use std::io::Write;
     if fd == 2 {
         let _ = std::io::stderr().write_all(s.as_bytes());
@@ -225,8 +225,7 @@ pub(crate) fn host_print(fd: i32, s: &str) {
     // issue #55: fd=1 do app segue o modo configurado — o CLI roteia para o
     // stderr do host (stdout reservado ao artefato do comando: dump XML/JSON);
     // default da LIB continua stdout (comportamento Java real).
-    let mode = app_stdout_mode();
-    match mode {
+    match vm.fw.app_stdout.clone() {
         HostOut::Std => {
             let _ = std::io::stdout().write_all(s.as_bytes());
             let _ = std::io::stdout().flush();
@@ -259,21 +258,29 @@ pub enum HostOut {
     Buffer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>),
 }
 
-static APP_STDOUT: std::sync::Mutex<HostOut> = std::sync::Mutex::new(HostOut::Std);
+/// Padrão de System.out para engines criados depois (CLI: stderr; lib: stdout).
+/// Só semeia `Engine::new`: o destino de cada engine vive em `HostState`
+/// (`Engine::set_app_stdout`), então sessões no mesmo processo não se misturam
+/// (ADR 024, passo 1).
+static DEFAULT_APP_STDOUT: std::sync::Mutex<HostOut> = std::sync::Mutex::new(HostOut::Std);
 
-fn app_stdout_mode() -> HostOut {
-    APP_STDOUT.lock().expect("app stdout mode").clone()
+pub(crate) fn default_app_stdout() -> HostOut {
+    DEFAULT_APP_STDOUT
+        .lock()
+        .expect("default app stdout")
+        .clone()
 }
 
-/// Configura o destino do System.out do app (issue #55).
-pub fn set_app_stdout(mode: HostOut) {
-    *APP_STDOUT.lock().expect("app stdout mode") = mode;
+/// Configura o padrão de System.out para engines criados depois (issue #55).
+/// Não afeta engines já criados.
+pub fn set_default_app_stdout(mode: HostOut) {
+    *DEFAULT_APP_STDOUT.lock().expect("default app stdout") = mode;
 }
 
 /// Roteia System.out do app para o STDERR do host (contrato de máquina:
 /// stdout reservado ao artefato do comando — issue #55). Idempotente.
-pub fn route_app_stdout_to_stderr() {
-    set_app_stdout(HostOut::Stderr);
+pub fn route_default_app_stdout_to_stderr() {
+    set_default_app_stdout(HostOut::Stderr);
 }
 
 /// Intrínseco STATIC: chamado de invoke-static (e do entrypoint público).
@@ -5444,28 +5451,28 @@ fn instance_intrinsic_dispatch(
         // embutido (objeto alocado pelo sget de System.out; interp.rs). PrintStream
         // nunca lança — falha de E/S é engolida (host_print).
         (PRINTSTREAM, "println", "()V") => {
-            host_print(ps_fd(vm, recv)?, "\n");
+            host_print(vm, ps_fd(vm, recv)?, "\n");
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "println", "(I)V") => {
             let s = format!("{}\n", args[0].as_int()?);
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "println", "(J)V") => {
             let s = format!("{}\n", args[0].as_long()?);
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "println", "(Z)V") => {
             let s = format!("{}\n", args[0].as_int()? != 0);
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "println", "(C)V") => {
             let c = char::from_u32(args[0].as_int()? as u32).unwrap_or('\u{FFFD}');
             let s = format!("{c}\n");
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "println", "(Ljava/lang/String;)V") => {
@@ -5474,7 +5481,7 @@ fn instance_intrinsic_dispatch(
                 Some(_) => string_arg(vm, &args[0])?,
             };
             s.push('\n');
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "println", "(Ljava/lang/Object;)V") => {
@@ -5483,7 +5490,7 @@ fn instance_intrinsic_dispatch(
                 Some(r) => object_to_string(vm, r)?,
             };
             s.push('\n');
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "print", "(Ljava/lang/String;)V") => {
@@ -5491,7 +5498,7 @@ fn instance_intrinsic_dispatch(
                 None => "null".to_string(),
                 Some(_) => string_arg(vm, &args[0])?,
             };
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "print", "(Ljava/lang/Object;)V") => {
@@ -5499,27 +5506,27 @@ fn instance_intrinsic_dispatch(
                 None => "null".to_string(),
                 Some(r) => object_to_string(vm, r)?,
             };
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "print", "(I)V") => {
             let s = args[0].as_int()?.to_string();
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "print", "(J)V") => {
             let s = args[0].as_long()?.to_string();
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "print", "(Z)V") => {
             let s = (args[0].as_int()? != 0).to_string();
-            host_print(ps_fd(vm, recv)?, &s);
+            host_print(vm, ps_fd(vm, recv)?, &s);
             Ok(Some(Value::Null))
         }
         (PRINTSTREAM, "print", "(C)V") => {
             let c = char::from_u32(args[0].as_int()? as u32).unwrap_or('\u{FFFD}');
-            host_print(ps_fd(vm, recv)?, &c.to_string());
+            host_print(vm, ps_fd(vm, recv)?, &c.to_string());
             Ok(Some(Value::Null))
         }
         (INTEGER, "toString", "()Ljava/lang/String;") => {

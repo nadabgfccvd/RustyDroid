@@ -114,7 +114,7 @@ pub(super) fn run(sub: &EngineSub, dd: &DataDir) -> RdResult<()> {
                 .with_suggestion("use an APK no larger than 256 MiB"));
             }
             let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-            rd_vm::set_app_stdout(rd_vm::HostOut::Buffer(logs.clone()));
+            rd_vm::set_default_app_stdout(rd_vm::HostOut::Buffer(logs.clone()));
             let mut process = adapter.parse(Artifact {
                 name: &path.to_string_lossy(),
                 bytes: &bytes,

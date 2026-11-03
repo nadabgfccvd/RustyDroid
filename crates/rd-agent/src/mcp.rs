@@ -460,7 +460,6 @@ impl AgentSession {
         // Um processo = uma sessão: System.out do app vai para o buffer
         // (nunca ao stdout do protocolo — mesmo contrato da #55).
         let logs: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
-        rd_vm::set_app_stdout(HostOut::Buffer(logs.clone()));
         // Issue #230: sessão nova = dispositivo limpo. O VFS do hóspede é
         // thread_local no rd-vm; sem este reset, arquivos/SQLite/prefs de
         // uma sessão (ou cenário de suíte) anterior na mesma thread
@@ -1551,6 +1550,9 @@ impl AgentSession {
             e.set_resources_arc(resources);
             e
         };
+        // ADR 024: cada sessão tem o próprio destino de System.out. Sem isto o
+        // app de uma sessão escreveria no buffer de outra (ou no stdout do MCP).
+        eng.set_app_stdout(HostOut::Buffer(self.logs.clone()));
         #[cfg(feature = "advanced-components")]
         eng.m9_set_notification_permission(notification_permission);
         #[cfg(any(feature = "advanced-components", feature = "virtual-devices"))]

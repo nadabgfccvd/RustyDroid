@@ -45,7 +45,7 @@ fn real_source_apks_parse_launch_invoke_syscall_and_fail_closed() {
             .expect("set RD_NATIVE_LANGUAGE_APKS to source-built APK directory"),
     );
     let registry = Registry::embedded().unwrap();
-    rd_vm::set_app_stdout(rd_vm::HostOut::Buffer(std::sync::Arc::default()));
+    rd_vm::set_default_app_stdout(rd_vm::HostOut::Buffer(std::sync::Arc::default()));
     for (id, file, tag) in [
         ("c-ndk", "native-c.apk", 1),
         ("cpp-ndk", "native-cpp.apk", 2),

@@ -163,7 +163,7 @@ pub(crate) fn log_intrinsic(
             let msg = text(vm, args.get(2))?.unwrap_or_default();
             let c = ['V', 'V', 'V', 'D', 'I', 'W', 'E', 'A'][p.clamp(0, 7) as usize];
             let line = format!("{c}/{tag}: {msg}\n");
-            crate::intrinsics::host_print(1, &line);
+            crate::intrinsics::host_print(vm, 1, &line);
             return Ok(Some(Value::Int(line.len() as i32)));
         }
         _ => return Ok(None),
@@ -182,6 +182,6 @@ pub(crate) fn log_intrinsic(
     }
     let _ = sig;
     let line = format!("{level}/{tag}: {msg}\n");
-    crate::intrinsics::host_print(1, &line);
+    crate::intrinsics::host_print(vm, 1, &line);
     Ok(Some(Value::Int(line.len() as i32)))
 }
