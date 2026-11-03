@@ -1604,9 +1604,17 @@ fn resolve_or_run_host_invoke(
         if let Some(v) = crate::m9::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
             return Ok(InvokeTarget::Value(v));
         }
+        // M10 is the opt-in virtual-device profile, not the default Android
+        // framework implementation. Keep the DEX dispatcher aligned with the
+        // intrinsic path: in a no-virtual-hardware run, let GMS/framework (or
+        // the structured unresolved-method path) handle the call instead.
         #[cfg(feature = "virtual-devices")]
-        if let Some(v) = crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
-            return Ok(InvokeTarget::Value(v));
+        if vm.fw.vdev.virtual_hardware_enabled {
+            if let Some(v) =
+                crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
+            {
+                return Ok(InvokeTarget::Value(v));
+            }
         }
         #[cfg(feature = "wasm-engine")]
         if let Some(v) =
@@ -1984,8 +1992,10 @@ fn call_host_shim_layer(
     }
 
     #[cfg(feature = "virtual-devices")]
-    if let Some(v) = crate::m10::call_instance(vm, class, name, sig, recv, args)? {
-        return Ok(Some(v));
+    if vm.fw.vdev.virtual_hardware_enabled {
+        if let Some(v) = crate::m10::call_instance(vm, class, name, sig, recv, args)? {
+            return Ok(Some(v));
+        }
     }
 
     // M8: compat real — host sequestra só os métodos listados em m8.rs;
@@ -2035,8 +2045,12 @@ pub(crate) fn inherited_android_host(
                 return Ok(Some(value));
             }
             #[cfg(feature = "virtual-devices")]
-            if let Some(value) = crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)? {
-                return Ok(Some(value));
+            if vm.fw.vdev.virtual_hardware_enabled {
+                if let Some(value) =
+                    crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)?
+                {
+                    return Ok(Some(value));
+                }
             }
             if let Some(value) = crate::m8::call_m8_instance(vm, &ancestor, name, sig, recv, args)?
             {
