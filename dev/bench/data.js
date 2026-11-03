@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793692410357,
+  "lastUpdate": 1793698162632,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2087,6 +2087,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3387,
             "range": "± 30",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f593cbe86636a3535c5aee295799e3fd5f4cc340",
+          "message": "refactor(rd-vm): ObjRef-keyed host tables live in HostState (ADR 024, step 2) (#497)\n\nPasso 2 do ADR 024. Ver a descrição do PR #497.",
+          "timestamp": "2026-11-03T06:28:56-03:00",
+          "tree_id": "43644cd6b1a6d0e31e36a3df551444f71e488a01",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f593cbe86636a3535c5aee295799e3fd5f4cc340"
+        },
+        "date": 1793698162147,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3240,
+            "range": "± 167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3298,
+            "range": "± 395",
             "unit": "ns/iter"
           }
         ]
