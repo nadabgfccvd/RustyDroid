@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793725639938,
+  "lastUpdate": 1793732359098,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2879,6 +2879,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3441,
             "range": "± 353",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ac917046e8ea56b57bb6ab2811c98316bd761757",
+          "message": "fix(vm): ConcurrentHashMap(IFI), DataInputStream e deque em LinkedList (launch F-Droid) (#520)\n\n* fix(vm): ConcurrentHashMap(int,float,int), DataInputStream e deque em LinkedList\n\nPróximos gaps do launch do F-Droid (teste fdroid_oncreate_e2e, APK real):\n\n- ConcurrentHashMap.<init>(IFI)V: host map com as validações da JDK\n  (fator > 0, capacidade >= 0, nível de concorrência > 0).\n- java.io.DataInputStream: big-endian sobre qualquer InputStream (lê\n  byte a byte pelo read() do stream interno; EOF vira EOFException).\n  Caminho: BuiltInsBinaryVersion.readFrom do Kotlin reflect.\n- LinkedList: addFirst/addLast/removeFirst/... usam o estado List; nulls\n  são aceitos (ArrayDeque continua rejeitando).\n\nTestes de regressão unitários em intrinsics.rs e jio_chars.rs.\n\nAI usage: código e testes gerados com assistência de IA e validados\nlocalmente (workspace, clippy, golden suite no JDK 21).\n\n* docs: corrige o estado do launch do F-Droid (ADR 025, ROADMAP)\n\n---------\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T15:58:16-03:00",
+          "tree_id": "ab3bf8a3f782e41da5f7df89a7ae183a0128718a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/ac917046e8ea56b57bb6ab2811c98316bd761757"
+        },
+        "date": 1793732339813,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1710,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1724,
+            "range": "± 65",
             "unit": "ns/iter"
           }
         ]
