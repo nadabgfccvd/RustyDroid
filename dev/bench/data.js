@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793722147122,
+  "lastUpdate": 1793722697616,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2807,6 +2807,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2758,
             "range": "± 11",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5a557adde3c9f0af5093435fdd62c7096cb70b0",
+          "message": "feat(vm): CookieManager, Boolean.getBoolean, Context.getDrawable (#518)\n\nCookieManager with the RFC 6265 subset APKs use (host-only vs Domain, Path, Secure refused over http, Max-Age on the virtual clock, path-most-specific-first, ValueCallback), Boolean.getBoolean over the system-property table, and Context.getDrawable resolving colors to ColorDrawable while naming the vector-drawable capability gap. With these, NewPipe's Application.onCreate runs to completion and execution reaches MainActivity.",
+          "timestamp": "2026-11-03T13:17:40-03:00",
+          "tree_id": "d671e2050b13cdb3750cf72e985586b38a1dc34a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/b5a557adde3c9f0af5093435fdd62c7096cb70b0"
+        },
+        "date": 1793722696059,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2760,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2759,
+            "range": "± 12",
             "unit": "ns/iter"
           }
         ]
