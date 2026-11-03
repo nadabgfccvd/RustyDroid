@@ -90,6 +90,36 @@ pub struct ResMapEntry {
     pub string: Option<String>,
 }
 
+/// Item de um recurso ARRAY já resolvido (`string-array`, `integer-array`,
+/// `array`). Os campos espelham `ResTable_map`: valor cru tipado + a string
+/// pré-resolvida quando o tipo é STRING.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResArrayItem {
+    pub data_type: u8,
+    pub data: u32,
+    pub string: Option<String>,
+}
+
+/// Índice de um item de array em `ResTable_map.name`, ou `None` quando a
+/// entrada é de outra natureza (atributo de style, por exemplo).
+///
+/// AOSP: `Res_MAKEARRAY(index) = 0x02000000 | index`. Alguns produtores
+/// (aapt antigo) gravam o índice cru; ambos são aceitos, e um `name` que
+/// parece um resource id de atributo (`0x0101____`/`0x7f______`) nunca é
+/// tratado como índice.
+fn array_item_index(name: u32) -> Option<u32> {
+    // aapt2 writes 0x02000000 | index; the aapt/aapt2 pair used by the golden
+    // APKs writes 0x01000000 | index (measured on NewPipe 0.27: names
+    // 0x01000001, 0x01000002, … with mixed value types inside one bag).
+    if name & 0xFF00_0000 == 0x0200_0000 || name & 0xFFFF_0000 == 0x0100_0000 {
+        return Some(name & 0x0000_FFFF);
+    }
+    if name < 0x0001_0000 {
+        return Some(name);
+    }
+    None
+}
+
 /// Uma entrada de recurso resolvida para uma config.
 #[derive(Debug, Clone)]
 pub struct ResEntry {
@@ -523,6 +553,61 @@ impl Arsc {
             }),
             _ => None,
         }
+    }
+
+    /// Resolve um recurso ARRAY para os seus itens, na ordem de declaração.
+    ///
+    /// `None` quando o resid não existe, quando a melhor entrada não é um bag
+    /// complexo, ou quando o bag é de outra natureza (style, `attr`, plurals):
+    /// nesses casos o chamador falha de forma honesta em vez de inventar um
+    /// array vazio. Cadeia de `parent` é seguida (aapt2 permite array que
+    /// herda de array), com guarda de profundidade e de ciclo.
+    pub fn resolve_array(&self, res_id: u32) -> Option<Vec<ResArrayItem>> {
+        self.resolve_array_inner(res_id, 0)
+    }
+
+    fn resolve_array_inner(&self, res_id: u32, depth: usize) -> Option<Vec<ResArrayItem>> {
+        if depth >= 8 {
+            return None;
+        }
+        let pkg = self.package_for(res_id)?;
+        let entries = pkg.entries_for(res_id)?;
+        let best = entries
+            .iter()
+            .min_by_key(|e| (e.config.specificity(), !e.config.is_default()))?;
+        let mut out: Vec<(u32, ResArrayItem)> = Vec::new();
+        if let Some(parent) = best.parent {
+            if parent != res_id {
+                if let Some(inherited) = self.resolve_array_inner(parent, depth + 1) {
+                    for (i, item) in inherited.into_iter().enumerate() {
+                        out.push((i as u32, item));
+                    }
+                }
+            }
+        }
+        let bag = best.bag.as_ref()?;
+        let mut any_item = false;
+        for m in bag {
+            let Some(index) = array_item_index(m.name) else {
+                continue;
+            };
+            any_item = true;
+            let item = ResArrayItem {
+                data_type: m.data_type,
+                data: m.data,
+                string: m.string.clone(),
+            };
+            match out.iter_mut().find(|(i, _)| *i == index) {
+                Some(slot) => slot.1 = item,
+                None => out.push((index, item)),
+            }
+        }
+        if !any_item && out.is_empty() {
+            // bag sem itens de array (style/plurals/attr) — não é um array.
+            return None;
+        }
+        out.sort_by_key(|(i, _)| *i);
+        Some(out.into_iter().map(|(_, i)| i).collect())
     }
 
     /// Resolve one attribute from a style, including its parent style and
@@ -1432,5 +1517,33 @@ mod tests {
         let err = parse_package(&raw, 0, 288, 288, &StringPool::default(), &budget)
             .expect_err("package pools must live inside the package chunk");
         assert_eq!(err.code, "PARSE_ERROR");
+    }
+}
+
+#[cfg(test)]
+mod array_index_tests {
+    use super::array_item_index;
+
+    #[test]
+    fn decodes_both_aapt_array_index_encodings() {
+        // aapt2: 0x02000000 | index
+        assert_eq!(array_item_index(0x0200_0000), Some(0));
+        assert_eq!(array_item_index(0x0200_0003), Some(3));
+        // aapt/aapt2 pair used by the golden APKs (measured on NewPipe 0.27:
+        // names 0x01000001, 0x01000002, … inside one array bag)
+        assert_eq!(array_item_index(0x0100_0001), Some(1));
+        assert_eq!(array_item_index(0x0100_0008), Some(8));
+        // plain index, written by older aapt
+        assert_eq!(array_item_index(0), Some(0));
+        assert_eq!(array_item_index(7), Some(7));
+    }
+
+    #[test]
+    fn attribute_names_inside_a_style_bag_are_not_array_indices() {
+        // android.R.attr.* and app attribute ids must never be read as items:
+        // otherwise a style would be reported as an array of N values.
+        assert_eq!(array_item_index(0x0101_0000), None); // android:attr
+        assert_eq!(array_item_index(0x7F01_0002), None); // app attr
+        assert_eq!(array_item_index(0x7F0B_0001), None); // app style item
     }
 }
