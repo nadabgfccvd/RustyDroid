@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793732359098,
+  "lastUpdate": 1793734074626,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2915,6 +2915,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1724,
             "range": "± 65",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "021d0e6a6f04d44e35b56f1df530bee34b64857b",
+          "message": "docs(roadmap): campanha curta de fuzz M1 (5 targets, 300 s cada) (#521)\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T16:27:32-03:00",
+          "tree_id": "2e6f3d0be5913242941674b4280dce7429ee875f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/021d0e6a6f04d44e35b56f1df530bee34b64857b"
+        },
+        "date": 1793734073902,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3452,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3453,
+            "range": "± 83",
             "unit": "ns/iter"
           }
         ]
