@@ -65,3 +65,8 @@ Resumo: **9 módulos** com `thread_local!` e **1 `static`** de processo. Dos 9 m
 
 - Threads reais por sessão e execução concorrente de executors (hoje executors rodam inline; ver compat_gaps).
 - Compartilhamento de heap entre sessões (rejeitado na ADR 023).
+
+## Estado de implementação
+
+- **Passo 1 (APP_STDOUT por engine): feito.** O destino do System.out vive em `HostState` (`Engine::set_app_stdout`). O `static` virou padrão do processo (`set_default_app_stdout`), que só semeia `Engine::new`. O agente fixa o buffer da sessão em cada engine criado. Teste: `system_out_is_per_engine_not_process_global` (dois engines no mesmo thread, cada um com seu buffer).
+- Passos 2 a 4: pendentes.
