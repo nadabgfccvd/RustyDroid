@@ -34,6 +34,7 @@ const VIEW_SET: &str = "Ljava/util/HashSet;";
 const MAP_ENTRY: &str = "Ljava/util/Map$Entry;";
 const ITERATOR: &str = "Ljava/util/Iterator;";
 const EXECUTORS: &str = "Ljava/util/concurrent/Executors;";
+const KOTLIN_REFLECTION: &str = "Lkotlin/jvm/internal/Reflection;";
 const EXECUTOR: &str = "Ljava/util/concurrent/Executor;";
 const EXECUTOR_SVC: &str = "Ljava/util/concurrent/ExecutorService;";
 const FORK_JOIN_POOL: &str = "Ljava/util/concurrent/ForkJoinPool;";
@@ -1032,6 +1033,16 @@ fn call_static_intrinsic_rooted(
         // Tamanho do pool e ThreadFactory são ignorados (VM single-threaded).
         (c, n, s) if c == EXECUTORS && executors_factory(n, s) => {
             let r = vm.heap.alloc_instance(EXECUTOR_SVC.to_string(), vec![])?;
+            Ok(Some(Value::Obj(r)))
+        }
+        // ADR 025 (etapa 1): `Reflection.getOrCreateKotlinClass(Class)` sem
+        // kotlin-reflect devolve `ClassReference(jClass)`, como o stdlib faz
+        // quando o reflect não está no classpath. Sem isto o VM cai em
+        // ReflectionFactoryImpl, que não executa (NPE em `getClass`).
+        (KOTLIN_REFLECTION, "getOrCreateKotlinClass", "(Ljava/lang/Class;)Lkotlin/reflect/KClass;") => {
+            let jcls = args.first().cloned().unwrap_or(Value::Null);
+            let r = vm.new_dex_instance_pub("Lkotlin/jvm/internal/ClassReference;")?;
+            vm.invoke_instance(r, "<init>", "(Ljava/lang/Class;)V", &[jcls])?;
             Ok(Some(Value::Obj(r)))
         }
         (FORK_JOIN_POOL, "commonPool", "()Ljava/util/concurrent/ForkJoinPool;") => {
