@@ -267,6 +267,66 @@ impl Engine {
     pub fn m10_enable_virtual_devices(&mut self) {
         self.fw.vdev.virtual_hardware_enabled = true;
     }
+
+    /// Disables M10 virtual peripherals, restoring the Appendix C
+    /// absent-hardware profile for the hardware surfaces (see
+    /// [`is_virtual_hardware_class`]). Software-only host surfaces that happen
+    /// to live in the M10 modules (`java.nio.ByteBuffer`, clipboard, locale /
+    /// UI-mode configuration, `DisplayMetrics`) keep answering either way:
+    /// they are not hardware and the absence of a virtual device must not
+    /// remove them.
+    pub fn m10_disable_virtual_devices(&mut self) {
+        self.fw.vdev.virtual_hardware_enabled = false;
+    }
+}
+
+/// Host surfaces that model **virtual hardware** (ADR 011) rather than a
+/// software service. Appendix C requires the absent-hardware profile to be the
+/// default: an engine that never enabled virtual devices must not silently
+/// answer as if a camera / sensor / radio existed.
+///
+/// The list is deliberately about *classes*, not about the M10 submodules,
+/// because several modules mix both kinds: `camera.rs` also hosts
+/// `java.nio.ByteBuffer`, `sysconfig.rs` also hosts the clipboard and the
+/// locale/UI-mode configuration, and `media.rs` also hosts metadata value
+/// objects. Gating by module would remove those software surfaces too (issue
+/// #229, point 3: earlier attempts broke `camera_305` and `dispatch_315` for
+/// exactly that reason).
+pub fn is_virtual_hardware_class(class: &str) -> bool {
+    const HARDWARE_PREFIXES: &[&str] = &[
+        // Sensors, camera2, biometrics/fingerprint, VirtualDisplay, USB…
+        "Landroid/hardware/",
+        // GPS / fused location providers.
+        "Landroid/location/",
+        // Radios: Bluetooth/BLE, NFC, telephony/SMS, Wi-Fi and network state.
+        "Landroid/bluetooth/",
+        "Landroid/nfc/",
+        "Landroid/telephony/",
+        "Landroid/net/",
+        // Audio out (MediaPlayer/AudioTrack), microphone (AudioRecord),
+        // screen capture (MediaProjection) and camera image sinks.
+        "Landroid/media/Audio",
+        "Landroid/media/MediaPlayer",
+        "Landroid/media/MediaRecorder",
+        "Landroid/media/MediaExtractor",
+        "Landroid/media/Image",
+        "Landroid/media/ImageReader",
+        "Landroid/media/projection/",
+        // Battery / power / vibration: state of a physical device.
+        "Landroid/os/BatteryManager",
+        "Landroid/os/PowerManager",
+        "Landroid/os/Vibrator",
+    ];
+    HARDWARE_PREFIXES
+        .iter()
+        .any(|prefix| class.starts_with(prefix))
+}
+
+/// True when the M10 layer must answer for `class` in this engine: either the
+/// session enabled virtual devices (`rd mcp`, tests that drive virtual
+/// peripherals) or the class is a software-only surface.
+pub fn dispatch_enabled(vm: &Engine, class: &str) -> bool {
+    vm.fw.vdev.virtual_hardware_enabled || !is_virtual_hardware_class(class)
 }
 
 pub(super) fn error(class: &str, msg: impl Into<String>) -> VmExit {

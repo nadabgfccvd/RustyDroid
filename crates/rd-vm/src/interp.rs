@@ -1605,8 +1605,12 @@ fn resolve_or_run_host_invoke(
             return Ok(InvokeTarget::Value(v));
         }
         #[cfg(feature = "virtual-devices")]
-        if let Some(v) = crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
-            return Ok(InvokeTarget::Value(v));
+        if crate::m10::dispatch_enabled(vm, &mref.class) {
+            if let Some(v) =
+                crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
+            {
+                return Ok(InvokeTarget::Value(v));
+            }
         }
         #[cfg(feature = "wasm-engine")]
         if let Some(v) =
@@ -1983,9 +1987,14 @@ fn call_host_shim_layer(
         return Ok(Some(v));
     }
 
+    // Issue #229 point 3: virtual hardware only answers when the session
+    // enabled it (ADR 011). Software surfaces hosted by the M10 modules keep
+    // answering either way (see `m10::is_virtual_hardware_class`).
     #[cfg(feature = "virtual-devices")]
-    if let Some(v) = crate::m10::call_instance(vm, class, name, sig, recv, args)? {
-        return Ok(Some(v));
+    if crate::m10::dispatch_enabled(vm, class) {
+        if let Some(v) = crate::m10::call_instance(vm, class, name, sig, recv, args)? {
+            return Ok(Some(v));
+        }
     }
 
     // M8: compat real — host sequestra só os métodos listados em m8.rs;
@@ -2035,8 +2044,12 @@ pub(crate) fn inherited_android_host(
                 return Ok(Some(value));
             }
             #[cfg(feature = "virtual-devices")]
-            if let Some(value) = crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)? {
-                return Ok(Some(value));
+            if crate::m10::dispatch_enabled(vm, &ancestor) {
+                if let Some(value) =
+                    crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)?
+                {
+                    return Ok(Some(value));
+                }
             }
             if let Some(value) = crate::m8::call_m8_instance(vm, &ancestor, name, sig, recv, args)?
             {

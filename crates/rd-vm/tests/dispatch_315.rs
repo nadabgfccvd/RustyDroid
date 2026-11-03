@@ -528,6 +528,9 @@ fn camera_and_image_autocloseable_try_with_resources_closes_host_resources() {
     );
 
     let mut e = engine_of(&b);
+    // Issue #229 point 3: virtual hardware (camera2 / ImageReader) only
+    // answers when the session enabled it, so this test must ask for it.
+    e.m10_enable_virtual_devices();
 
     let Value::Obj(reader) = rd_vm::m10::call_static(
         &mut e,
