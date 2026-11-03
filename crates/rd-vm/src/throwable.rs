@@ -212,6 +212,63 @@ pub(crate) fn instance_intrinsic(
     }
 }
 
+/// Renders an escaping throwable the way `printStackTrace` does: the head
+/// line plus one `Caused by:` line per link of the cause chain.
+///
+/// The uncaught-exception contract used to report only `class: message`, so
+/// every app that wraps a failure (`throw new InflateException(text, e)`,
+/// `new IOException(msg, cause)`, Kotlin's `IllegalStateException(msg, e)`)
+/// hid the real cause from the agent and from the CLI. The chain is walked
+/// from the heap object (`cause` field), never from an invented list, and a
+/// cycle or a missing object ends the walk.
+pub(crate) fn describe_with_causes(vm: &Engine, t: &Throwable) -> String {
+    let trace_of = |vm: &Engine, r: ObjRef| -> String {
+        match field(vm, r, "rd_trace") {
+            Value::Obj(t) => vm.heap.as_str(t).unwrap_or("").to_string(),
+            _ => String::new(),
+        }
+    };
+    let mut out = format!(
+        "{}: {}",
+        t.name_without_l(),
+        t.message.clone().unwrap_or_default()
+    );
+    let Some(obj) = t.obj else {
+        return out;
+    };
+    out.push_str(&trace_of(vm, obj));
+    let mut cur = obj;
+    let mut seen = vec![obj];
+    for _ in 0..8 {
+        let Value::Obj(c) = field(vm, cur, "cause") else {
+            break;
+        };
+        if seen.contains(&c) {
+            break;
+        }
+        seen.push(c);
+        let class = match vm.heap.class_of(c) {
+            Ok(k) => k
+                .trim_start_matches('L')
+                .trim_end_matches(';')
+                .replace('/', "."),
+            Err(_) => "?".to_string(),
+        };
+        let msg = match field(vm, c, "message") {
+            Value::Obj(m) => vm.heap.as_str(m).unwrap_or("").to_string(),
+            _ => String::new(),
+        };
+        if msg.is_empty() {
+            out.push_str(&format!("\nCaused by: {class}"));
+        } else {
+            out.push_str(&format!("\nCaused by: {class}: {msg}"));
+        }
+        out.push_str(&trace_of(vm, c));
+        cur = c;
+    }
+    out
+}
+
 fn new_array(vm: &mut Engine, elem: &str, vals: Vec<Value>) -> Result<ObjRef, VmExit> {
     // alloc_array leaves the element vector empty: assign it whole (indexing
     // panicked and killed the MCP server on getStackTrace/getSuppressed)
