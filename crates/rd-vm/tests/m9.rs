@@ -41,8 +41,8 @@ fn channel(e: &mut Engine) {
         "messages".into(),
         Channel {
             id: "messages".into(),
-            name: "Messages".into(),
-            description: String::new(),
+            name: Some("Messages".into()),
+            description: None,
             importance: 3,
             group: None,
             lights: false,
@@ -187,6 +187,64 @@ fn channel_constructor_is_not_registration_and_importance_is_immutable() {
     );
     assert_eq!(e.fw.m9.channels["news"].importance, 3);
 }
+#[test]
+fn channel_name_and_description_accept_the_null_literal() {
+    let mut e = engine();
+    let c = obj(&mut e, "Landroid/app/NotificationChannel;");
+    let id = string(&mut e, "news");
+    let name = string(&mut e, "News");
+    call(
+        &mut e,
+        "Landroid/app/NotificationChannel;",
+        "<init>",
+        "(Ljava/lang/String;Ljava/lang/CharSequence;I)V",
+        c,
+        &[id, name, Value::Int(3)],
+    );
+    // `setGroup(null)`, `setName(null)` e `setDescription(null)` são válidos no
+    // AOSP; o literal nulo do DEX (`const/4 v0, 0`) chega ao modelo como Int(0),
+    // e antes desta correção o modelo respondia `NullPointerException: text`
+    // (foi o que parou o `App.onCreate` do NewPipe em
+    // `NotificationChannelCompat$Api26Impl.setGroup`).
+    for (method, sig) in [
+        ("setGroup", "(Ljava/lang/String;)V"),
+        ("setName", "(Ljava/lang/CharSequence;)V"),
+        ("setDescription", "(Ljava/lang/String;)V"),
+    ] {
+        call(
+            &mut e,
+            "Landroid/app/NotificationChannel;",
+            method,
+            sig,
+            c,
+            &[Value::Int(0)],
+        );
+    }
+    assert_eq!(
+        call(
+            &mut e,
+            "Landroid/app/NotificationChannel;",
+            "getGroup",
+            "()Ljava/lang/String;",
+            c,
+            &[]
+        ),
+        Value::Null
+    );
+    assert_eq!(
+        call(
+            &mut e,
+            "Landroid/app/NotificationChannel;",
+            "getName",
+            "()Ljava/lang/CharSequence;",
+            c,
+            &[]
+        ),
+        Value::Null,
+        "nome nulo precisa voltar nulo, não a string vazia"
+    );
+}
+
 #[test]
 fn remote_views_render_and_widget_provider_dex_lifecycle() {
     let mut e = engine();

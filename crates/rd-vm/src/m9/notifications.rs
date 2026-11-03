@@ -8,8 +8,13 @@ const STATUS: &str = "Landroid/service/notification/StatusBarNotification;";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Channel {
     pub id: String,
-    pub name: String,
-    pub description: String,
+    /// `NotificationChannel.setName(null)`/`setDescription(null)` são válidos
+    /// no AOSP (o valor fica nulo) — por isso `Option`, e não `String` vazia:
+    /// inventar "" faria `getName()` mentir para quem compara com null.
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
     pub importance: i32,
     pub group: Option<String>,
     pub lights: bool,
@@ -20,6 +25,29 @@ pub struct Channel {
     pub show_badge: bool,
     #[serde(default)]
     pub light_color: i32,
+}
+
+/// `CharSequence` opcional: `null` é um valor válido em vários setters do
+/// framework (nome/descrição de canal de notificação), e o estado guarda `None`.
+fn optional_text(vm: &Engine, args: &[Value], i: usize) -> Result<Option<String>, VmExit> {
+    match args.get(i) {
+        // `const/4 v0, 0` (o literal nulo do DEX) chega ao modelo como `Int(0)`.
+        Some(Value::Null | Value::Int(0)) | None => Ok(None),
+        Some(Value::Obj(r)) => Ok(Some(
+            vm.heap
+                .as_str(*r)
+                .map(str::to_string)
+                .map_err(VmExit::from)?,
+        )),
+        _ => Err(error("Ljava/lang/NullPointerException;", "text")),
+    }
+}
+
+fn optional_string(vm: &mut Engine, value: Option<String>) -> Result<Value, VmExit> {
+    match value {
+        Some(s) => string(vm, s),
+        None => Ok(Value::Null),
+    }
 }
 
 fn default_show_badge() -> bool {
@@ -290,7 +318,7 @@ pub(super) fn instance_call(
     if class == CHANNEL {
         if name == "<init>" {
             let id = text(vm, args, 0)?;
-            let n = text(vm, args, 1)?;
+            let n = optional_text(vm, args, 1)?;
             let importance = int(args, 2);
             if id.is_empty() || !(0..=5).contains(&importance) {
                 return Err(illegal("invalid notification channel id/importance"));
@@ -301,7 +329,7 @@ pub(super) fn instance_call(
                 Channel {
                     id,
                     name: n,
-                    description: String::new(),
+                    description: None,
                     importance,
                     group: None,
                     lights: false,
@@ -322,8 +350,8 @@ pub(super) fn instance_call(
             .ok_or_else(|| illegal("uninitialized NotificationChannel"))?;
         let result = match name {
             "getId" => string(vm, c.id)?,
-            "getName" => string(vm, c.name)?,
-            "getDescription" => string(vm, c.description)?,
+            "getName" => optional_string(vm, c.name.clone())?,
+            "getDescription" => optional_string(vm, c.description.clone())?,
             "getImportance" => Value::Int(c.importance),
             "getGroup" => {
                 if let Some(g) = c.group {
@@ -335,18 +363,18 @@ pub(super) fn instance_call(
             "shouldShowLights" => Value::Int(c.lights as i32),
             "shouldVibrate" => Value::Int(c.vibration as i32),
             "setDescription" => {
-                let s = text(vm, args, 0)?;
+                let s = optional_text(vm, args, 0)?;
                 vm.fw.m9.channel_values.get_mut(&recv).unwrap().description = s;
                 Value::Null
             }
             "setName" => {
-                let s = text(vm, args, 0)?;
+                let s = optional_text(vm, args, 0)?;
                 vm.fw.m9.channel_values.get_mut(&recv).unwrap().name = s;
                 Value::Null
             }
             "setGroup" => {
                 // `setGroup(null)` é válido no Android: remove o grupo do canal.
-                let g = if matches!(args.first(), Some(Value::Null)) {
+                let g = if matches!(args.first(), Some(Value::Null | Value::Int(0)) | None) {
                     None
                 } else {
                     Some(text(vm, args, 0)?)
