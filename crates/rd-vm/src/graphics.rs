@@ -412,6 +412,14 @@ fn it(v: Option<&Value>) -> i32 {
         _ => 0,
     }
 }
+/// `long` argument of a packed-colour call (`Color.pack` family).
+fn it_long(v: Option<&Value>) -> i64 {
+    match v {
+        Some(Value::Long(l)) => *l,
+        Some(Value::Int(i)) => i64::from(*i),
+        _ => 0,
+    }
+}
 fn obj(v: Option<&Value>) -> Option<ObjRef> {
     match v {
         Some(Value::Obj(r)) => Some(*r),
@@ -1264,6 +1272,31 @@ pub(crate) fn static_intrinsic(
                     let q = |i: usize| (fl(a(i)).clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
                     Value::Int(((q(0) << 24) | (q(1) << 16) | (q(2) << 8) | q(3)) as i32)
                 }
+                // AOSP `Color.pack(int)`: colour-space id in the high 32 bits,
+                // ARGB in the low 32 bits. sRGB is id 0, so a packed sRGB colour
+                // is just its unsigned ARGB value.
+                ("pack", "(I)J") => Value::Long(c as i64),
+                ("colorSpace", "(J)") | ("colorSpace", _) if sig.starts_with("(J)") => {
+                    crate::android_colorspace::get(vm, ((it_long(a(0)) as u64) >> 32) as usize)?
+                }
+                ("isSrgb", _) if sig.starts_with("(J)") => {
+                    Value::Int(i32::from(((it_long(a(0)) as u64) >> 32) == 0))
+                }
+                ("isWideGamut", _) if sig.starts_with("(J)") => {
+                    Value::Int(i32::from(((it_long(a(0)) as u64) >> 32) != 0))
+                }
+                ("alpha", _) if sig.starts_with("(J)") => {
+                    Value::Int(((it_long(a(0)) as u64 >> 24) & 0xFF) as i32)
+                }
+                ("red", _) if sig.starts_with("(J)") => {
+                    Value::Int(((it_long(a(0)) as u64 >> 16) & 0xFF) as i32)
+                }
+                ("green", _) if sig.starts_with("(J)") => {
+                    Value::Int(((it_long(a(0)) as u64 >> 8) & 0xFF) as i32)
+                }
+                ("blue", _) if sig.starts_with("(J)") => {
+                    Value::Int((it_long(a(0)) as u64 & 0xFF) as i32)
+                }
                 ("parseColor", _) => {
                     let s = cs_text(vm, a(0).unwrap_or(&Value::Null))?;
                     let h = s.trim_start_matches('#');
@@ -1431,6 +1464,10 @@ pub(crate) fn instance_intrinsic(
     }
     if let Some(v) = xfermode(vm, recv_class, name, recv, args)? {
         return Ok(Some(v));
+    }
+    // `PathMeasure` keeps its own fields; it is not a G:: object.
+    if recv_class == "Landroid/graphics/PathMeasure;" {
+        return path_measure_method(vm, name, sig, recv, args);
     }
     let host_ref = GFX_PREFIXES.iter().any(|p| mref_class.starts_with(p));
     let insets_ref = recv_class == PLATFORM_INSETS || mref_class == PLATFORM_INSETS;
@@ -2039,14 +2076,18 @@ fn paint_method(
         "setColor" => {
             p.argb = match a(0) {
                 Some(Value::Long(l)) => {
-                    // packed ColorLong (sRGB variant): ARGB in the high 32 bits
-                    ((*l as u64) >> 32) as u32
+                    // AOSP packed colour long: sRGB id in the high 32 bits, ARGB
+                    // in the low 32 bits.
+                    (*l as u64 & 0xFFFF_FFFF) as u32
                 }
                 v => it(v) as u32,
             };
             Value::Null
         }
         "getColor" => Value::Int(p.argb as i32),
+        // `Paint.getColorLong()`: the colour packed with its colour-space id
+        // (sRGB = 0). Compose reads it to build a `Color(long)`.
+        "getColorLong" => Value::Long(i64::from(p.argb)),
         "setAlpha" => {
             p.argb = (p.argb & 0x00FF_FFFF) | ((it(a(0)).clamp(0, 255) as u32) << 24);
             Value::Null
@@ -2589,6 +2630,166 @@ fn path_method(
         "incReserve" | "setLastPoint" | "toggleInverseFillType" => Value::Null,
         _ => return Ok(None),
     }))
+}
+
+/// One flattened segment: `(from, to, cumulative length at `to`)`.
+type FlatSeg = ((f32, f32), (f32, f32), f32);
+
+/// `android.graphics.PathMeasure` — lengths and positions along a path.
+///
+/// The path is flattened (the same polyline the rasterizer draws), so the
+/// measured length is the length of the flattened curve: AOSP measures the
+/// curve itself. Compose's progress indicators and F-Droid's swipe refresh
+/// only need the walk to be monotonic and to end at `getLength()`.
+fn path_measure_method(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let a = |i: usize| args.get(i);
+    let f = |i: usize| fl(args.get(i));
+    // Flattened segments of the measured path, with cumulative lengths.
+    let src = match vm.heap.get_field(recv, "rd_measure_src") {
+        Ok(Value::Obj(p)) => path_of(vm, Some(p)),
+        _ => Vec::new(),
+    };
+    let mut segs: Vec<FlatSeg> = Vec::new();
+    let mut total = 0.0f32;
+    for sp in &src {
+        for w in sp.windows(2) {
+            let d = ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt();
+            total += d;
+            segs.push((w[0], w[1], total));
+        }
+    }
+    Ok(Some(match name {
+        "<init>" => {
+            if let Some(p) = obj(a(0)) {
+                let _ = vm.heap.put_field(recv, "rd_measure_src", Value::Obj(p));
+                let forced = if args.len() >= 2 && sig.contains("Z") {
+                    args[1].as_int().unwrap_or(0) != 0
+                } else {
+                    false
+                };
+                let _ = vm
+                    .heap
+                    .put_field(recv, "rd_force_closed", Value::Int(i32::from(forced)));
+            }
+            let _ = vm.heap.put_field(recv, "rd_measure_pos", Value::Float(0.0));
+            Value::Null
+        }
+        "setPath" => {
+            let p = obj(a(0)).unwrap_or(0);
+            let _ = vm.heap.put_field(recv, "rd_measure_src", Value::Obj(p));
+            let _ = vm.heap.put_field(recv, "rd_measure_pos", Value::Float(0.0));
+            Value::Null
+        }
+        "getLength" => Value::Float(total),
+        "getPosTan" => {
+            let dist = f(0).clamp(0.0, total.max(0.0));
+            let mut point = segs.last().map(|s| s.1).unwrap_or((0.0, 0.0));
+            let mut tangent = (0.0f32, 0.0f32);
+            for (p0, p1, acc) in &segs {
+                if dist <= *acc {
+                    let seg_len = (acc - (acc - seg_len_of(p0, p1))).max(f32::EPSILON);
+                    let t = if seg_len > 0.0 {
+                        ((dist - (acc - seg_len)) / seg_len).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    point = (p0.0 + (p1.0 - p0.0) * t, p0.1 + (p1.1 - p0.1) * t);
+                    let dl = seg_len.max(f32::EPSILON);
+                    tangent = ((p1.0 - p0.0) / dl, (p1.1 - p0.1) / dl);
+                    break;
+                }
+            }
+            if let Some(pos) = obj(a(1)) {
+                write_float_array(vm, pos, 0, &[point.0, point.1])?;
+            }
+            if let Some(tan) = obj(a(2)) {
+                write_float_array(vm, tan, 0, &[tangent.0, tangent.1])?;
+            }
+            let _ = vm
+                .heap
+                .put_field(recv, "rd_measure_pos", Value::Float(dist));
+            b(true)
+        }
+        "getSegment" => {
+            let (start, stop) = (f(0), f(1));
+            let start_closed = if args.len() >= 4 {
+                args[3].as_int().unwrap_or(0) != 0
+            } else {
+                true
+            };
+            let Some(dst) = obj(a(2)) else {
+                return Ok(Some(b(false)));
+            };
+            if stop <= start || start >= total {
+                return Ok(Some(b(false)));
+            }
+            let mut pts: Vec<(f32, f32)> = Vec::new();
+            for (p0, p1, acc) in &segs {
+                let seg_start = acc - seg_len_of(p0, p1);
+                if *acc < start {
+                    continue;
+                }
+                if seg_start > stop {
+                    break;
+                }
+                // Clip each segment to [start, stop].
+                let cl = |d: f32| -> (f32, f32) {
+                    let t = if seg_len_of(p0, p1) > 0.0 {
+                        ((d - seg_start) / seg_len_of(p0, p1)).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    (p0.0 + (p1.0 - p0.0) * t, p0.1 + (p1.1 - p0.1) * t)
+                };
+                let from = cl(start.max(seg_start));
+                let to = cl(stop.min(*acc));
+                if pts.is_empty() {
+                    pts.push(from);
+                }
+                pts.push(to);
+            }
+            if pts.len() < 2 {
+                return Ok(Some(b(false)));
+            }
+            let mut p = path_of(vm, Some(dst));
+            p.push(pts);
+            if start_closed && p.len() == 1 {
+                if let Some(first) = p[0].first().copied() {
+                    p.push(vec![first]);
+                }
+            }
+            vm.gfx.objs.insert(dst, G::Path(p, false));
+            b(true)
+        }
+        "nextContour" => b(false),
+        "isClosed" => b(false),
+        _ => return Ok(None),
+    }))
+}
+
+fn seg_len_of(p0: &(f32, f32), p1: &(f32, f32)) -> f32 {
+    ((p1.0 - p0.0).powi(2) + (p1.1 - p0.1).powi(2)).sqrt()
+}
+
+fn write_float_array(
+    vm: &mut Engine,
+    arr: ObjRef,
+    off: usize,
+    values: &[f32],
+) -> Result<(), VmExit> {
+    let elems = vm.heap.array_elems_mut(arr)?;
+    for (k, v) in values.iter().enumerate() {
+        if let Some(slot) = elems.get_mut(off + k) {
+            *slot = Value::Float(*v);
+        }
+    }
+    Ok(())
 }
 
 fn matrix_method(
@@ -4321,6 +4522,110 @@ mod tests {
         assert!(w > 80.0 && w < 200.0, "{w}");
         assert!(ascent(14.0) < 0.0 && descent(14.0) > 0.0);
         assert!(atlas().map.contains_key(&('ã' as u32)));
+    }
+
+    /// `Paint.getColorLong()`/`Paint.setColor(long)` and `Color.pack` share the
+    /// AOSP packing: colour-space id (sRGB = 0) high, ARGB low. Compose reads a
+    /// paint's colour back through the long form, so the two must agree.
+    #[test]
+    fn paint_color_long_round_trips_through_a_packed_color() {
+        let mut vm = Engine::new(Vec::new(), crate::engine::VmConfig::default());
+        let paint = vm
+            .heap
+            .alloc_instance("Landroid/graphics/Paint;".to_string(), Vec::new())
+            .unwrap();
+        // Paints only carry graphics state once their constructor ran.
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "<init>",
+            "()V",
+            paint,
+            &[],
+        )
+        .unwrap();
+        let argb = 0x8040_20C0u32 as i32;
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "setColor",
+            "(I)V",
+            paint,
+            &[Value::Int(argb)],
+        )
+        .unwrap();
+        let packed = match instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "getColorLong",
+            "()J",
+            paint,
+            &[],
+        )
+        .unwrap()
+        {
+            Some(Value::Long(l)) => l,
+            other => panic!("getColorLong returned {other:?}"),
+        };
+        assert_eq!(packed as u32 as i32, argb, "low 32 bits carry the ARGB");
+        assert_eq!(packed >> 32, 0, "sRGB id is 0");
+        // `Paint.setColor(long)` reads the ARGB back out of the packed value.
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "setColor",
+            "(J)V",
+            paint,
+            &[Value::Long(packed)],
+        )
+        .unwrap();
+        let back = match instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "getColor",
+            "()I",
+            paint,
+            &[],
+        )
+        .unwrap()
+        {
+            Some(Value::Int(i)) => i,
+            other => panic!("getColor returned {other:?}"),
+        };
+        assert_eq!(back, argb);
+        // `Color.pack(int)` is the same packing, and `Color.colorSpace(long)`
+        // reports sRGB for it.
+        let packed2 = match static_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Color;",
+            "pack",
+            "(I)J",
+            &[Value::Int(argb)],
+        )
+        .unwrap()
+        {
+            Some(Value::Long(l)) => l,
+            other => panic!("Color.pack returned {other:?}"),
+        };
+        assert_eq!(packed2, packed);
+        let cs = match static_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Color;",
+            "colorSpace",
+            "(J)Landroid/graphics/ColorSpace;",
+            &[Value::Long(packed)],
+        )
+        .unwrap()
+        {
+            Some(Value::Obj(_)) => true,
+            other => panic!("Color.colorSpace returned {other:?}"),
+        };
+        assert!(cs);
     }
 
     #[test]

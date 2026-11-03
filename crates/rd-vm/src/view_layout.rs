@@ -35,16 +35,48 @@ const AT_MOST: i32 = i32::MIN;
 const VIEW_CONFIG: &str = "Landroid/view/ViewConfiguration;";
 const LAYOUT_INFLATER: &str = "Landroid/view/LayoutInflater;";
 const WINDOW_INSETS: &str = "Landroid/view/WindowInsets;";
+const STRICT_VM_POLICY: &str = "Landroid/os/StrictMode$VmPolicy;";
+const STRICT_THREAD_POLICY: &str = "Landroid/os/StrictMode$ThreadPolicy;";
 const SCROLLER: &str = "Landroid/widget/Scroller;";
 const OVER_SCROLLER: &str = "Landroid/widget/OverScroller;";
 const EDGE_EFFECT: &str = "Landroid/widget/EdgeEffect;";
+
+/// The engine's `StrictMode.VmPolicy`/`ThreadPolicy` singleton: allocated on
+/// first use and kept in `statics`, like the platform's per-process default.
+fn strict_mode_policy(vm: &mut Engine, class: &str) -> Result<ObjRef, VmExit> {
+    let key = (
+        "Landroid/os/StrictMode;".to_string(),
+        format!("rd_policy_singleton:{class}"),
+    );
+    if let Some(Value::Obj(r)) = vm.statics.get(&key) {
+        return Ok(*r);
+    }
+    let r = vm.heap.alloc_instance(class.to_string(), Vec::new())?;
+    vm.statics.insert(key, Value::Obj(r));
+    Ok(r)
+}
+
+/// `View.getAutofillId()`: mint the view's `AutofillId` on first use and cache
+/// it on the object, exactly like AOSP's `mAutofillId` (stable for the life of
+/// the view). Works for host views and for DEX subclasses (`AndroidComposeView`)
+/// because the cache lives in a heap field.
+fn autofill_id_of(vm: &mut Engine, view: ObjRef) -> Result<Value, VmExit> {
+    const FIELD: &str = "rd_autofill_id";
+    if let Ok(Value::Obj(id)) = vm.heap.get_field(view, FIELD) {
+        return Ok(Value::Obj(id));
+    }
+    let view_id = (view % i32::MAX as u32) as i32;
+    let id = crate::android_stub_surfaces::new_view_autofill_id(vm, view_id)?;
+    crate::err::put_field_result(vm.heap.put_field(view, FIELD, Value::Obj(id)))?;
+    Ok(Value::Obj(id))
+}
 const LINEAR_INTERPOLATOR: &str = "Landroid/view/animation/LinearInterpolator;";
 const DECELERATE_INTERPOLATOR: &str = "Landroid/view/animation/DecelerateInterpolator;";
 const ACCELERATE_INTERPOLATOR: &str = "Landroid/view/animation/AccelerateInterpolator;";
 const ACCELERATE_DECELERATE_INTERPOLATOR: &str =
     "Landroid/view/animation/AccelerateDecelerateInterpolator;";
 
-fn density() -> f32 {
+pub(crate) fn density() -> f32 {
     std::env::var("RD_DENSITY_DPI")
         .ok()
         .and_then(|v| v.parse::<f32>().ok())
@@ -417,6 +449,44 @@ pub(crate) fn static_intrinsic(
             "isEnabled" => Value::Int(0),
             _ => Value::Null, // beginSection/endSection/async sections/counters: no tracer attached
         },
+        // StrictMode is compiled into most apps but is off unless the app turns
+        // it on. AOSP returns a real (default) policy object from the getters,
+        // never null, and apps compare/round-trip them — returning null made
+        // androidx.window's `getVmPolicy()` round-trip crash.
+        ("Landroid/os/StrictMode;", "getVmPolicy") => {
+            Value::Obj(strict_mode_policy(vm, STRICT_VM_POLICY)?)
+        }
+        ("Landroid/os/StrictMode;", "getThreadPolicy") => {
+            Value::Obj(strict_mode_policy(vm, STRICT_THREAD_POLICY)?)
+        }
+        ("Landroid/os/StrictMode;", "setVmPolicy") => {
+            if let Some(v @ Value::Obj(_)) = args.first() {
+                vm.statics.insert(
+                    (
+                        "Landroid/os/StrictMode;".to_string(),
+                        "rd_vm_policy".to_string(),
+                    ),
+                    v.clone(),
+                );
+            }
+            Value::Null
+        }
+        ("Landroid/os/StrictMode;", "setThreadPolicy") => {
+            if let Some(v @ Value::Obj(_)) = args.first() {
+                vm.statics.insert(
+                    (
+                        "Landroid/os/StrictMode;".to_string(),
+                        "rd_thread_policy".to_string(),
+                    ),
+                    v.clone(),
+                );
+            }
+            Value::Null
+        }
+        // `noteSlowCall`/`noteDiskRead`/`noteNetwork`/… only report to the
+        // active policy; with no policy enforcement in the virtual device they
+        // are observations with no effect (AOSP does the same when disabled).
+        ("Landroid/os/StrictMode;", n) if n.starts_with("note") => Value::Null,
         _ => return Ok(None),
     }))
 }
@@ -766,6 +836,30 @@ pub(crate) fn instance_intrinsic(
 ) -> Result<Option<Value>, VmExit> {
     if mref_class == SCROLLER || mref_class == OVER_SCROLLER {
         return scroller_intrinsic(vm, name, sig, recv, args);
+    }
+    if mref_class == crate::view_gesture::GESTURE_DETECTOR {
+        return crate::view_gesture::instance_call(vm, name, sig, recv, args);
+    }
+    if mref_class == STRICT_VM_POLICY || mref_class == STRICT_THREAD_POLICY {
+        // AOSP policies are value-less singletons: identity equality, the
+        // object hash, and the platform `toString` shape.
+        let v = match (name, sig) {
+            ("equals", "(Ljava/lang/Object;)Z") => match args.first() {
+                Some(Value::Obj(o)) => Value::Int(i32::from(*o == recv)),
+                _ => Value::Int(0),
+            },
+            ("hashCode", "()I") => Value::Int(recv as i32),
+            ("toString", "()Ljava/lang/String;") => {
+                let n = if mref_class == STRICT_VM_POLICY {
+                    "android.os.StrictMode.VmPolicy"
+                } else {
+                    "android.os.StrictMode.ThreadPolicy"
+                };
+                Value::Obj(crate::intrinsics::alloc_string(vm, n.to_string())?)
+            }
+            _ => return Ok(None),
+        };
+        return Ok(Some(v));
     }
     if matches!(
         mref_class,
@@ -1518,10 +1612,17 @@ pub(crate) fn instance_intrinsic(
             "(Landroid/graphics/Rect;)Z" | "(Landroid/graphics/Rect;Z)Z",
         ) => Value::Int(0),
         ("findFocus", _) | ("focusSearch", _) => Value::Null,
-        // no content-capture / autofill / translation service on the headless device
+        // AOSP assigns every View an AutofillId when it joins the window and
+        // `View.getAutofillId()` never returns null there. Returning null made
+        // Compose die on the first composition: `AndroidAutofill.<init>` does
+        // `requireNotNull(view.autofillId)` (InlineClassHelperKt ->
+        // "Required value was null."), which is what stopped the F-Droid
+        // launcher screen before this. The id is stable per view, so it is
+        // cached in the view's `rd_autofill_id` field (AOSP's `mAutofillId`).
+        ("getAutofillId", "()Landroid/view/autofill/AutofillId;") => autofill_id_of(vm, recv)?,
+        // no content-capture / translation service on the headless device
         (
             "getContentCaptureSession"
-            | "getAutofillId"
             | "getViewTranslationResponse"
             | "getRootSurfaceControl"
             | "getHandwritingDelegatorCallback",

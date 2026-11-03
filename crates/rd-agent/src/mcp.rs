@@ -1582,9 +1582,11 @@ impl AgentSession {
             let dexes = dexes_of_apk(&resources)?;
             phase("dex_mount_total", t_mount);
             let t_new = std::time::Instant::now();
+            // App runtime host: `rd mcp` serves on a normal-stack thread, so it
+            // uses the larger frame cap (see `VmConfig::app_runtime`).
             let config = VmConfig {
                 heap_budget: self.heap_budget,
-                ..VmConfig::default()
+                ..VmConfig::app_runtime()
             };
             let mut e = Engine::new(dexes, config);
             phase("engine_new", t_new);

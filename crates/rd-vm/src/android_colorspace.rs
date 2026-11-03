@@ -229,7 +229,8 @@ pub(crate) fn host_static(
     }
 }
 
-fn get(vm: &mut Engine, id: usize) -> Result<Value, VmExit> {
+/// Named space `id` (AOSP `ColorSpace.Named` ordinal), as the cached singleton.
+pub(crate) fn get(vm: &mut Engine, id: usize) -> Result<Value, VmExit> {
     let k = (CS.to_string(), format!("rd_named_{id}"));
     if let Some(v) = vm.statics.get(&k) {
         return Ok(v.clone());

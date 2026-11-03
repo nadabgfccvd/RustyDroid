@@ -60,6 +60,9 @@ fn trace_m9_remote_views(rv: &crate::m9::RemoteViews, out: &mut Vec<ObjRef>) {
 /// keyed by name rather than by guest object identity). Zero scalar integers
 /// are emitted.
 pub(super) fn collect_strong_roots(fw: &HostState, out: &mut Vec<ObjRef>) {
+    // GestureDetectors waiting on a delayed callback (view_gesture.rs).
+    out.extend(fw.gesture_watch.iter().copied().filter(|r| *r != 0));
+
     // ── M8 strong roots ──────────────────────────────────────────────────
     let m8 = &fw.m8;
     for db in m8.databases.values() {

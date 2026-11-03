@@ -552,6 +552,7 @@ impl Engine {
         crate::jregex::gc_purge(&mut self.fw.regex, &alive_ref);
         crate::android_spannable::gc_purge(&mut self.fw.spannable, &alive_ref);
         crate::jio_chars::gc_purge(&mut self.fw.io_chars, &alive_ref);
+        crate::org_json::gc_purge(&mut self.fw.org_json, &alive_ref);
         crate::xml_res::gc_purge(&mut self.fw.xml, &alive_ref);
         crate::jrandom::gc_purge(&mut self.fw.random, &alive_ref);
         crate::android_uri::gc_purge(&mut self.fw.uri, &alive_ref);
