@@ -2732,6 +2732,7 @@ fn map_supported(name: &str, sig: &str) -> bool {
             | ("<init>", "(I)V")
             | ("<init>", "(IF)V")
             | ("<init>", "(IFZ)V")
+            | ("<init>", "(IFI)V")
             | ("<init>", "(Ljava/util/Map;)V")
             | ("<init>", "(Ljava/lang/Class;)V")
             | ("<init>", "(Ljava/util/EnumMap;)V")
@@ -3483,6 +3484,7 @@ fn deque_intrinsic(
     name: &str,
     sig: &str,
     args: &[Value],
+    permits_null: bool,
 ) -> Result<Option<Value>, VmExit> {
     use crate::framework::HostObj;
     if name == "<init>" {
@@ -3508,7 +3510,7 @@ fn deque_intrinsic(
             Ok(Some(Value::Obj(it)))
         }
         ("addFirst", _) | ("push", _) | ("offerFirst", _) => {
-            if matches!(args[0], Value::Null) {
+            if !permits_null && matches!(args[0], Value::Null) {
                 return Err(deque_null_rejected());
             }
             list_elems(vm, recv)?.insert(0, args[0].clone());
@@ -3519,7 +3521,7 @@ fn deque_intrinsic(
             }))
         }
         ("addLast", _) | ("add", _) | ("offerLast", _) | ("offer", _) => {
-            if matches!(args[0], Value::Null) {
+            if !permits_null && matches!(args[0], Value::Null) {
                 return Err(deque_null_rejected());
             }
             list_elems(vm, recv)?.push(args[0].clone());
@@ -3729,6 +3731,24 @@ fn map_intrinsic(
 ) -> Result<Option<Value>, VmExit> {
     use crate::framework::HostObj;
     if name == "<init>" {
+        // ConcurrentHashMap(int, float, int): as mesmas validações da JDK
+        // (fator > 0, capacidade ≥ 0, nível de concorrência > 0). O nível não
+        // tem efeito no host single-threaded: o estado é o do HashMap.
+        if sig == "(IFI)V" {
+            let initial_capacity = args[0].as_int()?;
+            let load_factor = args[1].as_float()?;
+            let concurrency_level = args[2].as_int()?;
+            if initial_capacity < 0
+                || load_factor.is_nan()
+                || load_factor <= 0.0
+                || concurrency_level <= 0
+            {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/IllegalArgumentException;",
+                    "",
+                )));
+            }
+        }
         let access_order = if sig == "(IFZ)V" {
             let initial_capacity = args[0].as_int()?;
             let load_factor = args[1].as_float()?;
@@ -5320,8 +5340,10 @@ fn instance_intrinsic_dispatch(
             set_intrinsic(vm, recv, name, sig, args)
         }
         // ArrayDeque (M8): Deque host sobre o estado List (frente = índice 0)
-        (c, name, sig) if c == ARRAY_DEQUE && deque_supported(name, sig) => {
-            deque_intrinsic(vm, recv, name, sig, args)
+        // LinkedList é List e Deque: as operações de deque usam o mesmo estado
+        // List; nulls são aceitos (diferente de ArrayDeque).
+        (c, name, sig) if (c == ARRAY_DEQUE || c == LINKED_LIST) && deque_supported(name, sig) => {
+            deque_intrinsic(vm, recv, name, sig, args, c == LINKED_LIST)
         }
         // LinkedBlockingQueue (M8): FIFO; bloqueantes fail-fast (sem deadlock)
         (c, name, sig) if c == BLOCKING_Q && queue_supported(name, sig) => {
@@ -6167,5 +6189,81 @@ mod utf16_optimization_tests {
                 assert_eq!(utf16_unit_at(&text, index), reference.get(index).copied());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod collection_ctor_tests {
+    use super::*;
+
+    fn new_obj(vm: &mut Engine, class: &str) -> crate::heap::ObjRef {
+        vm.heap
+            .alloc_instance(class.to_string(), Vec::new())
+            .unwrap()
+    }
+
+    #[test]
+    fn concurrent_hash_map_three_arg_ctor_validates_like_the_jdk() {
+        let mut vm = Engine::new(vec![], Default::default());
+        let m = new_obj(&mut vm, CONCURRENT_MAP);
+        let ok = call_instance_intrinsic(
+            &mut vm,
+            CONCURRENT_MAP,
+            "<init>",
+            "(IFI)V",
+            m,
+            &[Value::Int(16), Value::Float(0.75), Value::Int(4)],
+        );
+        assert!(matches!(ok, Ok(Some(_))), "{ok:?}");
+        for bad in [
+            [Value::Int(-1), Value::Float(0.75), Value::Int(1)],
+            [Value::Int(16), Value::Float(0.0), Value::Int(1)],
+            [Value::Int(16), Value::Float(0.75), Value::Int(0)],
+        ] {
+            let m2 = new_obj(&mut vm, CONCURRENT_MAP);
+            let r = call_instance_intrinsic(&mut vm, CONCURRENT_MAP, "<init>", "(IFI)V", m2, &bad);
+            assert!(matches!(r, Err(VmExit::Exception(_))), "{bad:?} -> {r:?}");
+        }
+    }
+
+    #[test]
+    fn linked_list_deque_ops_accept_null_but_array_deque_rejects_it() {
+        let mut vm = Engine::new(vec![], Default::default());
+        let ll = new_obj(&mut vm, LINKED_LIST);
+        call_instance_intrinsic(&mut vm, LINKED_LIST, "<init>", "()V", ll, &[])
+            .unwrap()
+            .unwrap();
+        let add = call_instance_intrinsic(
+            &mut vm,
+            LINKED_LIST,
+            "addFirst",
+            "(Ljava/lang/Object;)V",
+            ll,
+            &[Value::Null],
+        );
+        assert!(matches!(add, Ok(Some(_))), "{add:?}");
+        let got = call_instance_intrinsic(
+            &mut vm,
+            LINKED_LIST,
+            "getFirst",
+            "()Ljava/lang/Object;",
+            ll,
+            &[],
+        );
+        assert_eq!(got.unwrap(), Some(Value::Null));
+
+        let ad = new_obj(&mut vm, ARRAY_DEQUE);
+        call_instance_intrinsic(&mut vm, ARRAY_DEQUE, "<init>", "()V", ad, &[])
+            .unwrap()
+            .unwrap();
+        let r = call_instance_intrinsic(
+            &mut vm,
+            ARRAY_DEQUE,
+            "addFirst",
+            "(Ljava/lang/Object;)V",
+            ad,
+            &[Value::Null],
+        );
+        assert!(matches!(r, Err(VmExit::Exception(_))), "{r:?}");
     }
 }
