@@ -19,7 +19,7 @@
 //!   `TypedArray.getValue` reports an int as a color type when the attribute
 //!   name contains "color" or "tint".
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use rd_apk::axml::{AttrValue, XmlAttribute, XmlElement};
@@ -33,8 +33,8 @@ pub(crate) const PARSER: &str = "Landroid/content/res/XmlResourceParser;";
 const RESOURCES: &str = "Landroid/content/res/Resources;";
 const ANDROID_NS: &str = "http://schemas.android.com/apk/res/android";
 
-#[derive(Clone)]
-enum Ev {
+#[derive(Clone, Debug)]
+pub(crate) enum Ev {
     Start {
         name: String,
         attrs: Vec<XmlAttribute>,
@@ -47,7 +47,8 @@ enum Ev {
     },
 }
 
-struct ParserState {
+#[derive(Debug)]
+pub(crate) struct ParserState {
     file: String,
     events: Vec<Ev>,
     /// -1 = START_DOCUMENT, events.len() = END_DOCUMENT.
@@ -55,8 +56,6 @@ struct ParserState {
 }
 
 thread_local! {
-    static PARSERS: RefCell<HashMap<ObjRef, ParserState>> = RefCell::new(HashMap::new());
-    static ARRAYS: RefCell<HashMap<ObjRef, Vec<Option<XmlAttribute>>>> = RefCell::new(HashMap::new());
     /// Bytes de host (estimativa) retidos por `PARSERS`. Ficam fora de
     /// `heap.used()`, então são cobrados contra `heap_budget` na abertura (#370).
     static PARSER_HOST_BYTES: Cell<usize> = const { Cell::new(0) };
@@ -83,26 +82,29 @@ fn parser_host_release(cost: usize) {
     PARSER_HOST_BYTES.with(|b| b.set(b.get().saturating_sub(cost)));
 }
 
-/// GC: drop state of collected objects (slots are reused).
-pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    PARSERS.with(|m| {
-        m.borrow_mut().retain(|k, v| {
-            if alive(*k) {
-                return true;
-            }
-            parser_host_release(parser_host_cost(&v.file, &v.events));
-            false
-        })
-    });
-    ARRAYS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
+/// Estado de XmlPullParser/arrays por engine (ADR 024, passo 2).
+#[derive(Debug, Default)]
+pub(crate) struct Tables {
+    pub(crate) parsers: HashMap<ObjRef, ParserState>,
+    pub(crate) arrays: HashMap<ObjRef, Vec<Option<XmlAttribute>>>,
 }
 
-/// Issue #230: fronteira de `Engine` — parsers/atributos pendurados em
-/// `ObjRef`s de um heap morto não podem vazar para o próximo `Engine`.
-pub(crate) fn reset_all() {
-    PARSERS.with(|m| m.borrow_mut().clear());
+/// GC: drop state of collected objects (slots are reused).
+pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    t.parsers.retain(|k, v| {
+        if alive(*k) {
+            return true;
+        }
+        parser_host_release(parser_host_cost(&v.file, &v.events));
+        false
+    });
+    t.arrays.retain(|k, _| alive(*k));
+}
+
+/// Zera o contador de bytes de host (ainda thread-local até o passo 3 do
+/// ADR 024). Chamado na fronteira de `Engine` por `reset_host_thread_state`.
+pub(crate) fn reset_host_bytes() {
     PARSER_HOST_BYTES.with(|b| b.set(0));
-    ARRAYS.with(|m| m.borrow_mut().clear());
 }
 
 /// Achata a árvore em eventos na mesma ordem de antes (Start, Text, filhos, End),
@@ -220,8 +222,8 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
         .heap
         .alloc_instance(PARSER.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
-    let old = PARSERS.with(|p| {
-        p.borrow_mut().insert(
+    let old = {
+        vm.fw.xml.parsers.insert(
             r,
             ParserState {
                 file: path,
@@ -229,7 +231,7 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
                 pos: -1,
             },
         )
-    });
+    };
     if let Some(old) = old {
         parser_host_release(parser_host_cost(&old.file, &old.events));
     }
@@ -237,26 +239,25 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
     Ok(Value::Obj(r))
 }
 
-fn is_parser(r: ObjRef) -> bool {
-    PARSERS.with(|p| p.borrow().contains_key(&r))
+fn is_parser(vm: &Engine, r: ObjRef) -> bool {
+    vm.fw.xml.parsers.contains_key(&r)
 }
 
 /// Attributes of the parser's current start tag.
-fn current_attrs(r: ObjRef) -> Option<Vec<XmlAttribute>> {
-    PARSERS.with(|p| {
-        let p = p.borrow();
-        let st = p.get(&r)?;
+fn current_attrs(vm: &Engine, r: ObjRef) -> Option<Vec<XmlAttribute>> {
+    {
+        let st = vm.fw.xml.parsers.get(&r)?;
         match st.events.get(usize::try_from(st.pos).ok()?) {
             Some(Ev::Start { attrs, .. }) => Some(attrs.clone()),
             _ => None,
         }
-    })
+    }
 }
 
 /// Fills TypedArray `ta` from AttributeSet `set` for the `attrs` id array.
 /// No-op unless `set` is a parser created here.
 pub(crate) fn fill_typed_array(
-    vm: &Engine,
+    vm: &mut Engine,
     ta: ObjRef,
     set: Option<&Value>,
     attrs: Option<&Value>,
@@ -264,7 +265,9 @@ pub(crate) fn fill_typed_array(
     let (Some(Value::Obj(s)), Some(Value::Obj(a))) = (set, attrs) else {
         return;
     };
-    let Some(cur) = current_attrs(*s) else { return };
+    let Some(cur) = current_attrs(vm, *s) else {
+        return;
+    };
     let Ok((ids, _)) = vm.heap.as_array_elems(*a) else {
         return;
     };
@@ -283,8 +286,8 @@ pub(crate) fn fill_typed_array(
                 .cloned()
         })
         .collect();
-    ARRAYS.with(|m| {
-        let mut arrays = m.borrow_mut();
+    ({
+        let arrays = &mut vm.fw.xml.arrays;
         if let Some(existing) = arrays.get(&ta) {
             let mut merged = existing.clone();
             merged.resize(vals.len(), None);
@@ -303,7 +306,7 @@ pub(crate) fn fill_typed_array(
 /// Fill a TypedArray from a resolved style bag. Missing attributes remain
 /// `None`, allowing the normal TypedArray default-value path to apply.
 pub(crate) fn fill_theme_typed_array(
-    vm: &Engine,
+    vm: &mut Engine,
     ta: ObjRef,
     attrs: Option<&Value>,
     style_id: u32,
@@ -343,7 +346,7 @@ pub(crate) fn fill_theme_typed_array(
             })
         })
         .collect();
-    ARRAYS.with(|m| m.borrow_mut().insert(ta, values));
+    vm.fw.xml.arrays.insert(ta, values);
 }
 
 fn str_val(vm: &mut Engine, s: String) -> Result<Value, VmExit> {
@@ -453,7 +456,7 @@ fn typed_array_get(
     sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
-    let Some(vals) = ARRAYS.with(|m| m.borrow().get(&recv).cloned()) else {
+    let Some(vals) = vm.fw.xml.arrays.get(&recv).cloned() else {
         return Ok(None);
     };
     let idx = match args.first() {
@@ -475,7 +478,7 @@ fn typed_array_get(
             Value::Int(n.unwrap_or(0))
         }
         "recycle" | "close" => {
-            ARRAYS.with(|m| m.borrow_mut().remove(&recv));
+            vm.fw.xml.arrays.remove(&recv);
             Value::Null
         }
         _ => {
@@ -572,7 +575,7 @@ fn type_of(a: &XmlAttribute) -> i32 {
 }
 
 fn find_attr(vm: &Engine, recv: ObjRef, args: &[Value], indexed: bool) -> Option<XmlAttribute> {
-    let attrs = current_attrs(recv)?;
+    let attrs = current_attrs(vm, recv)?;
     if indexed {
         let i = match args.first() {
             Some(Value::Int(i)) => *i as usize,
@@ -628,18 +631,17 @@ pub fn instance_intrinsic(
     if recv_class == "Landroid/content/res/TypedArray;" {
         return typed_array_get(vm, recv, name, sig, args);
     }
-    if recv_class != PARSER || !is_parser(recv) {
+    if recv_class != PARSER || !is_parser(vm, recv) {
         return Ok(None);
     }
     // Pull-parser state machine.
-    let state = PARSERS.with(|p| {
-        let p = p.borrow();
-        let st = &p[&recv];
+    let state = {
+        let st = &vm.fw.xml.parsers[&recv];
         let ev = usize::try_from(st.pos)
             .ok()
             .and_then(|i| st.events.get(i).cloned());
         (st.pos, st.events.len() as isize, ev, st.file.clone())
-    });
+    };
     let (pos, len, ev, file) = state;
     let event_type = |pos: isize, ev: &Option<Ev>| -> i32 {
         if pos < 0 {
@@ -678,15 +680,17 @@ pub fn instance_intrinsic(
                     // Only whitespace text may be skipped by nextTag().
                     while np < len
                         && matches!(
-                            PARSERS.with(|p| p.borrow()[&recv].events.get(np as usize).cloned()),
+                            &vm.fw.xml.parsers[&recv].events.get(np as usize).cloned(),
                             Some(Ev::Text(ref t, _)) if t.trim().is_empty()
                         )
                     {
                         np += 1;
                     }
                 }
-                PARSERS.with(|p| p.borrow_mut().get_mut(&recv).map(|s| s.pos = np));
-                let nev = PARSERS.with(|p| p.borrow()[&recv].events.get(np as usize).cloned());
+                if let Some(s) = vm.fw.xml.parsers.get_mut(&recv) {
+                    s.pos = np;
+                }
+                let nev = vm.fw.xml.parsers[&recv].events.get(np as usize).cloned();
                 let t = event_type(np, &nev);
                 if name == "nextTag" && t != 2 && t != 3 {
                     return Err(exc(
@@ -734,12 +738,11 @@ pub fn instance_intrinsic(
         "close" => {
             // Idempotent: keep the parser registered and drop its events, so
             // later close()/getEventType() calls still answer (END_DOCUMENT).
-            PARSERS.with(|p| {
-                if let Some(st) = p.borrow_mut().get_mut(&recv) {
-                    st.events.clear();
-                    st.pos = 0;
-                }
-            });
+
+            if let Some(st) = vm.fw.xml.parsers.get_mut(&recv) {
+                st.events.clear();
+                st.pos = 0;
+            };
             Value::Null
         }
         // XmlPullParser.require(type, namespace, name): throws on any mismatch (#370).
@@ -777,7 +780,7 @@ pub fn instance_intrinsic(
                     "parser must be on START_TAG to read next text",
                 ));
             }
-            let st_events = PARSERS.with(|p| p.borrow()[&recv].events.clone());
+            let st_events = vm.fw.xml.parsers[&recv].events.clone();
             let mut np = (pos + 1) as usize;
             let mut text = String::new();
             if let Some(Ev::Text(t, _)) = st_events.get(np) {
@@ -786,7 +789,9 @@ pub fn instance_intrinsic(
             }
             match st_events.get(np) {
                 Some(Ev::End { .. }) => {
-                    PARSERS.with(|p| p.borrow_mut().get_mut(&recv).map(|s| s.pos = np as isize));
+                    if let Some(s) = vm.fw.xml.parsers.get_mut(&recv) {
+                        s.pos = np as isize;
+                    }
                     str_val(vm, text)?
                 }
                 _ => {
@@ -797,9 +802,11 @@ pub fn instance_intrinsic(
                 }
             }
         }
-        "getAttributeCount" => {
-            Value::Int(current_attrs(recv).map(|a| a.len() as i32).unwrap_or(-1))
-        }
+        "getAttributeCount" => Value::Int(
+            current_attrs(vm, recv)
+                .map(|a| a.len() as i32)
+                .unwrap_or(-1),
+        ),
         "getAttributeName" => {
             let a = find_attr(vm, recv, args, true).map(|a| a.name);
             opt_str(vm, a)?
@@ -858,14 +865,14 @@ pub fn instance_intrinsic(
             } else {
                 "class"
             };
-            let a = current_attrs(recv)
+            let a = current_attrs(vm, recv)
                 .and_then(|v| v.into_iter().find(|a| a.name == n))
                 .map(|a| a.text());
             opt_str(vm, a)?
         }
         "getIdAttributeResourceValue" => {
             let d = args.first().cloned().unwrap_or(Value::Int(0));
-            match current_attrs(recv)
+            match current_attrs(vm, recv)
                 .and_then(|v| v.into_iter().find(|a| a.name == "id"))
                 .map(|a| a.value)
             {

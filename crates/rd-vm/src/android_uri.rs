@@ -28,7 +28,6 @@
 //! `appendQueryParameter`, `clearQuery`, `fragment`/`encodedFragment`,
 //! `opaquePart`/`encodedOpaquePart`, `build`, `toString`.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::engine::Engine;
@@ -39,8 +38,8 @@ use crate::value::Value;
 pub const URI: &str = "Landroid/net/Uri;";
 const BUILDER: &str = "Landroid/net/Uri$Builder;";
 
-#[derive(Default, Clone)]
-struct B {
+#[derive(Debug, Default, Clone)]
+pub(crate) struct B {
     scheme: Option<String>,
     opaque: Option<String>,
     authority: Option<String>,
@@ -49,19 +48,15 @@ struct B {
     fragment: Option<String>,
 }
 
-thread_local! {
-    static BUILDERS: RefCell<HashMap<ObjRef, B>> = RefCell::new(HashMap::new());
+/// Estado de URI por engine (ADR 024, passo 2): builders indexados por `ObjRef`. Vive em `HostState`.
+#[derive(Debug, Default)]
+pub(crate) struct Tables {
+    pub(crate) builders: HashMap<ObjRef, B>,
 }
 
 /// GC: drop state of collected objects (slots are reused).
-pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    BUILDERS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
-}
-
-/// Issue #230: fronteira de `Engine` — builders são por `ObjRef` de um
-/// heap que deixou de existir quando o `Engine` anterior morreu.
-pub(crate) fn reset_all() {
-    BUILDERS.with(|m| m.borrow_mut().clear());
+pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    t.builders.retain(|k, _| alive(*k));
 }
 
 /// Encoded parts of a Uri string.
@@ -550,7 +545,7 @@ pub fn instance_intrinsic(
                 .heap
                 .alloc_instance(BUILDER.to_string(), Vec::new())
                 .map_err(crate::err::oom_throwable)?;
-            BUILDERS.with(|m| m.borrow_mut().insert(r, b));
+            vm.fw.uri.builders.insert(r, b);
             Value::Obj(r)
         }
         "equals" => Value::Int(match args.first() {
@@ -588,10 +583,10 @@ fn builder(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     if name == "<init>" {
-        BUILDERS.with(|m| m.borrow_mut().insert(recv, B::default()));
+        vm.fw.uri.builders.insert(recv, B::default());
         return Ok(Some(Value::Null));
     }
-    let Some(mut b) = BUILDERS.with(|m| m.borrow().get(&recv).cloned()) else {
+    let Some(mut b) = vm.fw.uri.builders.get(&recv).cloned() else {
         return Ok(None);
     };
     let a0 = sval(vm, args.first());
@@ -708,7 +703,7 @@ fn builder(
         _ => return Ok(None),
     };
     charge_builder(vm, recv, build_string(&b))?;
-    BUILDERS.with(|m| m.borrow_mut().insert(recv, b));
+    vm.fw.uri.builders.insert(recv, b);
     Ok(Some(if ret_self { Value::Obj(recv) } else { out }))
 }
 

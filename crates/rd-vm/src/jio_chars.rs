@@ -28,7 +28,6 @@
 //! constructors and the template methods (`Writer.write(String)` →
 //! `write(char[],int,int)`, `Reader.read()` → `read(char[],int,int)`).
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::engine::Engine;
@@ -68,7 +67,7 @@ enum Sink {
 }
 
 #[derive(Debug, Clone)]
-struct WState {
+pub(crate) struct WState {
     sink: Sink,
     pending: Vec<u16>,
     /// StringWriter content (Sink::Buffer).
@@ -87,7 +86,7 @@ enum Source {
 }
 
 #[derive(Debug, Clone)]
-struct RState {
+pub(crate) struct RState {
     source: Source,
     loaded: bool,
     chars: Vec<u16>,
@@ -97,53 +96,43 @@ struct RState {
 }
 
 #[derive(Debug, Clone, Default)]
-struct BState {
+pub(crate) struct BState {
     bytes: Vec<u8>,
     pos: usize,
     mark: usize,
 }
 
-thread_local! {
-    static WRITERS_ST: RefCell<HashMap<ObjRef, WState>> = RefCell::new(HashMap::new());
-    static READERS_ST: RefCell<HashMap<ObjRef, RState>> = RefCell::new(HashMap::new());
-    static BYTES_ST: RefCell<HashMap<ObjRef, BState>> = RefCell::new(HashMap::new());
+/// Estado de streams de `java.io` por engine (ADR 024, passo 2).
+#[derive(Debug, Default)]
+pub(crate) struct Tables {
+    pub(crate) writers: HashMap<ObjRef, WState>,
+    pub(crate) readers: HashMap<ObjRef, RState>,
+    pub(crate) bytes: HashMap<ObjRef, BState>,
 }
 
 /// GC: objects that have state here (marking consults `gc_entry` only
 /// for these).
-pub(crate) fn gc_keys(out: &mut Vec<ObjRef>) {
-    WRITERS_ST.with(|m| out.extend(m.borrow().keys().copied()));
-    READERS_ST.with(|m| out.extend(m.borrow().keys().copied()));
-    BYTES_ST.with(|m| out.extend(m.borrow().keys().copied()));
+pub(crate) fn gc_keys(t: &Tables, out: &mut Vec<ObjRef>) {
+    out.extend(t.writers.keys().copied());
+    out.extend(t.readers.keys().copied());
+    out.extend(t.bytes.keys().copied());
 }
 
 /// GC ephemeron: state of a reachable object (holds heap refs).
-pub(crate) fn gc_entry(r: ObjRef, out: &mut impl std::fmt::Write) {
-    WRITERS_ST.with(|m| {
-        if let Some(v) = m.borrow().get(&r) {
-            let _ = write!(out, "|{:?}", v.sink);
-        }
-    });
-    READERS_ST.with(|m| {
-        if let Some(v) = m.borrow().get(&r) {
-            let _ = write!(out, "|{:?}", v.source);
-        }
-    });
+pub(crate) fn gc_entry(t: &Tables, r: ObjRef, out: &mut impl std::fmt::Write) {
+    if let Some(v) = t.writers.get(&r) {
+        let _ = write!(out, "|{:?}", v.sink);
+    }
+    if let Some(v) = t.readers.get(&r) {
+        let _ = write!(out, "|{:?}", v.source);
+    }
 }
 
 /// GC: drop state of collected objects (slots are reused).
-pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    WRITERS_ST.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
-    READERS_ST.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
-    BYTES_ST.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
-}
-
-/// Issue #230: fronteira de `Engine` — estados de streams indexados por
-/// `ObjRef` morrem com o heap que os criou.
-pub(crate) fn reset_all() {
-    WRITERS_ST.with(|m| m.borrow_mut().clear());
-    READERS_ST.with(|m| m.borrow_mut().clear());
-    BYTES_ST.with(|m| m.borrow_mut().clear());
+pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    t.writers.retain(|k, _| alive(*k));
+    t.readers.retain(|k, _| alive(*k));
+    t.bytes.retain(|k, _| alive(*k));
 }
 
 fn exc(class: &str, msg: impl Into<String>) -> VmExit {
@@ -312,17 +301,17 @@ fn print_units(vm: &mut Engine, sig: &str, v: Option<&Value>) -> Result<Vec<u16>
 
 // ── writers ─────────────────────────────────────────────────────────────
 
-fn wput(r: ObjRef, st: WState) {
-    WRITERS_ST.with(|m| m.borrow_mut().insert(r, st));
+fn wput(vm: &mut Engine, r: ObjRef, st: WState) {
+    vm.fw.io_chars.writers.insert(r, st);
 }
 /// Leitura sem clonar o estado (o `text` pode ser grande). #366: clonar a cada
 /// `write` tornava a escrita O(N^2).
-fn wview<R>(r: ObjRef, f: impl FnOnce(&WState) -> R) -> Option<R> {
-    WRITERS_ST.with(|m| m.borrow().get(&r).map(f))
+fn wview<R>(vm: &Engine, r: ObjRef, f: impl FnOnce(&WState) -> R) -> Option<R> {
+    vm.fw.io_chars.writers.get(&r).map(f)
 }
 /// Mutação in-place do estado (sem clone e sem reinserir).
-fn wmod<R>(r: ObjRef, f: impl FnOnce(&mut WState) -> R) -> Option<R> {
-    WRITERS_ST.with(|m| m.borrow_mut().get_mut(&r).map(f))
+fn wmod<R>(vm: &mut Engine, r: ObjRef, f: impl FnOnce(&mut WState) -> R) -> Option<R> {
+    vm.fw.io_chars.writers.get_mut(&r).map(f)
 }
 
 fn flush_writer(
@@ -331,7 +320,7 @@ fn flush_writer(
     close: bool,
     hold_trailing_high: bool,
 ) -> Result<(), VmExit> {
-    let Some((sink, data)) = wmod(recv, |st| {
+    let Some((sink, data)) = wmod(vm, recv, |st| {
         let units = if !close
             && hold_trailing_high
             && st
@@ -376,9 +365,9 @@ fn flush_writer(
     Ok(())
 }
 
-fn write_units(vm: &Engine, recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
+fn write_units(vm: &mut Engine, recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
     let (used, budget) = (vm.heap.used(), vm.heap.budget());
-    let res = wmod(recv, |st| {
+    let res = wmod(vm, recv, |st| {
         if st.closed {
             // JDK: escrita após close() não lança; vira checkError() (#366).
             st.error = true;
@@ -409,7 +398,7 @@ fn write_units(vm: &Engine, recv: ObjRef, units: &[u16]) -> Result<(), VmExit> {
     res.unwrap_or(Ok(()))
 }
 
-fn write_text(vm: &Engine, recv: ObjRef, s: &str) -> Result<(), VmExit> {
+fn write_text(vm: &mut Engine, recv: ObjRef, s: &str) -> Result<(), VmExit> {
     let units: Vec<u16> = s.encode_utf16().collect();
     write_units(vm, recv, &units)
 }
@@ -504,6 +493,7 @@ fn writer(
             && sig.contains("Z)V")
             && args.iter().any(|a| matches!(a, Value::Int(1)));
         wput(
+            vm,
             recv,
             WState {
                 sink,
@@ -516,7 +506,7 @@ fn writer(
         );
         return Ok(Some(Value::Null));
     }
-    if wview(recv, |_| ()).is_none() {
+    if wview(vm, recv, |_| ()).is_none() {
         return Ok(None);
     }
     let ret_self = sig.ends_with(")Ljava/io/Writer;")
@@ -533,7 +523,7 @@ fn writer(
                 slice(&all, int(args, 1), int(args, 2))?
             };
             flush_writer(vm, recv, false, false)?;
-            if let Some(os) = wview(recv, |w| match (&w.sink, w.closed) {
+            if let Some(os) = wview(vm, recv, |w| match (&w.sink, w.closed) {
                 (Sink::Stream(os, _), false) => Some(*os),
                 _ => None,
             })
@@ -548,7 +538,7 @@ fn writer(
         "writeBytes" if class == PS => {
             let raw = require_byte_array(vm, args.first())?;
             flush_writer(vm, recv, false, false)?;
-            if let Some(os) = wview(recv, |w| match (&w.sink, w.closed) {
+            if let Some(os) = wview(vm, recv, |w| match (&w.sink, w.closed) {
                 (Sink::Stream(os, _), false) => Some(*os),
                 _ => None,
             })
@@ -635,21 +625,21 @@ fn writer(
             Value::Null
         }
         "close" => {
-            if class != SW && !wview(recv, |w| w.closed).unwrap_or(false) {
+            if class != SW && !wview(vm, recv, |w| w.closed).unwrap_or(false) {
                 flush_writer(vm, recv, true, false)?;
             }
             Value::Null
         }
         "checkError" => {
             flush_writer(vm, recv, false, false)?;
-            Value::Int(wview(recv, |w| w.error).unwrap_or(false) as i32)
+            Value::Int(wview(vm, recv, |w| w.error).unwrap_or(false) as i32)
         }
         "toString" if class == SW => {
-            let t = wview(recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
+            let t = wview(vm, recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
             jstr(vm, t)?
         }
         "getBuffer" if class == SW => {
-            let t = wview(recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
+            let t = wview(vm, recv, |w| String::from_utf16_lossy(&w.text)).unwrap_or_default();
             let sb = vm
                 .heap
                 .alloc_instance("Ljava/lang/StringBuffer;".to_string(), Vec::new())
@@ -666,7 +656,7 @@ fn writer(
             )?;
             Value::Obj(sb)
         }
-        "getEncoding" => match wview(recv, |w| w.sink.clone()) {
+        "getEncoding" => match wview(vm, recv, |w| w.sink.clone()) {
             Some(Sink::Stream(_, cs)) => jstr(vm, cs.replace('-', ""))?,
             _ => Value::Null,
         },
@@ -679,7 +669,7 @@ fn writer(
         )
         && !matches!(sig, "([B)V" | "([BII)V");
     let printwriter_autoflush =
-        class == PW && name == "println" && wview(recv, |w| w.autoflush).unwrap_or(false);
+        class == PW && name == "println" && wview(vm, recv, |w| w.autoflush).unwrap_or(false);
     if stream_write || printwriter_autoflush {
         flush_writer(vm, recv, false, name != "println" && name != "newLine")?;
     }
@@ -692,17 +682,17 @@ fn writer(
 
 // ── readers ─────────────────────────────────────────────────────────────
 
-fn rget(r: ObjRef) -> Option<RState> {
-    READERS_ST.with(|m| m.borrow().get(&r).cloned())
+fn rget(vm: &Engine, r: ObjRef) -> Option<RState> {
+    vm.fw.io_chars.readers.get(&r).cloned()
 }
-fn rput(r: ObjRef, st: RState) {
-    READERS_ST.with(|m| m.borrow_mut().insert(r, st));
+fn rput(vm: &mut Engine, r: ObjRef, st: RState) {
+    vm.fw.io_chars.readers.insert(r, st);
 }
 
 /// Drains the reader's source into `chars` on first use.
 fn load(vm: &mut Engine, recv: ObjRef) -> Result<RState, VmExit> {
     let mut st =
-        rget(recv).ok_or_else(|| exc("Ljava/io/IOException;", "reader not initialised"))?;
+        rget(vm, recv).ok_or_else(|| exc("Ljava/io/IOException;", "reader not initialised"))?;
     if st.closed {
         return Err(exc("Ljava/io/IOException;", "Stream closed"));
     }
@@ -712,12 +702,12 @@ fn load(vm: &mut Engine, recv: ObjRef) -> Result<RState, VmExit> {
     match st.source.clone() {
         Source::Text => {}
         Source::Reader(inner) => {
-            if rget(inner).is_some() {
+            if rget(vm, inner).is_some() {
                 let ist = load(vm, inner)?;
                 st.chars = ist.chars[ist.pos..].to_vec();
                 let mut ist2 = ist;
                 ist2.pos = ist2.chars.len();
-                rput(inner, ist2);
+                rput(vm, inner, ist2);
             } else {
                 // DEX Reader: pull through read(char[],int,int) reusing one buffer.
                 let arr = vm
@@ -803,7 +793,7 @@ fn load(vm: &mut Engine, recv: ObjRef) -> Result<RState, VmExit> {
         }
     }
     st.loaded = true;
-    rput(recv, st.clone());
+    rput(vm, recv, st.clone());
     Ok(st)
 }
 
@@ -868,6 +858,7 @@ fn reader(
             _ => (Vec::new(), false),
         };
         rput(
+            vm,
             recv,
             RState {
                 source,
@@ -880,15 +871,15 @@ fn reader(
         );
         return Ok(Some(Value::Null));
     }
-    if rget(recv).is_none() {
+    if rget(vm, recv).is_none() {
         return Ok(None);
     }
     if name == "close" {
-        if let Some(mut st) = rget(recv) {
+        if let Some(mut st) = rget(vm, recv) {
             if !st.closed {
                 st.closed = true;
                 let src = st.source.clone();
-                rput(recv, st);
+                rput(vm, recv, st);
                 match src {
                     Source::Reader(r) | Source::Stream(r, _) => {
                         vm.invoke_instance(r, "close", "()V", &[])?;
@@ -903,7 +894,7 @@ fn reader(
         return Ok(Some(Value::Int(1)));
     }
     if name == "getEncoding" {
-        return match rget(recv) {
+        return match rget(vm, recv) {
             Some(st) if !st.closed => match st.source {
                 Source::Stream(_, cs) => Ok(Some(jstr(vm, cs.replace('-', ""))?)),
                 _ => Ok(Some(Value::Null)),
@@ -1009,7 +1000,7 @@ fn reader(
         }
         _ => return Ok(None),
     };
-    rput(recv, st);
+    rput(vm, recv, st);
     Ok(Some(out))
 }
 
@@ -1018,26 +1009,24 @@ fn reader(
 /// A host `ByteArrayInputStream` over `bytes` (raw resources, assets).
 pub(crate) fn new_byte_input_stream(vm: &mut Engine, bytes: Vec<u8>) -> Result<Value, VmExit> {
     let r = vm.heap.alloc_instance(BAIS.to_string(), Vec::new())?;
-    BYTES_ST.with(|m| {
-        m.borrow_mut().insert(
-            r,
-            BState {
-                bytes,
-                pos: 0,
-                mark: 0,
-            },
-        )
-    });
+
+    vm.fw.io_chars.bytes.insert(
+        r,
+        BState {
+            bytes,
+            pos: 0,
+            mark: 0,
+        },
+    );
     Ok(Value::Obj(r))
 }
 
 /// Acrescenta `data` ao buffer do BAOS in place. O buffer vive no host, então
 /// o crescimento é cobrado contra `heap_budget` antes (mesma regra de #369/#366).
-fn baos_append(vm: &Engine, recv: ObjRef, data: &[u8]) -> Result<(), VmExit> {
+fn baos_append(vm: &mut Engine, recv: ObjRef, data: &[u8]) -> Result<(), VmExit> {
     let (used, budget) = (vm.heap.used(), vm.heap.budget());
-    BYTES_ST.with(|m| {
-        let mut m = m.borrow_mut();
-        let Some(st) = m.get_mut(&recv) else {
+    {
+        let Some(st) = vm.fw.io_chars.bytes.get_mut(&recv) else {
             return Ok(());
         };
         let cost = st.bytes.len().saturating_add(data.len()).saturating_add(32);
@@ -1049,7 +1038,7 @@ fn baos_append(vm: &Engine, recv: ObjRef, data: &[u8]) -> Result<(), VmExit> {
         }
         st.bytes.extend_from_slice(data);
         Ok(())
-    })
+    }
 }
 
 fn bytes_stream(
@@ -1060,8 +1049,6 @@ fn bytes_stream(
     recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
-    let get = || BYTES_ST.with(|m| m.borrow().get(&recv).cloned());
-    let set = |st: BState| BYTES_ST.with(|m| m.borrow_mut().insert(recv, st));
     if name == "<init>" {
         if class == BAOS && args.len() == 1 && int(args, 0) < 0 {
             return Err(exc(
@@ -1084,7 +1071,7 @@ fn bytes_stream(
         } else {
             BState::default()
         };
-        set(st);
+        vm.fw.io_chars.bytes.insert(recv, st);
         return Ok(Some(Value::Null));
     }
     // BAOS: escritas e `size()` mexem no buffer in place. Clonar o buffer a cada
@@ -1107,14 +1094,16 @@ fn bytes_stream(
                 return Ok(Some(Value::Null));
             }
             ("size", _) => {
-                if let Some(n) = BYTES_ST.with(|m| m.borrow().get(&recv).map(|s| s.bytes.len())) {
+                if let Some(n) = vm.fw.io_chars.bytes.get(&recv).map(|s| s.bytes.len()) {
                     return Ok(Some(Value::Int(n as i32)));
                 }
             }
             _ => {}
         }
     }
-    let Some(mut st) = get() else { return Ok(None) };
+    let Some(mut st) = vm.fw.io_chars.bytes.get(&recv).cloned() else {
+        return Ok(None);
+    };
     let n = st.bytes.len();
     let out = match (class, name) {
         (BAOS, "toByteArray") => crate::jlstring::byte_array(vm, &st.bytes)?,
@@ -1206,7 +1195,7 @@ fn bytes_stream(
         }
         _ => return Ok(None),
     };
-    set(st);
+    vm.fw.io_chars.bytes.insert(recv, st);
     Ok(Some(out))
 }
 
@@ -1336,7 +1325,7 @@ fn buffered_output_stream(
             ));
         }
         let _ = vm.heap.put_field(recv, "rd_buf_size", Value::Int(size));
-        BYTES_ST.with(|m| m.borrow_mut().insert(recv, BState::default()));
+        vm.fw.io_chars.bytes.insert(recv, BState::default());
         return Ok(Some(Value::Null));
     }
     let wrapped = match vm.heap.get_field(recv, "out") {
@@ -1344,11 +1333,11 @@ fn buffered_output_stream(
         _ => None,
     };
     let flush_buffer = |vm: &mut Engine| -> Result<(), VmExit> {
-        let pending = BYTES_ST.with(|m| {
-            let mut map = m.borrow_mut();
+        let pending = {
+            let map = &mut vm.fw.io_chars.bytes;
             let st = map.entry(recv).or_default();
             std::mem::take(&mut st.bytes)
-        });
+        };
         if !pending.is_empty() {
             if let Some(out) = wrapped {
                 let b = crate::jlstring::byte_array(vm, &pending)?;
@@ -1367,17 +1356,24 @@ fn buffered_output_stream(
                     slice(&all, int(args, 1), int(args, 2))?
                 }
             };
-            BYTES_ST.with(|m| m.borrow_mut().entry(recv).or_default().bytes.extend(data));
+            (vm.fw
+                .io_chars
+                .bytes
+                .entry(recv)
+                .or_default()
+                .bytes
+                .extend(data));
             let cap = match vm.heap.get_field(recv, "rd_buf_size") {
                 Ok(Value::Int(v)) => v.max(1) as usize,
                 _ => 8192,
             };
-            let over = BYTES_ST.with(|m| {
-                m.borrow()
-                    .get(&recv)
-                    .map(|st| st.bytes.len() >= cap)
-                    .unwrap_or(false)
-            });
+            let over = vm
+                .fw
+                .io_chars
+                .bytes
+                .get(&recv)
+                .map(|st| st.bytes.len() >= cap)
+                .unwrap_or(false);
             if over {
                 flush_buffer(vm)?;
             }

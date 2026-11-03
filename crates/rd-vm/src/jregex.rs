@@ -38,7 +38,7 @@ enum Anchor {
 }
 
 #[derive(Debug, Default, Clone)]
-struct MState {
+pub(crate) struct MState {
     pattern: ObjRef,
     input: String,
     /// Groups of the last successful match, as byte ranges.
@@ -52,35 +52,32 @@ struct MState {
 }
 
 thread_local! {
+    /// Cache puro de regex compiladas por (pattern, flags): válido entre engines.
     static CACHE: RefCell<HashMap<(String, i32, u8), fancy_regex::Regex>> = RefCell::new(HashMap::new());
-    static MATCHERS: RefCell<HashMap<ObjRef, MState>> = RefCell::new(HashMap::new());
+}
+
+/// Estado de `Matcher` por engine (ADR 024, passo 2).
+#[derive(Debug, Default)]
+pub(crate) struct Tables {
+    pub(crate) matchers: HashMap<ObjRef, MState>,
 }
 
 /// GC: objects that have state here (marking consults `gc_entry` only
 /// for these).
-pub(crate) fn gc_keys(out: &mut Vec<ObjRef>) {
-    MATCHERS.with(|m| out.extend(m.borrow().keys().copied()));
+pub(crate) fn gc_keys(t: &Tables, out: &mut Vec<ObjRef>) {
+    out.extend(t.matchers.keys().copied());
 }
 
 /// GC ephemeron: state of a reachable object (holds heap refs).
-pub(crate) fn gc_entry(r: ObjRef, out: &mut impl std::fmt::Write) {
-    MATCHERS.with(|m| {
-        if let Some(v) = m.borrow().get(&r) {
-            let _ = write!(out, "|{v:?}");
-        }
-    });
+pub(crate) fn gc_entry(t: &Tables, r: ObjRef, out: &mut impl std::fmt::Write) {
+    if let Some(v) = t.matchers.get(&r) {
+        let _ = write!(out, "|{v:?}");
+    }
 }
 
 /// GC: drop state of collected objects (slots are reused).
-pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    MATCHERS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
-}
-
-/// Issue #230: fronteira de `Engine` — limpa só os matchers (indexados
-/// por `ObjRef`); o `CACHE` de regex compiladas é cache puro por
-/// (pattern, flags), válido entre engines, e fica.
-pub(crate) fn reset_all() {
-    MATCHERS.with(|m| m.borrow_mut().clear());
+pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    t.matchers.retain(|k, _| alive(*k));
 }
 
 fn exc(class: &str, msg: impl Into<String>) -> VmExit {
@@ -331,16 +328,15 @@ fn new_matcher(vm: &mut Engine, pattern: ObjRef, input: String) -> Result<Value,
         .alloc_instance(MATCHER.to_string(), Vec::new())
         .map_err(crate::err::oom_throwable)?;
     mirror_input(vm, r, &input)?;
-    MATCHERS.with(|m| {
-        m.borrow_mut().insert(
-            r,
-            MState {
-                pattern,
-                input,
-                ..Default::default()
-            },
-        )
-    });
+
+    vm.fw.regex.matchers.insert(
+        r,
+        MState {
+            pattern,
+            input,
+            ..Default::default()
+        },
+    );
     Ok(Value::Obj(r))
 }
 
@@ -359,8 +355,8 @@ fn new_match_result(vm: &mut Engine, st: &MState) -> Result<Value, VmExit> {
         matched: st.matched,
         hit_end: st.hit_end,
     };
-    MATCHERS.with(|m| {
-        m.borrow_mut().insert(r, snap);
+    ({
+        vm.fw.regex.matchers.insert(r, snap);
     });
     Ok(Value::Obj(r))
 }
@@ -700,7 +696,7 @@ pub fn instance_intrinsic(
         }));
     }
     if recv_class == MATCH_RESULT {
-        let Some(st) = MATCHERS.with(|m| m.borrow().get(&recv).cloned()) else {
+        let Some(st) = vm.fw.regex.matchers.get(&recv).cloned() else {
             return Ok(None);
         };
         let (src, flags) = pattern_of(vm, st.pattern);
@@ -726,7 +722,7 @@ pub fn instance_intrinsic(
     if recv_class != MATCHER {
         return Ok(None);
     }
-    let Some(mut st) = MATCHERS.with(|m| m.borrow().get(&recv).cloned()) else {
+    let Some(mut st) = vm.fw.regex.matchers.get(&recv).cloned() else {
         return Ok(None);
     };
     let (src, flags) = pattern_of(vm, st.pattern);
@@ -885,7 +881,7 @@ pub fn instance_intrinsic(
         )?,
         _ => return Ok(None),
     };
-    MATCHERS.with(|m| m.borrow_mut().insert(recv, st));
+    vm.fw.regex.matchers.insert(recv, st);
     Ok(Some(out))
 }
 

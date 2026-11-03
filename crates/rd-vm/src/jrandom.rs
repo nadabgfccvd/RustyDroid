@@ -20,20 +20,23 @@ const MULT: u64 = 0x5_DEEC_E66D;
 const MASK: u64 = (1 << 48) - 1;
 
 thread_local! {
-    static SEEDS: RefCell<HashMap<ObjRef, u64>> = RefCell::new(HashMap::new());
+    /// Uniquifier de `Random()` sem seed. Ainda thread-local: passo 3 do ADR 024.
     static UNIQ: RefCell<u64> = const { RefCell::new(0) };
 }
 
-/// GC: drop state of collected objects (slots are reused).
-pub(crate) fn gc_purge(alive: &dyn Fn(ObjRef) -> bool) {
-    SEEDS.with(|m| m.borrow_mut().retain(|k, _| alive(*k)));
+/// Seeds de `java.util.Random` por engine (ADR 024, passo 2).
+#[derive(Debug, Default)]
+pub(crate) struct Tables {
+    pub(crate) seeds: HashMap<ObjRef, u64>,
 }
 
-/// Issue #230: fronteira de `Engine` — limpa os seeds por `ObjRef` e
-/// reinicia o uniquifier, para a sequência de `Random()` sem seed ser
-/// função só deste `Engine` (determinismo, PRF-04).
+/// GC: drop state of collected objects (slots are reused).
+pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    t.seeds.retain(|k, _| alive(*k));
+}
+
+/// Reinicia o uniquifier (ainda thread-local até o passo 3 do ADR 024).
 pub(crate) fn reset_all() {
-    SEEDS.with(|m| m.borrow_mut().clear());
     UNIQ.with(|u| *u.borrow_mut() = 0);
 }
 
@@ -53,23 +56,27 @@ fn default_seed() -> i64 {
     })
 }
 
-fn next(r: ObjRef, bits: u32) -> i32 {
-    SEEDS.with(|m| {
-        let mut m = m.borrow_mut();
-        let s = m.entry(r).or_insert_with(|| scramble(default_seed()));
+fn next(vm: &mut Engine, r: ObjRef, bits: u32) -> i32 {
+    {
+        let s = vm
+            .fw
+            .random
+            .seeds
+            .entry(r)
+            .or_insert_with(|| scramble(default_seed()));
         *s = (s.wrapping_mul(MULT).wrapping_add(0xB)) & MASK;
         (*s >> (48 - bits)) as i64 as i32
-    })
+    }
 }
 
-fn next_int_bound(r: ObjRef, bound: i32) -> i32 {
+fn next_int_bound(vm: &mut Engine, r: ObjRef, bound: i32) -> i32 {
     // Mesma máscara bit a bit de `bound & -bound == bound` (potência de 2,
     // incl. 0 e i32::MIN), sem depender de `wrapping_neg` em i32.
     if (bound as u32).isolate_lowest_one() == bound as u32 {
-        return ((bound as i64 * next(r, 31) as i64) >> 31) as i32;
+        return ((bound as i64 * next(vm, r, 31) as i64) >> 31) as i32;
     }
     loop {
-        let bits = next(r, 31);
+        let bits = next(vm, r, 31);
         let val = bits % bound;
         if bits.wrapping_sub(val).wrapping_add(bound - 1) >= 0 {
             return val;
@@ -77,12 +84,12 @@ fn next_int_bound(r: ObjRef, bound: i32) -> i32 {
     }
 }
 
-fn next_long(r: ObjRef) -> i64 {
-    ((next(r, 32) as i64) << 32).wrapping_add(next(r, 32) as i64)
+fn next_long(vm: &mut Engine, r: ObjRef) -> i64 {
+    ((next(vm, r, 32) as i64) << 32).wrapping_add(next(vm, r, 32) as i64)
 }
 
-fn next_double(r: ObjRef) -> f64 {
-    (((next(r, 26) as i64) << 27) + next(r, 27) as i64) as f64 * (1.0 / (1u64 << 53) as f64)
+fn next_double(vm: &mut Engine, r: ObjRef) -> f64 {
+    (((next(vm, r, 26) as i64) << 27) + next(vm, r, 27) as i64) as f64 * (1.0 / (1u64 << 53) as f64)
 }
 
 fn iarg(args: &[Value], i: usize) -> i32 {
@@ -133,21 +140,21 @@ pub(crate) fn instance_intrinsic(
     }
     Ok(Some(match (name, sig) {
         ("<init>", "()V") => {
-            SEEDS.with(|m| m.borrow_mut().insert(recv, scramble(default_seed())));
+            vm.fw.random.seeds.insert(recv, scramble(default_seed()));
             Value::Null
         }
         ("<init>", "(J)V") | ("setSeed", "(J)V") => {
             let s = scramble(larg(args, 0));
-            SEEDS.with(|m| m.borrow_mut().insert(recv, s));
+            vm.fw.random.seeds.insert(recv, s);
             Value::Null
         }
-        ("nextInt", "()I") => Value::Int(next(recv, 32)),
+        ("nextInt", "()I") => Value::Int(next(vm, recv, 32)),
         ("nextInt", "(I)I") => {
             let b = iarg(args, 0);
             if b <= 0 {
                 return Err(bad_bound("bound must be positive"));
             }
-            Value::Int(next_int_bound(recv, b))
+            Value::Int(next_int_bound(vm, recv, b))
         }
         ("nextInt", "(II)I") => {
             let (lo, hi) = (iarg(args, 0), iarg(args, 1));
@@ -156,32 +163,32 @@ pub(crate) fn instance_intrinsic(
             }
             let n = hi.wrapping_sub(lo);
             if n > 0 {
-                Value::Int(lo + next_int_bound(recv, n))
+                Value::Int(lo + next_int_bound(vm, recv, n))
             } else {
                 loop {
-                    let v = next(recv, 32);
+                    let v = next(vm, recv, 32);
                     if v >= lo && v < hi {
                         break Value::Int(v);
                     }
                 }
             }
         }
-        ("nextLong", "()J") => Value::Long(next_long(recv)),
+        ("nextLong", "()J") => Value::Long(next_long(vm, recv)),
         ("nextLong", "(J)J") => {
             let b = larg(args, 0);
             if b <= 0 {
                 return Err(bad_bound("bound must be positive"));
             }
-            Value::Long(next_long(recv).rem_euclid(b))
+            Value::Long(next_long(vm, recv).rem_euclid(b))
         }
-        ("nextBoolean", "()Z") => Value::Int((next(recv, 1) != 0) as i32),
-        ("nextFloat", "()F") => Value::Float(next(recv, 24) as f32 / (1u32 << 24) as f32),
-        ("nextDouble", "()D") => Value::Double(next_double(recv)),
+        ("nextBoolean", "()Z") => Value::Int((next(vm, recv, 1) != 0) as i32),
+        ("nextFloat", "()F") => Value::Float(next(vm, recv, 24) as f32 / (1u32 << 24) as f32),
+        ("nextDouble", "()D") => Value::Double(next_double(vm, recv)),
         ("nextGaussian", "()D") => {
             // polar Box–Muller as in the JDK (no cached second value)
             loop {
-                let v1 = 2.0 * next_double(recv) - 1.0;
-                let v2 = 2.0 * next_double(recv) - 1.0;
+                let v1 = 2.0 * next_double(vm, recv) - 1.0;
+                let v2 = 2.0 * next_double(vm, recv) - 1.0;
                 let s = v1 * v1 + v2 * v2;
                 if s < 1.0 && s != 0.0 {
                     break Value::Double(v1 * (-2.0 * s.ln() / s).sqrt());
@@ -197,7 +204,7 @@ pub(crate) fn instance_intrinsic(
                     .unwrap_or(0);
                 let mut out = Vec::with_capacity(len);
                 while out.len() < len {
-                    let mut rnd = next(recv, 32);
+                    let mut rnd = next(vm, recv, 32);
                     for _ in 0..4.min(len - out.len()) {
                         out.push(Value::Int(rnd as i8 as i32));
                         rnd >>= 8;
@@ -221,10 +228,11 @@ mod tests {
     fn matches_jdk_sequence() {
         // new java.util.Random(42).nextInt() == -1170105035
         // new java.util.Random(42).nextInt(10) == 0 (first draw)
+        let mut vm = crate::engine::Engine::new(vec![], crate::VmConfig::default());
         let r: ObjRef = 7;
-        SEEDS.with(|m| m.borrow_mut().insert(r, scramble(42)));
-        assert_eq!(next(r, 32), -1170105035);
-        SEEDS.with(|m| m.borrow_mut().insert(r, scramble(42)));
-        assert_eq!(next_int_bound(r, 10), 0);
+        vm.fw.random.seeds.insert(r, scramble(42));
+        assert_eq!(next(&mut vm, r, 32), -1170105035);
+        vm.fw.random.seeds.insert(r, scramble(42));
+        assert_eq!(next_int_bound(&mut vm, r, 10), 0);
     }
 }

@@ -114,31 +114,22 @@ pub use value::Value;
 /// Módulo do contrato de erro.
 pub const MODULE_ID: &str = "rd-vm";
 
-/// Issue #230: fronteira de `Engine` para o estado host que vive em
-/// estado thread-local (macro do std) fora do `Engine`. Esvazia/reinicia as tabelas
-/// indexadas por `ObjRef` (spannable, random, regex, uri, xml,
-/// annotations, io-chars) e o RNG de UUID. Sem isto, um `Engine` novo
-/// na mesma thread (relaunch, próximo cenário de `rd test`) herdava
-/// estado fantasma de um heap morto, porque os `ObjRef`s reiniciam com
-/// o `Heap::new`. O VFS de arquivos NÃO entra aqui: dados persistidos
-/// sobrevivem a relaunch dentro da sessão (comportamento Android);
-/// quem o limpa é `clear_package_data` (clear/remove) e `reset_vfs`
-/// (sessão nova).
+/// Issue #230 / ADR 024: fronteira de `Engine` para o estado host que ainda
+/// vive em thread-local. As tabelas indexadas por `ObjRef` (spannable,
+/// random, regex, uri, xml, annotations, io-chars) já são campos de
+/// `HostState` (passo 2): um `Engine` novo nasce com elas vazias e não
+/// precisa de reset. Restam aqui os contadores e o RNG de UUID, que
+/// migram nos passos 3 e 4. O VFS de arquivos NÃO entra aqui: quem o limpa
+/// é `clear_package_data` (clear/remove) e `reset_vfs` (sessão nova).
 ///
 /// Contrato: chamar ao descartar um `Engine` (o MCP faz isso ao matar o
 /// engine ativo) ou antes de construir outro na mesma thread.
 ///
-/// Premissa explícita: um `Engine` vivo por vez por thread — o padrão
-/// de todas as superfícies (MCP, CLI, suítes). A migração dessas
-/// tabelas para dentro de `HostState` segue como follow-up da #230.
+/// Premissa explícita: um `Engine` vivo por vez por thread (ADR 017). Esta
+/// função sai quando o passo 3 do ADR 024 mover os contadores restantes.
 pub fn reset_host_thread_state() {
-    android_spannable::reset_all();
+    xml_res::reset_host_bytes();
     jrandom::reset_all();
-    jregex::reset_all();
-    android_uri::reset_all();
-    xml_res::reset_all();
-    jannotations::reset_all();
-    jio_chars::reset_all();
     juuid::reset_all();
 }
 

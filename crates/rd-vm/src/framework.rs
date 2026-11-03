@@ -934,6 +934,15 @@ pub struct HostState {
     /// Destino do System.out deste engine (ADR 024). Semeado pelo padrão do
     /// processo em `Engine::new`; `Engine::set_app_stdout` troca por engine.
     pub(crate) app_stdout: crate::intrinsics::HostOut,
+    /// Tabelas de anotações do engine (ADR 024, passo 2).
+    pub(crate) annotations: crate::jannotations::Tables,
+    /// Tabelas `ObjRef` de cada módulo host (ADR 024, passo 2).
+    pub(crate) uri: crate::android_uri::Tables,
+    pub(crate) spannable: crate::android_spannable::Tables,
+    pub(crate) random: crate::jrandom::Tables,
+    pub(crate) regex: crate::jregex::Tables,
+    pub(crate) xml: crate::xml_res::Tables,
+    pub(crate) io_chars: crate::jio_chars::Tables,
     pub objects: HashMap<ObjRef, HostObj>,
     /// `List.subList` views: view → (parent, offset, len). See
     /// `jcollections::sublist_*` (write-through semantics).
