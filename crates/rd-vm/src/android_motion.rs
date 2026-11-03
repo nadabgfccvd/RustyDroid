@@ -291,6 +291,10 @@ pub fn instance_intrinsic(
             Value::Int((geti(vm, recv, "rd_source") & s == s) as i32)
         }
         ("getDeviceId", _) | ("getEdgeFlags", _) | ("getFlags", _) => Value::Int(0),
+        // API 29 touch classification. The VM's synthetic input is a plain
+        // finger, so AOSP's CLASSIFICATION_NONE (0) is the faithful answer —
+        // Compose's pointer classification reads it on every down event.
+        ("getClassification", _) => Value::Int(0),
         ("getMetaState", _) => Value::Int(geti(vm, recv, "rd_meta")),
         ("getButtonState", _) => Value::Int(geti(vm, recv, "rd_buttons")),
         ("isButtonPressed", _) => {
