@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793660698808,
+  "lastUpdate": 1793687552192,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1871,6 +1871,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3247,
             "range": "± 14",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7fd374bd7e273c4f350d5737495185f2fa128777",
+          "message": "docs(adr): ADR 024 thread-local inventory and path to concurrent engines (#491)\n\nInventories the host thread-local state (9 modules, 1 process static) and\ndecides the path for ADR 023 sessions: migrate ObjRef-keyed tables and\nAPP_STDOUT into HostState (option A), rejecting thread-per-engine and\nswap-on-entry. Complements ADR 017 follow-up.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-03T03:32:05-03:00",
+          "tree_id": "53abf44f0c6c24b9e630e7af6762a4f89078335a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/7fd374bd7e273c4f350d5737495185f2fa128777"
+        },
+        "date": 1793687551765,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3433,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3435,
+            "range": "± 36",
             "unit": "ns/iter"
           }
         ]
