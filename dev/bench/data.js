@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793734074626,
+  "lastUpdate": 1793738274914,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2951,6 +2951,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3453,
             "range": "± 83",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5751d6b1b130e581c0e026be63dec7167928310b",
+          "message": "fix(vm): F-Droid onCreate conclui e a primeira tela desenha (ADR 027) (#522)\n\n* docs(adr): ADR 027 — metadados de Class para reflexão do Kotlin, sem falsear\n\n* fix(vm): Class.getTypeParameters/isAnnotation/isSynthetic e AssertionError(Object) (launch F-Droid)\n\nFecha os próximos três gaps do caminho do Ktor pelo Kotlin reflect no\nApp.onCreate do F-Droid real (fdroid_oncreate_e2e passa):\n\n- Class.getTypeParameters(): array vazio só quando a classe é sabidamente\n  não genérica (array/primitivo; classe DEX sem <...> no atributo\n  dalvik.annotation.Signature; lista fechada de tipos de plataforma).\n  Qualquer outra classe, ou classe genérica, responde NOT_IMPLEMENTED.\n  Não há falsa resposta vazia para classes genéricas.\n- Class.isAnnotation() e isSynthetic(): flags ACC_ANNOTATION e\n  ACC_SYNTHETIC da definição DEX da classe.\n- AssertionError(Object): mensagem = String.valueOf(detail); Throwable\n  como detalhe vira causa. AssertionError entra na hierarquia de Error.\n\nTestes: launch_gap_tests (intrinsics.rs). Decisão em ADR 027.\n\nAI usage: código e testes gerados com assistência de IA e validados\nlocalmente (workspace 1451 passed, clippy, golden 150/150 no JDK 21).\n\n* docs: F-Droid onCreate conclui; próximos gaps de reflexão (ADR 025, ROADMAP)\n\n* fix(rd-cli): roda a CLI numa thread de 32 MiB; primeiro quadro do F-Droid desenha\n\nNa thread principal de 8 MiB, o orçamento de pilha nativa cortava o draw\ndo Compose em ~400 quadros (StackOverflowError, tela branca em rd app shot).\nA CLI inteira passa a rodar na mesma thread de 32 MiB que rd app run já\nusava. Todos os comandos encerram com process::exit; o join só volta em\npânico (código 101).\n\nTeste: fdroid_first_frame_draws_without_stack_overflow (APK real; pula sem\no APK, como o outro teste E2E).\n\nAI usage: código e teste com assistência de IA, validados localmente.\n\n* docs: primeiro quadro do F-Droid renderiza (ROADMAP, ADR 025)\n\n---------\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T17:37:21-03:00",
+          "tree_id": "5d7738e53e563b404d41a4f66c49aec0c4773333",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5751d6b1b130e581c0e026be63dec7167928310b"
+        },
+        "date": 1793738274034,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3244,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3243,
+            "range": "± 15",
             "unit": "ns/iter"
           }
         ]
