@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793707702793,
+  "lastUpdate": 1793708716441,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2483,6 +2483,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2776,
             "range": "± 41",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5499b599e5dbe522f24b98a7c96599a942d80b78",
+          "message": "feat(rd-agent): sessões de app no MCP (ADR 023, etapa 1) (#510)\n\nUm processo rd mcp hospeda até N sessões (RD_MCP_MAX_SESSIONS, padrão 2).\nNovas tools session_open, session_list, session_close; tools de app aceitam\nengine_id opcional. Sem engine_id, a tool usa a sessão padrão.\n\nCatálogo MCP 47 -> 50. Contratos, docs gerados e gate native-languages\natualizados. Desvios e pendências (roteamento por M10, orçamento de\nmemória) declarados na ADR 023.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T09:24:39-03:00",
+          "tree_id": "82decdc047da7929e44adc27f56d1290291f1132",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5499b599e5dbe522f24b98a7c96599a942d80b78"
+        },
+        "date": 1793708716107,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3301,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3300,
+            "range": "± 8",
             "unit": "ns/iter"
           }
         ]
