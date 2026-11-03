@@ -204,7 +204,7 @@ pub(crate) fn instance_intrinsic(
                 cur = c;
             }
             for l in out.lines() {
-                crate::intrinsics::host_print(1, &format!("W/System.err: {l}\n"));
+                crate::intrinsics::host_print(vm, 1, &format!("W/System.err: {l}\n"));
             }
             Ok(Some(Value::Null))
         }

@@ -1881,12 +1881,30 @@ fn system_out_println_executes() {
     // falso-verde). Agora captura a saída via HostOut::Buffer (issue #55)
     // e asserta o CONTEÚDO impresso (String e Object boxado).
     let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    rd_vm::set_app_stdout(rd_vm::HostOut::Buffer(buf.clone()));
+    e.set_app_stdout(rd_vm::HostOut::Buffer(buf.clone()));
     invoke(&mut e, "oi", "()V", &[]).expect("println(String) não pode falhar");
     invoke(&mut e, "oi_num", "()V", &[]).expect("println(Object box) não pode falhar");
-    rd_vm::set_app_stdout(rd_vm::HostOut::Std); // restaura (testes paralelos)
     let out = String::from_utf8(buf.lock().unwrap().clone()).expect("utf8");
     assert_eq!(out, "hi\n7\n", "println(String) e println(Object) imprimem");
+
+    // ADR 024 (passo 1): o destino do System.out é do engine, não do processo.
+    // Dois engines no mesmo thread, cada um com seu buffer: a saída de um não
+    // aparece no outro. Com o estado global antigo, as três linhas iriam para
+    // um buffer só.
+    let buf_a = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let buf_b = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut e1 = engine_of(&b);
+    let mut e2 = engine_of(&b);
+    e1.set_app_stdout(rd_vm::HostOut::Buffer(buf_a.clone()));
+    e2.set_app_stdout(rd_vm::HostOut::Buffer(buf_b.clone()));
+    invoke(&mut e1, "oi", "()V", &[]).expect("e1 oi");
+    invoke(&mut e2, "oi", "()V", &[]).expect("e2 oi");
+    invoke(&mut e1, "oi", "()V", &[]).expect("e1 oi 2");
+    let text = |b: &std::sync::Arc<std::sync::Mutex<Vec<u8>>>| {
+        String::from_utf8(b.lock().unwrap().clone()).expect("utf8")
+    };
+    assert_eq!(text(&buf_a), "hi\nhi\n", "engine 1 só vê a própria saída");
+    assert_eq!(text(&buf_b), "hi\n", "engine 2 só vê a própria saída");
 }
 
 // ── issues #41/#49: gating de erros (EIIE capturável, OOM tipado, if-eq misto)

@@ -931,6 +931,9 @@ pub struct SuspendedActivity {
 }
 #[derive(Debug, Default)]
 pub struct HostState {
+    /// Destino do System.out deste engine (ADR 024). Semeado pelo padrão do
+    /// processo em `Engine::new`; `Engine::set_app_stdout` troca por engine.
+    pub(crate) app_stdout: crate::intrinsics::HostOut,
     pub objects: HashMap<ObjRef, HostObj>,
     /// `List.subList` views: view → (parent, offset, len). See
     /// `jcollections::sublist_*` (write-through semantics).
@@ -1023,6 +1026,16 @@ pub struct HostState {
     /// GMS" honesto): `crates/rd-vm/src/gms.rs`. Enraizado pelo GC via o
     /// mesmo render Debug que cobre todo o `HostState`.
     pub gms: crate::gms::GmsState,
+}
+
+impl HostState {
+    /// Estado inicial de um engine com o destino de System.out dado (ADR 024).
+    pub(crate) fn with_app_stdout(app_stdout: crate::intrinsics::HostOut) -> Self {
+        Self {
+            app_stdout,
+            ..Default::default()
+        }
+    }
 }
 
 /// M8 (31º gap): fragment registrada por um commit de FragmentTransaction.

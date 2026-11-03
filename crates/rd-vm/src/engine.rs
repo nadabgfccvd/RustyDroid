@@ -316,6 +316,13 @@ pub struct CoverageSnapshot {
 }
 
 impl Engine {
+    /// Destino do System.out deste engine (ADR 024). Por padrão herda o padrão
+    /// do processo (`rd_vm::set_default_app_stdout`); quem roda várias sessões
+    /// deve fixar o destino de cada engine com este método.
+    pub fn set_app_stdout(&mut self, mode: crate::intrinsics::HostOut) {
+        self.fw.app_stdout = mode;
+    }
+
     pub fn new(dexes: Vec<rd_dex::Dex>, config: VmConfig) -> Self {
         // Issue #230: nasce um Heap novo (ObjRefs reiniciam) — o estado
         // host thread_local indexado por refs do heap anterior morre aqui.
@@ -333,7 +340,9 @@ impl Engine {
             clinit_done: HashSet::new(),
             clinit_running: HashSet::new(),
             clinit_failed: HashSet::new(),
-            fw: Default::default(),
+            fw: crate::framework::HostState::with_app_stdout(
+                crate::intrinsics::default_app_stdout(),
+            ),
             depth: 0,
             fuel_used: 0,
             fuel_window_start: 0,

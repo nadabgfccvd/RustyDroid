@@ -603,6 +603,7 @@ pub(crate) fn ueh_intrinsic(
         cur = c;
     }
     crate::intrinsics::host_print(
+        vm,
         1,
         &format!("E/AndroidRuntime: FATAL EXCEPTION: main\nE/AndroidRuntime: {text}\n"),
     );

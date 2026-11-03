@@ -429,7 +429,7 @@ fn main() {
     // issue #55: stdout do processo host é do ARTEFATO do comando (dump XML,
     // JSON, PNG status) — System.out do app vai para o stderr (o Android real
     // manda saída do app para o logcat, nunca para o stream do dump).
-    rd_vm::route_app_stdout_to_stderr();
+    rd_vm::route_default_app_stdout_to_stderr();
     // issue #34: clap sai com 2 em usage error — colide com o 2 =
     // NOT_IMPLEMENTED do contrato. Remapeado: help/version = 0; usage = 64
     // (EX_USAGE, convenção BSD) — o contrato JSON do projeto fica intacto.
