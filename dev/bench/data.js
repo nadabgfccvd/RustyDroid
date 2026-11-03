@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793722697616,
+  "lastUpdate": 1793725639938,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2843,6 +2843,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2759,
             "range": "± 12",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e4d038a3e3327af092dcabe78867755795f434c4",
+          "message": "feat(vm): run the F-Droid/Compose launch path end to end (#519)\n\n* feat(vm): run the F-Droid/Compose launch path end to end\n\n`rd app run golden-apks/org.fdroid.fdroid.apk` now gets past Compose's\nfirst composition and the app's cold start instead of stopping at the\nfirst unimplemented platform class. Each gap below was reached from the\nreal app, not from a stub list.\n\nFramework surfaces F-Droid touches during startup:\n\n- `View.getAutofillId` returns a stable `AutofillId` per view\n  (`AndroidComposeView` reads it while attaching).\n- `Context.isUiContext`, `WindowManager.getCurrentWindowMetrics` /\n  `getMaximumWindowMetrics` and `WindowMetrics` (bounds/density/insets).\n- `StrictMode` policies as class-scoped singletons with identity\n  `equals` (Compose compares the policy it installed).\n- `PackageManager.getPackageInstaller` with real install sessions\n  (`createSession`/`openSession`/`Session.openWrite`/`commit` writing into\n  the VM's virtual disk) and `getSystemAvailableFeatures`, whose\n  array agrees with `hasSystemFeature`.\n- `Activity.setIntent` (F-Droid rewrites the launch intent in its router).\n\nNew `java.*` surfaces:\n\n- `java.nio.charset` coders + `CharBuffer` (jcharset.rs): incremental\n  UTF-8/UTF-16/ISO-8859-1/US-ASCII decoders that keep split code points\n  across reads, `CodingErrorAction`, `CoderResult`, encoder, and a\n  windowed `CharBuffer` (`wrap(char[],off,len)`, `slice`, position\n  state machine). `kotlinx.serialization`'s `CharsetReader` drives every\n  ktor JSON body through this.\n- `java.text.Collator`/`CollationKey` (jtext_collator.rs): three-level\n  collation (base letter, accent, case) with `setStrength`.\n- `java.util.concurrent.CountDownLatch` (threads.rs): guest threads park\n  and wake, the main thread drains ready threads until the latch opens.\n- `org.json` (org_json.rs): `JSONObject`/`JSONArray`/`JSONTokener` with\n  the lenient parsing Android accepts; F-Droid parses its index and\n  preferences with it.\n- `android.net` connectivity: an always-on validated Wi-Fi network\n  (`Network`, `NetworkCapabilities`, `NetworkInfo`).\n- `android.graphics.PathMeasure` and the `ColorFilter`/`Shader` class\n  hierarchies for `check-cast`.\n\nRuntime:\n\n- `VmConfig::app_runtime()` (1024-frame cap) for hosts on a normal\n  stack; the 128-frame default stays for 2 MiB threads (#313).\n- `rd app run` executes the app on a 32 MiB thread: an interpreter frame\n  is far larger than an ART frame, so Compose's legitimate ~400-frame\n  layout pass exhausted the 8 MiB main stack while staying below the\n  guest cap.\n- Guest `Iterator` implementations run their own DEX body (the host\n  funnel only answers for `HostObj::Iter`).\n- Static calls into classes absent from the DEX and not platform-provided\n  throw a catchable `NoClassDefFoundError` (androidx.window's sidecar\n  probe depends on it).\n- `TimeUnit.convert` finds its unit argument on both call paths.\n\nTests: `tests/compose_path_fdroid.rs` (autofill id, isUiContext, window\nmetrics, NCDFE, guest iterator, app_runtime), plus module tests for the\ndecoder (split code point, malformed actions), encoder round trip,\n`CharBuffer` windows, `compact`, collation strengths and keys.\n\nRemaining known gap: the launch now stops at `VM_TYPE_ERROR: esperado\nlong, got Null` during Compose's first measure/place pass.\n\nAI assistance: this change was produced with an AI coding agent (Xisto)\nunder human review; every behavioural claim above is backed by a test in\nthis PR or by the app run quoted in the commit.\n\n* fix(vm): packed colour longs keep ARGB in the low bits\n\nCompose's first measure/place pass died with `VM_TYPE_ERROR: esperado long,\ngot Null`: `Paint.getColorLong()` had no host implementation, so a `long`\nregister held `null` and the failure only surfaced later inside `binop`.\n\n- `Paint.getColorLong()` returns the AOSP packed form (colour-space id in\n  the high 32 bits, ARGB in the low 32 bits; sRGB is id 0).\n- `Color.pack(int)` / `Color.colorSpace(long)` / `Color.isSrgb` /\n  `Color.isWideGamut` / `Color.{alpha,red,green,blue}(long)` follow the same\n  packing.\n- `Paint.setColor(long)` read the colour from the *high* 32 bits, i.e. it\n  always installed the colour-space id (transparent black for sRGB). It now\n  reads the low 32 bits.\n\nWith this, `rd app run golden-apks/org.fdroid.fdroid.apk` completes the\nlaunch and prints the composed hierarchy:\n\n    FitWindowsLinearLayout @id/action_bar_root [0,0 720x1440] vertical\n      ViewStubCompat @id/action_mode_bar_stub\n      ContentFrameLayout @16908290 [0,0 720x1440]\n        ComposeView @0 [0,0 720x1440]\n          AndroidComposeView @0 [0,0 720x1440]\n\nTest: `graphics::tests::paint_color_long_round_trips_through_a_packed_color`.\n\nAI assistance: produced with an AI coding agent (Xisto) under human review;\nthe behaviour is pinned by the test above and by the app run quoted here.\n\n* fix(vm): MotionEvent.getClassification answers CLASSIFICATION_NONE\n\nThe first tap into the composed UI stopped at\n`NOT_FOUND: MotionEvent.getClassification()`. AOSP returns\n`CLASSIFICATION_NONE` (0) for synthetic finger input without a\nclassification, which is exactly the VM's touch model; Compose reads it on\nevery down event.\n\n`rd app run golden-apks/org.fdroid.fdroid.apk --script \"tap 360,700\"` now\ndelivers the tap (`listener acionado: true`) and still prints the composed\nhierarchy.\n\nAI assistance: produced with an AI coding agent (Xisto) under human review;\nbehaviour confirmed by the app run quoted above.\n\n* fix(vm): android.net constructors stay with their owning host module\n\n`android_net.rs` answered every `<init>` on `Landroid/net/*` with a\n`NoSuchMethodError`, but it only hosts `ConnectivityManager`,\n`Network*` and `NetworkInfo`. The rest of the package (IPsec/IKE, NSD,\nSIP, SSL, Wi-Fi) lives in `android_stub_surfaces`, which runs later in the\ndispatch chain — so those constructors could never be reached and 9 tests\nin `android_stub_surfaces` failed.\n\nDeclining unknown names makes the chain fall through, as every other host\nmodule does. `cargo test -p rd-vm` is green again (109 tests in that\ntarget, 107 test targets overall).\n\nAI assistance: produced with an AI coding agent (Xisto) under human review.\n\n* fix(vm): drop android_net's now-unused exception helper\n\n`exc` lost its only caller when `android_net` stopped claiming every\n`Landroid/net/*` constructor; `cargo clippy --workspace --all-targets -D\nwarnings` (and every job that runs it, including NDK/JNI, Cranelift JIT\nand Appendix G) then failed on `function exc is never used`.\n\nAI assistance: produced with an AI coding agent (Xisto) under human review.\n\n---------\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-03T14:06:36-03:00",
+          "tree_id": "ab34beaf0fa85313fc0be9b0161453dd4b693816",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e4d038a3e3327af092dcabe78867755795f434c4"
+        },
+        "date": 1793725636695,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3352,
+            "range": "± 120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3441,
+            "range": "± 353",
             "unit": "ns/iter"
           }
         ]
