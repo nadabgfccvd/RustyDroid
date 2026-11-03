@@ -72,6 +72,28 @@ fn class_annotations(
         .collect()
 }
 
+/// Assinatura genérica de uma classe DEX (`dalvik.annotation.Signature`,
+/// visibilidade SYSTEM). `None` quando a classe não tem o atributo.
+pub(crate) fn class_generic_signature(vm: &Engine, desc: &str) -> Option<String> {
+    for (di, ann) in class_annotations(vm, desc, Visibility::System) {
+        if vm.cp.dexes[di].type_str(ann.type_idx) != "Ldalvik/annotation/Signature;" {
+            continue;
+        }
+        for el in &ann.elements {
+            if let EncodedValue::Array(items) = &el.value {
+                let mut sig = String::new();
+                for it in items {
+                    if let EncodedValue::String(idx) = it {
+                        sig.push_str(vm.cp.dexes[di].string(*idx));
+                    }
+                }
+                return Some(sig);
+            }
+        }
+    }
+    None
+}
+
 fn desc_of_class_obj(vm: &Engine, c: ObjRef) -> Option<String> {
     match vm.heap.get_field(c, "class_name") {
         Ok(Value::Obj(s)) => vm.heap.as_str(s).ok().map(str::to_string),

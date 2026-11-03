@@ -1044,6 +1044,8 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Ljava/lang/Throwable;" => Some(&["Ljava/lang/Object;"]),
         "Ljava/lang/Exception;" => Some(EXC),
         "Ljava/lang/Error;" => Some(ERR),
+        // AssertionError estende Error (usado por Kotlin/Java em asserções internas).
+        "Ljava/lang/AssertionError;" => Some(ERR),
         // ── M3.2: framework host Android ───────────────────────────────────
         "Landroid/content/Context;" => Some(OBJECT),
         "Ljava/text/BreakIterator;" => Some(OBJECT),

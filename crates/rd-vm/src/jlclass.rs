@@ -122,6 +122,9 @@ pub(crate) fn instance_intrinsic(
     };
     Ok(Some(match (name, sig) {
         ("isPrimitive", "()Z") => b(is_primitive(&d)),
+        // Flags de classfile/DEX: ACC_ANNOTATION e ACC_SYNTHETIC.
+        ("isAnnotation", "()Z") => b(access_flags(vm, &d).is_some_and(|f| f & 0x2000 != 0)),
+        ("isSynthetic", "()Z") => b(access_flags(vm, &d).is_some_and(|f| f & 0x1000 != 0)),
         ("isArray", "()Z") => b(d.starts_with('[')),
         ("getComponentType", "()Ljava/lang/Class;") => match d.strip_prefix('[') {
             Some(c) => Value::Obj(vm.class_object_for(c)?),

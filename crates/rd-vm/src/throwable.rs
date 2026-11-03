@@ -83,6 +83,28 @@ pub(crate) fn instance_intrinsic(
             set_cause(vm, recv, args.get(1).cloned().unwrap_or(Value::Null))?;
             Ok(Some(Value::Null))
         }
+        // AssertionError(Object): mensagem = String.valueOf(detail) (null vira
+        // "null"); se o detalhe for Throwable, ele também vira a causa.
+        ("<init>", "(Ljava/lang/Object;)V") if recv_class == "Ljava/lang/AssertionError;" => {
+            let detail = args.first().cloned().unwrap_or(Value::Null);
+            let text = match detail {
+                Value::Obj(d) => crate::intrinsics::object_to_string(vm, d)?,
+                _ => "null".to_string(),
+            };
+            let msg = Value::Obj(crate::intrinsics::alloc_string(vm, text)?);
+            put(vm, recv, "message", msg)?;
+            if let Value::Obj(d) = detail {
+                let is_throwable = vm
+                    .heap
+                    .class_of(d)
+                    .ok()
+                    .is_some_and(|c| crate::intrinsics::is_throwable_class(vm, c));
+                if is_throwable {
+                    set_cause(vm, recv, detail)?;
+                }
+            }
+            Ok(Some(Value::Null))
+        }
         ("<init>", "(Ljava/lang/Throwable;)V") => {
             let cause = args.first().cloned().unwrap_or(Value::Null);
             let msg = match cause {
