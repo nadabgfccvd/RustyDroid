@@ -21,7 +21,7 @@
 //! comparisons work.
 
 use crate::engine::Engine;
-use crate::err::{Throwable, VmExit};
+use crate::err::VmExit;
 use crate::heap::ObjRef;
 use crate::value::Value;
 
@@ -42,9 +42,6 @@ const CAP_VALIDATED: i32 = 16;
 /// `NetworkCapabilities.NET_CAPABILITY_NOT_METERED`.
 const CAP_NOT_METERED: i32 = 11;
 
-fn exc(class: &str, msg: impl Into<String>) -> VmExit {
-    VmExit::Exception(Throwable::new(class, msg))
-}
 fn jstr(vm: &mut Engine, s: impl Into<String>) -> Result<Value, VmExit> {
     Ok(Value::Obj(crate::intrinsics::alloc_string(vm, s.into())?))
 }
