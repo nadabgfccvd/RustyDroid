@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793721398899,
+  "lastUpdate": 1793721577107,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2735,6 +2735,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3645,
             "range": "± 338",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "be2863087c30f1ad082c81f6388e990007ba52dc",
+          "message": "fix(vm): NotificationChannel null literal + java.util.EnumSet.of (#516)\n\nThe DEX null literal (const/4 v0,0 -> Int(0)) was rejected by the NotificationChannel setters (AOSP accepts null; an unset name reads back as null). Channel.name/description are Option<String>. Plus java.util.EnumSet.of(1..5) as a host Set with the JDK's duplicate/null exceptions.",
+          "timestamp": "2026-11-03T12:58:28-03:00",
+          "tree_id": "ee4a646f4e7ec323338e3ce684bd64d55992cffe",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/be2863087c30f1ad082c81f6388e990007ba52dc"
+        },
+        "date": 1793721573843,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2760,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2756,
+            "range": "± 11",
             "unit": "ns/iter"
           }
         ]
