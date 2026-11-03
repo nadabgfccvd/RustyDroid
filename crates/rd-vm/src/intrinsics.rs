@@ -72,6 +72,10 @@ const WEAK_REF: &str = "Ljava/lang/ref/WeakReference;";
 const SOFT_REF: &str = "Ljava/lang/ref/SoftReference;";
 const REF_QUEUE: &str = "Ljava/lang/ref/ReferenceQueue;";
 const HASH_MAP: &str = "Ljava/util/HashMap;";
+/// `java.util.EnumMap`: chaves são constantes de enum. O modelo host é o mesmo
+/// `HostObj::Map` do HashMap (o estado guarda as chaves como objetos; a ordem de
+/// enumeração das constantes não é reconstruída — documentado, não inventado).
+const ENUM_MAP: &str = "Ljava/util/EnumMap;";
 /// M8 (40º gap real): classe-marcadora host da view de
 /// `Collections.unmodifiableMap` — mutações → UOE, leituras delegam.
 const UNMODIFIABLE_MAP: &str = "Ljava/util/Collections$UnmodifiableMap;";
@@ -2684,6 +2688,8 @@ fn map_supported(name: &str, sig: &str) -> bool {
             | ("<init>", "(IF)V")
             | ("<init>", "(IFZ)V")
             | ("<init>", "(Ljava/util/Map;)V")
+            | ("<init>", "(Ljava/lang/Class;)V")
+            | ("<init>", "(Ljava/util/EnumMap;)V")
             | (
                 "put",
                 "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
@@ -5146,6 +5152,7 @@ fn instance_intrinsic_dispatch(
         }
         (c, name, sig)
             if (c == HASH_MAP
+                || c == ENUM_MAP
                 || c == WEAK_MAP
                 || c == "Ljava/util/IdentityHashMap;"
                 || c == LINKED_MAP

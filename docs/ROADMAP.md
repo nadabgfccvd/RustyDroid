@@ -203,10 +203,11 @@ certos); configs específicas (land/locale/density) selecionáveis.
    Com isso o `App.onCreate` do NewPipe executa ~236 métodos DEX (preferências,
    WorkManager, Room, okhttp, PrettyTime), passou pelo canal de notificação
    (o literal nulo do DEX, `Int(0)`, não era aceito pelos setters — corrigido)
-   e pelo `EnumSet.of`, e para em `NoClassDefFoundError: Lj$/util/stream/d7;`
-   (JLS 12.4.2): o `<clinit>` de uma classe de `j$/util/stream` falhou **antes**
-   (o erro original foi engolido por um `catch` do app) e a JVM recusa
-   reinicializá-la — o próximo passo é achar o `clinit` que falhou primeiro.
+   e pelo `EnumSet.of`. O `NoClassDefFoundError: Lj$/util/stream/d7;` (JLS
+   12.4.2) foi rastreado com `RD_TRACE_CLINIT=1` até a causa real —
+   `java.util.EnumMap` sem modelo — e caiu junto. O endpoint agora é
+   `android.webkit.CookieManager.getInstance()` (NewPipe grava cookies do
+   YouTube antes de qualquer tela).
    Cada um desses passos tem teste próprio
    (`collections_binary_search.rs`, `field_hiding.rs`, `collections_completion.rs`,
    `jnet_socket_factory.rs`) e o e2e `crates/rd-cli/tests/newpipe_oncreate_e2e.rs`
