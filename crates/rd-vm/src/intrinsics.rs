@@ -430,6 +430,15 @@ fn call_static_intrinsic_rooted(
     if let Some(v) = crate::juuid::static_intrinsic(vm, class, name, args)? {
         return Ok(Some(v));
     }
+    if let Some(v) = crate::jtext_collator::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::org_json::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jcharset::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
     if let Some(v) = crate::jtext_format::static_intrinsic(vm, class, name, args)? {
         return Ok(Some(v));
     }
@@ -4278,6 +4287,8 @@ fn instance_intrinsic_dispatch(
             crate::android_display::DISPLAY
                 | crate::android_display::DISPLAY_MODE
                 | crate::android_display::DISPLAY_MANAGER
+                | crate::android_display::WINDOW_MANAGER
+                | crate::android_display::WINDOW_METRICS
         )
     {
         if let Some(v) = crate::android_display::instance_intrinsic(
@@ -4286,10 +4297,14 @@ fn instance_intrinsic_dispatch(
             return Ok(Some(v));
         }
     }
-    // PackageManager backed by the manifest (android_pm.rs)
+    // PackageManager backed by the manifest, plus the install sessions it
+    // hands out (android_pm.rs)
     if name == "getPackageManager"
         || recv_class == crate::android_pm::APM
         || recv_class == "Landroid/content/pm/PackageInfo;"
+        || recv_class == "Landroid/content/pm/PackageInstaller;"
+        || recv_class == "Landroid/content/pm/PackageInstaller$Session;"
+        || recv_class == "Landroid/content/pm/PackageInstaller$SessionParams;"
     {
         if let Some(v) =
             crate::android_pm::instance_intrinsic(vm, recv_class, mref_class, name, recv, args)?
@@ -4389,6 +4404,29 @@ fn instance_intrinsic_dispatch(
     if let Some(v) =
         crate::jio_chars::instance_intrinsic(vm, recv_class, mref_class, name, sig, recv, args)?
     {
+        return Ok(Some(v));
+    }
+    // java.text.Collator / CollationKey (jtext_collator.rs)
+    if let Some(v) =
+        crate::jtext_collator::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
+    }
+    // android.net connectivity (android_net.rs)
+    if let Some(v) = crate::android_net::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
+    }
+    // java.util.concurrent (CountDownLatch) — threads.rs
+    if let Some(v) = crate::threads::concurrent_intrinsic(vm, recv_class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    // org.json documents (org_json.rs)
+    if let Some(v) = crate::org_json::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    // java.nio.charset coders + CharBuffer (jcharset.rs)
+    if let Some(v) = crate::jcharset::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
     if let Some(v) = crate::jtext_format::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
@@ -4763,9 +4801,14 @@ fn instance_intrinsic_dispatch(
                 .unwrap_or(Value::Long(1))
                 .as_long()
                 .unwrap_or(1);
+            // The unit is the last reference argument: `args` is raw slots on
+            // the interpreter path (a `long` occupies two, the second being
+            // `WideHi`) but already normalised on the host `invoke_instance`
+            // path, so scan for it instead of indexing a fixed slot.
             let source = args
-                .get(2)
-                .and_then(|v| v.as_ref().ok().flatten())
+                .iter()
+                .rev()
+                .find_map(|v| v.as_ref().ok().flatten())
                 .ok_or_else(|| {
                     VmExit::Exception(Throwable::new(
                         "Ljava/lang/NullPointerException;",

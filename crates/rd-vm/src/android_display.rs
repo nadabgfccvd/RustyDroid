@@ -31,6 +31,8 @@ use crate::value::Value;
 pub(crate) const DISPLAY: &str = "Landroid/view/Display;";
 pub(crate) const DISPLAY_MODE: &str = "Landroid/view/Display$Mode;";
 pub(crate) const DISPLAY_MANAGER: &str = "Landroid/hardware/display/DisplayManager;";
+pub(crate) const WINDOW_MANAGER: &str = "Landroid/view/WindowManager;";
+pub(crate) const WINDOW_METRICS: &str = "Landroid/view/WindowMetrics;";
 const LISTENER_DELEGATE: &str =
     "Landroid/hardware/display/DisplayManagerGlobal$DisplayListenerDelegate;";
 
@@ -354,6 +356,12 @@ pub fn instance_intrinsic(
     if recv_class == DISPLAY_MODE {
         return display_mode_intrinsic(vm, recv, name, sig, args);
     }
+    if recv_class == WINDOW_MANAGER {
+        return window_manager_intrinsic(vm, name, sig);
+    }
+    if recv_class == WINDOW_METRICS {
+        return window_metrics_intrinsic(vm, name, sig);
+    }
     // display getters on View / Context / WindowManager / DisplayManager subclasses
     if recv_class != DISPLAY {
         let is_getter = match name {
@@ -464,4 +472,68 @@ pub fn dispatch_display_event(
         delivered += 1;
     }
     Ok(delivered)
+}
+
+/// `android.view.WindowManager` (API 30 window metrics form). The headless
+/// device has one display with no system bars, so both "current" and
+/// "maximum" metrics are the full device size — the same numbers
+/// `Display.getSize` reports. Compose reads the current metrics when it builds
+/// the recomposer/`WindowInfo`, so this cannot answer `NOT_FOUND`.
+fn window_manager_intrinsic(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+) -> Result<Option<Value>, VmExit> {
+    let value = match (name, sig) {
+        ("getCurrentWindowMetrics", "()Landroid/view/WindowMetrics;")
+        | ("getMaximumWindowMetrics", "()Landroid/view/WindowMetrics;") => {
+            let metrics = vm
+                .heap
+                .alloc_instance(WINDOW_METRICS.to_string(), Vec::new())?;
+            Value::Obj(metrics)
+        }
+        // Already answered by the display getters above when it reaches here.
+        ("getDefaultDisplay", "()Landroid/view/Display;") => Value::Obj(alloc_display(vm)?),
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
+}
+
+/// `android.view.WindowMetrics`: bounds (device size), density, and a
+/// zero-inset `WindowInsets` (the headless window is edge-to-edge with no
+/// system bars).
+fn window_metrics_intrinsic(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+) -> Result<Option<Value>, VmExit> {
+    let d = crate::android_res::device();
+    let value = match (name, sig) {
+        ("getBounds", "()Landroid/graphics/Rect;") => {
+            let rect = vm
+                .heap
+                .alloc_instance("Landroid/graphics/Rect;".to_string(), Vec::new())?;
+            vm.invoke_instance(
+                rect,
+                "<init>",
+                "(IIII)V",
+                &[
+                    Value::Int(0),
+                    Value::Int(0),
+                    Value::Int(d.w as i32),
+                    Value::Int(d.h as i32),
+                ],
+            )?;
+            Value::Obj(rect)
+        }
+        ("getDensity", "()F") => Value::Float(d.dpi as f32 / 160.0),
+        ("getWindowInsets", "()Landroid/view/WindowInsets;") => {
+            let insets = vm
+                .heap
+                .alloc_instance("Landroid/view/WindowInsets;".to_string(), Vec::new())?;
+            Value::Obj(insets)
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
 }

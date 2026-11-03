@@ -1669,6 +1669,26 @@ fn resolve_or_run_host_invoke(
                 }
             };
         }
+        // JVM fidelity for *optional* libraries: a static call into a class
+        // that neither the app's DEX nor the host provides raises a catchable
+        // `NoClassDefFoundError`, not a structured VM error. androidx.window's
+        // sidecar adapter depends on exactly that (it catches
+        // NoClassDefFoundError from `SidecarProvider.getApiVersion()` and
+        // falls back to the SDK backend); the same pattern covers other
+        // optional modules (play-services parts, desugared helpers).
+        // Platform-provided packages are excluded: there the class exists on a
+        // real device and the honest answer is the runtime-gap error below.
+        if vm.cp.find_class(&mref.class).is_none()
+            && !crate::classpath::platform_provided_class(&mref.class)
+        {
+            return Err(VmExit::Exception(crate::err::Throwable::new(
+                "Ljava/lang/NoClassDefFoundError;",
+                mref.class
+                    .trim_start_matches('L')
+                    .trim_end_matches(';')
+                    .replace('/', "."),
+            )));
+        }
         vm.ensure_initialized(&mref.class)?;
         let _t0 = vm.trace_start();
         let resolved = vm.cp.resolve_method(&mref.class, &mref.name, &mref.proto);

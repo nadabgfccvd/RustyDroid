@@ -174,6 +174,27 @@ impl Default for VmConfig {
     }
 }
 
+impl VmConfig {
+    /// Config for *app runtime* hosts — the CLI (`rd app run`) and the MCP
+    /// server — which run the app on a thread with a normal process stack
+    /// (≥ 8 MiB). The 128-frame default of [`VmConfig::default`] exists for
+    /// callers on 2 MiB threads (ADR/issue #313) and is far below what real
+    /// apps need: Compose + Room + coroutines legitimately nest ~150–250
+    /// frames (F-Droid cold start hit the cap inside
+    /// `StringsKt.indexOf$default` while Room synced its triggers).
+    ///
+    /// Raising the frame cap is safe because the **native** stack guard
+    /// (`entry_sp` + `detect_native_stack_budget`) stays authoritative and
+    /// throws a catchable `StackOverflowError` before the OS guard page when the
+    /// real stack runs out.
+    pub fn app_runtime() -> Self {
+        VmConfig {
+            max_depth: 1024,
+            ..VmConfig::default()
+        }
+    }
+}
+
 /// M7 — telemetria de launch (opt-in via `RD_LAUNCH_TRACE`): decompõe o
 /// custo do caminho frio (`launch_app_cold` ~330 ms no primftpd para só
 /// ~236k instruções guest) em resolução de método/classe, resolução de
@@ -1166,6 +1187,12 @@ impl Engine {
         if let Some(v) = crate::jbigdecimal::host_static(self, owner, field)? {
             return Ok(Some(v));
         }
+        if let Some(v) = crate::org_json::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
+        if let Some(v) = crate::jcharset::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
         if let Some(v) = crate::jtext_format::host_static(self, owner, field)? {
             return Ok(Some(v));
         }
@@ -1541,8 +1568,6 @@ pub fn parse_param_types(sig: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
-/// `RD_TRACE_METHOD=<substring>`: log every guest method entry whose label
-/// (`Lpkg/Class;->name(sig)`) contains the substring (debugging aid).
 fn trace_method_pattern() -> Option<&'static str> {
     static PAT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     PAT.get_or_init(|| {

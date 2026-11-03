@@ -1217,6 +1217,7 @@ pub(crate) fn instance_intrinsic(
             | "isDeviceProtectedStorage"
             | "getAttributionTag"
             | "getAttributionSource"
+            | "isUiContext"
             | "getAssets"
             | "getApplicationInfo"
             | "getText"
@@ -1282,6 +1283,16 @@ pub(crate) fn instance_intrinsic(
         // App comum: o contexto não é o de armazenamento protegido do device.
         ("isDeviceProtectedStorage", _) => Value::Int(0),
         ("getAttributionTag", _) => Value::Null,
+        // API 31 `Context.isUiContext()`: true for the UI context family
+        // (Activity, ContextThemeWrapper and their app subclasses), false for
+        // Application/Service/ContextImpl. Compose checks it before creating
+        // window/recomposer resources, so it must not be a blind constant.
+        ("isUiContext", "()Z") => Value::Int(i32::from(
+            vm.cp.is_subtype(recv_class, "Landroid/app/Activity;")
+                || vm
+                    .cp
+                    .is_subtype(recv_class, "Landroid/view/ContextThemeWrapper;"),
+        )),
         ("getAttributionSource", "()Landroid/content/AttributionSource;") => {
             match get(vm, recv, "mAttributionSource") {
                 value @ Value::Obj(_) => value,

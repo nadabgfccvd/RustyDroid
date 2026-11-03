@@ -1546,7 +1546,10 @@ fn boot_app(
         rd_vm::VmConfig {
             exception_trace,
             fuel: fuel.unwrap_or(rd_vm::VmConfig::default().fuel),
-            ..rd_vm::VmConfig::default()
+            // `rd app run` runs on the process main thread (8 MiB stack): the
+            // frame cap of the 2 MiB-safe default (128) is below what Compose +
+            // Room + coroutines need; the native-stack guard still applies.
+            ..rd_vm::VmConfig::app_runtime()
         },
     );
     if let Some(a) = apk {
@@ -1590,7 +1593,51 @@ fn boot_app(
     Ok((eng, activity_desc, package))
 }
 
+/// Host stack for the app runtime thread.
+///
+/// ART's interpreted frame is far smaller than this interpreter's (a Rust
+/// `call` frame carries the whole register file plus the interpreter locals),
+/// so Compose's legitimate ~400-frame layout pass exhausts an 8 MiB main
+/// thread even though the *guest* depth is below `VmConfig::app_runtime`'s
+/// 1024-frame cap. Running the app on a 32 MiB thread keeps the guest cap —
+/// not the host stack — as the limit that decides when a guest recurses too
+/// deep (the native-stack guard still fires first for real runaway recursion,
+/// it just has four times the headroom).
+const APP_RUNTIME_STACK_BYTES: usize = 32 * 1024 * 1024;
+
 fn cmd_app_run(
+    path: &Path,
+    activity: Option<&str>,
+    scripts: &[String],
+    trace: bool,
+    json: bool,
+    fuel: Option<u64>,
+) -> Result<(), RdError> {
+    let path = path.to_path_buf();
+    let activity = activity.map(str::to_string);
+    let scripts = scripts.to_vec();
+    let worker = std::thread::Builder::new()
+        .name("rd-app".into())
+        .stack_size(APP_RUNTIME_STACK_BYTES)
+        .spawn(move || cmd_app_run_inner(&path, activity.as_deref(), &scripts, trace, json, fuel))
+        .map_err(|e| {
+            RdError::new(
+                "THREAD",
+                format!("não foi possível criar a thread do app: {e}"),
+                "rd-cli",
+            )
+        })?;
+    match worker.join() {
+        Ok(r) => r,
+        Err(_) => Err(RdError::new(
+            "THREAD",
+            "a thread do app terminou em pânico",
+            "rd-cli",
+        )),
+    }
+}
+
+fn cmd_app_run_inner(
     path: &Path,
     activity: Option<&str>,
     scripts: &[String],

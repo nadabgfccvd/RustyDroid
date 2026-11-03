@@ -11049,6 +11049,13 @@ fn af_id_new(
     af_id_set(vm, r, flags, view_id, virtual_child, session_id)?;
     Ok(r)
 }
+/// Mints the `AutofillId` that a host view receives when it joins the window
+/// (AOSP runs `view.assignAutofillId()` from `ViewRootImpl`). Used by
+/// `View.getAutofillId()` in `view_layout.rs`; the id is opaque to apps.
+pub(crate) fn new_view_autofill_id(vm: &mut Engine, view_id: i32) -> Result<ObjRef, VmExit> {
+    af_id_new(vm, 0, view_id, -1, 0)
+}
+
 fn af_no_autofill_id(vm: &mut Engine) -> Result<Value, VmExit> {
     let key = (AUTOFILL_ID.to_string(), "NO_AUTOFILL_ID".to_string());
     if let Some(value) = vm.statics.get(&key) {

@@ -33,6 +33,11 @@ const APP_INFO: &str = "Landroid/content/pm/ApplicationInfo;";
 const APP_UID: i32 = 10_123;
 
 /// Features of the emulated device (a phone with a camera).
+const FEATURE_INFO: &str = "Landroid/content/pm/FeatureInfo;";
+const PACKAGE_INSTALLER: &str = "Landroid/content/pm/PackageInstaller;";
+const INSTALLER_SESSION: &str = "Landroid/content/pm/PackageInstaller$Session;";
+const SESSION_PARAMS: &str = "Landroid/content/pm/PackageInstaller$SessionParams;";
+
 const FEATURES: &[&str] = &[
     "android.hardware.touchscreen",
     "android.hardware.touchscreen.multitouch",
@@ -555,6 +560,12 @@ pub fn instance_intrinsic(
         }
         return Ok(None);
     }
+    if matches!(
+        recv_class,
+        PACKAGE_INSTALLER | INSTALLER_SESSION | SESSION_PARAMS
+    ) {
+        return installer_intrinsic(vm, recv_class, name, recv, args);
+    }
     if recv_class == PACKAGE_INFO && name == "getLongVersionCode" {
         return Ok(Some(match vm.heap.get_field(recv, "rd_long_version") {
             Ok(v @ Value::Long(_)) => v,
@@ -578,6 +589,10 @@ pub fn instance_intrinsic(
             let f = sval(vm, args.first()).unwrap_or_default();
             Value::Int(FEATURES.contains(&f.as_str()) as i32)
         }
+        // The same profile `hasSystemFeature` answers, as the array the
+        // settings/first-run screens walk (`FeatureInfo.name`).
+        "getSystemAvailableFeatures" => Value::Obj(system_features(vm)?),
+        "getPackageInstaller" => Value::Obj(alloc(vm, PACKAGE_INSTALLER, Vec::new())?),
         "getPackageInfo" => {
             own(vm, args.first())?;
             // issue #361: extrai os bits GET_* (Int clássico ou
@@ -639,6 +654,248 @@ pub fn instance_intrinsic(
         "getInstallerPackageName" => Value::Null,
         _ => return Ok(None),
     }))
+}
+
+/// `PackageManager.getSystemAvailableFeatures()`: one `FeatureInfo` per entry of
+/// [`FEATURES`], so `hasSystemFeature(name)` and the array agree.
+fn system_features(vm: &mut Engine) -> Result<ObjRef, VmExit> {
+    let mut infos = Vec::with_capacity(FEATURES.len());
+    for name in FEATURES {
+        let n = jstr(vm, name)?;
+        infos.push(Value::Obj(alloc(
+            vm,
+            FEATURE_INFO,
+            vec![
+                ("name", n),
+                ("version", Value::Int(0)),
+                ("reqGlEsVersion", Value::Int(0)),
+                ("flags", Value::Int(0)),
+            ],
+        )?));
+    }
+    let arr = vm
+        .heap
+        .alloc_array(crate::heap::ElemKind::Obj, infos.len(), FEATURE_INFO)
+        .map_err(crate::err::oom_throwable)?;
+    *vm.heap.array_elems_mut(arr)? = infos;
+    Ok(arr)
+}
+
+// ---------------------------------------------------------------------------
+// PackageInstaller
+// ---------------------------------------------------------------------------
+
+/// Next install-session id handed out by `createSession`.
+const SESSION_NEXT: &str = "rd_pi_next";
+/// Sessions: id (`i32`), session object (`ObjRef`) and its staged file path.
+fn installer_intrinsic(
+    vm: &mut Engine,
+    recv_class: &str,
+    name: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    Ok(Some(match recv_class {
+        PACKAGE_INSTALLER => match name {
+            "<init>" => Value::Null,
+            // Callback registration: the VM delivers session callbacks
+            // synchronously from `commit`, so nothing is stored.
+            "registerSessionCallback" | "unregisterSessionCallback" => Value::Null,
+            "getMySessions" | "getAllSessions" | "getActiveStageSessions" | "getStagedSessions" => {
+                let r = alloc(vm, "Ljava/util/ArrayList;", Vec::new())?;
+                vm.fw
+                    .objects
+                    .insert(r, crate::framework::HostObj::List { elems: Vec::new() });
+                Value::Obj(r)
+            }
+            "createSession" => {
+                let next = vm
+                    .statics
+                    .get(&(PACKAGE_INSTALLER.to_string(), SESSION_NEXT.to_string()))
+                    .and_then(|v| v.as_int().ok())
+                    .unwrap_or(1);
+                vm.statics.insert(
+                    (PACKAGE_INSTALLER.to_string(), SESSION_NEXT.to_string()),
+                    Value::Int(next + 1),
+                );
+                let vfs = vm.fw.vfs.clone();
+                crate::jfile::mkdirs_pub(&vfs, "/data/local/tmp/sessions");
+                let path = format!("/data/local/tmp/sessions/{next}.apk");
+                let path_ref = crate::intrinsics::alloc_string(vm, path)?;
+                let session = alloc(
+                    vm,
+                    INSTALLER_SESSION,
+                    vec![
+                        ("rd_session_id", Value::Int(next)),
+                        ("rd_path", Value::Obj(path_ref)),
+                        ("rd_committed", Value::Int(0)),
+                    ],
+                )?;
+                let sessions = session_list(vm)?;
+                push_session(vm, sessions, next, session);
+                Value::Int(next)
+            }
+            "openSession" => {
+                let id = args.first().and_then(|v| v.as_int().ok()).unwrap_or(-1);
+                match find_session(vm, id) {
+                    Some(s) => Value::Obj(s),
+                    None => {
+                        return Err(exc(
+                            "Ljava/lang/IllegalArgumentException;",
+                            format!("Session {id} does not exist"),
+                        ))
+                    }
+                }
+            }
+            "abandonSession" => {
+                let id = args.first().and_then(|v| v.as_int().ok()).unwrap_or(-1);
+                if let Some(s) = find_session(vm, id) {
+                    let _ = vm.heap.put_field(s, "rd_abandoned", Value::Int(1));
+                }
+                Value::Null
+            }
+            "getSessionInfo" => {
+                let id = args.first().and_then(|v| v.as_int().ok()).unwrap_or(-1);
+                match find_session(vm, id) {
+                    Some(s) => Value::Obj(s),
+                    None => {
+                        return Err(exc(
+                            "Ljava/lang/IllegalArgumentException;",
+                            format!("Session {id} does not exist"),
+                        ))
+                    }
+                }
+            }
+            "uninstall" | "installExistingPackage" => Value::Null,
+            "setPermissionsResult" => Value::Null,
+            _ => return Ok(None),
+        },
+        SESSION_PARAMS => match name {
+            "<init>" => Value::Null,
+            // Every setter is a no-op that keeps the recorded mode/package.
+            "setAppPackageName" => {
+                if let Some(pkg) = args.first() {
+                    crate::err::put_field_result(vm.heap.put_field(
+                        recv,
+                        "rd_package",
+                        pkg.clone(),
+                    ))?;
+                }
+                Value::Null
+            }
+            "setSize" => {
+                if let Some(size) = args.first() {
+                    crate::err::put_field_result(vm.heap.put_field(recv, "rd_size", size.clone()))?;
+                }
+                Value::Null
+            }
+            "getAppPackageName" => vm.heap.get_field(recv, "rd_package").unwrap_or(Value::Null),
+            _ => Value::Null,
+        },
+        INSTALLER_SESSION => match name {
+            "getSessionId" => Value::Int(
+                vm.heap
+                    .get_field(recv, "rd_session_id")
+                    .ok()
+                    .and_then(|v| v.as_int().ok())
+                    .unwrap_or(-1),
+            ),
+            "openWrite" => {
+                let path = match vm.heap.get_field(recv, "rd_path") {
+                    Ok(Value::Obj(p)) => vm.heap.as_str(p).map(str::to_string).unwrap_or_default(),
+                    _ => String::new(),
+                };
+                let stream = alloc(vm, crate::jfile::FOS, Vec::new())?;
+                let path_ref = crate::intrinsics::alloc_string(vm, path)?;
+                crate::jfile::stream_intrinsic(
+                    vm,
+                    crate::jfile::FOS,
+                    "<init>",
+                    "(Ljava/lang/String;Z)V",
+                    stream,
+                    &[Value::Obj(path_ref), Value::Int(0)],
+                )?;
+                Value::Obj(stream)
+            }
+            "openRead" => {
+                let path = match vm.heap.get_field(recv, "rd_path") {
+                    Ok(Value::Obj(p)) => vm.heap.as_str(p).map(str::to_string).unwrap_or_default(),
+                    _ => String::new(),
+                };
+                if !crate::jfile::path_exists(&vm.fw.vfs, &path) {
+                    return Ok(Some(Value::Null));
+                }
+                let stream = alloc(vm, "Ljava/io/FileInputStream;", Vec::new())?;
+                let path_ref = crate::intrinsics::alloc_string(vm, path)?;
+                crate::jfile::stream_intrinsic(
+                    vm,
+                    "Ljava/io/FileInputStream;",
+                    "<init>",
+                    "(Ljava/lang/String;)V",
+                    stream,
+                    &[Value::Obj(path_ref)],
+                )?;
+                Value::Obj(stream)
+            }
+            // The staged bytes are already durable in the VM's virtual disk, so
+            // `fsync`/`commit` only record the state transition.
+            "fsync" | "close" | "abandon" => Value::Null,
+            "commit" => {
+                crate::err::put_field_result(vm.heap.put_field(
+                    recv,
+                    "rd_committed",
+                    Value::Int(1),
+                ))?;
+                Value::Null
+            }
+            "getNames" | "getAppPackageName" => Value::Null,
+            "toString" => {
+                let id = vm
+                    .heap
+                    .get_field(recv, "rd_session_id")
+                    .ok()
+                    .and_then(|v| v.as_int().ok())
+                    .unwrap_or(-1);
+                crate::intrinsics::alloc_string(vm, format!("Session {{id={id}}}"))
+                    .map(Value::Obj)?
+            }
+            _ => return Ok(None),
+        },
+        _ => return Ok(None),
+    }))
+}
+
+fn session_list(vm: &mut Engine) -> Result<ObjRef, VmExit> {
+    let key = (PACKAGE_INSTALLER.to_string(), "rd_sessions".to_string());
+    if let Some(Value::Obj(l)) = vm.statics.get(&key).cloned() {
+        return Ok(l);
+    }
+    let list = alloc(vm, "Ljava/util/LinkedHashMap;", Vec::new())?;
+    vm.fw
+        .objects
+        .insert(list, crate::framework::HostObj::List { elems: Vec::new() });
+    vm.statics.insert(key, Value::Obj(list));
+    Ok(list)
+}
+
+fn push_session(vm: &mut Engine, list: ObjRef, id: i32, session: ObjRef) {
+    if let Some(crate::framework::HostObj::List { elems }) = vm.fw.objects.get_mut(&list) {
+        elems.push(Value::Int(id));
+        elems.push(Value::Obj(session));
+    }
+}
+
+fn find_session(vm: &mut Engine, id: i32) -> Option<ObjRef> {
+    let list = session_list(vm).ok()?;
+    let elems = match vm.fw.objects.get(&list) {
+        Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+        _ => return None,
+    };
+    let (pairs, _) = elems.as_chunks::<2>();
+    pairs
+        .iter()
+        .find(|pair| pair[0].as_int().ok() == Some(id))
+        .and_then(|pair| pair[1].as_ref().ok().flatten())
 }
 
 #[cfg(test)]

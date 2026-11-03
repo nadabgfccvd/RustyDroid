@@ -2495,6 +2495,23 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Landroid/telecom/VideoProfile$CameraCapabilities;"
         | "Landroid/telecom/StatusHints;"
         | "Landroid/telecom/GatewayInfo;" => Some(OBJECT),
+        // Android graphics value classes: the host keeps them as plain
+        // objects, but `check-cast` to the AOSP base type (Paint color
+        // filters, shaders) must succeed — Compose casts every
+        // `BlendModeColorFilter` back to `ColorFilter`.
+        "Landroid/graphics/BlendModeColorFilter;"
+        | "Landroid/graphics/PorterDuffColorFilter;"
+        | "Landroid/graphics/LightingColorFilter;"
+        | "Landroid/graphics/ColorMatrixColorFilter;" => {
+            Some(&["Landroid/graphics/ColorFilter;", "Ljava/lang/Object;"])
+        }
+        "Landroid/graphics/LinearGradient;"
+        | "Landroid/graphics/RadialGradient;"
+        | "Landroid/graphics/SweepGradient;"
+        | "Landroid/graphics/BitmapShader;"
+        | "Landroid/graphics/ComposeShader;" => {
+            Some(&["Landroid/graphics/Shader;", "Ljava/lang/Object;"])
+        }
         _ => None,
     }
 }
@@ -3225,6 +3242,26 @@ pub fn unresolved_method_on(class: &str, recv_class: &str, name: &str, proto: &s
         ),
         "a classe pode depender de plataforma fora do escopo M2",
     )
+}
+
+/// Classes the Android platform always provides (`java.*`, `javax.*`, `jdk.*`,
+/// `sun.*`, `dalvik.*`, the bundled XML/JSON packages). An app never bundles
+/// them, so `find_class` returning `None` for them means *this runtime has a
+/// gap* (structured `NOT_IMPLEMENTED`/`NOT_FOUND`), not that the class is
+/// absent from the device.
+pub(crate) fn platform_provided_class(desc: &str) -> bool {
+    [
+        "Ljava/",
+        "Ljavax/",
+        "Ljdk/",
+        "Lsun/",
+        "Ldalvik/",
+        "Lorg/w3c/",
+        "Lorg/xml/",
+        "Lorg/json/",
+    ]
+    .iter()
+    .any(|prefix| desc.starts_with(prefix))
 }
 
 pub fn unresolved_method(class: &str, name: &str, proto: &str) -> RdError {

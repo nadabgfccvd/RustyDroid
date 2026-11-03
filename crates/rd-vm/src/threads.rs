@@ -498,6 +498,9 @@ pub(crate) fn run_ready(vm: &mut Engine, max: usize) -> Result<usize, VmExit> {
     Ok(ran)
 }
 
+/// `java.util.concurrent.CountDownLatch` (fields `rd_count`/`rd_waiters`).
+pub(crate) const CDL: &str = "Ljava/util/concurrent/CountDownLatch;";
+
 pub(crate) const KILL_HANDLER: &str =
     "Lcom/android/internal/os/RuntimeInit$KillApplicationHandler;";
 
@@ -611,5 +614,131 @@ pub(crate) fn ueh_intrinsic(
         class,
         message: msg,
         obj: Some(e),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// CountDownLatch
+// ---------------------------------------------------------------------------
+
+fn latch_count(vm: &Engine, r: ObjRef) -> i32 {
+    vm.heap
+        .get_field(r, "rd_count")
+        .ok()
+        .and_then(|v| v.as_int().ok())
+        .unwrap_or(0)
+}
+
+fn set_latch_count(vm: &mut Engine, r: ObjRef, n: i32) {
+    let _ = vm.heap.put_field(r, "rd_count", Value::Int(n));
+}
+
+/// Threads parked in this latch's `await()`, in arrival order.
+fn latch_waiters(vm: &Engine, r: ObjRef) -> Vec<ObjRef> {
+    match vm.heap.get_field(r, "rd_waiters") {
+        Ok(Value::Obj(list)) => match vm.fw.objects.get(&list) {
+            Some(crate::framework::HostObj::List { elems }) => elems
+                .iter()
+                .filter_map(|v| v.as_ref().ok().flatten())
+                .collect(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+fn add_latch_waiter(vm: &mut Engine, r: ObjRef, t: ObjRef) {
+    let Ok(Value::Obj(list)) = vm.heap.get_field(r, "rd_waiters") else {
+        return;
+    };
+    if let Some(crate::framework::HostObj::List { elems }) = vm.fw.objects.get_mut(&list) {
+        if !elems.iter().any(|v| v.as_ref().ok().flatten() == Some(t)) {
+            elems.push(Value::Obj(t));
+        }
+    }
+}
+
+/// `await()`: a guest thread parks (the scheduler re-runs it later, the same
+/// contract as `LockSupport.park`); the main thread drains ready threads until
+/// the latch opens or nothing else can run.
+fn latch_await(vm: &mut Engine, recv: ObjRef) -> Result<(), VmExit> {
+    if latch_count(vm, recv) <= 0 {
+        return Ok(());
+    }
+    match vm.threads.current {
+        Some(t) => {
+            add_latch_waiter(vm, recv, t);
+            park(vm, None)
+        }
+        None => {
+            while latch_count(vm, recv) > 0 {
+                if run_ready(vm, 1)? == 0 {
+                    break;
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+pub(crate) fn concurrent_intrinsic(
+    vm: &mut Engine,
+    recv_class: &str,
+    name: &str,
+    _sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if recv_class != CDL {
+        return Ok(None);
+    }
+    Ok(Some(match name {
+        "<init>" => {
+            let n = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+            set_latch_count(vm, recv, n);
+            let list = vm
+                .heap
+                .alloc_instance("Ljava/util/ArrayList;".to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            vm.fw
+                .objects
+                .insert(list, crate::framework::HostObj::List { elems: Vec::new() });
+            let _ = vm.heap.put_field(recv, "rd_waiters", Value::Obj(list));
+            Value::Null
+        }
+        "countDown" => {
+            let n = (latch_count(vm, recv) - 1).max(0);
+            set_latch_count(vm, recv, n);
+            if n == 0 {
+                for t in latch_waiters(vm, recv) {
+                    if is_main(vm, t) {
+                        vm.threads.main_permit = true;
+                    } else {
+                        unpark(vm, t);
+                    }
+                }
+            }
+            Value::Null
+        }
+        "getCount" => Value::Int(latch_count(vm, recv).max(0)),
+        "await" => {
+            latch_await(vm, recv)?;
+            if name == "await" && !args.is_empty() {
+                // Timed `await(long, TimeUnit)`: report the outcome — true only
+                // when the latch actually opened.
+                Value::Int(i32::from(latch_count(vm, recv) <= 0))
+            } else {
+                Value::Null
+            }
+        }
+        "toString" => Value::Obj(crate::intrinsics::alloc_string(
+            vm,
+            format!(
+                "java.util.concurrent.CountDownLatch@{}[Count = {}]",
+                recv,
+                latch_count(vm, recv)
+            ),
+        )?),
+        _ => return Ok(None),
     }))
 }

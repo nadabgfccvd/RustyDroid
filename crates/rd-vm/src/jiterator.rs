@@ -26,6 +26,15 @@ pub(crate) fn bind(vm: &mut Engine, it: ObjRef, owner: ObjRef) -> Result<(), VmE
 }
 
 pub(crate) fn navigate(vm: &mut Engine, it: ObjRef, name: &str) -> Result<Option<Value>, VmExit> {
+    // Dispatch keys on the *declared* interface (`Ljava/util/Iterator;`), so a
+    // guest class that implements `Iterator` in DEX (androidx.collection's
+    // `MutableSetWrapper$iterator$1`, Kotlin's `AbstractIterator`, app
+    // iterators) reaches this funnel too. A guest iterator owns its own state:
+    // hand the call back to the interpreter instead of failing `remove()` with
+    // "immutable iterator" (the CDD for a guest `remove`).
+    if !matches!(vm.fw.objects.get(&it), Some(HostObj::Iter { .. })) {
+        return Ok(None);
+    }
     if name == "remove" {
         return remove(vm, it).map(Some);
     }

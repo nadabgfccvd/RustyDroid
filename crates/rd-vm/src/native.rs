@@ -890,6 +890,10 @@ fn jni_read_static_field(
             Some(c)
         } else if let Some(c) = crate::jbigdecimal::host_static(vm, &owner, fname)? {
             Some(c)
+        } else if let Some(c) = crate::org_json::host_static(vm, &owner, fname)? {
+            Some(c)
+        } else if let Some(c) = crate::jcharset::host_static(vm, &owner, fname)? {
+            Some(c)
         } else if let Some(c) = crate::jtext_format::host_static(vm, &owner, fname)? {
             Some(c)
         } else if let Some(c) = crate::android_colorspace::host_static(vm, &owner, fname)? {

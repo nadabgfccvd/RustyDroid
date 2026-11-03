@@ -946,6 +946,8 @@ pub struct HostState {
     pub(crate) regex: crate::jregex::Tables,
     pub(crate) xml: crate::xml_res::Tables,
     pub(crate) io_chars: crate::jio_chars::Tables,
+    /// `org.json` documents (org_json.rs).
+    pub(crate) org_json: crate::org_json::Tables,
     /// RNG de `UUID.randomUUID()` (ADR 024, passo 3).
     pub(crate) uuid: crate::juuid::Tables,
     /// Bytes de host de parsers XML (ADR 024, passo 3 — em `xml`).
@@ -971,6 +973,10 @@ pub struct HostState {
     /// A view called invalidate/requestLayout: ViewRootImpl schedules a
     /// traversal for the next vsync (`advance_clock` runs `layout_pass`).
     pub(crate) traversal_pending: bool,
+    /// `GestureDetector`s with a deferred callback armed (long press or
+    /// single-tap-confirmed). Drained in virtual time by
+    /// `view_gesture::deliver_pending` (same drain as `postDelayed`).
+    pub(crate) gesture_watch: Vec<ObjRef>,
     /// re-entrancy guard for the traversal run from `advance_clock`
     pub(crate) in_traversal: bool,
     /// Recursion depth guard for `host_dispatch_draw` and `dispatch_touch` / `host_dispatch_touch`.
@@ -2614,6 +2620,9 @@ impl Engine {
         let mut ran = 0usize;
         // async results queued by requestPermissions (perms.rs)
         ran += crate::perms::deliver_pending(self)?;
+        // deferred gesture callbacks due in virtual time (view_gesture.rs:
+        // long press, single-tap-confirmed after the double-tap window)
+        ran += crate::view_gesture::deliver_pending(self)?;
         loop {
             // menor deadline entre os vencidos; idx empata estável
             let due = self.fw.objects.get(&looper).and_then(|h| match h {
@@ -3385,6 +3394,19 @@ fn call_host_instance_rooted(
                 Some(i) => Ok(Some(Value::Obj(i))),
                 None => Err(not_impl("getIntent antes do launch")),
             }
+        }
+        // `setIntent` replaces the launch intent (AOSP: Activity.mIntent).
+        // F-Droid's IntentRouter rewrites the activity's intent after it
+        // handles a deep link, so the field has to be writable.
+        (ACTIVITY, "setIntent") | (CONTEXT, "setIntent") => {
+            let new_intent = match args.first() {
+                Some(Value::Obj(i)) => Some(*i),
+                _ => None,
+            };
+            if let Some(HostObj::Activity { intent, .. }) = vm.fw.objects.get_mut(&recv) {
+                *intent = new_intent;
+            }
+            Ok(Some(Value::Null))
         }
         // ── M8 (29º gap real): Activity.getFragmentManager — FragmentManager
         // canônico do host (identidade estável). O estado de fragments ainda

@@ -872,7 +872,7 @@ pub fn instance_intrinsic(
     }))
 }
 
-const FOS: &str = "Ljava/io/FileOutputStream;";
+pub(crate) const FOS: &str = "Ljava/io/FileOutputStream;";
 const FIS: &str = "Ljava/io/FileInputStream;";
 const CHANNEL: &str = "Ljava/nio/channels/FileChannel;";
 const FLOCK: &str = "Ljava/nio/channels/FileLock;";
@@ -917,7 +917,7 @@ fn int_arg(args: &[Value], i: usize) -> i64 {
     }
 }
 
-fn stream_intrinsic(
+pub(crate) fn stream_intrinsic(
     vm: &mut Engine,
     class: &str,
     name: &str,
@@ -1166,6 +1166,11 @@ fn stream_intrinsic(
 }
 
 /// Creates `p`'s parent directories (public entry for other host modules).
+/// Whether `p` names a file (or directory) in the virtual disk.
+pub(crate) fn path_exists(h: &VfsHandle, p: &str) -> bool {
+    is_file(h, p)
+}
+
 pub(crate) fn mkdirs_pub(h: &VfsHandle, p: &str) {
     mkdirs(h, p);
 }
