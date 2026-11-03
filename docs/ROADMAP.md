@@ -817,4 +817,5 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   sessão, `VfsHandle` em `HostState`) feito em #499: sessões não se veem, `package_clear`
   apaga só o pacote, e relançamento na mesma sessão mantém os arquivos.
   ADR 025 (Room `init` sobre o SQLite de framework): proposta, com achados da etapa 1
-  verificados no DEX do F-Droid (ver o ADR). Implementação ainda não iniciada.
+  verificados no DEX do F-Droid. Spike da etapa 1 (branch `wip/adr025-step1-spike`, não
+  mergeado) parou na cadeia de coroutines do kotlinx: a decisão A1 ou B está no ADR, com o dono.

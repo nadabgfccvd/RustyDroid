@@ -70,3 +70,27 @@ Verificados no `classes.dex`/`classes2.dex` do F-Droid (`golden-apks/org.fdroid.
 - b. Em `build()`, criar uma instância DEX de `Landroidx/room/DatabaseConfiguration;` e preencher os campos pelo nome (`heap.put_field`), sem chamar o construtor de muitos parâmetros. Depois chamar `init(config)` no `_Impl`.
 - c. Teste de regressão (`m8`): após `build()`, `connectionManager` não é nulo. Teste de integração com o F-Droid: `WorkDatabase.systemIdInfoDao()` roda sem exceção, ou falha com uma causa nova e registrada.
 - d. Se o `useConnection` exigir mais coroutines do que o VM tem, parar e revisar, como o item 2 da decisão manda.
+
+## Resultado do spike da etapa 1 (2026-11-03, não mergeado)
+
+O spike está no branch `wip/adr025-step1-spike` (commit `299b464`). Ele não foi mergeado e não deve ser.
+
+O que o spike fez:
+
+- O builder guarda o `Context` e o `openHelperFactory` em campos do próprio objeto do builder. Assim o GC os rastreia, sem mapa lateral.
+- `build()` cria um `DatabaseConfiguration` real, grava os campos pelo nome e chama `init(config)` no `_Impl` do DEX. Os campos que o builder não modela recebem o padrão do Room: `callbacks`, `autoMigrationSpecs`, `typeConverters`, `migrationNotRequiredFrom`, `migrationContainer`, executores (`Executors.newFixedThreadPool`), `queryCoroutineContext` (`EmptyCoroutineContext`), `allowMainThreadQueries` e `preparedStatementCacheSize`.
+- Intrínseco: `kotlin.jvm.internal.Reflection.getOrCreateKotlinClass(Class)` devolve `ClassReference`, como o stdlib faz sem kotlin-reflect.
+
+Resultado no F-Droid: o `lateinit connectionManager` deixou de acontecer. Mas a cadeia para em outro ponto:
+
+1. `Reflection.typeOf(Class)` cai em `ReflectionFactoryImpl` (kotlin-reflect), que o VM não executa.
+2. `RoomDatabase.init` cria `CoroutineScope(SupervisorJob(...))`. O kotlinx-coroutines entra em `JobSupport`, cujo campo estático `$FU` é um `AtomicReferenceFieldUpdater.newUpdater(...)`. Esse objeto é construído por reflexão, e o VM o entrega como null. A exceção final é `NullPointerException` em `getClass`.
+
+A regra 2 desta ADR manda parar quando a etapa 1 exigir coroutines além do que o VM tem. Por isso a implementação para aqui, e a decisão volta ao dono.
+
+**Decisão necessária:**
+
+- **A1. Continuar o caminho A com intrínsecos.** Implementar no host `AtomicReferenceFieldUpdater.newUpdater`, `Dispatchers.getDefault`, `ExecutorsKt.from` e o que a cadeia exigir depois (`StateFlow` e outros). Cada um é pequeno, mas a lista ainda não é conhecida. Cada passo tem teste e medição com a CLI no F-Droid.
+- **B. Modelar `RoomConnectionManager` no host** (contingência desta ADR). Exige ADR própria, conforme o item 2 da decisão.
+
+Recomendação de quem escreveu o spike: A1 com um limite de passos. Se a cadeia passar de uns poucos intrínsecos de coroutines, abrir a ADR de B. O spike não altera código de biblioteca do Room, e cada intrínseco fica isolado em `intrinsics.rs`.
