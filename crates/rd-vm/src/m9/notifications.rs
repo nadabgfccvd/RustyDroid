@@ -15,6 +15,15 @@ pub struct Channel {
     pub lights: bool,
     pub vibration: bool,
     pub deleted: bool,
+    /// Padrão do Android: o canal mostra o badge até o app desligar.
+    #[serde(default = "default_show_badge")]
+    pub show_badge: bool,
+    #[serde(default)]
+    pub light_color: i32,
+}
+
+fn default_show_badge() -> bool {
+    true
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Action {
@@ -298,6 +307,8 @@ pub(super) fn instance_call(
                     lights: false,
                     vibration: false,
                     deleted: false,
+                    show_badge: true,
+                    light_color: 0,
                 },
             );
             return Ok(Some(Value::Null));
@@ -334,10 +345,28 @@ pub(super) fn instance_call(
                 Value::Null
             }
             "setGroup" => {
-                let g = text(vm, args, 0)?;
-                vm.fw.m9.channel_values.get_mut(&recv).unwrap().group = Some(g);
+                // `setGroup(null)` é válido no Android: remove o grupo do canal.
+                let g = if matches!(args.first(), Some(Value::Null)) {
+                    None
+                } else {
+                    Some(text(vm, args, 0)?)
+                };
+                vm.fw.m9.channel_values.get_mut(&recv).unwrap().group = g;
                 Value::Null
             }
+            "setShowBadge" => {
+                vm.fw.m9.channel_values.get_mut(&recv).unwrap().show_badge = int(args, 0) != 0;
+                Value::Null
+            }
+            "canShowBadge" => Value::Int(c.show_badge as i32),
+            "setLightColor" => {
+                vm.fw.m9.channel_values.get_mut(&recv).unwrap().light_color = int(args, 0);
+                Value::Null
+            }
+            "getLightColor" => Value::Int(c.light_color),
+            // Som, padrão de vibração e conversa: o host não toca áudio nem
+            // vibra, então estes setters aceitam o argumento e não guardam estado.
+            "setSound" | "setVibrationPattern" | "setConversationId" => Value::Null,
             "enableLights" => {
                 vm.fw.m9.channel_values.get_mut(&recv).unwrap().lights = int(args, 0) != 0;
                 Value::Null

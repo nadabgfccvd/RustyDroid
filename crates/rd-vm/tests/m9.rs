@@ -48,6 +48,8 @@ fn channel(e: &mut Engine) {
             lights: false,
             vibration: false,
             deleted: false,
+            show_badge: true,
+            light_color: 0,
         },
     );
 }

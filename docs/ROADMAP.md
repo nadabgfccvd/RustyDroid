@@ -816,6 +816,8 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   intercalados. Passo 3 (contadores e RNG de UUID, #498) feito. Passo 4 (VFS por
   sessão, `VfsHandle` em `HostState`) feito em #499: sessões não se veem, `package_clear`
   apaga só o pacote, e relançamento na mesma sessão mantém os arquivos.
-  ADR 025 (Room `init` sobre o SQLite de framework): proposta, com achados da etapa 1
-  verificados no DEX do F-Droid. Spike da etapa 1 (branch `wip/adr025-step1-spike`, não
-  mergeado) parou na cadeia de coroutines do kotlinx: a decisão A1 ou B está no ADR, com o dono.
+  ADR 025 (Room `init` sobre o SQLite de framework): etapa 1 feita pelo caminho A1, sem
+  intrínsecos de coroutines. A causa do ponto de parada do spike era `queryCoroutineContext`
+  não nulo (o Room usa nulo). Também foram corrigidos os builders de WorkRequest e as
+  setters de NotificationChannel. `App.onCreate` do F-Droid roda até o fim. A próxima
+  frente é Compose na tela de entrada, fora do ADR 025. Detalhes no ADR 025, seção de resultado.
