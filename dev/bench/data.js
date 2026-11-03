@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793721014463,
+  "lastUpdate": 1793721398899,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2699,6 +2699,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3594,
             "range": "± 19",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cdcbfd38125f4a6aff4c85822bf5818bfc883d3f",
+          "message": "docs(roadmap): ADR 023 decisões 3 e 5 implementadas no hub (#513) (#515)\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T12:56:13-03:00",
+          "tree_id": "b4073ff116d2a80b9477033d7aa7e9f4d3ed7646",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/cdcbfd38125f4a6aff4c85822bf5818bfc883d3f"
+        },
+        "date": 1793721397783,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3560,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3645,
+            "range": "± 338",
             "unit": "ns/iter"
           }
         ]
