@@ -311,14 +311,9 @@ pub(crate) fn instance_intrinsic(
             "ordinal" => vm.heap.get_field(recv, "rd_ord").unwrap_or(Value::Int(0)),
             _ => return Ok(None),
         })),
-        _ => {
-            if name == "<init>" && recv_class.starts_with("Landroid/net/") {
-                return Err(exc(
-                    "Ljava/lang/NoSuchMethodError;",
-                    format!("host constructor for {recv_class}"),
-                ));
-            }
-            Ok(None)
-        }
+        // Everything else under `android.net` belongs to another host module
+        // (`android_stub_surfaces`, `android_pm`, ...). Declining here lets the
+        // dispatch chain continue instead of claiming the class.
+        _ => Ok(None),
     }
 }
