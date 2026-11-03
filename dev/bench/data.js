@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793709089293,
+  "lastUpdate": 1793709442159,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2555,6 +2555,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3211,
             "range": "± 43",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4003a6d01c332039955039a0fcc11379d6b1f548",
+          "message": "docs(roadmap): ADR 023 etapa 1 mergeada (#510) (#511)\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T09:36:36-03:00",
+          "tree_id": "58d5bb8927a4e68ec3a30b62ba06b1cae1b0316d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4003a6d01c332039955039a0fcc11379d6b1f548"
+        },
+        "date": 1793709441595,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3564,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3669,
+            "range": "± 308",
             "unit": "ns/iter"
           }
         ]
