@@ -392,7 +392,22 @@ impl Engine {
     /// returns and how the next `authenticate()` calls end.
     pub fn androidx_set_biometric(&mut self, can_authenticate: i32, outcome: BiometricOutcome) {
         self.fw.androidx.biometric_can_authenticate = can_authenticate;
-        self.fw.androidx.biometric_outcome = outcome;
+        self.fw.androidx.biometric_outcome = outcome.clone();
+
+        // The DEX dispatcher gives the opt-in M10 biometric shim first refusal
+        // for AndroidX classes too. Mirror its configuration so the host API
+        // and guest bytecode observe one programmed device, not split-brain state.
+        #[cfg(feature = "virtual-devices")]
+        {
+            self.fw.vdev.biometrics.can_authenticate_override = Some(can_authenticate);
+            self.fw.vdev.biometrics.auto_outcome = match outcome {
+                BiometricOutcome::Success => crate::m10::BiometricOutcome::Success,
+                BiometricOutcome::Failed => crate::m10::BiometricOutcome::Failed,
+                BiometricOutcome::Error(code, message) => {
+                    crate::m10::BiometricOutcome::Error { code, message }
+                }
+            };
+        }
     }
     pub fn androidx_biometric_requests(&self) -> &[String] {
         &self.fw.androidx.biometric_requests

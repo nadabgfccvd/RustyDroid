@@ -51,6 +51,9 @@ pub enum BiometricOutcome {
 pub struct BiometricState {
     pub hardware_present: bool,
     pub enrolled: bool,
+    /// Exact API result supplied by the AndroidX host when configured. `None`
+    /// keeps the framework-device-derived SUCCESS / NO_HARDWARE / NONE_ENROLLED result.
+    pub can_authenticate_override: Option<i32>,
     pub auto_outcome: BiometricOutcome,
     pub active_prompt: Option<ActiveBiometricPrompt>,
     pub auth_attempts: u32,
@@ -61,6 +64,7 @@ impl Default for BiometricState {
         Self {
             hardware_present: true,
             enrolled: true,
+            can_authenticate_override: None,
             auto_outcome: BiometricOutcome::Pending,
             active_prompt: None,
             auth_attempts: 0,
@@ -70,6 +74,9 @@ impl Default for BiometricState {
 
 impl BiometricState {
     pub fn can_authenticate_code(&self) -> i32 {
+        if let Some(code) = self.can_authenticate_override {
+            return code;
+        }
         if !self.hardware_present {
             12 // BIOMETRIC_ERROR_NO_HARDWARE
         } else if !self.enrolled {
@@ -334,34 +341,24 @@ fn start_biometric_prompt(
     crypto: Option<ObjRef>,
 ) -> Result<(), VmExit> {
     vm.fw.vdev.biometrics.auth_attempts += 1;
-    if !vm.fw.vdev.biometrics.hardware_present {
+    let availability = vm.fw.vdev.biometrics.can_authenticate_code();
+    if availability != 0 {
         let prompt = ActiveBiometricPrompt {
             kind,
             callback,
             crypto,
         };
-        let _ = deliver_prompt_outcome(
-            vm,
-            &prompt,
-            &BiometricOutcome::Error {
-                code: 12,
-                message: "No biometric hardware present".into(),
-            },
-        )?;
-        return Ok(());
-    }
-    if !vm.fw.vdev.biometrics.enrolled {
-        let prompt = ActiveBiometricPrompt {
-            kind,
-            callback,
-            crypto,
+        let message = match availability {
+            11 => "No biometrics enrolled",
+            12 => "No biometric hardware present",
+            _ => "Biometric authentication is unavailable",
         };
         let _ = deliver_prompt_outcome(
             vm,
             &prompt,
             &BiometricOutcome::Error {
-                code: 11,
-                message: "No biometrics enrolled".into(),
+                code: availability,
+                message: message.into(),
             },
         )?;
         return Ok(());
@@ -393,6 +390,14 @@ impl Engine {
     ) -> Result<bool, VmExit> {
         if persist_auto {
             self.fw.vdev.biometrics.auto_outcome = outcome.clone();
+            self.fw.androidx.biometric_outcome = match outcome.clone() {
+                BiometricOutcome::Success => crate::androidx::BiometricOutcome::Success,
+                BiometricOutcome::Failed => crate::androidx::BiometricOutcome::Failed,
+                BiometricOutcome::Error { code, message } => {
+                    crate::androidx::BiometricOutcome::Error(code, message)
+                }
+                BiometricOutcome::Pending => self.fw.androidx.biometric_outcome.clone(),
+            };
         }
         let active = match &outcome {
             BiometricOutcome::Failed => self.fw.vdev.biometrics.active_prompt.clone(),
@@ -408,5 +413,8 @@ impl Engine {
     pub fn m10_set_biometric_hardware(&mut self, present: bool, enrolled: bool) {
         self.fw.vdev.biometrics.hardware_present = present;
         self.fw.vdev.biometrics.enrolled = enrolled;
+        self.fw.vdev.biometrics.can_authenticate_override = None;
+        self.fw.androidx.biometric_can_authenticate =
+            self.fw.vdev.biometrics.can_authenticate_code();
     }
 }

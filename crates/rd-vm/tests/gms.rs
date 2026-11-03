@@ -2473,6 +2473,106 @@ fn dex_bytecode_calls_gms_through_full_dispatch() {
     assert_eq!(get(&e, "code"), 1);
 }
 
+#[test]
+fn dex_tasks_keep_result_and_exception_state_through_full_dispatch() {
+    const TASKS: &str = "Lcom/google/android/gms/tasks/Tasks;";
+    const TASK: &str = "Lcom/google/android/gms/tasks/Task;";
+
+    let mut b = DexBuilder::new();
+    let probe = b.class("LTaskDispatchProbe;", "Ljava/lang/Object;");
+    let p_for_result = b.proto_idx(TASK, vec!["Ljava/lang/Object;".to_string()]);
+    let m_for_result = b.method_idx(TASKS, p_for_result, "forResult");
+    let p_get_result = b.proto_idx("Ljava/lang/Object;", vec![]);
+    let m_get_result = b.method_idx(TASK, p_get_result, "getResult");
+    let p_for_exception = b.proto_idx(TASK, vec!["Ljava/lang/Exception;".to_string()]);
+    let m_for_exception = b.method_idx(TASKS, p_for_exception, "forException");
+    let p_is_successful = b.proto_idx("Z", vec![]);
+    let m_is_successful = b.method_idx(TASK, p_is_successful, "isSuccessful");
+    let p_get_exception = b.proto_idx("Ljava/lang/Exception;", vec![]);
+    let m_get_exception = b.method_idx(TASK, p_get_exception, "getException");
+
+    let mut result_code = op35c(0x71, 1, m_for_result, [3, 0, 0, 0, 0]);
+    result_code.extend(op11x(0x0c, 0)); // move-result-object v0
+    result_code.extend(op35c(0x6e, 1, m_get_result, [0, 0, 0, 0, 0]));
+    result_code.extend(op11x(0x0c, 1)); // move-result-object v1
+    result_code.extend(op11x(0x11, 1)); // return-object v1
+    b.direct(
+        probe,
+        "resultFromTask",
+        "Ljava/lang/Object;",
+        vec!["Ljava/lang/Object;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(4, 1, 1, result_code)),
+    );
+
+    let mut failure_code = op35c(0x71, 1, m_for_exception, [3, 0, 0, 0, 0]);
+    failure_code.extend(op11x(0x0c, 0)); // move-result-object v0
+    failure_code.extend(op35c(0x6e, 1, m_is_successful, [0, 0, 0, 0, 0]));
+    failure_code.extend(op11x(0x0a, 1)); // move-result v1
+    failure_code.extend(op11x(0x0f, 1)); // return v1
+    b.direct(
+        probe,
+        "failureIsSuccessful",
+        "Z",
+        vec!["Ljava/lang/Exception;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(4, 1, 1, failure_code)),
+    );
+
+    let mut exception_code = op35c(0x71, 1, m_for_exception, [3, 0, 0, 0, 0]);
+    exception_code.extend(op11x(0x0c, 0)); // move-result-object v0
+    exception_code.extend(op35c(0x6e, 1, m_get_exception, [0, 0, 0, 0, 0]));
+    exception_code.extend(op11x(0x0c, 1)); // move-result-object v1
+    exception_code.extend(op11x(0x11, 1)); // return-object v1
+    b.direct(
+        probe,
+        "exceptionFromTask",
+        "Ljava/lang/Exception;",
+        vec!["Ljava/lang/Exception;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(b.code(4, 1, 1, exception_code)),
+    );
+
+    let mut e = engine_of(&b);
+    // Exercise the precedence path that previously shadowed GMS Tasks: M10 is
+    // enabled, but generic Tasks still have to fall through to the canonical GMS shim.
+    e.m10_enable_virtual_devices();
+    let payload = s(&mut e, "fcm-token-value");
+    let returned = e
+        .invoke_static(
+            "LTaskDispatchProbe;",
+            "resultFromTask",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+            std::slice::from_ref(&payload),
+        )
+        .expect("Tasks.forResult/getResult via DEX");
+    assert_eq!(returned, payload, "Task.getResult must preserve its value");
+
+    let exception = Value::Obj(obj(&mut e, "Ljava/lang/Exception;"));
+    assert_eq!(
+        e.invoke_static(
+            "LTaskDispatchProbe;",
+            "failureIsSuccessful",
+            "(Ljava/lang/Exception;)Z",
+            std::slice::from_ref(&exception),
+        )
+        .expect("Tasks.forException/isSuccessful via DEX"),
+        Value::Int(0),
+        "a failed Task must not report success"
+    );
+    assert_eq!(
+        e.invoke_static(
+            "LTaskDispatchProbe;",
+            "exceptionFromTask",
+            "(Ljava/lang/Exception;)Ljava/lang/Exception;",
+            std::slice::from_ref(&exception),
+        )
+        .expect("Tasks.forException/getException via DEX"),
+        exception,
+        "Task.getException must return the actual failure"
+    );
+}
+
 // ── Regressão (auditoria de estabilização): listeners que escrevem no
 // próprio callback NÃO podem recursir até ao abort do hospedeiro. Antes
 // da guarda de reentrância, este cenário terminava em

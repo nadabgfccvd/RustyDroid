@@ -797,6 +797,29 @@ fn camera2_session_imagereader_and_bytebuffer_pipeline() {
 }
 
 #[test]
+fn androidx_biometric_programming_is_visible_to_m10_dex_dispatch() {
+    let mut e = engine();
+    e.androidx_set_biometric(
+        11,
+        rd_vm::androidx::BiometricOutcome::Error(11, "No biometrics enrolled".into()),
+    );
+
+    let manager = host_obj(&mut e, "Landroidx/biometric/BiometricManager;");
+    assert_eq!(
+        icall(
+            &mut e,
+            "Landroidx/biometric/BiometricManager;",
+            "canAuthenticate",
+            "()I",
+            manager,
+            &[]
+        ),
+        Value::Int(11),
+        "AndroidX host configuration must be visible to the M10 guest shim"
+    );
+}
+
+#[test]
 fn biometrics_framework_and_androidx_callbacks() {
     let mut e = engine();
     let bm = host_obj(&mut e, "Landroid/hardware/biometrics/BiometricManager;");
@@ -1505,6 +1528,65 @@ fn denied_permissions_raise_security_exception_cleanly() {
         VmExit::Exception(t) => assert_eq!(t.class, "Ljava/lang/SecurityException;"),
         other => panic!("expected SecurityException, got {other:?}"),
     }
+}
+
+#[test]
+fn guest_dex_virtual_device_shims_require_the_opt_in_profile() {
+    let mut b = DexBuilder::new();
+    let probe = b.class("Ltest/probe/Probe;", "Ljava/lang/Object;");
+    let gps = b.intern("gps") as u16;
+    let p_enabled = b.proto_idx("Z", vec!["Ljava/lang/String;".into()]);
+    let m_enabled = b.method_idx(
+        "Landroid/location/LocationManager;",
+        p_enabled,
+        "isProviderEnabled",
+    );
+    let mut units = op21c(0x1a, 0, gps); // const-string v0, "gps"
+    units.extend(op35c(0x6e, 2, m_enabled, [1, 0, 0, 0, 0]));
+    units.extend(op11x(0x0a, 0)); // move-result v0
+    units.extend(op10x(0x0f)); // return v0
+    let code = b.code(2, 1, 2, units);
+    b.direct(
+        probe,
+        "isGpsEnabled",
+        "Z",
+        vec!["Landroid/location/LocationManager;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(code),
+    );
+
+    let dex = rd_dex::Dex::parse(b.finish()).expect("parse probe DEX");
+    let mut e = Engine::new(vec![dex], VmConfig::default());
+    let manager = e
+        .heap
+        .alloc_instance("Landroid/location/LocationManager;".into(), Vec::new())
+        .expect("allocate LocationManager receiver");
+
+    // The default profile must not fabricate active GPS through the M10 host
+    // shim. Its unimplemented framework call remains an explicit error.
+    let disabled = e.invoke_static(
+        "Ltest/probe/Probe;",
+        "isGpsEnabled",
+        "(Landroid/location/LocationManager;)Z",
+        &[Value::Obj(manager)],
+    );
+    assert!(
+        disabled.is_err(),
+        "M10 intercepted a DEX call while virtual hardware was disabled: {disabled:?}"
+    );
+
+    // The identical guest bytecode is handled by M10 after the caller opts in.
+    e.m10_enable_virtual_devices();
+    assert_eq!(
+        e.invoke_static(
+            "Ltest/probe/Probe;",
+            "isGpsEnabled",
+            "(Landroid/location/LocationManager;)Z",
+            &[Value::Obj(manager)],
+        )
+        .expect("M10 GPS provider call"),
+        Value::Int(1)
+    );
 }
 
 #[test]
