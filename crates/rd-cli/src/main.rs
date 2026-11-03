@@ -426,6 +426,29 @@ enum DeviceSub {
 }
 
 fn main() {
+    // Toda a CLI roda numa thread de 32 MiB (mesma razão de `APP_RUNTIME_STACK_BYTES`):
+    // `shot`, `tap`, `dump` e o servidor MCP também executam a pilha do Compose.
+    // Na thread principal de 8 MiB o orçamento de pilha nativa corta a recursão em
+    // ~400 quadros e a primeira tela sai em branco. Todos os comandos encerram com
+    // `process::exit`; o `join` só volta em pânico (código 101, como o runtime faz).
+    let worker = std::thread::Builder::new()
+        .name("rd-main".into())
+        .stack_size(APP_RUNTIME_STACK_BYTES)
+        .spawn(real_main);
+    match worker {
+        Ok(handle) => {
+            if handle.join().is_err() {
+                std::process::exit(101);
+            }
+        }
+        Err(e) => {
+            eprintln!("E/rd: não foi possível criar a thread principal: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn real_main() {
     // issue #55: stdout do processo host é do ARTEFATO do comando (dump XML,
     // JSON, PNG status) — System.out do app vai para o stderr (o Android real
     // manda saída do app para o logcat, nunca para o stream do dump).
