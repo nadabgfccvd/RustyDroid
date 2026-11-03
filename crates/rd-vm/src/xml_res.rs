@@ -537,13 +537,84 @@ fn typed_array_get(
                     }
                     Value::Int(1)
                 }
+                // Resolve an ARRAY resource (string-array/integer-array). This
+                // is what a real preference screen needs: `entries`/
+                // `entryValues` are array references, and returning null made
+                // `MultiSelectListPreference.<init>` do `array-length` on null
+                // (NewPipe cold start).
+                // `getTextArray(int)` takes no default argument, so an
+                // attribute that is not an array answers null (the JDK
+                // returns null too) — never the index that `def` would hold.
+                "getTextArray" => match array_values(vm, &a.value)? {
+                    Some(v) => v,
+                    None => Value::Null,
+                },
                 // Complex colors / drawables need inflation that is not modelled.
-                "getColorStateList" | "getDrawable" | "getFont" | "getTextArray" => Value::Null,
+                "getColorStateList" | "getDrawable" | "getFont" => Value::Null,
                 _ => return Ok(None),
             }
         }
     };
     Ok(Some(v))
+}
+
+/// Materializes an ARRAY resource referenced by `value` as a
+/// `CharSequence[]` (the runtime type of `TypedArray.getTextArray`).
+///
+/// `Ok(None)` = the attribute is absent or does not point at an array, so the
+/// caller keeps the legacy default (null) instead of inventing an empty array.
+/// A reference to something that is not an array is also `None`: Leak 1 forbids
+/// pretending that a style bag is a list of entries.
+fn array_values(vm: &mut Engine, value: &AttrValue) -> Result<Option<Value>, VmExit> {
+    use rd_apk::arsc::ResolvedValue as R;
+    let AttrValue::Reference(id) = value else {
+        return Ok(None);
+    };
+    let Some(items) = vm
+        .fw
+        .resources
+        .as_ref()
+        .and_then(|a| a.arsc.as_ref())
+        .and_then(|arsc| arsc.resolve_array(*id))
+    else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let v = match item.data_type {
+            0x03 => match item.string {
+                Some(t) => str_val(vm, t)?,
+                None => Value::Null,
+            },
+            // INT_DEC/INT_HEX/INT_BOOLEAN/INT_COLOR_*: raw i32, like TypedValue.data
+            0x10 | 0x11 | 0x12 | 0x1c..=0x1f => Value::Int(item.data as i32),
+            0x04 => Value::Float(f32::from_bits(item.data)),
+            // A reference inside the array is dereferenced with the same
+            // resource policy the rest of the surface uses.
+            0x01 => match vm.resolve_resource_value(item.data) {
+                Ok(R::Str(t)) => str_val(vm, t)?,
+                Ok(R::Integer(i)) => Value::Int(i),
+                Ok(R::Boolean(b)) => Value::Int(b as i32),
+                Ok(R::Float(f)) => Value::Float(f),
+                _ => Value::Null,
+            },
+            _ => Value::Null,
+        };
+        out.push(v);
+    }
+    Ok(Some(new_char_sequence_array(vm, out)?))
+}
+
+fn new_char_sequence_array(vm: &mut Engine, vals: Vec<Value>) -> Result<Value, VmExit> {
+    let a = vm.heap.alloc_array(
+        crate::heap::ElemKind::Obj,
+        vals.len(),
+        "Ljava/lang/CharSequence;",
+    )?;
+    *vm.heap
+        .array_elems_mut(a)
+        .map_err(|e| VmExit::from(crate::err::vm_error("INVALID_FORMAT", e)))? = vals;
+    Ok(Value::Obj(a))
 }
 
 fn type_of(a: &XmlAttribute) -> i32 {
