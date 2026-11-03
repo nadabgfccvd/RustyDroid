@@ -155,9 +155,27 @@ impl Xapk {
         &self.splits[self.base_index].apk
     }
 
-    /// Consome o bundle e devolve o APK base.
-    pub fn into_base(mut self) -> Apk {
-        self.splits.swap_remove(self.base_index).apk
+    /// Consome o bundle e devolve o APK base. Os DEX dos demais splits viram
+    /// `Apk::split_dex` (mesclados na execução, ADR 022). As libs nativas dos
+    /// splits ainda não são carregadas: ver `SplitSummary::native_libs`.
+    pub fn into_base(self) -> Apk {
+        let base_index = self.base_index;
+        let mut base = None;
+        let mut extra = Vec::new();
+        for (i, split) in self.splits.into_iter().enumerate() {
+            if i == base_index {
+                base = Some(split.apk);
+            } else if !split.apk.dex_files.is_empty() {
+                extra.push(crate::SplitDexSource {
+                    split_id: split.id,
+                    dex_files: split.apk.dex_files,
+                    zip: split.apk.zip,
+                });
+            }
+        }
+        let mut base = base.expect("base_index dentro de splits (validado em from_zip)");
+        base.split_dex = extra;
+        base
     }
 
     /// Resumo por split para o `inspect`.
@@ -213,6 +231,54 @@ mod tests {
     fn bundle(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
         let refs: Vec<(&str, &[u8])> = entries.iter().map(|(n, b)| (*n, b.as_slice())).collect();
         stored_zip(&refs)
+    }
+
+    /// ADR 022: o DEX de um split de feature entra na execução (`split_dex`),
+    /// com o ZIP do próprio split; o base continua sendo o split de `base`.
+    #[test]
+    fn into_base_carries_split_dex_for_execution() {
+        let pkg = "com.example.game";
+        let base = stored_zip(&[
+            ("AndroidManifest.xml", &minimal_manifest_axml(pkg)),
+            ("classes.dex", b"dex-base"),
+        ]);
+        let feature = stored_zip(&[
+            ("AndroidManifest.xml", &minimal_manifest_axml(pkg)),
+            ("classes2.dex", b"dex-feature"),
+        ]);
+        let cfg = apk_for(pkg);
+        let mf = manifest_json(
+            &[
+                ("com.example.game.apk", "base"),
+                ("feature.apk", "feature"),
+                ("config.arm64.apk", "config.arm64"),
+            ],
+            &[],
+        );
+        let bytes = bundle(&[
+            ("manifest.json", mf),
+            ("com.example.game.apk", base),
+            ("feature.apk", feature),
+            ("config.arm64.apk", cfg),
+        ]);
+        let (apk, summaries) = Apk::from_bytes_with_splits(bytes).unwrap();
+        assert!(summaries.is_some());
+        assert_eq!(apk.dex_files, vec!["classes.dex".to_string()]);
+        assert_eq!(apk.split_dex.len(), 1, "só o split de feature tem DEX");
+        let src = &apk.split_dex[0];
+        assert_eq!(src.split_id, "feature");
+        assert_eq!(src.dex_files, vec!["classes2.dex".to_string()]);
+        let entry = src
+            .zip
+            .find("classes2.dex")
+            .expect("DEX do split no ZIP do split");
+        assert_eq!(src.zip.read_entry(entry).unwrap(), b"dex-feature".to_vec());
+        // o base continua lendo o próprio DEX, não o do split
+        let base_entry = apk.zip.find("classes.dex").unwrap();
+        assert_eq!(
+            apk.zip.read_entry(base_entry).unwrap(),
+            b"dex-base".to_vec()
+        );
     }
 
     #[test]
