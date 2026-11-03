@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793720324518,
+  "lastUpdate": 1793720707860,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2627,6 +2627,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3194,
             "range": "± 25",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "31b403a899264e5d653eab7a2833b72b0dd70bd5",
+          "message": "feat(rd-agent): orçamento de heap por sessão e roteador de entrada (ADR 023, decisões 3 e 5) (#513)\n\nCada sessão recebe min(ram_app_heap_mb, ram_process_cap_mb / N) de heap; a\nsoma das sessões nunca passa do teto do processo. session_info mostra o\norçamento. Toda tool que injeta entrada passa pelo InputRouter do hub, que\nregistra sessão de destino, ordem e aceitação; session_list expõe\nlast_input_seq. O roteador fica no hub, não no M10 (o M10 não tem roteador):\ndeclarado na ADR 023.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T12:44:22-03:00",
+          "tree_id": "6c79f7088b19cf515570e7dfabade98d7ebebbbc",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/31b403a899264e5d653eab7a2833b72b0dd70bd5"
+        },
+        "date": 1793720706892,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3275,
+            "range": "± 446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3264,
+            "range": "± 102",
             "unit": "ns/iter"
           }
         ]
