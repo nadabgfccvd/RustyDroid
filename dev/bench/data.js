@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793707497463,
+  "lastUpdate": 1793707574326,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2375,6 +2375,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3335,
             "range": "± 86",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da3d1ded38a314d4a9ef6f2ab5327f3fc69104e3",
+          "message": "fix(rd-vm): virtual_hardware_enabled vale no despacho de bytecode (#229) (#505)\n\nO ponto 3 da #229 era o único aberto: intrinsics.rs consultava o flag, interp.rs não. Gate por classe (m10::is_virtual_hardware_class), não por módulo — os módulos M10 misturam hardware e software. ADR 026. Testes: m10_gate_229.rs (probe em bytecode DEX real).",
+          "timestamp": "2026-11-03T09:04:35-03:00",
+          "tree_id": "f8629233dba6c96a241e78d0e342353e20a07e6e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/da3d1ded38a314d4a9ef6f2ab5327f3fc69104e3"
+        },
+        "date": 1793707573561,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3202,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3194,
+            "range": "± 18",
             "unit": "ns/iter"
           }
         ]
