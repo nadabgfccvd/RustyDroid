@@ -91,6 +91,7 @@ pub(crate) mod platform_base;
 pub(crate) mod prefs;
 pub(crate) mod reflect;
 pub mod repr;
+pub(crate) mod resbundle;
 pub mod threads;
 pub(crate) mod throwable;
 pub mod value;

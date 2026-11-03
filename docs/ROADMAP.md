@@ -196,9 +196,15 @@ certos); configs específicas (land/locale/density) selecionáveis.
    queimar o fuel dentro do `App.onCreate` (a queima era silenciosa: `VM_FUEL`
    só no fim, ~20 min de CPU). Corrigido, com o modelo de elementos de array
    (`arrayBaseOffset`/`arrayIndexScale`), em `crates/rd-vm/tests/unsafe_cas.rs`.
-   O `App.onCreate` **ainda não termina** — o bloqueio atual é
-   `java.util.ResourceBundle.getBundle(String, Locale)` (o `PrettyTime` do
-   NewPipe carrega as unidades de tempo localizadas por *class-based bundle*). Cada um desses passos tem teste próprio
+   Na sequência, `java.util.ResourceBundle.getBundle(String, Locale)`
+   (`resbundle.rs`): o `PrettyTime` localiza suas unidades por *class-based
+   bundle* (`Resources_pt extends ListResourceBundle`), e os bundles passaram a
+   resolver candidato por locale, `getContents()` e `getString`/`containsKey`.
+   Com isso o `App.onCreate` do NewPipe executa ~236 métodos DEX (preferências,
+   WorkManager, Room, okhttp, PrettyTime) e para em
+   `androidx.core.app.NotificationChannelCompat$Api26Impl.setGroup`
+   (`NullPointerException: text` no canal de notificação — o nome do canal vem
+   de `getString` de recurso e chega nulo). Cada um desses passos tem teste próprio
    (`collections_binary_search.rs`, `field_hiding.rs`, `collections_completion.rs`,
    `jnet_socket_factory.rs`) e o e2e `crates/rd-cli/tests/newpipe_oncreate_e2e.rs`
    fixa que os gaps fechados não voltam.

@@ -22,6 +22,8 @@ const UNSAFE: &str = "Lsun/misc/Unsafe;";
 const TARGET: &str = "LUnsafeTarget;";
 const HOLDER: &str = "LUnsafeHolder;";
 const OFFSET: i64 = 8;
+/// `Unsafe.arrayBaseOffset`: o VM numera os elementos acima dos offsets de campo.
+const ARRAY_BASE: i64 = 0x4000_0000;
 
 /// `if-test` formato 21t: `off` é relativo à própria instrução.
 fn op21t(op: u8, a: u8, off: i16) -> Vec<u16> {
@@ -114,10 +116,11 @@ fn fixture() -> DexBuilder {
     );
 
     // static int casArray(Unsafe u, int[] table)
-    //   return u.compareAndSetInt(table, 16 + 2*8, 0, 5) ? 1 : -1;
+    //   return u.compareAndSetInt(table, ARRAY_BASE + 2*8, 0, 5) ? 1 : -1;
     let mut arr = op12x(0x07, 5, 11); // receiver
     arr.extend(op12x(0x07, 6, 12)); // object (the array)
-    arr.extend(op21s(0x16, 7, 32)); // const-wide/16 v7, 32 == 16 + 2*8
+                                    // const-wide v7, ARRAY_BASE + 2*8 (o offset sintético de `table[2]`)
+    arr.extend(op51l(0x17, 7, ARRAY_BASE + 16));
     arr.extend(op11n(0x12, 9, 0)); // expected 0
     arr.extend(op11n(0x12, 10, 5)); // update 5 (const/4 é lit4: -8..7)
     arr.extend(op3rc(0x74, 6, m_cas, 5));
