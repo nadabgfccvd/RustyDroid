@@ -1475,6 +1475,21 @@ fn vm_err_to_rd(e: rd_vm::VmExit) -> RdError {
     }
 }
 
+/// `VmExit` → `RdError` com o Engine à mão: a exceção que escapou ganha a
+/// cadeia `Caused by:` do `Throwable` real. Sem isso, um app que embrulha a
+/// falha (`throw new InflateException(text, e)`) esconde a causa do agente —
+/// e o diagnóstico vira adivinhação.
+fn vm_err_to_rd_with(eng: &rd_vm::Engine, e: rd_vm::VmExit) -> RdError {
+    match e {
+        rd_vm::VmExit::Exception(t) => RdError::new(
+            "VM_EXCEPTION",
+            format!("exceção não capturada: {}", eng.describe_throwable(&t)),
+            "rd-vm",
+        ),
+        other => vm_err_to_rd(other),
+    }
+}
+
 /// M3 (DoD): roda o app trivial headless — lifecycle + script do agente
 /// ("tap X,Y", "wait MS", "dump"). O dump textual é a observabilidade do
 /// agente até o UI dump rico do M4.
@@ -1548,7 +1563,7 @@ fn boot_app(
         eng.set_resources(a);
     }
     if let Err(e) = eng.launch_app(&activity_desc, &package, Vec::new()) {
-        let mut rd = vm_err_to_rd(e);
+        let mut rd = vm_err_to_rd_with(&eng, e);
         // Observabilidade (M8): com --trace, VM_EXCEPTION ganha postmortem —
         // rótulos dos corpos DEX executados (cobertura de entrada, AG-09).
         // Presença/ausência responde "esse método androidx rodou?" — o passo

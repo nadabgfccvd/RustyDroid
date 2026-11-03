@@ -1368,6 +1368,80 @@ impl Engine {
         Ok(obj)
     }
 
+    /// Chave de heap qualificada para um campo de INSTÂNCIA quando o nome é
+    /// ambíguo por *field hiding* (JLS 8.3): `SwitchPreference` declara
+    /// `mListener` e `Preference` também, então um único slot por nome fazia a
+    /// escrita da subclasse sobrescrever o campo da superclasse. O
+    /// `PreferenceGroupAdapter` escrevia o adapter em `Preference.mListener`,
+    /// o `SwitchPreference.<init>` escrevia o listener booleano na MESMA
+    /// entrada, e `Preference.notifyChanged()` lia um
+    /// `SwitchPreference$Listener` onde esperava o adapter — NPE em
+    /// `mVisiblePreferences.indexOf` no launch real do NewPipe.
+    ///
+    /// `None` = sem ambiguidade: o slot por nome continua valendo (custo zero
+    /// e nenhuma mudança de comportamento para os outros 99% dos campos).
+    /// Quando há ambiguidade, a chave vira `declClass#nome`, que é o que o
+    /// bytecode descreve: o campo da classe declarante, não "o campo com esse
+    /// nome em qualquer nível da hierarquia".
+    pub(crate) fn qualified_field_key(
+        &mut self,
+        recv: crate::heap::ObjRef,
+        decl_class: &str,
+        fname: &str,
+    ) -> Result<Option<String>, VmExit> {
+        let recv_class = match self.heap.class_of(recv) {
+            Ok(c) => c.to_string(),
+            Err(_) => return Ok(None),
+        };
+        if recv_class == decl_class {
+            return Ok(None);
+        }
+        let mut cur = recv_class;
+        for _ in 0..16 {
+            if cur == decl_class {
+                return Ok(None);
+            }
+            if self.class_declares_field(&cur, fname)? {
+                return Ok(Some(format!("{decl_class}#{fname}")));
+            }
+            match self.cp.superclass_of(&cur) {
+                Some(s) => cur = s,
+                None => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+
+    /// A classe (do DEX) declara um campo de instância com esse nome?
+    /// Classes de plataforma (sem DEX) respondem `false`: elas não participam
+    /// do heap por campo e não criam ambiguidade de nome.
+    fn class_declares_field(&mut self, class_desc: &str, fname: &str) -> Result<bool, VmExit> {
+        let Some((dex_idx, def)) = self.cp.find_class(class_desc) else {
+            return Ok(false);
+        };
+        let def = *def;
+        let Ok(Some(data)) = self.cp.class_data(dex_idx, &def) else {
+            return Ok(false);
+        };
+        for f in &data.instance_fields {
+            if f.field_idx == rd_dex::strings::NO_INDEX {
+                continue;
+            }
+            if let Ok((_, name, _)) = self.cp.field_ref(dex_idx, f.field_idx) {
+                if name == fname {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Texto de uma exceção que escapou, com a cadeia `Caused by:` (Lei 1:
+    /// o agente vê a causa real, não só o embrulho que o app lançou).
+    pub fn describe_throwable(&self, t: &Throwable) -> String {
+        crate::throwable::describe_with_causes(self, t)
+    }
+
     /// Cria um Throwable VM-built (ArithmeticException, NPE, …) com objeto.
     pub(super) fn vm_exception(&mut self, class: &str, message: &str) -> Result<Throwable, VmExit> {
         let obj = self

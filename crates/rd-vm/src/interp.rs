@@ -842,7 +842,7 @@ pub(crate) fn exec_frame(
                 let Kind::RegRegIndex(a, b, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let (_class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                let (fclass, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
                 let r = step!(match regs[*b as usize].as_ref() {
                     Ok(None) => Err(VmExit::Exception(
                         vm.vm_exception(NPE, &format!("iget '{fname}' em null"))?,
@@ -850,7 +850,11 @@ pub(crate) fn exec_frame(
                     Ok(Some(r)) => Ok(r),
                     Err(e) => Err(e.into()),
                 });
-                let v = match vm.heap.get_field(r, &fname) {
+                // Field hiding (JLS 8.3): nome ambíguo na hierarquia → slot
+                // qualificado pela classe declarante (`decl#nome`).
+                let fkey = step!(vm.qualified_field_key(r, &fclass, &fname));
+                let fname = fkey.as_deref().unwrap_or(fname.as_str());
+                let v = match vm.heap.get_field(r, fname) {
                     Ok(v) => v,
                     Err(_) => default_for(&ftype), // campo nunca escrito → default
                 };
@@ -864,7 +868,7 @@ pub(crate) fn exec_frame(
                 let Kind::RegRegIndex(a, b, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let (_class, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                let (fclass, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
                 let r = step!(match regs[*b as usize].as_ref() {
                     Ok(None) => Err(VmExit::Exception(
                         vm.vm_exception(NPE, &format!("iput '{fname}' em null"))?,
@@ -872,6 +876,8 @@ pub(crate) fn exec_frame(
                     Ok(Some(r)) => Ok(r),
                     Err(e) => Err(e.into()),
                 });
+                let fkey = step!(vm.qualified_field_key(r, &fclass, &fname));
+                let fname = fkey.as_deref().unwrap_or(fname.as_str()).to_string();
                 // issue #49: OOM de campo novo no iput é OutOfMemoryError
                 // CAPTURÁVEL (antes: VM_TYPE_ERROR mentiroso e run-killer)
                 let field_value = regs[*a as usize].clone();
