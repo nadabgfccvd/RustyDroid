@@ -830,10 +830,13 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   etapa 1 mergeada em #510: `RunningApp` (#489), `SessionHub` com `session_open`,
   `session_list`, `session_close` e `engine_id` opcional em todas as tools de app
   (catálogo de 47 para 50 tools). Validado: CI 10/10 (job `native-languages` inclui
-  as tools de sessão), workspace 1388 passed. Pendências declaradas na ADR 023:
-  roteamento de toque pelo M10 (hoje o toque vai para o engine da sessão, sem roteador
-  no M10) e orçamento de memória `teto / N`. Ainda não cobertas: duas sessões com
-  apps em execução ao mesmo tempo, e a ordem de intercalação de toques.
+  as tools de sessão), workspace 1388 passed.
+  Segunda rodada (#513, ADR 023 decisões 3 e 5): orçamento de heap por sessão,
+  `min(256 MB, teto/N)` com teto do perfil moto-e5 (1024 MB), e `InputRouter` no hub
+  com registro de cada toque por sessão. Dois apps rodando ao mesmo tempo, com toques
+  intercalados, têm teste de regressão. Lacunas declaradas na ADR 023: o roteador
+  está no hub e não no M10 (o M10 não tem roteador de entrada); o orçamento é de heap
+  do VM, não de RSS por sessão; `batch` conta como um evento só.
   Pré-requisito da etapa 1 (ADR 024, concluído em #495, #497, #498 e #499): o estado host indexado por `ObjRef`
   e o destino do System.out saem do thread-local e vão para `HostState`. Passo 1
   (System.out por engine) mergeado em #495. Passo 2 (tabelas de spannable, regex, URI,
