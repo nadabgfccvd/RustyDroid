@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793709442159,
+  "lastUpdate": 1793720324518,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2591,6 +2591,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3669,
             "range": "± 308",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d0123b62eab1b50f7f213761ad2c2c1e68b34eb",
+          "message": "fix(vm): sun.misc.Unsafe operands were off by one (#512)\n\nThe receiver is not part of the intrinsic args, so putInt/putLong/putObject stored a default and compareAndSetInt/Long/Object compared the wrong word and always answered false. okhttp's ConcurrentHashMap.initTable() then spun until the fuel budget died inside Application.onCreate (NewPipe). Added arrayBaseOffset/arrayIndexScale/addressSize/pageSize with a non-colliding array offset space.",
+          "timestamp": "2026-11-03T12:38:19-03:00",
+          "tree_id": "b241f92048015dac725fbdb0506e2d20ae269739",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4d0123b62eab1b50f7f213761ad2c2c1e68b34eb"
+        },
+        "date": 1793720322309,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3254,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3194,
+            "range": "± 25",
             "unit": "ns/iter"
           }
         ]
