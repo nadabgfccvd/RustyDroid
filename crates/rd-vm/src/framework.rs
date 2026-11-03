@@ -943,6 +943,9 @@ pub struct HostState {
     pub(crate) regex: crate::jregex::Tables,
     pub(crate) xml: crate::xml_res::Tables,
     pub(crate) io_chars: crate::jio_chars::Tables,
+    /// RNG de `UUID.randomUUID()` (ADR 024, passo 3).
+    pub(crate) uuid: crate::juuid::Tables,
+    /// Bytes de host de parsers XML (ADR 024, passo 3 — em `xml`).
     pub objects: HashMap<ObjRef, HostObj>,
     /// `List.subList` views: view → (parent, offset, len). See
     /// `jcollections::sublist_*` (write-through semantics).

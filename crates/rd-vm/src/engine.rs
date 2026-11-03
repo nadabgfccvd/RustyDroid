@@ -324,9 +324,8 @@ impl Engine {
     }
 
     pub fn new(dexes: Vec<rd_dex::Dex>, config: VmConfig) -> Self {
-        // Issue #230: nasce um Heap novo (ObjRefs reiniciam) — o estado
-        // host thread_local indexado por refs do heap anterior morre aqui.
-        crate::reset_host_thread_state();
+        // Issue #230 / ADR 024: o estado host indexado por `ObjRef` vive em
+        // `HostState`, então um engine novo já nasce com tabelas vazias.
         let budget = config.heap_budget;
         Engine {
             #[cfg(feature = "native")]

@@ -8,8 +8,6 @@
 //!   `version`, `variant`, `equals`, `hashCode` (JDK formula), `compareTo`
 //!   (signed, as in the JDK).
 
-use std::cell::Cell;
-
 use crate::engine::Engine;
 use crate::err::{Throwable, VmExit};
 use crate::heap::ObjRef;
@@ -24,27 +22,30 @@ fn initial_seed() -> u64 {
         .unwrap_or(0x9E37_79B9_7F4A_7C15)
 }
 
-thread_local! {
-    static RNG: Cell<u64> = Cell::new(initial_seed());
+/// Estado do RNG de `UUID.randomUUID()` por engine (ADR 024, passo 3). Vive em
+/// `HostState`: a sequência começa na semente (`RD_UUID_SEED`) em cada `Engine`,
+/// independente de quantos UUIDs outros engines geraram na mesma thread (PRF-04).
+#[derive(Debug)]
+pub(crate) struct Tables {
+    pub(crate) rng: u64,
 }
 
-/// Issue #230: fronteira de `Engine` — a sequência de
-/// `UUID.randomUUID()` volta à semente (`RD_UUID_SEED`), em vez de
-/// depender de quantos UUIDs engines anteriores geraram na thread
-/// (determinismo, PRF-04).
-pub(crate) fn reset_all() {
-    RNG.with(|r| r.set(initial_seed()));
+impl Default for Tables {
+    fn default() -> Self {
+        Self {
+            rng: initial_seed(),
+        }
+    }
 }
 
-fn next_u64() -> u64 {
-    RNG.with(|r| {
-        let mut x = r.get();
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        r.set(x);
-        x
-    })
+fn next_u64(vm: &mut Engine) -> u64 {
+    let r = &mut vm.fw.uuid.rng;
+    let mut x = *r;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *r = x;
+    x
 }
 
 fn bits(vm: &Engine, r: ObjRef) -> (i64, i64) {
@@ -106,8 +107,8 @@ pub fn static_intrinsic(
     }
     Ok(Some(match name {
         "randomUUID" => {
-            let msb = (next_u64() & !0xf000) | 0x4000;
-            let lsb = (next_u64() & !(0xc000_0000_0000_0000)) | 0x8000_0000_0000_0000;
+            let msb = (next_u64(vm) & !0xf000) | 0x4000;
+            let lsb = (next_u64(vm) & !(0xc000_0000_0000_0000)) | 0x8000_0000_0000_0000;
             new_uuid(vm, msb as i64, lsb as i64)?
         }
         "fromString" => {
@@ -270,16 +271,19 @@ mod tests {
         assert_eq!(hex, "d41d8cd98f00b204e9800998ecf8427e");
     }
 
+    /// ADR 024, passo 3 / PRF-04: a sequência de `randomUUID()` pertence ao
+    /// engine. Um engine novo na mesma thread começa do mesmo ponto, mesmo que
+    /// o anterior tenha consumido valores (e não os vê).
     #[test]
-    fn reset_all_restarts_sequence() {
-        reset_all();
-        let first = next_u64();
-        let _ = next_u64();
-        reset_all();
+    fn uuid_sequence_belongs_to_its_engine() {
+        let mut a = Engine::new(vec![], crate::VmConfig::default());
+        let first = next_u64(&mut a);
+        let _ = next_u64(&mut a);
+        let mut b = Engine::new(vec![], crate::VmConfig::default());
         assert_eq!(
-            next_u64(),
+            next_u64(&mut b),
             first,
-            "#230: RNG de UUID reinicia na fronteira de Engine"
+            "RNG de UUID do engine novo herdou o estado do anterior"
         );
     }
 }

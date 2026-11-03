@@ -6,7 +6,6 @@
 //! deterministic per-process seed sequence (`RD_RANDOM_SEED` overrides the
 //! base) so agent runs are reproducible.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::engine::Engine;
@@ -19,15 +18,12 @@ pub(crate) const TLR: &str = "Ljava/util/concurrent/ThreadLocalRandom;";
 const MULT: u64 = 0x5_DEEC_E66D;
 const MASK: u64 = (1 << 48) - 1;
 
-thread_local! {
-    /// Uniquifier de `Random()` sem seed. Ainda thread-local: passo 3 do ADR 024.
-    static UNIQ: RefCell<u64> = const { RefCell::new(0) };
-}
-
 /// Seeds de `java.util.Random` por engine (ADR 024, passo 2).
 #[derive(Debug, Default)]
 pub(crate) struct Tables {
     pub(crate) seeds: HashMap<ObjRef, u64>,
+    /// Uniquifier de `Random()` sem seed (ADR 024, passo 3).
+    pub(crate) uniq: u64,
 }
 
 /// GC: drop state of collected objects (slots are reused).
@@ -35,35 +31,26 @@ pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
     t.seeds.retain(|k, _| alive(*k));
 }
 
-/// Reinicia o uniquifier (ainda thread-local até o passo 3 do ADR 024).
-pub(crate) fn reset_all() {
-    UNIQ.with(|u| *u.borrow_mut() = 0);
-}
-
 fn scramble(seed: i64) -> u64 {
     (seed as u64 ^ MULT) & MASK
 }
 
-fn default_seed() -> i64 {
+fn default_seed(uniq: &mut u64) -> i64 {
     let base: i64 = std::env::var("RD_RANDOM_SEED")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0x2545_F491_4F6C_DD1D);
-    UNIQ.with(|u| {
-        let mut u = u.borrow_mut();
-        *u += 1;
-        base ^ (*u as i64).wrapping_mul(1_181_783_497_276_652_981)
-    })
+    *uniq += 1;
+    base ^ (*uniq as i64).wrapping_mul(1_181_783_497_276_652_981)
 }
 
 fn next(vm: &mut Engine, r: ObjRef, bits: u32) -> i32 {
     {
-        let s = vm
-            .fw
-            .random
+        let t = &mut vm.fw.random;
+        let s = t
             .seeds
             .entry(r)
-            .or_insert_with(|| scramble(default_seed()));
+            .or_insert_with(|| scramble(default_seed(&mut t.uniq)));
         *s = (s.wrapping_mul(MULT).wrapping_add(0xB)) & MASK;
         (*s >> (48 - bits)) as i64 as i32
     }
@@ -140,7 +127,8 @@ pub(crate) fn instance_intrinsic(
     }
     Ok(Some(match (name, sig) {
         ("<init>", "()V") => {
-            vm.fw.random.seeds.insert(recv, scramble(default_seed()));
+            let seed = default_seed(&mut vm.fw.random.uniq);
+            vm.fw.random.seeds.insert(recv, scramble(seed));
             Value::Null
         }
         ("<init>", "(J)V") | ("setSeed", "(J)V") => {
@@ -234,5 +222,19 @@ mod tests {
         assert_eq!(next(&mut vm, r, 32), -1170105035);
         vm.fw.random.seeds.insert(r, scramble(42));
         assert_eq!(next_int_bound(&mut vm, r, 10), 0);
+    }
+
+    /// ADR 024, passo 3: o uniquifier de `Random()` sem seed pertence ao engine.
+    #[test]
+    fn unseeded_uniquifier_belongs_to_its_engine() {
+        let mut a = crate::engine::Engine::new(vec![], crate::VmConfig::default());
+        let first = default_seed(&mut a.fw.random.uniq);
+        let _ = default_seed(&mut a.fw.random.uniq);
+        let mut b = crate::engine::Engine::new(vec![], crate::VmConfig::default());
+        assert_eq!(
+            default_seed(&mut b.fw.random.uniq),
+            first,
+            "Random() sem seed do engine novo herdou o contador do anterior"
+        );
     }
 }
