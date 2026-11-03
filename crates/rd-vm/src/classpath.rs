@@ -921,10 +921,18 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/io/IOException;"
         | "Ljava/util/concurrent/TimeoutException;"
         | "Ljava/util/concurrent/ExecutionException;"
+        | "Ljava/util/MissingResourceException;"
         | "Landroid/util/AndroidException;" => Some(EXC),
         // javax.net: as fábricas de socket existem para que a CONSTRUÇÃO de
         // clientes HTTP termine (okhttp/HttpsURLConnection); a primeira
         // operação de I/O responde o gap estruturado (jnet.rs).
+        // java.util.ResourceBundle: `PrettyTime` (NewPipe) carrega as unidades
+        // localizadas por *class-based bundle*; sem a hierarquia o
+        // `checkcast`/assign de `Resources extends ListResourceBundle` falha.
+        "Ljava/util/ResourceBundle;" => Some(OBJECT),
+        "Ljava/util/ListResourceBundle;" => {
+            Some(&["Ljava/util/ResourceBundle;", "Ljava/lang/Object;"])
+        }
         "Ljavax/net/SocketFactory;" => Some(OBJECT),
         "Ljavax/net/ssl/SSLSocketFactory;" => {
             Some(&["Ljavax/net/SocketFactory;", "Ljava/lang/Object;"])

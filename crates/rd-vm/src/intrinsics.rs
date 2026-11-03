@@ -107,7 +107,9 @@ const THREAD_LOCAL: &str = "Ljava/lang/ThreadLocal;";
 const INHERITABLE_TL: &str = "Ljava/lang/InheritableThreadLocal;";
 /// Coleções abstratas da plataforma modeladas no classpath cujo `<init>()V`
 /// é no-op host (M8, 37º gap) — ver `call_instance_intrinsic_mref`.
-const ABSTRACT_COLLECTION_CTORS: [&str; 6] = [
+const ABSTRACT_COLLECTION_CTORS: [&str; 8] = [
+    "Ljava/util/ResourceBundle;",
+    "Ljava/util/ListResourceBundle;",
     "Ljava/util/AbstractCollection;",
     "Ljava/util/AbstractList;",
     "Ljava/util/AbstractSequentialList;",
@@ -303,6 +305,11 @@ fn call_static_intrinsic_rooted(
     sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if class == crate::resbundle::RESOURCE_BUNDLE {
+        if let Some(value) = crate::resbundle::static_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
     if class == "Ljava/util/Objects;" && name == "requireNonNull" {
         let value = args.first().cloned().unwrap_or(Value::Null);
         if !matches!(value, Value::Null | Value::Int(0)) {
@@ -1367,7 +1374,12 @@ fn unsafe_singleton(vm: &mut Engine, class: &str) -> Result<crate::heap::ObjRef,
 }
 
 /// Base sintética de array no modelo de `Unsafe` (o heap não expõe endereços).
-const ARRAY_BASE_OFFSET: i32 = 16;
+///
+/// Fica **acima** de qualquer offset de campo: `objectFieldOffset` numera os
+/// campos a partir de 8, e um offset de campo colidindo com o primeiro elemento
+/// de um array faria a escrita cair no objeto errado (foi um defeito real desta
+/// rodada, achado pelo `CHM.b` do R8).
+const ARRAY_BASE_OFFSET: i32 = 0x4000_0000;
 /// Escala sintética de índice de array: 8 bytes por elemento, uniforme.
 const ARRAY_INDEX_SCALE: i32 = 8;
 
@@ -4055,6 +4067,13 @@ fn instance_intrinsic_dispatch(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if mref_class == crate::resbundle::RESOURCE_BUNDLE
+        || mref_class == crate::resbundle::LIST_BUNDLE
+    {
+        if let Some(value) = crate::resbundle::instance_intrinsic(vm, recv, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
     // Virtual dispatch for Object's overridable methods: `invoke-virtual
     // Object.equals/hashCode/toString` on a host-state receiver (a host
     // List/Map/Set, …) must reach that receiver's own implementation, not
