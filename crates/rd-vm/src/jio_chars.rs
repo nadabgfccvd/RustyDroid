@@ -1398,6 +1398,78 @@ fn buffered_output_stream(
     }
 }
 
+/// `java.io.DataInputStream` (big-endian) sobre qualquer `InputStream`. O
+/// stream interno é consultado byte a byte por `read()` com dispatch virtual,
+/// então vale para BAIS, BufferedInputStream e subclasses DEX. É o caminho
+/// do Kotlin reflect (`BuiltInsBinaryVersion.readFrom`) no launch do F-Droid.
+const DATA_IN: &str = "Ljava/io/DataInputStream;";
+const DATA_IN_FIELD: &str = "rd$data_in_stream";
+
+/// Lê `n` bytes big-endian do stream interno; EOF antes do fim materializa
+/// `EOFException`, como `DataInputStream.readFully` na JDK.
+fn data_in_bytes(vm: &mut Engine, recv: ObjRef, n: u32) -> Result<u64, VmExit> {
+    let inner = match vm
+        .heap
+        .get_field(recv, DATA_IN_FIELD)
+        .map_err(|e| crate::err::vm_error("INVALID_ARG", e))?
+    {
+        Value::Obj(r) => r,
+        _ => return Err(exc("Ljava/lang/NullPointerException;", "")),
+    };
+    let mut acc: u64 = 0;
+    for _ in 0..n {
+        match vm.invoke_instance(inner, "read", "()I", &[])? {
+            Value::Int(b) if b >= 0 => acc = (acc << 8) | (b as u64 & 0xff),
+            _ => return Err(exc("Ljava/io/EOFException;", "")),
+        }
+    }
+    Ok(acc)
+}
+
+fn data_input(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if name == "<init>" {
+        if sig != "(Ljava/io/InputStream;)V" {
+            return Ok(None);
+        }
+        let inner = args.first().cloned().unwrap_or(Value::Null);
+        crate::err::put_field_result(vm.heap.put_field(recv, DATA_IN_FIELD, inner))?;
+        return Ok(Some(Value::Null));
+    }
+    let out = match (name, sig) {
+        ("read", "()I") => {
+            let inner = match vm.heap.get_field(recv, DATA_IN_FIELD) {
+                Ok(Value::Obj(r)) => r,
+                _ => return Err(exc("Ljava/lang/NullPointerException;", "")),
+            };
+            vm.invoke_instance(inner, "read", "()I", &[])?
+        }
+        ("readByte", "()B") => Value::Int(data_in_bytes(vm, recv, 1)? as u8 as i8 as i32),
+        ("readUnsignedByte", "()I") => Value::Int(data_in_bytes(vm, recv, 1)? as i32),
+        ("readBoolean", "()Z") => Value::Int((data_in_bytes(vm, recv, 1)? != 0) as i32),
+        ("readShort", "()S") => Value::Int(data_in_bytes(vm, recv, 2)? as u16 as i16 as i32),
+        ("readUnsignedShort", "()I") => Value::Int(data_in_bytes(vm, recv, 2)? as i32),
+        ("readChar", "()C") => Value::Int(data_in_bytes(vm, recv, 2)? as u16 as i32),
+        ("readInt", "()I") => Value::Int(data_in_bytes(vm, recv, 4)? as u32 as i32),
+        ("readLong", "()J") => Value::Long(data_in_bytes(vm, recv, 8)? as i64),
+        ("readFloat", "()F") => Value::Float(f32::from_bits(data_in_bytes(vm, recv, 4)? as u32)),
+        ("readDouble", "()D") => Value::Double(f64::from_bits(data_in_bytes(vm, recv, 8)?)),
+        ("close", "()V") => {
+            if let Ok(Value::Obj(inner)) = vm.heap.get_field(recv, DATA_IN_FIELD) {
+                vm.invoke_instance(inner, "close", "()V", &[])?;
+            }
+            Value::Null
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(out))
+}
+
 pub fn instance_intrinsic(
     vm: &mut Engine,
     recv_class: &str,
@@ -1419,6 +1491,9 @@ pub fn instance_intrinsic(
     if recv_class == BOS {
         return buffered_output_stream(vm, name, sig, recv, args);
     }
+    if recv_class == DATA_IN {
+        return data_input(vm, name, sig, recv, args);
+    }
     // Base-class templates apply when the DEX receiver does not override.
     if matches!(
         mref_class,
@@ -1428,4 +1503,77 @@ pub fn instance_intrinsic(
         return dex_base(vm, mref_class, name, sig, recv, args);
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod data_input_stream_tests {
+    use super::*;
+    use crate::intrinsics::call_instance_intrinsic;
+
+    /// `DataInputStream` sobre um BAIS host com `bytes`.
+    fn data_in(vm: &mut Engine, bytes: Vec<u8>) -> ObjRef {
+        let inner = new_byte_input_stream(vm, bytes).unwrap();
+        let d = vm
+            .heap
+            .alloc_instance(DATA_IN.to_string(), Vec::new())
+            .unwrap();
+        let sig = "(Ljava/io/InputStream;)V";
+        call_instance_intrinsic(vm, DATA_IN, "<init>", sig, d, &[inner])
+            .unwrap()
+            .expect("DataInputStream.<init> tratado");
+        d
+    }
+
+    fn call(vm: &mut Engine, d: ObjRef, name: &str, sig: &str) -> Result<Value, VmExit> {
+        call_instance_intrinsic(vm, DATA_IN, name, sig, d, &[])
+            .map(|v| v.expect("DataInputStream tratado"))
+    }
+
+    #[test]
+    fn reads_big_endian_primitives_like_the_jdk() {
+        let mut vm = Engine::new(vec![], Default::default());
+        let mut bytes = vec![0, 0, 1, 2]; // int 258
+        bytes.extend_from_slice(&[0xFF, 0xFE]); // short -2
+        bytes.extend_from_slice(&[0xFF, 0xFE]); // unsigned short 65534
+        bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 7]); // long 7
+        bytes.push(0x80); // byte -128
+        bytes.push(0x01); // boolean true
+        let d = data_in(&mut vm, bytes);
+        assert_eq!(call(&mut vm, d, "readInt", "()I").unwrap(), Value::Int(258));
+        assert_eq!(
+            call(&mut vm, d, "readShort", "()S").unwrap(),
+            Value::Int(-2)
+        );
+        assert_eq!(
+            call(&mut vm, d, "readUnsignedShort", "()I").unwrap(),
+            Value::Int(65534)
+        );
+        assert_eq!(call(&mut vm, d, "readLong", "()J").unwrap(), Value::Long(7));
+        assert_eq!(
+            call(&mut vm, d, "readByte", "()B").unwrap(),
+            Value::Int(-128)
+        );
+        assert_eq!(
+            call(&mut vm, d, "readBoolean", "()Z").unwrap(),
+            Value::Int(1)
+        );
+    }
+
+    #[test]
+    fn eof_inside_a_multibyte_read_throws_eof_exception() {
+        let mut vm = Engine::new(vec![], Default::default());
+        let d = data_in(&mut vm, vec![0, 1]);
+        match call(&mut vm, d, "readInt", "()I") {
+            Err(VmExit::Exception(_)) => {}
+            other => panic!("esperava EOFException, veio {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_delegates_to_the_inner_stream_and_returns_eof_as_minus_one() {
+        let mut vm = Engine::new(vec![], Default::default());
+        let d = data_in(&mut vm, vec![9]);
+        assert_eq!(call(&mut vm, d, "read", "()I").unwrap(), Value::Int(9));
+        assert_eq!(call(&mut vm, d, "read", "()I").unwrap(), Value::Int(-1));
+    }
 }
