@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793701131579,
+  "lastUpdate": 1793701746178,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2195,6 +2195,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2758,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "705d5aeefeef38f10f7bc40587ce523ca89b84ab",
+          "message": "docs(adr): ADR 025 step 1 findings from the F-Droid DEX; ADR 024 marked complete (#500)\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T07:28:37-03:00",
+          "tree_id": "cffc1926dd892ab0fa492191837a786ead25dea3",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/705d5aeefeef38f10f7bc40587ce523ca89b84ab"
+        },
+        "date": 1793701745237,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3395,
+            "range": "± 147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3411,
+            "range": "± 264",
             "unit": "ns/iter"
           }
         ]
