@@ -559,10 +559,8 @@ impl AgentSession {
             self.running.engine_package = None;
             self.running.native_engine = None;
             self.running.activity = None;
-            // Issue #230: o heap morreu aqui — o estado host indexado por
-            // ObjRef nas thread_locals do rd-vm morre junto, para o
-            // próximo Engine (mesma thread) não herdar fantasmas.
-            rd_vm::reset_host_thread_state();
+            // Issue #230 / ADR 024: o estado host indexado por ObjRef vive no
+            // Engine (HostState) e morre com ele; nada a resetar aqui.
             true
         } else {
             false

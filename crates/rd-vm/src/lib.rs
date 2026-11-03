@@ -114,25 +114,6 @@ pub use value::Value;
 /// Módulo do contrato de erro.
 pub const MODULE_ID: &str = "rd-vm";
 
-/// Issue #230 / ADR 024: fronteira de `Engine` para o estado host que ainda
-/// vive em thread-local. As tabelas indexadas por `ObjRef` (spannable,
-/// random, regex, uri, xml, annotations, io-chars) já são campos de
-/// `HostState` (passo 2): um `Engine` novo nasce com elas vazias e não
-/// precisa de reset. Restam aqui os contadores e o RNG de UUID, que
-/// migram nos passos 3 e 4. O VFS de arquivos NÃO entra aqui: quem o limpa
-/// é `clear_package_data` (clear/remove) e `reset_vfs` (sessão nova).
-///
-/// Contrato: chamar ao descartar um `Engine` (o MCP faz isso ao matar o
-/// engine ativo) ou antes de construir outro na mesma thread.
-///
-/// Premissa explícita: um `Engine` vivo por vez por thread (ADR 017). Esta
-/// função sai quando o passo 3 do ADR 024 mover os contadores restantes.
-pub fn reset_host_thread_state() {
-    xml_res::reset_host_bytes();
-    jrandom::reset_all();
-    juuid::reset_all();
-}
-
 /// Issue #230: apaga o armazenamento privado de um pacote no VFS
 /// (`/data/user/0/<pkg>/`) — backend de `package_clear`/`package_remove`.
 pub use jfile::clear_package_data;

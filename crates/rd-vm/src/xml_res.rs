@@ -19,7 +19,6 @@
 //!   `TypedArray.getValue` reports an int as a color type when the attribute
 //!   name contains "color" or "tint".
 
-use std::cell::Cell;
 use std::collections::HashMap;
 
 use rd_apk::axml::{AttrValue, XmlAttribute, XmlElement};
@@ -55,12 +54,6 @@ pub(crate) struct ParserState {
     pos: isize,
 }
 
-thread_local! {
-    /// Bytes de host (estimativa) retidos por `PARSERS`. Ficam fora de
-    /// `heap.used()`, então são cobrados contra `heap_budget` na abertura (#370).
-    static PARSER_HOST_BYTES: Cell<usize> = const { Cell::new(0) };
-}
-
 /// Estimativa dos bytes de host de um parser: caminho, eventos, nomes, textos e atributos.
 fn parser_host_cost(file: &str, events: &[Ev]) -> usize {
     events.iter().fold(
@@ -78,8 +71,8 @@ fn parser_host_cost(file: &str, events: &[Ev]) -> usize {
     )
 }
 
-fn parser_host_release(cost: usize) {
-    PARSER_HOST_BYTES.with(|b| b.set(b.get().saturating_sub(cost)));
+fn parser_host_release(held: &mut usize, cost: usize) {
+    *held = held.saturating_sub(cost);
 }
 
 /// Estado de XmlPullParser/arrays por engine (ADR 024, passo 2).
@@ -87,24 +80,22 @@ fn parser_host_release(cost: usize) {
 pub(crate) struct Tables {
     pub(crate) parsers: HashMap<ObjRef, ParserState>,
     pub(crate) arrays: HashMap<ObjRef, Vec<Option<XmlAttribute>>>,
+    /// Bytes de host (estimativa) retidos por `parsers`. Ficam fora de
+    /// `heap.used()`, então são cobrados contra `heap_budget` na abertura (#370).
+    pub(crate) host_bytes: usize,
 }
 
 /// GC: drop state of collected objects (slots are reused).
 pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
+    let held = &mut t.host_bytes;
     t.parsers.retain(|k, v| {
         if alive(*k) {
             return true;
         }
-        parser_host_release(parser_host_cost(&v.file, &v.events));
+        parser_host_release(held, parser_host_cost(&v.file, &v.events));
         false
     });
     t.arrays.retain(|k, _| alive(*k));
-}
-
-/// Zera o contador de bytes de host (ainda thread-local até o passo 3 do
-/// ADR 024). Chamado na fronteira de `Engine` por `reset_host_thread_state`.
-pub(crate) fn reset_host_bytes() {
-    PARSER_HOST_BYTES.with(|b| b.set(0));
 }
 
 /// Achata a árvore em eventos na mesma ordem de antes (Start, Text, filhos, End),
@@ -208,7 +199,7 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
     // #370: a árvore vive no host com pouco custo no heap guest; cobra-se o
     // total retido contra o orçamento antes de guardar o parser.
     let cost = parser_host_cost(&path, &events);
-    let held = PARSER_HOST_BYTES.with(|b| b.get());
+    let held = vm.fw.xml.host_bytes;
     if vm.heap.used().saturating_add(held).saturating_add(cost) > vm.heap.budget() {
         return Err(VmExit::Exception(Throwable::new(
             "Ljava/lang/OutOfMemoryError;",
@@ -233,9 +224,12 @@ fn open_xml(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
         )
     };
     if let Some(old) = old {
-        parser_host_release(parser_host_cost(&old.file, &old.events));
+        parser_host_release(
+            &mut vm.fw.xml.host_bytes,
+            parser_host_cost(&old.file, &old.events),
+        );
     }
-    PARSER_HOST_BYTES.with(|b| b.set(b.get().saturating_add(cost)));
+    vm.fw.xml.host_bytes = vm.fw.xml.host_bytes.saturating_add(cost);
     Ok(Value::Obj(r))
 }
 
