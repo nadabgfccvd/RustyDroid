@@ -111,6 +111,8 @@ O dono mandou seguir todos os passos. Executado A1, com limite de passos. Nenhum
 
 **Estado depois da etapa 1.** `App.onCreate` do F-Droid roda até o fim. O WorkManager enfileira o trabalho periódico de repositório, com o `WorkDatabase` (Room) inicializado de verdade sobre o SQLite de framework. A falha seguinte é de Compose (`AbstractComposeView.ensureCompositionCreated`, "Required value was null"), na tela de entrada. Isso está fora do escopo do ADR 025 e fica como próxima frente.
 
+> **Correção (2026-11-03):** a frase acima vale para o NewPipe. No F-Droid real (`golden-apks/org.fdroid.fdroid.apk`), `App.onCreate` ainda lança exceção: o `HttpManager` do Ktor dispara `ContentEncodingKt.<clinit>` e, dali, o Kotlin reflect. Gaps fechados nessa frente: `ConcurrentHashMap(int,float,int)`, `java.io.DataInputStream` e deque em `LinkedList`. O próximo é `Class.getTypeParameters()`. O teste `fdroid_oncreate_e2e` falha localmente; o CI não roda o teste porque o APK não é versionado.
+
 **Regressão.** `crates/rd-cli/tests/fdroid_oncreate_e2e.rs` falha se `App.onCreate`, o lateinit do Room ou o `scheduleOrCancel` voltarem a lançar exceção. Os testes unitários de `m8.rs` cobrem os helpers de builder.
 
 **Limites desta etapa.** Não foi medida invalidação de tabelas nem transação do Room sobre o VM. Layering (ADR 021, etapa 1 "sessions") não foi iniciado.
