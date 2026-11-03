@@ -867,11 +867,10 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   intrínsecos de coroutines. A causa do ponto de parada do spike era `queryCoroutineContext`
   não nulo (o Room usa nulo). Também foram corrigidos os builders de WorkRequest e as
   setters de NotificationChannel. `App.onCreate` do NewPipe roda até o fim.
-  **Correção (2026-11-03):** no F-Droid real, `App.onCreate` ainda lança exceção. O
-  `HttpManager` do Ktor chama `ContentEncodingKt.<clinit>`, que aciona o Kotlin reflect
-  (`typeOf`, `BuiltInsBinaryVersion.readFrom`, `LockBasedStorageManager`). Nesta rodada
-  foram fechados três gaps desse caminho: `ConcurrentHashMap(int,float,int)`,
-  `java.io.DataInputStream` e as operações de deque em `LinkedList`. O próximo gap é
-  `Class.getTypeParameters()` (reflexão de generics), fora do que o VM modela hoje.
-  O teste `fdroid_oncreate_e2e` segue vermelho com o APK local; o CI não roda esse teste
-  porque o APK não é versionado (GH-05). Detalhes no ADR 025, seção de resultado.
+  **Atualização (2026-11-03, bloco 9):** no F-Droid real, `App.onCreate` conclui sem
+  exceção, e o teste `fdroid_oncreate_e2e` passa. A cadeia do Ktor pelo Kotlin reflect
+  exigiu `Class.getTypeParameters()` (array vazio só para classes não genéricas;
+  `NOT_IMPLEMENTED` para as demais), `Class.isAnnotation`/`isSynthetic` e
+  `AssertionError(Object)`. Decisão em [ADR 027](adr/027-reflexao-class-metadados-genericos.md).
+  Reflexão genérica completa (`TypeVariable`, `ParameterizedType`, enumeração de membros
+  com tipos genéricos) segue fora de escopo até um app exigir.
