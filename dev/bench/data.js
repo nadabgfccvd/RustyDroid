@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793708716441,
+  "lastUpdate": 1793709089293,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2519,6 +2519,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3300,
             "range": "± 8",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bcdf0b97dc7bc9a5cae53f141ff7a252d421a1fa",
+          "message": "feat(vm): Collections completion, javax.net socket factories, ObjectStreamField + NewPipe e2e (#509)\n\nCollections: reverseOrder(+Comparator), nCopies, frequency, fill, swap, rotate, copy, disjoint, replaceAll. jnet: SocketFactory/SSLSocketFactory construction exists, createSocket answers the structured network gap. ObjectStreamField metadata. e2e test pins the NewPipe gaps closed in #506/#507/#509.",
+          "timestamp": "2026-11-03T09:31:08-03:00",
+          "tree_id": "563c9c24b87e0b8107608a75c00a2365c60dccc1",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/bcdf0b97dc7bc9a5cae53f141ff7a252d421a1fa"
+        },
+        "date": 1793709088871,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3231,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3211,
+            "range": "± 43",
             "unit": "ns/iter"
           }
         ]
