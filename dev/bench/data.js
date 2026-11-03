@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793720707860,
+  "lastUpdate": 1793721014463,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2663,6 +2663,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3264,
             "range": "± 102",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ebb332a1ed840ea0ab849526821325844966d66d",
+          "message": "feat(vm): java.util.ResourceBundle (class-based bundles) (#514)\n\ngetBundle with the JDK candidate order, getObject/handleGetObject/getString/getStringArray/containsKey over the guest getContents(), MissingResourceException naming the bundle. ListResourceBundle is-a ResourceBundle in the builtin hierarchy. NewPipe's App.onCreate now runs ~236 DEX methods and stops at NotificationChannelCompat.setGroup.",
+          "timestamp": "2026-11-03T12:49:50-03:00",
+          "tree_id": "2b5aaea71738f7bbaa6e44e6dfea709520fa5067",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/ebb332a1ed840ea0ab849526821325844966d66d"
+        },
+        "date": 1793721013012,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3593,
+            "range": "± 29",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3594,
+            "range": "± 19",
             "unit": "ns/iter"
           }
         ]
