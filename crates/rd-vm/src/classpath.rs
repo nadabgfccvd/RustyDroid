@@ -922,6 +922,12 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/util/concurrent/TimeoutException;"
         | "Ljava/util/concurrent/ExecutionException;"
         | "Landroid/util/AndroidException;" => Some(EXC),
+        // NewPipe (launch real): o `LayoutInflater` de framework lança
+        // `InflateException` quando um layout do APK não infla. Sem a entrada
+        // aqui a hierarquia é desconhecida, `is_throwable_class` devolve
+        // false e o `invoke-direct <init>(String)` morre com NOT_FOUND em vez
+        // de materializar a exceção do app. AOSP: estende RuntimeException.
+        "Landroid/view/InflateException;" => Some(RUNTIME),
         "Ljava/lang/ClassNotFoundException;"
         | "Ljava/lang/InstantiationException;"
         | "Ljava/lang/NoSuchMethodException;"
