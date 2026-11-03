@@ -212,8 +212,10 @@ certos); configs específicas (land/locale/density) selecionáveis.
    `Boolean.getBoolean` (propriedade de sistema) e, **marco desta rodada, o
    `App.onCreate` do NewPipe passou a terminar**: a execução agora entra em
    `org.schabi.newpipe.MainActivity` e para em
-   `Context.getDrawable(I)` (o modelo tem `Resources` para strings/cores/arrays,
-   não para drawables — o próximo gap é a pilha de Drawable/Bitmap).
+   `Context.getDrawable(I)`. Esse ponto foi fechado em parte: cor vira
+   `ColorDrawable` e arquivo vira gap estruturado com o caminho resolvido
+   (`res/hq.xml`), então o endpoint atual é **rasterizar drawable de vetor** —
+   o próximo passo natural é o renderizador de vetores (ADR antes de código).
    Cada um desses passos tem teste próprio
    (`collections_binary_search.rs`, `field_hiding.rs`, `collections_completion.rs`,
    `jnet_socket_factory.rs`) e o e2e `crates/rd-cli/tests/newpipe_oncreate_e2e.rs`
