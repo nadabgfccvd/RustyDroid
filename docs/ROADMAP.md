@@ -874,3 +874,7 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   `AssertionError(Object)`. Decisão em [ADR 027](adr/027-reflexao-class-metadados-genericos.md).
   Reflexão genérica completa (`TypeVariable`, `ParameterizedType`, enumeração de membros
   com tipos genéricos) segue fora de escopo até um app exigir.
+  A primeira tela do F-Droid real renderiza (`rd app shot`: barra "F-Droid", "Fetching app
+  repositories...", navegação Discover/Search/My apps). Isso exigiu rodar a CLI inteira
+  numa thread de 32 MiB: na thread principal de 8 MiB, o orçamento de pilha nativa cortava
+  o draw do Compose em ~400 quadros (`StackOverflowError`, tela branca).

@@ -111,7 +111,7 @@ O dono mandou seguir todos os passos. Executado A1, com limite de passos. Nenhum
 
 **Estado depois da etapa 1.** `App.onCreate` do F-Droid roda até o fim. O WorkManager enfileira o trabalho periódico de repositório, com o `WorkDatabase` (Room) inicializado de verdade sobre o SQLite de framework. A falha seguinte é de Compose (`AbstractComposeView.ensureCompositionCreated`, "Required value was null"), na tela de entrada. Isso está fora do escopo do ADR 025 e fica como próxima frente.
 
-> **Atualização (2026-11-03, bloco 9):** o F-Droid real também conclui `App.onCreate` sem exceção. O teste `fdroid_oncreate_e2e` passa. Para isso, o caminho do Ktor exigiu metadados de `Class` (ADR 027). Essa parte não é ADR 025 (Room/WorkManager), mas fica registrada aqui porque o teste é deste ADR.
+> **Atualização (2026-11-03, bloco 9):** o F-Droid real também conclui `App.onCreate` sem exceção. O teste `fdroid_oncreate_e2e` passa. Para isso, o caminho do Ktor exigiu metadados de `Class` (ADR 027). Essa parte não é ADR 025 (Room/WorkManager), mas fica registrada aqui porque o teste é deste ADR. A primeira tela do F-Droid também renderiza (`rd app shot`) depois que a CLI passou a rodar numa thread de 32 MiB, como `app run` já fazia; na thread principal de 8 MiB o draw do Compose estourava o orçamento de pilha nativa e a tela saía em branco.
 
 **Regressão.** `crates/rd-cli/tests/fdroid_oncreate_e2e.rs` falha se `App.onCreate`, o lateinit do Room ou o `scheduleOrCancel` voltarem a lançar exceção. Os testes unitários de `m8.rs` cobrem os helpers de builder.
 
