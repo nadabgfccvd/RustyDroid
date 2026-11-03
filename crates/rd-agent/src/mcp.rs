@@ -435,6 +435,10 @@ pub struct AgentSession {
     running: RunningApp,
     /// System.out do app (issue #55: buffer da sessão, tool `logs` lê).
     logs: Arc<Mutex<Vec<u8>>>,
+    /// Disco virtual da sessão (ADR 024, passo 4). Todo engine desta sessão
+    /// usa este handle, então um relançamento mantém os arquivos do app, e
+    /// outra sessão começa com disco vazio (Issue #230).
+    vfs: rd_vm::VfsHandle,
     /// Issue #259: pacotes cujo estado visível ao guest pode divergir
     /// de um install pristine NESTA sessão (engine já rodou, grants
     /// mudaram). O fingerprint do snapshot só enxerga o APK — servir
@@ -460,11 +464,10 @@ impl AgentSession {
         // Um processo = uma sessão: System.out do app vai para o buffer
         // (nunca ao stdout do protocolo — mesmo contrato da #55).
         let logs: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
-        // Issue #230: sessão nova = dispositivo limpo. O VFS do hóspede é
-        // thread_local no rd-vm; sem este reset, arquivos/SQLite/prefs de
-        // uma sessão (ou cenário de suíte) anterior na mesma thread
-        // vazavam para a próxima, quebrando o isolamento do M6.
-        rd_vm::reset_vfs();
+        // Issue #230 / ADR 024 passo 4: sessão nova = disco novo e vazio.
+        // O VFS pertence à sessão (não à thread nem ao engine), então
+        // arquivos/SQLite/prefs de uma sessão não vazam para a próxima.
+        let vfs = rd_vm::VfsHandle::new();
         let policy = Policy::from_env();
         let roots = policy.canonical_roots();
         let session_id = format!(
@@ -483,6 +486,7 @@ impl AgentSession {
             active: None,
             running: RunningApp::empty(),
             logs,
+            vfs,
             snapshot_dirty: std::collections::HashSet::new(),
             devices: DeviceTable::embedded().expect("devices.toml embutido parseia"),
             behavior: SwitchTable::embedded().expect("behavior-switches.toml embutido parseia"),
@@ -1551,6 +1555,8 @@ impl AgentSession {
         // ADR 024: cada sessão tem o próprio destino de System.out. Sem isto o
         // app de uma sessão escreveria no buffer de outra (ou no stdout do MCP).
         eng.set_app_stdout(HostOut::Buffer(self.logs.clone()));
+        // ADR 024 passo 4: o engine usa o disco da sessão, não um próprio.
+        eng.set_vfs(self.vfs.clone());
         #[cfg(feature = "advanced-components")]
         eng.m9_set_notification_permission(notification_permission);
         #[cfg(any(feature = "advanced-components", feature = "virtual-devices"))]
@@ -2236,7 +2242,7 @@ impl AgentSession {
         let killed = self.kill_engine_if_running(package);
         // Issue #230: desinstalar apaga também os dados privados do app
         // no VFS (/data/user/0/<pkg>/), não só o registro da sessão.
-        rd_vm::clear_package_data(package);
+        rd_vm::clear_package_data(&self.vfs, package);
         self.installed.retain(|a| a.package != package);
         if self.active.as_deref() == Some(package) {
             self.active = self.installed.last().map(|a| a.package.clone());
@@ -2274,7 +2280,7 @@ impl AgentSession {
         // Issue #230: clear data apaga de fato o armazenamento privado
         // (/data/user/0/<pkg>/: arquivos, SQLite, shared_prefs) — antes
         // só as permissões resetavam e os dados continuavam legíveis.
-        rd_vm::clear_package_data(package);
+        rd_vm::clear_package_data(&self.vfs, package);
         let table = PermissionTable::embedded()
             .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
         let fresh = PermissionEngine::install(&manifest, table);

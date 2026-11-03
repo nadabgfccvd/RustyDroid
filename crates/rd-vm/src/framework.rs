@@ -934,6 +934,9 @@ pub struct HostState {
     /// Destino do System.out deste engine (ADR 024). Semeado pelo padrão do
     /// processo em `Engine::new`; `Engine::set_app_stdout` troca por engine.
     pub(crate) app_stdout: crate::intrinsics::HostOut,
+    /// Disco virtual da sessão (ADR 024, passo 4). Padrão: disco novo e
+    /// vazio; `Engine::set_vfs` compartilha o da sessão.
+    pub(crate) vfs: crate::jfile::VfsHandle,
     /// Tabelas de anotações do engine (ADR 024, passo 2).
     pub(crate) annotations: crate::jannotations::Tables,
     /// Tabelas `ObjRef` de cada módulo host (ADR 024, passo 2).
@@ -4748,7 +4751,7 @@ fn ensure_prefs_loaded(vm: &mut Engine, name: &str) {
         return;
     }
     let path = crate::prefs::path(&vm.fw.package_name, name);
-    let store = crate::jfile::read_bytes(&path)
+    let store = crate::jfile::read_bytes(&vm.fw.vfs.clone(), &path)
         .and_then(|bytes| crate::prefs::parse(&bytes))
         .unwrap_or_default();
     vm.fw.m8.prefs_stores.insert(name.to_string(), store);
@@ -4775,7 +4778,11 @@ fn persist_prefs(vm: &Engine, name: &str) -> bool {
         .get(name)
         .map(crate::prefs::serialize)
         .unwrap_or_else(|| crate::prefs::serialize(&Default::default()));
-    crate::jfile::write_bytes(&crate::prefs::path(&vm.fw.package_name, name), bytes);
+    crate::jfile::write_bytes(
+        &vm.fw.vfs.clone(),
+        &crate::prefs::path(&vm.fw.package_name, name),
+        bytes,
+    );
     true
 }
 

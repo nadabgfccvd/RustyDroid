@@ -13,6 +13,13 @@ use rd_vm::{Engine, VmConfig};
 fn engine() -> Engine {
     Engine::new(Vec::new(), VmConfig::default())
 }
+/// Engine ligado ao disco de uma sessão (ADR 024, passo 4). Lançamentos com o
+/// mesmo `session` são um relançamento: enxergam os arquivos uns dos outros.
+fn engine_in(session: &rd_vm::VfsHandle) -> Engine {
+    let mut e = engine();
+    e.set_vfs(session.clone());
+    e
+}
 fn s(e: &mut Engine, txt: &str) -> Value {
     Value::Obj(e.heap.alloc_string(txt.to_string()).unwrap())
 }
@@ -225,6 +232,7 @@ fn sqlite_first_string(e: &mut Engine, db: u32, sql: &str) -> String {
 /// boundary), instead of living only in the first Engine's backend process.
 #[test]
 fn sqlite_named_database_persists_across_engine_launches() {
+    let session = rd_vm::VfsHandle::new();
     let dbname = format!(
         "persist-{}-{}.db",
         std::process::id(),
@@ -234,7 +242,7 @@ fn sqlite_named_database_persists_across_engine_launches() {
             .as_nanos()
     );
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let db = sqlite_open_helper(&mut e, &dbname);
         sqlite_exec(
             &mut e,
@@ -249,7 +257,7 @@ fn sqlite_named_database_persists_across_engine_launches() {
         call_m8_instance(&mut e, SQLITE_DB, "close", "()V", db, &[]).unwrap();
     }
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let db = sqlite_open_helper(&mut e, &dbname);
         assert_eq!(
             sqlite_first_string(&mut e, db, "SELECT title FROM notes WHERE id = 7"),
@@ -262,7 +270,7 @@ fn sqlite_named_database_persists_across_engine_launches() {
         );
     }
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let db = sqlite_open_helper(&mut e, &dbname);
         assert_eq!(
             sqlite_first_string(&mut e, db, "SELECT CAST(count(*) AS TEXT) FROM notes"),
@@ -290,7 +298,7 @@ fn sqlite_named_database_persists_across_engine_launches() {
         );
     }
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let db = sqlite_open_helper(&mut e, &dbname);
         // Succeeds only if the deleted image was not resurrected.
         sqlite_exec(
@@ -1113,11 +1121,12 @@ fn prefs_get_string(e: &mut Engine, prefs: u32, key: &str) -> String {
 
 #[test]
 fn shared_preferences_named_stores_persist_across_engine_launches() {
+    let session = rd_vm::VfsHandle::new();
     const MAIN: &str = "literal-round3-main";
     const OTHER: &str = "literal-round3-other";
 
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let main = named_prefs(&mut e, MAIN);
         assert_eq!(named_prefs(&mut e, MAIN), main);
         let other = named_prefs(&mut e, OTHER);
@@ -1194,7 +1203,7 @@ fn shared_preferences_named_stores_persist_across_engine_launches() {
     }
 
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let main = named_prefs(&mut e, MAIN);
         let other = named_prefs(&mut e, OTHER);
         assert_eq!(prefs_get_string(&mut e, main, "user"), "Ana & João");
@@ -1318,7 +1327,7 @@ fn shared_preferences_named_stores_persist_across_engine_launches() {
     }
 
     {
-        let mut e = engine();
+        let mut e = engine_in(&session);
         let main = named_prefs(&mut e, MAIN);
         let other = named_prefs(&mut e, OTHER);
         assert_eq!(prefs_get_string(&mut e, main, "user"), "<missing>");

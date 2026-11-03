@@ -813,4 +813,6 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   e o destino do System.out saem do thread-local e vão para `HostState`. Passo 1
   (System.out por engine) mergeado em #495. Passo 2 (tabelas de spannable, regex, URI,
   XML, io-chars, anotações e seeds de Random) feito, com teste de dois engines
-  intercalados. Passos 3 (contadores e RNG de UUID) e 4 (VFS) pendentes.
+  intercalados. Passo 3 (contadores e RNG de UUID, #498) feito. Passo 4 (VFS por
+  sessão, `VfsHandle` em `HostState`) feito neste PR: sessões não se veem, `package_clear`
+  apaga só o pacote, e relançamento na mesma sessão mantém os arquivos.

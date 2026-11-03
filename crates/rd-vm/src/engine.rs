@@ -323,6 +323,13 @@ impl Engine {
         self.fw.app_stdout = mode;
     }
 
+    /// Liga este engine ao disco virtual da sessão (ADR 024, passo 4). Engines
+    /// com o mesmo handle veem os mesmos arquivos; sem esta chamada o engine
+    /// usa um disco próprio e vazio.
+    pub fn set_vfs(&mut self, vfs: crate::jfile::VfsHandle) {
+        self.fw.vfs = vfs;
+    }
+
     pub fn new(dexes: Vec<rd_dex::Dex>, config: VmConfig) -> Self {
         // Issue #230 / ADR 024: o estado host indexado por `ObjRef` vive em
         // `HostState`, então um engine novo já nasce com tabelas vazias.
