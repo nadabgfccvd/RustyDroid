@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793698162632,
+  "lastUpdate": 1793699318867,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2123,6 +2123,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3298,
             "range": "± 395",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3b7185de594f2866b4ea3905f4d3d6e213c5935e",
+          "message": "refactor(rd-vm): counters and UUID RNG live in HostState; reset_host_thread_state removed (ADR 024, step 3) (#498)\n\n- jrandom: the uniquifier of unseeded Random() moves from thread_local to\n  Tables.uniq.\n- xml_res: PARSER_HOST_BYTES moves from thread_local to Tables.host_bytes,\n  the host-byte budget of parsers (#370).\n- juuid: the randomUUID RNG moves to HostState.uuid. Each Engine starts at\n  RD_UUID_SEED, independent of earlier engines on the thread (PRF-04).\n\nNo thread-local host state is left except jfile's VFS (step 4), so\nreset_host_thread_state is removed. Its callers (Engine::new and the MCP\nengine teardown) no longer need it.\n\nTests: uuid_sequence_belongs_to_its_engine and\nunseeded_uniquifier_belongs_to_its_engine.\n\nAI usage: drafted with an AI agent, reviewed by the author with cargo\ncheck, clippy and the rd-vm suite (873 passed).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-03T06:48:10-03:00",
+          "tree_id": "9f1321bbe5530f265c582c3c332e36132f93e2b0",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/3b7185de594f2866b4ea3905f4d3d6e213c5935e"
+        },
+        "date": 1793699318138,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1850,
+            "range": "± 72",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1945,
+            "range": "± 359",
             "unit": "ns/iter"
           }
         ]
