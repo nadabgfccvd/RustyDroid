@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793687552192,
+  "lastUpdate": 1793687571105,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1907,6 +1907,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3435,
             "range": "± 36",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dcd2e7d3c9c4bc35836edc0fa8b4bb826ce5313e",
+          "message": "fix(rd-vm): F-Droid WorkManager init chain — Room _Impl, executor thread identity (#492)\n\n- Room builder instantiates <DB>_Impl when the generated class exists in the\n  DEX (Room convention), falling back to the abstract DB class.\n- JobScheduler.forNamespace arm and Context.isDeviceProtectedStorage (false).\n- Tasks of an inline Executor report a worker Thread for currentThread and\n  null for Looper.myLooper, so Room's main-thread guard no longer fires.\n  Executors still run inline; real concurrency is not implemented.\n\nRegression tests: executor_inline_task_has_no_looper_outside_main_thread\n(fails with the fix reverted), room_impl_descriptor unit test.\n\nKnown remaining blocker: RoomDatabase.connectionManager is not initialized,\nbecause the VM does not run RoomDatabase.init(DatabaseConfiguration).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-03T03:32:08-03:00",
+          "tree_id": "c078b66851395289817a1464a2b33df37eb8c24a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/dcd2e7d3c9c4bc35836edc0fa8b4bb826ce5313e"
+        },
+        "date": 1793687570664,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3335,
+            "range": "± 59",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3334,
+            "range": "± 64",
             "unit": "ns/iter"
           }
         ]
