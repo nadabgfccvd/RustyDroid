@@ -1222,12 +1222,57 @@ pub(crate) fn instance_intrinsic(
             | "getText"
             | "getString"
             | "getColor"
+            | "getDrawable"
             | "getResources"
     ) || !vm.cp.is_subtype(recv_class, "Landroid/content/Context;")
     {
         return Ok(None);
     }
     Ok(Some(match (name, sig) {
+        // `Context.getDrawable(int)` (API 21+) é `getResources().getDrawable(id,
+        // getTheme())`. Cores viram `ColorDrawable` (o modelo de
+        // `android_drawable.rs`); arquivos (vetor/PNG) **não** são rasterizados
+        // aqui, e isso vira gap ESTRUTURADO com o caminho do recurso, em vez de
+        // um null silencioso (o Android real nunca devolve null: lança
+        // `Resources.NotFoundException`).
+        ("getDrawable", "(I)Landroid/graphics/drawable/Drawable;") => {
+            let id = match args.first() {
+                Some(Value::Int(v)) => *v,
+                _ => {
+                    return Err(crate::err::vm_error("INVALID_ARG", "getDrawable sem resid").into())
+                }
+            };
+            let value = value_of(vm, id)?;
+            match value {
+                ResolvedValue::Str(path) if path.starts_with("res/") => {
+                    return Err(crate::err::with_suggestion(
+                        crate::err::vm_error(
+                            "NOT_IMPLEMENTED",
+                            format!(
+                                "drawable 0x{id:08x} ({path}) não é rasterizado: Drawable de arquivo (vetor/PNG) fora do modelo"
+                            ),
+                        ),
+                        "o modelo tem ColorDrawable e ColorStateList; vetores exigem um renderizador de vetores",
+                    )
+                    .into())
+                }
+                ResolvedValue::Integer(color) => {
+                    let d = vm
+                        .heap
+                        .alloc_instance(
+                            "Landroid/graphics/drawable/ColorDrawable;".to_string(),
+                            Vec::new(),
+                        )
+                        .map_err(crate::err::oom_throwable)?;
+                    put(vm, d, "rd_color", Value::Int(color))?;
+                    put(vm, d, "rd_base", Value::Int(color))?;
+                    put(vm, d, "rd_alpha", Value::Int(255))?;
+                    put(vm, d, "rd_visible", Value::Int(1))?;
+                    Value::Obj(d)
+                }
+                _ => Value::Null,
+            }
+        }
         ("getTheme", _) => {
             let k = ("Lrd/Resources;".to_string(), "theme".to_string());
             let theme = match vm.statics.get(&k) {

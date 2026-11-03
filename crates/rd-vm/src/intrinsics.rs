@@ -311,6 +311,11 @@ fn call_static_intrinsic_rooted(
     sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if class == crate::webkit_cookies::COOKIE_MANAGER {
+        if let Some(value) = crate::webkit_cookies::static_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
     if class == ENUM_SET {
         if let Some(value) = enum_set_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -848,6 +853,37 @@ fn call_static_intrinsic_rooted(
         ) => Ok(Some(
             system_get_property(vm, args)?.unwrap_or_else(|| args[1].clone()),
         )),
+        // `Boolean.getBoolean(nome)` lê a *propriedade de sistema* e a
+        // interpreta como booleano (JDK). Sem a tabela de propriedades, o
+        // `<clinit>` de classes que a consultam morre — foi o caso do NewPipe
+        // logo depois do CookieManager. Valor ausente/qualquer coisa ≠ "true"
+        // devolve false (semântica JDK, e não um erro).
+        (
+            "Ljava/lang/Boolean;",
+            "getBoolean",
+            "(Ljava/lang/String;)Z",
+        ) => {
+            let name = match args.first() {
+                Some(Value::Obj(r)) => vm.heap.as_str(*r)?.to_string(),
+                _ => {
+                    return Err(VmExit::Exception(Throwable::new(
+                        "Ljava/lang/NullPointerException;",
+                        "propriedade nula",
+                    )))
+                }
+            };
+            let key = Value::Obj(alloc_string(vm, name)?);
+            let value = system_get_property(vm, &[key])?;
+            let truthy = match &value {
+                Some(Value::Obj(r)) => vm
+                    .heap
+                    .as_str(*r)
+                    .map(|t| t.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false),
+                _ => false,
+            };
+            Ok(Some(Value::Int(i32::from(truthy))))
+        }
         // M8: Thread statics — VM single-threaded: UMA thread sintética
         // "main"; sleep/yield operam sobre o relógio virtual (≡ SystemClock).
         ("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;") => {
@@ -4136,6 +4172,11 @@ fn instance_intrinsic_dispatch(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if mref_class == crate::webkit_cookies::COOKIE_MANAGER {
+        if let Some(value) = crate::webkit_cookies::instance_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
     if mref_class == crate::resbundle::RESOURCE_BUNDLE
         || mref_class == crate::resbundle::LIST_BUNDLE
     {

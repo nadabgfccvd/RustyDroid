@@ -207,7 +207,15 @@ certos); configs específicas (land/locale/density) selecionáveis.
    12.4.2) foi rastreado com `RD_TRACE_CLINIT=1` até a causa real —
    `java.util.EnumMap` sem modelo — e caiu junto. O endpoint agora é
    `android.webkit.CookieManager.getInstance()` (NewPipe grava cookies do
-   YouTube antes de qualquer tela).
+   YouTube antes de qualquer tela) — modelado em `webkit_cookies.rs`, com
+   parse/seleção de cookie por RFC 6265 e 7 testes. Depois dele veio
+   `Boolean.getBoolean` (propriedade de sistema) e, **marco desta rodada, o
+   `App.onCreate` do NewPipe passou a terminar**: a execução agora entra em
+   `org.schabi.newpipe.MainActivity` e para em
+   `Context.getDrawable(I)`. Esse ponto foi fechado em parte: cor vira
+   `ColorDrawable` e arquivo vira gap estruturado com o caminho resolvido
+   (`res/hq.xml`), então o endpoint atual é **rasterizar drawable de vetor** —
+   o próximo passo natural é o renderizador de vetores (ADR antes de código).
    Cada um desses passos tem teste próprio
    (`collections_binary_search.rs`, `field_hiding.rs`, `collections_completion.rs`,
    `jnet_socket_factory.rs`) e o e2e `crates/rd-cli/tests/newpipe_oncreate_e2e.rs`
