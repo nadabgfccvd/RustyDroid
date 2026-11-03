@@ -1604,6 +1604,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // flags (ex.: `Notification.FLAG_*`? não: `EnumSet.of(...)` de enums do
         // próprio app, visto no NewPipe dentro de `NotificationChannel`).
         "Ljava/util/EnumMap;" => Some(&["Ljava/util/AbstractMap;", "Ljava/lang/Object;"]),
+        // WebView: o CookieManager é um serviço único do processo (ver
+        // `webkit_cookies.rs`), sem relação com a hierarquia de View.
+        "Landroid/webkit/CookieManager;" => Some(OBJECT),
         "Ljava/util/EnumSet;" => Some(&[
             "Ljava/util/AbstractSet;",
             "Ljava/util/AbstractCollection;",
