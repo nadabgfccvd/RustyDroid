@@ -20,7 +20,10 @@ Muitos apps chegam como XAPK: um ZIP com `manifest.json` e vários APKs (um `bas
 
 - O inventário de `content` do `inspect` (contagens de DEX, libs e assets) continua sendo o do split base. Os totais por split aparecem no bloco `bundle`.
 - `rd dex disasm` lê os DEX de todos os splits. O split base vem primeiro, porque `--class` usa o primeiro dex que contém a classe. Cada dex leva o id do split como prefixo do nome.
-- `rd test` e a instalação ainda operam só sobre o split base. Isso é uma limitação conhecida, não um comportamento silencioso: está documentada no módulo, no CHANGELOG e no ROADMAP.
+- **Instalação (2026-11-02, #487):** todos os splits são parseados e validados; o split `base` é instalado e a resposta traz `bundle.splits`.
+- **DEX de splits na execução (2026-11-03):** o DEX de cada split de feature entra no classpath da execução (`bundle.split_dex_merged`). Teste de agente: `install_xapk_mounts_split_dex_into_execution`.
+- **Libs nativas de splits: ficam de fora (base-only), por decisão.** Uma lib nativa em split não é carregada. Isso é declarado, não silencioso: `bundle.native_libs_pending` conta as libs pendentes e `bundle.base_only_execution` fica `true` enquanto houver alguma. Carregar libs de split exige suporte a `System.loadLibrary` por split, que fica para uma ADR própria se for necessário.
+- **`rd test` sobre XAPK:** verificado pelo E2E `rd_test_runs_two_scenarios_over_an_xapk_bundle_with_split_dex` (`crates/rd-cli/tests/test_cli.rs`), com 2 cenários: instalar o bundle, lançar, conferir a tela; e reinstalar o mesmo bundle e conferir a mesma tela.
 - Um XAPK é lido inteiro na memória, como um APK comum abaixo de 512 MB. Bundles maiores que isso não usam o modo paginado de ADR 008 nesta versão.
 - A instalação de XAPK não está coberta por esta decisão.
 

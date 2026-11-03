@@ -797,8 +797,10 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   no classpath da execução (`bundle.split_dex_merged`, teste
   `install_xapk_mounts_split_dex_into_execution`). Limite honesto: as **libs nativas**
   dos splits ainda não são carregadas (`native_libs_pending`; `base_only_execution` fica
-  `true` enquanto houver lib nativa de split pendente). `rd test` sobre o XAPK: ver
-  resultado na seção de validação do bloco 2.
+  `true` enquanto houver lib nativa de split pendente). `rd test` sobre o XAPK: verificado
+  por `rd_test_runs_two_scenarios_over_an_xapk_bundle_with_split_dex` (2 cenários, instalação
+  do bundle com split de feature e reinstalação). Libs nativas de split: base-only, decisão
+  registrada no ADR 022.
   Decisão em [ADR 022](adr/022-xapk-bundles.md).
 - **Layering de APKs.** Permitir executar mais de um APK ao mesmo tempo, com um
   APK por cima do outro. Caso de uso citado pelo dono: um jogo clicker e um

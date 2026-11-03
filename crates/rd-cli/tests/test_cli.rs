@@ -223,3 +223,82 @@ fn rd_test_missing_file_exits_64() {
     assert_eq!(out.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&out.stderr).contains("IO_ERROR"));
 }
+
+/// ADR 022: `rd test` sobre um XAPK com split de feature (DEX próprio). A
+/// suíte tem 2 cenários: o primeiro instala o bundle, lança e confere a tela;
+/// o segundo reinstala o mesmo bundle e confere a mesma tela. O split entra
+/// na execução, como o teste de agente `install_xapk_mounts_split_dex_into_execution`.
+#[test]
+fn rd_test_runs_two_scenarios_over_an_xapk_bundle_with_split_dex() {
+    let tmp = tempfile_dir();
+    let base_path = build_apk_path(&tmp);
+    let base = std::fs::read(&base_path).expect("apk base do bundle");
+
+    let mut feat = rd_testsupport::vm::DexBuilder::new();
+    feat.class("Lcom/test/feature/Helper;", "Ljava/lang/Object;");
+    let feature_apk = rd_testsupport::apkfix::build_apk(
+        "com.test.mcp",
+        "com.test.feature.Main",
+        rd_testsupport::apkfix::ArscFix::new().build(),
+        vec![("classes2.dex", feat.finish())],
+    );
+    let manifest = serde_json::json!({
+        "xapk_version": 2,
+        "package_name": "com.test.mcp",
+        "split_apks": [
+            {"file": "base.apk", "id": "base"},
+            {"file": "feature.apk", "id": "feature"}
+        ],
+    });
+    let mut zip = rd_testsupport::apkfix::ZipFix::new();
+    zip.add("manifest.json", serde_json::to_vec(&manifest).unwrap());
+    zip.add("base.apk", base);
+    zip.add("feature.apk", feature_apk);
+    std::fs::write(tmp.join("bundle.xapk"), zip.build()).expect("escreve o xapk");
+
+    let suite_text = r#"{
+  "name": "e2e-xapk",
+  "scenarios": [
+    {"name": "xapk instala e confere a tela", "steps": [
+        {"name": "install", "arguments": {"apk": "bundle.xapk"}},
+        {"name": "launch", "arguments": {}},
+        {"name": "wait", "arguments": {"ms": 10}},
+        {"name": "assert_text", "arguments": {"resource_id": "com.test:id/tv", "expected": "Olá via MCP"}}
+    ]},
+    {"name": "reinstalar o xapk mantém a tela", "steps": [
+        {"name": "install", "arguments": {"apk": "bundle.xapk"}},
+        {"name": "launch", "arguments": {}},
+        {"name": "wait", "arguments": {"ms": 10}},
+        {"name": "assert_text", "arguments": {"resource_id": "com.test:id/tv", "expected": "Olá via MCP"}}
+    ]}
+  ]
+}"#;
+    let suite = write_suite(&tmp, "suite.json", suite_text);
+    let junit = tmp.join("out.xml");
+    let out = Command::new(env!("CARGO_BIN_EXE_rd"))
+        .args(["test"])
+        .arg(&suite)
+        .arg("--junit")
+        .arg(&junit)
+        .output()
+        .expect("roda rd test");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stdout={stdout} stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("PASS  xapk instala e confere a tela"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("PASS  reinstalar o xapk mantém a tela"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("2 passou, 0 falhou"), "{stdout}");
+    let xml = std::fs::read_to_string(&junit).expect("junit gravado");
+    assert!(xml.contains("tests=\"2\" failures=\"0\""), "{xml}");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
