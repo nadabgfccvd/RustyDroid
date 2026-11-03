@@ -6,7 +6,7 @@
     "rust_version": "1.76",
     "cargo_lock_version": 3,
     "floor_min_sdk": 9,
-    "mcp_tool_count": 47,
+    "mcp_tool_count": 50,
     "golden_vector_count": 150,
     "fuzz_target_count": 5,
     "minimum_static_test_attributes": 699,

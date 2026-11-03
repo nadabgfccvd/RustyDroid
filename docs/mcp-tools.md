@@ -4,7 +4,7 @@
 
 Servidor `rustydroid-agent` v0.9.0 · protocolo `2024-11-05` · transporte stdio (JSON-RPC 2.0, uma mensagem por linha).
 
-Total: **47 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` — o MESMO registro respondido em `tools/list` e impresso por `rd mcp --describe-tools`.
+Total: **50 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` — o MESMO registro respondido em `tools/list` e impresso por `rd mcp --describe-tools`.
 
 ## Controles de segurança
 
@@ -19,6 +19,24 @@ Total: **47 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` �
 Falhas de tool voltam com `isError: true` e o contrato estável `{code, cause, suggestion?, module_id}`. Erros de PROTOCOLO são JSON-RPC (-32601 método, -32700 parse).
 
 ## Catálogo
+
+### `session_open`
+
+ADR 023 (sessões): abre outra sessão de app no processo, com estado isolado (engine, disco virtual, logs, permissões e tela). Devolve `engine_id`; passe-o em `engine_id` das demais tools para atuar nela. Limite padrão 2 (env RD_MCP_MAX_SESSIONS, máximo 8). Erro SESSION_LIMIT ao passar do teto.
+
+- Parâmetros: nenhum
+
+### `session_list`
+
+ADR 023 (sessões): lista as sessões abertas no processo, com `engine_id`, se é a padrão, o app instalado ativo e o app em execução. A sessão padrão (sem `engine_id`) vem primeiro.
+
+- Parâmetros: nenhum
+
+### `session_close`
+
+ADR 023 (sessões): fecha uma sessão aberta com `session_open` e libera o slot. A sessão padrão não fecha (erro INVALID_ARG). Erro SESSION_NOT_FOUND para `engine_id` desconhecido.
+
+- Parâmetros: `engine_id` · obrigatórios: `engine_id`
 
 ### `install`
 

@@ -810,7 +810,11 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   Status (2026-11-02): proposta em [ADR 021](adr/021-apk-layering.md). O dono escolheu a
   etapa 1 (sessões com roteamento de entrada). A revisão do ADR 001 que ela exige está
   aceita em [ADR 023](adr/023-revisa-adr-001-multiplas-sessoes.md) (mergeada). Código da
-  etapa 1 (refactor `RunningApp`, `engine_id`, `session_launch`) ainda não iniciado.
+  etapa 1 em implementação: `RunningApp` (#489), `SessionHub` com `session_open`,
+  `session_list`, `session_close` e `engine_id` opcional em todas as tools de app
+  (catálogo de 47 para 50 tools). Pendências declaradas na ADR 023: roteamento de
+  toque pelo M10 (hoje o toque vai para o engine da sessão) e orçamento de memória
+  `teto / N`.
   Pré-requisito da etapa 1 (ADR 024, concluído em #495, #497, #498 e #499): o estado host indexado por `ObjRef`
   e o destino do System.out saem do thread-local e vão para `HostState`. Passo 1
   (System.out por engine) mergeado em #495. Passo 2 (tabelas de spannable, regex, URI,
