@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`java.util.Collections` completion:** `reverseOrder()` (singleton, JDK identity) and `reverseOrder(Comparator)`, `nCopies`, `frequency`, `fill`, `swap`, `rotate`, `copy`, `disjoint`, `replaceAll` — with the JDK's exception classes at the boundaries. Test: `crates/rd-vm/tests/collections_completion.rs`.
+- **ARSC array resources:** `Arsc::resolve_array` resolves `string-array`/`integer-array`/`array` bags (both the aapt2 `0x02000000|index` and the `0x01000000|index` naming found in the golden APKs, parent chain followed), and `TypedArray.getTextArray(int)` materializes the `CharSequence[]`. Without it no preference screen with a list could inflate.
+- **`Collections.binarySearch(List[, Comparator])`** over host and guest lists, with the JDK's `-(insertion point) - 1` encoding for a missing key. Test: `crates/rd-vm/tests/collections_binary_search.rs`.
+- **`javax.net.SocketFactory` / `SSLSocketFactory` (`crates/rd-vm/src/jnet.rs`):** `getDefault()` returns a real object of the right class so HTTP clients can finish their construction (okhttp builds its client in `Application.onCreate`); the first `createSocket` answers the structured `NOT_IMPLEMENTED` network gap, never a fake socket. Test: `crates/rd-vm/tests/jnet_socket_factory.rs`.
 - **M4 renderer (ADR 019 accepted):** `rd app shot` paints with `tiny-skia` (anti-aliased paths) and shapes text with `rustybuzz` over the bundled DejaVu Sans (`crates/rd-render/assets/`). Golden lock `golden/screens/trivial-app.png` (`tests/golden_screenshot.rs`, regression only, not Android fidelity).
 - **XAPK bundles (ADR 022):** inspect, base split, OBB listing, and dex disasm across splits.
 - **XAPK install (ADR 022):** `install` accepts `.xapk`, validates every split, installs the base, and returns `bundle.splits` in the response. DEX of other splits is merged into execution (`bundle.split_dex_merged`). Native libs of other splits are not loaded yet (`native_libs_pending`; `base_only_execution` stays true while they are pending).
@@ -25,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **VM, field hiding (JLS 8.3):** instance fields were keyed by name only, so a subclass field with the same name as an inherited one shared a single slot. Real APK (NewPipe 0.27): `SwitchPreference.mListener` and `Preference.mListener` collapsed, and `Preference.notifyChanged()` dereferenced the wrong object inside `Application.onCreate`. Ambiguous names now use a `declClass#name` slot; unambiguous fields are unchanged. Test: `crates/rd-vm/tests/field_hiding.rs`.
+- **VM, `android.view.InflateException`** is in the builtin hierarchy, so the framework's own throwable constructors materialize instead of failing with `NOT_FOUND`.
+- **CLI, uncaught exceptions:** `rd app run` now prints the `Caused by:` chain of the escaped throwable (guest frames included when `--trace` is on), which is what made the NewPipe failures diagnosable.
 - `SharedPreferencesImpl` is now a subtype of `SharedPreferences` (checkcast on the F-Droid cold start).
 - **VM, okhttp shim (F-Droid cold start):** the `<init>` shim for `Lokhttp3/*` applies only to classes that are modeled (`is_modeled_okhttp`), so `ConnectionSpec$Builder` keeps its real fields instead of returning null.
 - **VM, reflection:** `Class.getEnclosingClass` and `Class.getDeclaringClass` answer named member classes (`Outer$Inner` → `Outer`) from the class name. `getEnclosingMethod` and `getEnclosingConstructor` return null: the EnclosingMethod attribute is not modeled yet.

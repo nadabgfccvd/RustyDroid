@@ -62,6 +62,7 @@ pub(crate) mod jlclass;
 pub(crate) mod jlocks;
 pub(crate) mod jlstring;
 pub(crate) mod jlsystem;
+pub(crate) mod jnet;
 pub(crate) mod jnormalizer;
 pub(crate) mod jpriorityqueue;
 pub(crate) mod jrandom;

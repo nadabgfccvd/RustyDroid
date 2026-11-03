@@ -922,6 +922,13 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/util/concurrent/TimeoutException;"
         | "Ljava/util/concurrent/ExecutionException;"
         | "Landroid/util/AndroidException;" => Some(EXC),
+        // javax.net: as fábricas de socket existem para que a CONSTRUÇÃO de
+        // clientes HTTP termine (okhttp/HttpsURLConnection); a primeira
+        // operação de I/O responde o gap estruturado (jnet.rs).
+        "Ljavax/net/SocketFactory;" => Some(OBJECT),
+        "Ljavax/net/ssl/SSLSocketFactory;" => {
+            Some(&["Ljavax/net/SocketFactory;", "Ljava/lang/Object;"])
+        }
         // NewPipe (launch real): o `LayoutInflater` de framework lança
         // `InflateException` quando um layout do APK não infla. Sem a entrada
         // aqui a hierarquia é desconhecida, `is_throwable_class` devolve
