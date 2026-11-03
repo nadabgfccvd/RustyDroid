@@ -27,6 +27,14 @@ pub const FLOOR_MIN_SDK: u32 = 9;
 
 pub const MODULE_ID: &str = "rd-apk";
 
+/// Fonte de DEX extra: um split de XAPK (ADR 022) com seu ZIP próprio.
+#[derive(Debug, Clone)]
+pub struct SplitDexSource {
+    pub split_id: String,
+    pub zip: Zip,
+    pub dex_files: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Apk {
     /// Nome da entrada do manifest dentro do ZIP (constante na plataforma).
@@ -41,6 +49,10 @@ pub struct Apk {
     pub signing: SigningInfo,
     /// classes*.dex presentes.
     pub dex_files: Vec<String>,
+    /// DEX de splits de XAPK, executados junto com o base (ADR 022). Vazio
+    /// para APK comum. Cada fonte guarda o ZIP do split e os nomes dos DEX.
+    #[serde(skip)]
+    pub split_dex: Vec<SplitDexSource>,
     /// lib/<abi>/<name>.so
     pub native_libs: Vec<String>,
     /// ABIs distintas detectadas.
@@ -172,6 +184,7 @@ impl Apk {
             arsc,
             signing,
             dex_files,
+            split_dex: Vec::new(),
             native_libs,
             abis,
             assets,

@@ -586,14 +586,19 @@ fn dexes_of_apk(apk: &Apk) -> Result<Vec<rd_dex::Dex>, RdError> {
     // in declaration order -> deterministic Vec<Dex>). Each file's inflate +
     // CRC + parse is independent; on multi-core hosts this turns the sum of
     // per-DEX costs into roughly the largest single DEX cost.
-    let parse_one = |name: &String| -> Result<rd_dex::Dex, RdError> {
-        let entry = apk
-            .zip
+    // ADR 022: o base vem primeiro; depois os DEX dos splits de XAPK, cada um
+    // lido do próprio ZIP. A ordem é a do manifesto, então é determinística.
+    let mut sources: Vec<(&rd_apk::Zip, &String)> =
+        apk.dex_files.iter().map(|n| (&apk.zip, n)).collect();
+    for split in &apk.split_dex {
+        sources.extend(split.dex_files.iter().map(|n| (&split.zip, n)));
+    }
+    let parse_one = |(zip, name): &(&rd_apk::Zip, &String)| -> Result<rd_dex::Dex, RdError> {
+        let entry = zip
             .find(name)
             .ok_or_else(|| RdError::missing_entry(format!("entrada zip {name:?}")))?;
         let t_entry = std::time::Instant::now();
-        let bytes = apk
-            .zip
+        let bytes = zip
             .read_entry(entry)
             .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
         phase(&format!("dex_read_entry:{name}"), t_entry);
@@ -605,12 +610,11 @@ fn dexes_of_apk(apk: &Apk) -> Result<Vec<rd_dex::Dex>, RdError> {
         phase(&format!("dex_parse:{name}"), t_parse);
         Ok(d)
     };
-    let out: Vec<rd_dex::Dex> = if apk.dex_files.len() > 1 {
+    let out: Vec<rd_dex::Dex> = if sources.len() > 1 {
         std::thread::scope(|scope| {
-            let handles: Vec<_> = apk
-                .dex_files
+            let handles: Vec<_> = sources
                 .iter()
-                .map(|name| scope.spawn(|| parse_one(name)))
+                .map(|src| scope.spawn(|| parse_one(src)))
                 .collect();
             let mut out = Vec::with_capacity(handles.len());
             for h in handles {
@@ -629,8 +633,8 @@ fn dexes_of_apk(apk: &Apk) -> Result<Vec<rd_dex::Dex>, RdError> {
         })?
     } else {
         let mut out = Vec::new();
-        for name in &apk.dex_files {
-            out.push(parse_one(name)?);
+        for src in &sources {
+            out.push(parse_one(src)?);
         }
         out
     };
@@ -1430,13 +1434,28 @@ impl AgentSession {
             "installed_count": self.installed.len(),
             "runtime_pending": self.find_installed(&package).map(|a| a.perms.pending_runtime().len()).unwrap_or(0),
             "runtime_special": self.find_installed(&package).map(|a| a.perms.pending_special().len()).unwrap_or(0),
-            "bundle": bundle_splits.as_ref().map(|splits| serde_json::json!({
-                "format": "xapk",
-                "splits": splits,
-                // Execução usa só o split base; os demais são validados, mas o
-                // DEX e as libs nativas deles ainda não são carregados (ADR 022).
-                "base_only_execution": true,
-            })),
+            "bundle": bundle_splits.as_ref().map(|splits| {
+                // ADR 022: o DEX dos splits é mesclado à execução; as libs nativas
+                // dos splits ainda não são carregadas. `base_only_execution` fica
+                // true enquanto houver lib nativa de split pendente.
+                let native_pending: usize = splits
+                    .iter()
+                    .filter(|sp| !sp.base)
+                    .map(|sp| sp.native_libs)
+                    .sum();
+                let dex_merged: Vec<&str> = splits
+                    .iter()
+                    .filter(|sp| !sp.base && sp.dex_files > 0)
+                    .map(|sp| sp.id.as_str())
+                    .collect();
+                serde_json::json!({
+                    "format": "xapk",
+                    "splits": splits,
+                    "split_dex_merged": dex_merged,
+                    "native_libs_pending": native_pending,
+                    "base_only_execution": native_pending > 0,
+                })
+            }),
         })))
     }
 
@@ -5400,6 +5419,57 @@ mod tests {
         fixture_apk_write(zip.build())
     }
 
+    /// ADR 022: a classe de um split de feature de XAPK entra no classpath da
+    /// execução. Antes, só o DEX do base era montado.
+    #[test]
+    fn install_xapk_mounts_split_dex_into_execution() {
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut feat = rd_testsupport::vm::DexBuilder::new();
+        feat.class("Lcom/test/feature/Helper;", "Ljava/lang/Object;");
+        let feature_apk = rd_testsupport::apkfix::build_apk(
+            "com.test.mcp",
+            "com.test.feature.Main",
+            rd_testsupport::apkfix::ArscFix::new().build(),
+            vec![("classes2.dex", feat.finish())],
+        );
+        let base = std::fs::read(fixture_apk_path()).expect("apk base do fixture");
+        let manifest = serde_json::json!({
+            "xapk_version": 2,
+            "package_name": "com.test.mcp",
+            "split_apks": [
+                {"file": "base.apk", "id": "base"},
+                {"file": "feature.apk", "id": "feature"}
+            ],
+        });
+        let mut zip = rd_testsupport::apkfix::ZipFix::new();
+        zip.add("manifest.json", serde_json::to_vec(&manifest).unwrap());
+        zip.add("base.apk", base);
+        zip.add("feature.apk", feature_apk);
+        let path = fixture_apk_write(zip.build());
+
+        let mut s = AgentSession::new();
+        let v = install_ok(&mut s, &path);
+        assert_eq!(
+            v["bundle"]["split_dex_merged"],
+            serde_json::json!(["feature"]),
+            "{v}"
+        );
+        assert_eq!(v["bundle"]["native_libs_pending"], 0, "{v}");
+        assert_eq!(v["bundle"]["base_only_execution"], false, "{v}");
+
+        let apk = s
+            .find_installed("com.test.mcp")
+            .and_then(|a| a.apk.clone())
+            .expect("app instalado");
+        let dexes = dexes_of_apk(&apk).expect("mount");
+        assert!(
+            dexes
+                .iter()
+                .any(|d| d.find_class("Lcom/test/feature/Helper;").is_some()),
+            "a classe do split de feature precisa estar no classpath da execução"
+        );
+    }
+
     #[test]
     fn install_xapk_validates_all_splits_and_runs_the_base() {
         let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -5413,7 +5483,13 @@ mod tests {
             Some(2),
             "{v}"
         );
-        assert_eq!(v["bundle"]["base_only_execution"], true, "{v}");
+        // o split de config do fixture tem DEX: entra na execução (ADR 022)
+        assert_eq!(
+            v["bundle"]["split_dex_merged"],
+            serde_json::json!(["config.arm64"]),
+            "{v}"
+        );
+        assert_eq!(v["bundle"]["base_only_execution"], false, "{v}");
         let (info, err) = call(&mut s, "app_info", serde_json::json!({}));
         assert!(!err, "app_info após XAPK: {info}");
     }
