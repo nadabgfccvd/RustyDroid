@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793721577107,
+  "lastUpdate": 1793722147122,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2770,6 +2770,42 @@ window.BENCHMARK_DATA = {
           {
             "name": "parse_field_ids_20k",
             "value": 2756,
+            "range": "± 11",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d2089a4a4e59b789266b7417d19dc9201c79191",
+          "message": "feat(vm): java.util.EnumMap + RD_TRACE_CLINIT (#517)\n\nEnumMap shares the host Map model (put/get/remove/containsKey/size/isEmpty/clear/keySet/values/entrySet) with <init>(Class) and <init>(EnumMap), and java.util.Map in its builtin interface list. RD_TRACE_CLINIT=1 prints the class and original cause the first time a <clinit> fails -- the JLS 12.4.2 error alone hides it, and that trace is what found the missing constructor.",
+          "timestamp": "2026-11-03T13:08:39-03:00",
+          "tree_id": "0bab9b25b1be9d2d052ca2e51a7115e8ac3ad46d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4d2089a4a4e59b789266b7417d19dc9201c79191"
+        },
+        "date": 1793722145861,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2764,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2758,
             "range": "± 11",
             "unit": "ns/iter"
           }
