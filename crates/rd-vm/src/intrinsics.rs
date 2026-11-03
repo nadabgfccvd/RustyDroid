@@ -1280,6 +1280,7 @@ fn class_supported(name: &str, sig: &str) -> bool {
             )
             | ("getDeclaredFields", "()[Ljava/lang/reflect/Field;")
             | ("getField", "(Ljava/lang/String;)Ljava/lang/reflect/Field;")
+            | ("getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;")
     )
 }
 
@@ -1319,6 +1320,69 @@ fn descriptor_to_class_name(desc: &str) -> String {
 }
 
 /// Class host (M8): nome vem do campo de heap "class_name" (descritor).
+/// Classes de plataforma sem parâmetros de tipo (não genéricas). Qualquer
+/// outra classe de plataforma é desconhecida para `getTypeParameters`.
+const NON_GENERIC_HOST_TYPES: &[&str] = &[
+    "Ljava/lang/Object;",
+    "Ljava/lang/String;",
+    "Ljava/lang/Cloneable;",
+    "Ljava/io/Serializable;",
+    "Ljava/lang/Runnable;",
+    "Ljava/lang/CharSequence;",
+    "Ljava/lang/Number;",
+    "Ljava/lang/Boolean;",
+    "Ljava/lang/Byte;",
+    "Ljava/lang/Short;",
+    "Ljava/lang/Character;",
+    "Ljava/lang/Integer;",
+    "Ljava/lang/Long;",
+    "Ljava/lang/Float;",
+    "Ljava/lang/Double;",
+    "Ljava/lang/Void;",
+    "Ljava/lang/Throwable;",
+    "Ljava/lang/Exception;",
+    "Ljava/lang/RuntimeException;",
+    "Ljava/lang/Error;",
+];
+
+/// `Class.getTypeParameters()` (`TypeVariable[]`), sem falsear:
+/// - arrays e primitivos não têm parâmetros: array vazio;
+/// - classe DEX sem `Signature` genérica (`<...>`): array vazio;
+/// - classe DEX genérica, ou classe de plataforma fora da lista acima: falha
+///   estruturada `NOT_IMPLEMENTED` (`TypeVariable` não é modelado).
+fn type_parameters_of(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+) -> Result<crate::heap::ObjRef, VmExit> {
+    let desc = crate::reflect::class_desc(vm, recv).unwrap_or_default();
+    let no_params =
+        desc.starts_with('[') || (desc.len() == 1 && "ZBSCIJFDV".contains(desc.as_str()));
+    let generic = if no_params {
+        false
+    } else if vm.cp.find_class(&desc).is_some() {
+        crate::jannotations::class_generic_signature(vm, &desc)
+            .is_some_and(|sig| sig.starts_with('<'))
+    } else if NON_GENERIC_HOST_TYPES.contains(&desc.as_str()) {
+        false
+    } else {
+        return Err(VmExit::Error(crate::err::not_implemented(format!(
+            "Class.getTypeParameters() de {desc} (classe de plataforma sem metadado genérico)"
+        ))));
+    };
+    if generic {
+        return Err(VmExit::Error(crate::err::not_implemented(format!(
+            "Class.getTypeParameters() de {desc} (parâmetros de tipo genéricos: TypeVariable)"
+        ))));
+    }
+    vm.heap
+        .alloc_array(
+            crate::heap::ElemKind::Obj,
+            0,
+            "[Ljava/lang/reflect/TypeVariable;",
+        )
+        .map_err(crate::err::oom_throwable)
+}
+
 fn class_intrinsic(
     vm: &mut Engine,
     recv: crate::heap::ObjRef,
@@ -1423,6 +1487,10 @@ fn class_intrinsic(
             },
         );
         return Ok(Some(Value::Obj(field)));
+    }
+    if name == "getTypeParameters" {
+        let array = type_parameters_of(vm, recv)?;
+        return Ok(Some(Value::Obj(array)));
     }
     if name == "getDeclaredFields" {
         let fields = vm.cp.declared_fields_info(&desc);
@@ -6265,5 +6333,109 @@ mod collection_ctor_tests {
             &[Value::Null],
         );
         assert!(matches!(r, Err(VmExit::Exception(_))), "{r:?}");
+    }
+}
+
+#[cfg(test)]
+mod launch_gap_tests {
+    use super::*;
+
+    fn call_class(
+        vm: &mut Engine,
+        class_obj: crate::heap::ObjRef,
+        name: &str,
+        sig: &str,
+    ) -> Result<Option<Value>, VmExit> {
+        call_instance_intrinsic(vm, CLASS, name, sig, class_obj, &[])
+    }
+
+    #[test]
+    fn get_type_parameters_is_empty_for_non_generic_host_and_primitive_types() {
+        let mut vm = Engine::new(vec![], Default::default());
+        for desc in ["Ljava/lang/String;", "Ljava/lang/Cloneable;", "[I", "I"] {
+            let c = vm.class_object_for(desc).unwrap();
+            let got = call_class(
+                &mut vm,
+                c,
+                "getTypeParameters",
+                "()[Ljava/lang/reflect/TypeVariable;",
+            )
+            .unwrap_or_else(|e| panic!("{desc}: {e:?}"))
+            .expect("tratado");
+            let Value::Obj(arr) = got else {
+                panic!("{desc}: esperava array")
+            };
+            assert_eq!(vm.heap.array_elems_mut(arr).unwrap().len(), 0, "{desc}");
+        }
+    }
+
+    #[test]
+    fn get_type_parameters_of_a_generic_platform_class_is_a_structured_gap_not_empty() {
+        // `java.util.List` é genérica: devolver array vazio seria falsear o metadado.
+        let mut vm = Engine::new(vec![], Default::default());
+        let c = vm.class_object_for("Ljava/util/List;").unwrap();
+        match call_class(
+            &mut vm,
+            c,
+            "getTypeParameters",
+            "()[Ljava/lang/reflect/TypeVariable;",
+        ) {
+            Err(VmExit::Error(e)) => assert_eq!(e.code, "NOT_IMPLEMENTED", "{e:?}"),
+            other => panic!("esperava NOT_IMPLEMENTED, veio {other:?}"),
+        }
+    }
+
+    fn assertion_message(vm: &mut Engine, e: crate::heap::ObjRef) -> String {
+        let got = call_instance_intrinsic(
+            vm,
+            "Ljava/lang/AssertionError;",
+            "getMessage",
+            "()Ljava/lang/String;",
+            e,
+            &[],
+        )
+        .unwrap()
+        .expect("getMessage tratado");
+        match got {
+            Value::Obj(s) => vm.heap.as_str(s).unwrap().to_string(),
+            other => panic!("mensagem não é String: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assertion_error_detail_object_becomes_the_message_like_string_valueof() {
+        let mut vm = Engine::new(vec![], Default::default());
+        let e = vm
+            .heap
+            .alloc_instance("Ljava/lang/AssertionError;".to_string(), Vec::new())
+            .unwrap();
+        let text = alloc_string(&mut vm, "detalhe".to_string()).unwrap();
+        call_instance_intrinsic(
+            &mut vm,
+            "Ljava/lang/AssertionError;",
+            "<init>",
+            "(Ljava/lang/Object;)V",
+            e,
+            &[Value::Obj(text)],
+        )
+        .unwrap()
+        .expect("tratado");
+        assert_eq!(assertion_message(&mut vm, e), "detalhe");
+
+        let n = vm
+            .heap
+            .alloc_instance("Ljava/lang/AssertionError;".to_string(), Vec::new())
+            .unwrap();
+        call_instance_intrinsic(
+            &mut vm,
+            "Ljava/lang/AssertionError;",
+            "<init>",
+            "(Ljava/lang/Object;)V",
+            n,
+            &[Value::Null],
+        )
+        .unwrap()
+        .expect("tratado");
+        assert_eq!(assertion_message(&mut vm, n), "null");
     }
 }
