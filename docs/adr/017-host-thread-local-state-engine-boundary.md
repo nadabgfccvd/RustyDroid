@@ -57,6 +57,10 @@ Essas tabelas eram purgadas só durante o GC. Três vazamentos resultavam disso 
 - Nenhum `thread_local!` novo foi introduzido. A mudança só dá fronteiras
   explícitas ao estado que já existia.
 
+## Nota de supersessão (ADR 024, passo 4)
+
+O item 4 (`reset_vfs()` na fronteira de sessão) foi superado: o VFS agora é um `VfsHandle` por sessão, guardado em `HostState.vfs`, e a fronteira de sessão é `VfsHandle::new()`. Os itens 5 e 6 seguem válidos.
+
 ## Follow-up
 
 Migrar as tabelas indexadas por `ObjRef` para dentro de `HostState`. Isso

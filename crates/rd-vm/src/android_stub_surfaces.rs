@@ -19365,6 +19365,7 @@ fn sysos_path_arg(
     Ok(path)
 }
 fn sysos_fd_arg(vm: &mut Engine, args: &[Value], index: usize) -> Result<(ObjRef, i32), VmExit> {
+    let vfs = vm.fw.vfs.clone();
     let fd_obj = req_obj(args, index, "fd")?;
     let fd = match get(vm, fd_obj, "descriptor") {
         Value::Int(value) => value,
@@ -19377,7 +19378,7 @@ fn sysos_fd_arg(vm: &mut Engine, args: &[Value], index: usize) -> Result<(ObjRef
             };
             if path.is_empty() {
                 -1
-            } else if let Some(registered) = crate::jfile::os_register_path(&path, 2, 0) {
+            } else if let Some(registered) = crate::jfile::os_register_path(&vfs, &path, 2, 0) {
                 put(vm, fd_obj, "descriptor", Value::Int(registered))?;
                 registered
             } else {
@@ -19388,7 +19389,8 @@ fn sysos_fd_arg(vm: &mut Engine, args: &[Value], index: usize) -> Result<(ObjRef
     Ok((fd_obj, fd))
 }
 fn sysos_new_fd_obj(vm: &mut Engine, fd: i32) -> Result<Value, VmExit> {
-    let path = crate::jfile::os_fd_path(fd).unwrap_or_default();
+    let vfs = vm.fw.vfs.clone();
+    let path = crate::jfile::os_fd_path(&vfs, fd).unwrap_or_default();
     let path_value = jstr(vm, path)?;
     let obj = alloc_obj(
         vm,
@@ -19927,18 +19929,23 @@ fn android_os_static(
     sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    let vfs = vm.fw.vfs.clone();
     let value = match (name, sig) {
         ("access", "(Ljava/lang/String;I)Z") => {
             let path = sysos_path_arg(vm, args, 0, "access")?;
             bool_value(sysos_map(
                 vm,
                 "access",
-                crate::jfile::os_access(&path, iarg(args, 1)),
+                crate::jfile::os_access(&vfs, &path, iarg(args, 1)),
             )?)
         }
         ("chmod", "(Ljava/lang/String;I)V") => {
             let path = sysos_path_arg(vm, args, 0, "chmod")?;
-            sysos_map(vm, "chmod", crate::jfile::os_chmod(&path, iarg(args, 1)))?;
+            sysos_map(
+                vm,
+                "chmod",
+                crate::jfile::os_chmod(&vfs, &path, iarg(args, 1)),
+            )?;
             Value::Null
         }
         ("chown", "(Ljava/lang/String;II)V") | ("lchown", "(Ljava/lang/String;II)V") => {
@@ -19946,24 +19953,24 @@ fn android_os_static(
             sysos_map(
                 vm,
                 name,
-                crate::jfile::os_chown(&path, iarg(args, 1), iarg(args, 2)),
+                crate::jfile::os_chown(&vfs, &path, iarg(args, 1), iarg(args, 2)),
             )?;
             Value::Null
         }
         ("close", "(Ljava/io/FileDescriptor;)V") => {
             let (fd_obj, fd) = sysos_fd_arg(vm, args, 0)?;
-            sysos_map(vm, "close", crate::jfile::os_close(fd))?;
+            sysos_map(vm, "close", crate::jfile::os_close(&vfs, fd))?;
             put(vm, fd_obj, "descriptor", Value::Int(-1))?;
             Value::Null
         }
         ("dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;") => {
             let (_, fd) = sysos_fd_arg(vm, args, 0)?;
-            let new_fd = sysos_map(vm, "dup", crate::jfile::os_dup(fd))?;
+            let new_fd = sysos_map(vm, "dup", crate::jfile::os_dup(&vfs, fd))?;
             sysos_new_fd_obj(vm, new_fd)?
         }
         ("dup2", "(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;") => {
             let (fd_obj, fd) = sysos_fd_arg(vm, args, 0)?;
-            let new_fd = sysos_map(vm, "dup2", crate::jfile::os_dup2(fd, iarg(args, 1)))?;
+            let new_fd = sysos_map(vm, "dup2", crate::jfile::os_dup2(&vfs, fd, iarg(args, 1)))?;
             if new_fd == fd {
                 Value::Obj(fd_obj)
             } else {
@@ -19981,7 +19988,11 @@ fn android_os_static(
         }
         ("fchmod", "(Ljava/io/FileDescriptor;I)V") => {
             let (_, fd) = sysos_fd_arg(vm, args, 0)?;
-            sysos_map(vm, "fchmod", crate::jfile::os_fchmod(fd, iarg(args, 1)))?;
+            sysos_map(
+                vm,
+                "fchmod",
+                crate::jfile::os_fchmod(&vfs, fd, iarg(args, 1)),
+            )?;
             Value::Null
         }
         ("fchown", "(Ljava/io/FileDescriptor;II)V") => {
@@ -19989,23 +20000,23 @@ fn android_os_static(
             sysos_map(
                 vm,
                 "fchown",
-                crate::jfile::os_fchown(fd, iarg(args, 1), iarg(args, 2)),
+                crate::jfile::os_fchown(&vfs, fd, iarg(args, 1), iarg(args, 2)),
             )?;
             Value::Null
         }
         ("fdatasync", "(Ljava/io/FileDescriptor;)V") | ("fsync", "(Ljava/io/FileDescriptor;)V") => {
             let (_, fd) = sysos_fd_arg(vm, args, 0)?;
-            sysos_map(vm, name, crate::jfile::os_fsync(fd))?;
+            sysos_map(vm, name, crate::jfile::os_fsync(&vfs, fd))?;
             Value::Null
         }
         ("fstat", "(Ljava/io/FileDescriptor;)Landroid/system/StructStat;") => {
             let (_, fd) = sysos_fd_arg(vm, args, 0)?;
-            let stat = sysos_map(vm, "fstat", crate::jfile::os_fstat(fd))?;
+            let stat = sysos_map(vm, "fstat", crate::jfile::os_fstat(&vfs, fd))?;
             sysos_stat_obj(vm, &stat)?
         }
         ("fstatvfs", "(Ljava/io/FileDescriptor;)Landroid/system/StructStatVfs;") => {
             let (_, fd) = sysos_fd_arg(vm, args, 0)?;
-            let stat = sysos_map(vm, "fstatvfs", crate::jfile::os_fstatvfs(fd))?;
+            let stat = sysos_map(vm, "fstatvfs", crate::jfile::os_fstatvfs(&vfs, fd))?;
             sysos_statvfs_obj(vm, &stat)?
         }
         ("ftruncate", "(Ljava/io/FileDescriptor;J)V") => {
@@ -20013,7 +20024,7 @@ fn android_os_static(
             sysos_map(
                 vm,
                 "ftruncate",
-                crate::jfile::os_ftruncate(fd, larg(args, 1)),
+                crate::jfile::os_ftruncate(&vfs, fd, larg(args, 1)),
             )?;
             Value::Null
         }
@@ -20069,23 +20080,27 @@ fn android_os_static(
             Value::Long(sysos_map(
                 vm,
                 "lseek",
-                crate::jfile::os_lseek(fd, larg(args, 1), iarg(args, 2)),
+                crate::jfile::os_lseek(&vfs, fd, larg(args, 1), iarg(args, 2)),
             )?)
         }
         ("stat", "(Ljava/lang/String;)Landroid/system/StructStat;")
         | ("lstat", "(Ljava/lang/String;)Landroid/system/StructStat;") => {
             let path = sysos_path_arg(vm, args, 0, name)?;
-            let stat = sysos_map(vm, name, crate::jfile::os_stat(&path))?;
+            let stat = sysos_map(vm, name, crate::jfile::os_stat(&vfs, &path))?;
             sysos_stat_obj(vm, &stat)?
         }
         ("statvfs", "(Ljava/lang/String;)Landroid/system/StructStatVfs;") => {
             let path = sysos_path_arg(vm, args, 0, "statvfs")?;
-            let stat = sysos_map(vm, "statvfs", crate::jfile::os_statvfs(&path))?;
+            let stat = sysos_map(vm, "statvfs", crate::jfile::os_statvfs(&vfs, &path))?;
             sysos_statvfs_obj(vm, &stat)?
         }
         ("mkdir", "(Ljava/lang/String;I)V") => {
             let path = sysos_path_arg(vm, args, 0, "mkdir")?;
-            sysos_map(vm, "mkdir", crate::jfile::os_mkdir(&path, iarg(args, 1)))?;
+            sysos_map(
+                vm,
+                "mkdir",
+                crate::jfile::os_mkdir(&vfs, &path, iarg(args, 1)),
+            )?;
             Value::Null
         }
         ("open", "(Ljava/lang/String;II)Ljava/io/FileDescriptor;") => {
@@ -20093,7 +20108,7 @@ fn android_os_static(
             let fd = sysos_map(
                 vm,
                 "open",
-                crate::jfile::os_open(&path, iarg(args, 1), iarg(args, 2)),
+                crate::jfile::os_open(&vfs, &path, iarg(args, 1), iarg(args, 2)),
             )?;
             sysos_new_fd_obj(vm, fd)?
         }
@@ -20103,7 +20118,7 @@ fn android_os_static(
             if count == 0 {
                 Value::Int(0)
             } else {
-                let bytes = sysos_map(vm, "read", crate::jfile::os_read(fd, count))?;
+                let bytes = sysos_map(vm, "read", crate::jfile::os_read(&vfs, fd, count))?;
                 if bytes.is_empty() {
                     Value::Int(-1)
                 } else {
@@ -20122,7 +20137,7 @@ fn android_os_static(
                 let bytes = sysos_map(
                     vm,
                     "pread",
-                    crate::jfile::os_pread(fd, count, larg(args, 4)),
+                    crate::jfile::os_pread(&vfs, fd, count, larg(args, 4)),
                 )?;
                 if bytes.is_empty() {
                     Value::Int(-1)
@@ -20139,7 +20154,7 @@ fn android_os_static(
             if count == 0 {
                 Value::Int(0)
             } else {
-                Value::Int(sysos_map(vm, "write", crate::jfile::os_write(fd, &bytes))? as i32)
+                Value::Int(sysos_map(vm, "write", crate::jfile::os_write(&vfs, fd, &bytes))? as i32)
             }
         }
         ("pwrite", "(Ljava/io/FileDescriptor;[BIIJ)I") => {
@@ -20151,7 +20166,7 @@ fn android_os_static(
                 Value::Int(sysos_map(
                     vm,
                     "pwrite",
-                    crate::jfile::os_pwrite(fd, &bytes, larg(args, 4)),
+                    crate::jfile::os_pwrite(&vfs, fd, &bytes, larg(args, 4)),
                 )? as i32)
             }
         }
@@ -20159,7 +20174,7 @@ fn android_os_static(
             let path = sysos_path_arg(vm, args, 0, "readlink")?;
             // The VFS has no links: a path that exists is not a symbolic
             // link (EINVAL), and all other failures keep their errno.
-            sysos_map(vm, "readlink", crate::jfile::os_stat(&path))?;
+            sysos_map(vm, "readlink", crate::jfile::os_stat(&vfs, &path))?;
             return Err(sysos_errno_exit(vm, "readlink", SYSEO_EINVAL));
         }
         ("realpath", "(Ljava/lang/String;)Ljava/lang/String;") => {
@@ -20167,24 +20182,28 @@ fn android_os_static(
                 Value::Null
             } else {
                 let path = sysos_path_arg(vm, args, 0, "realpath")?;
-                let canonical = sysos_map(vm, "realpath", crate::jfile::os_realpath(&path))?;
+                let canonical = sysos_map(vm, "realpath", crate::jfile::os_realpath(&vfs, &path))?;
                 jstr(vm, canonical)?
             }
         }
         ("remove", "(Ljava/lang/String;)V") => {
             let path = sysos_path_arg(vm, args, 0, "remove")?;
-            sysos_map(vm, "remove", crate::jfile::os_remove(&path))?;
+            sysos_map(vm, "remove", crate::jfile::os_remove(&vfs, &path))?;
             Value::Null
         }
         ("unlink", "(Ljava/lang/String;)V") => {
             let path = sysos_path_arg(vm, args, 0, "unlink")?;
-            sysos_map(vm, "unlink", crate::jfile::os_unlink(&path))?;
+            sysos_map(vm, "unlink", crate::jfile::os_unlink(&vfs, &path))?;
             Value::Null
         }
         ("rename", "(Ljava/lang/String;Ljava/lang/String;)V") => {
             let old_path = sysos_path_arg(vm, args, 0, "rename")?;
             let new_path = sysos_path_arg(vm, args, 1, "rename")?;
-            sysos_map(vm, "rename", crate::jfile::os_rename(&old_path, &new_path))?;
+            sysos_map(
+                vm,
+                "rename",
+                crate::jfile::os_rename(&vfs, &old_path, &new_path),
+            )?;
             Value::Null
         }
         ("strerror", "(I)Ljava/lang/String;") => jstr(vm, sysos_strerror(iarg(args, 0)))?,

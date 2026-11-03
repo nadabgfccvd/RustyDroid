@@ -473,7 +473,8 @@ fn ensure_loaded(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
     // Mark first: loading is a backend-process boundary, and a failed load is
     // a typed corruption error rather than a reason to retry on every SQL op.
     vm.fw.m8.sqlx.loaded.insert(db.to_string());
-    let Some(bytes) = crate::jfile::read_bytes(db).filter(|b| !b.is_empty()) else {
+    let Some(bytes) = crate::jfile::read_bytes(&vm.fw.vfs.clone(), db).filter(|b| !b.is_empty())
+    else {
         return Ok(());
     };
     let r = send(vm, &json!({"op": "load", "db": db, "data": b64(&bytes)}))?;
@@ -506,7 +507,7 @@ fn persist_db(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
         .map(unb64)
         .unwrap_or_default();
     if !data.is_empty() {
-        crate::jfile::write_bytes(db, data);
+        crate::jfile::write_bytes(&vm.fw.vfs.clone(), db, data);
     }
     Ok(())
 }
@@ -772,7 +773,7 @@ fn new_db(vm: &mut Engine, path: &str) -> Result<ObjRef, VmExit> {
     vm.fw.m8.sqlx.clear_slot(r);
     vm.fw.m8.sqlx.dbs.insert(r, path.to_string());
     if path.starts_with('/') {
-        crate::jfile::touch(path);
+        crate::jfile::touch(&vm.fw.vfs.clone(), path);
     }
     Ok(r)
 }
@@ -1653,7 +1654,7 @@ fn helper_open(vm: &mut Engine, recv: ObjRef) -> Result<Value, VmExit> {
             } else {
                 vm.fw.package_name.clone()
             };
-            crate::jfile::mkdirs_pub(&format!("/data/user/0/{pkg}/databases"));
+            crate::jfile::mkdirs_pub(&vm.fw.vfs.clone(), &format!("/data/user/0/{pkg}/databases"));
             format!("/data/user/0/{pkg}/databases/{n}")
         }
         None => format!(":memory:{recv}"),
@@ -1909,7 +1910,8 @@ pub fn static_intrinsic(
         if was_open || vm.fw.m8.sqlx.loaded.contains(&path) {
             backend_close(vm, &path);
         }
-        let deleted_file = persistent_db(&path) && crate::jfile::delete_file(&path);
+        let deleted_file =
+            persistent_db(&path) && crate::jfile::delete_file(&vm.fw.vfs.clone(), &path);
         return Ok(Some(Value::Int((was_open || deleted_file) as i32)));
     }
     let path =

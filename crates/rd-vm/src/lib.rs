@@ -114,11 +114,12 @@ pub use value::Value;
 /// Módulo do contrato de erro.
 pub const MODULE_ID: &str = "rd-vm";
 
-/// Issue #230: apaga o armazenamento privado de um pacote no VFS
+/// Issue #230: apaga o armazenamento privado de um pacote no VFS da sessão
 /// (`/data/user/0/<pkg>/`) — backend de `package_clear`/`package_remove`.
 pub use jfile::clear_package_data;
-/// Issue #230: zera o VFS inteiro — fronteira de sessão nova.
-pub use jfile::reset_all as reset_vfs;
+/// Disco virtual de uma sessão (ADR 024, passo 4). `VfsHandle::new()` é a
+/// fronteira de sessão nova; `Engine::set_vfs` liga um engine a ela.
+pub use jfile::VfsHandle;
 
 /// Converte um `EncodedValue` (static_values de class_def) em `Value`,
 /// alocando strings no heap da VM. `None` = tipo não representável no M2
