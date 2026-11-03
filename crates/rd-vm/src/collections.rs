@@ -90,6 +90,68 @@ pub(crate) fn host_static(
     Ok(Some(Value::Obj(r)))
 }
 
+/// `Collections.reverseOrder()` / `reverseOrder(Comparator)` marker classes.
+/// The ordering lives here, not in a fake DEX class: `compare` swaps the
+/// operands (natural order) or negates the wrapped comparator's answer.
+pub(crate) const REVERSE_COMPARATOR: &str = "Ljava/util/Collections$ReverseComparator;";
+pub(crate) const REVERSE_COMPARATOR2: &str = "Ljava/util/Collections$ReverseComparator2;";
+
+/// The marker instance for `reverseOrder()` lives in `Engine::statics`, so
+/// `Collections.reverseOrder() == Collections.reverseOrder()` (JDK identity).
+fn reverse_comparator(
+    vm: &mut Engine,
+    class: &str,
+    wrapped: Option<Value>,
+) -> Result<Value, VmExit> {
+    let cacheable = wrapped.is_none();
+    let key = (class.to_string(), "INSTANCE".to_string());
+    if cacheable {
+        if let Some(v) = vm.statics.get(&key) {
+            return Ok(v.clone());
+        }
+    }
+    let r = vm.heap.alloc_instance(class.to_string(), Vec::new())?;
+    if let Some(w) = wrapped {
+        let _ = vm.heap.put_field(r, "rd_cmp", w);
+    }
+    let v = Value::Obj(r);
+    if cacheable {
+        vm.statics.insert(key, v.clone());
+    }
+    Ok(v)
+}
+
+/// Instance surface of the two reverse comparators.
+pub(crate) fn instance_intrinsic(
+    vm: &mut Engine,
+    recv_class: &str,
+    name: &str,
+    sig: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if recv_class != REVERSE_COMPARATOR && recv_class != REVERSE_COMPARATOR2 {
+        return Ok(None);
+    }
+    match (name, sig) {
+        ("compare", "(Ljava/lang/Object;Ljava/lang/Object;)I") => {
+            let a = args.first().cloned().unwrap_or(Value::Null);
+            let b = args.get(1).cloned().unwrap_or(Value::Null);
+            let wrapped = match vm.heap.get_field(recv, "rd_cmp") {
+                Ok(v @ Value::Obj(_)) => Some(v),
+                _ => None,
+            };
+            // Reversed order: compare(b, a), through the wrapped comparator
+            // when there is one (Collections.reverseOrder(cmp)).
+            let c = crate::arrays::compare(vm, wrapped.as_ref(), &b, &a)?;
+            Ok(Some(Value::Int(c)))
+        }
+        ("equals", "(Ljava/lang/Object;)Z") => Ok(Some(Value::Int(0))),
+        ("hashCode", "()I") => Ok(Some(Value::Int(1))),
+        _ => Ok(None),
+    }
+}
+
 pub(crate) fn static_intrinsic(
     vm: &mut Engine,
     class: &str,
@@ -250,6 +312,182 @@ pub(crate) fn static_intrinsic(
             }
             vm.fw.objects.insert(*c, HostObj::List { elems: out });
             Ok(Some(Value::Int(changed as i32)))
+        }
+        // `Collections.reverseOrder()` — sort descending without a lambda or a
+        // hand-written Comparator class: the marker answers `compare` with the
+        // operands swapped.
+        ("reverseOrder", "()Ljava/util/Comparator;") => {
+            Ok(Some(reverse_comparator(vm, REVERSE_COMPARATOR, None)?))
+        }
+        ("reverseOrder", "(Ljava/util/Comparator;)Ljava/util/Comparator;") => {
+            let inner = args.first().cloned().unwrap_or(Value::Null);
+            Ok(Some(reverse_comparator(
+                vm,
+                REVERSE_COMPARATOR2,
+                Some(inner),
+            )?))
+        }
+        // `nCopies(n, o)` — immutable list of n copies (JDK: CopiesList). The
+        // immutable marker class gives the JDK's UnsupportedOperationException
+        // on mutation.
+        ("nCopies", "(ILjava/lang/Object;)Ljava/util/List;") => {
+            let n = match args.first() {
+                Some(Value::Int(n)) => *n,
+                _ => 0,
+            };
+            if n < 0 {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/IllegalArgumentException;",
+                    format!("List length is negative: {n}"),
+                )));
+            }
+            let elem = args.get(1).cloned().unwrap_or(Value::Null);
+            let elems = vec![elem; n as usize];
+            Ok(Some(new_list(
+                vm,
+                crate::intrinsics::SINGLETON_LIST,
+                elems,
+            )?))
+        }
+        // `frequency(c, o)` — number of elements equal to o.
+        ("frequency", "(Ljava/util/Collection;Ljava/lang/Object;)I") => {
+            let Some(items) = host_elems(vm, args.first()) else {
+                return Ok(None);
+            };
+            let needle = args.get(1).cloned().unwrap_or(Value::Null);
+            let n = items
+                .iter()
+                .filter(|v| crate::intrinsics::values_equal(&vm.heap, v, &needle).unwrap_or(false))
+                .count();
+            Ok(Some(Value::Int(n as i32)))
+        }
+        // `disjoint(a, b)` — true when the collections share no element.
+        ("disjoint", "(Ljava/util/Collection;Ljava/util/Collection;)Z") => {
+            let (Some(a), Some(b)) = (host_elems(vm, args.first()), host_elems(vm, args.get(1)))
+            else {
+                return Ok(None);
+            };
+            let common = a.iter().any(|x| {
+                b.iter()
+                    .any(|y| crate::intrinsics::values_equal(&vm.heap, x, y).unwrap_or(false))
+            });
+            Ok(Some(Value::Int(!common as i32)))
+        }
+        // In-place List operations. They need the host list state to write
+        // back; a guest List implementation keeps falling through to its DEX
+        // class (honest gap instead of a silent no-op).
+        ("fill", "(Ljava/util/List;Ljava/lang/Object;)V") => {
+            let Some(Value::Obj(list)) = args.first().cloned() else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "Collections.fill(null, obj)",
+                )));
+            };
+            let obj = args.get(1).cloned().unwrap_or(Value::Null);
+            let Some(HostObj::List { elems }) = vm.fw.objects.get_mut(&list) else {
+                return Ok(None);
+            };
+            for e in elems.iter_mut() {
+                *e = obj.clone();
+            }
+            Ok(Some(Value::Null))
+        }
+        ("swap", "(Ljava/util/List;II)V") => {
+            let Some(Value::Obj(list)) = args.first().cloned() else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "Collections.swap(null, i, j)",
+                )));
+            };
+            let i = args.get(1).and_then(|v| v.as_int().ok());
+            let j = args.get(2).and_then(|v| v.as_int().ok());
+            let (Some(i), Some(j)) = (i, j) else {
+                return Ok(None);
+            };
+            let Some(HostObj::List { elems }) = vm.fw.objects.get_mut(&list) else {
+                return Ok(None);
+            };
+            let len = elems.len() as i32;
+            if i < 0 || j < 0 || i >= len || j >= len {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/IndexOutOfBoundsException;",
+                    format!("Index: {i}, Size: {len}"),
+                )));
+            }
+            elems.swap(i as usize, j as usize);
+            Ok(Some(Value::Null))
+        }
+        ("rotate", "(Ljava/util/List;I)V") => {
+            let Some(Value::Obj(list)) = args.first().cloned() else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "Collections.rotate(null, d)",
+                )));
+            };
+            let Some(dist) = args.get(1).and_then(|v| v.as_int().ok()) else {
+                return Ok(None);
+            };
+            let Some(HostObj::List { elems }) = vm.fw.objects.get_mut(&list) else {
+                return Ok(None);
+            };
+            let len = elems.len() as i64;
+            if len > 0 {
+                let shift = (dist as i64).rem_euclid(len) as usize;
+                elems.rotate_right(shift);
+            }
+            Ok(Some(Value::Null))
+        }
+        ("copy", "(Ljava/util/List;Ljava/util/List;)V") => {
+            let Some(Value::Obj(dest)) = args.first().cloned() else {
+                return Ok(None);
+            };
+            let Some(src) = host_elems(vm, args.get(1)) else {
+                return Ok(None);
+            };
+            let Some(HostObj::List { elems }) = vm.fw.objects.get(&dest) else {
+                return Ok(None);
+            };
+            if src.len() > elems.len() {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/IndexOutOfBoundsException;",
+                    format!(
+                        "Source does not fit in dest: {} > {}",
+                        src.len(),
+                        elems.len()
+                    ),
+                )));
+            }
+            if let Some(HostObj::List { elems }) = vm.fw.objects.get_mut(&dest) {
+                elems[..src.len()].clone_from_slice(&src);
+            }
+            Ok(Some(Value::Null))
+        }
+        ("replaceAll", "(Ljava/util/List;Ljava/lang/Object;Ljava/lang/Object;)Z") => {
+            let Some(Value::Obj(list)) = args.first().cloned() else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "Collections.replaceAll(null, old, new)",
+                )));
+            };
+            let old = args.get(1).cloned().unwrap_or(Value::Null);
+            let new = args.get(2).cloned().unwrap_or(Value::Null);
+            let Some(HostObj::List { elems }) = vm.fw.objects.get(&list) else {
+                return Ok(None);
+            };
+            let hits: Vec<usize> = elems
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| {
+                    crate::intrinsics::values_equal(&vm.heap, v, &old).unwrap_or(false)
+                })
+                .map(|(i, _)| i)
+                .collect();
+            if let Some(HostObj::List { elems }) = vm.fw.objects.get_mut(&list) {
+                for i in &hits {
+                    elems[*i] = new.clone();
+                }
+            }
+            Ok(Some(Value::Int(!hits.is_empty() as i32)))
         }
         _ => Ok(None),
     }

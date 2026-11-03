@@ -185,6 +185,17 @@ certos); configs específicas (land/locale/density) selecionáveis.
    dependências (zlib STORED + crc32/adler32 próprios). Texto com atlas
    DejaVu Sans com shaping `rustybuzz` e raster `tiny-skia` (M4 de 2026-11-02, ADR 019). O atlas de `rd-vm` continua só para a Canvas da VM. Sem bidi; o Android real usa skia.
 
+   **NewPipe (2026-11-03, atualização):** `Collections.binarySearch` (PR #506),
+   o hierarquia de `InflateException` (#506), o *field hiding* do heap (#506), o
+   `TypedArray.getTextArray` sobre arrays do ARSC (#507) e as fábricas
+   `javax.net.SocketFactory` (#509) destravaram a cadeia inteira de preferências
+   do `App.onCreate`: WorkManager/Room, inflate de `res/xml`, `PreferenceManager`.
+   O `App.onCreate` **ainda não termina** — o bloqueio atual é
+   `sun.misc.Unsafe.arrayBaseOffset` no `<clinit>` de classes JDK usadas pelo
+   okhttp. Cada um desses passos tem teste próprio
+   (`collections_binary_search.rs`, `field_hiding.rs`, `collections_completion.rs`,
+   `jnet_socket_factory.rs`) e o e2e `crates/rd-cli/tests/newpipe_oncreate_e2e.rs`
+   fixa que os gaps fechados não voltam.
    **F-Droid (`rd app shot golden-apks/org.fdroid.fdroid.apk`) ainda não sobe.** Achados: (a) `SharedPreferencesImpl` não era subtipo de `SharedPreferences` (corrigido nesta rodada, `classpath::builtin_hierarchy`, com teste); (b) próximo bloqueio: `ExceptionInInitializerError` em `okhttp3.ConnectionSpec$Builder.cipherSuites` (\"no cipher suites for cleartext connections\") durante o `<clinit>` de `ConnectionSpec`. O smali mostra o `cipherSuites(String...)` lançando incondicionalmente quando `tls=false`, então o defeito pode estar no caminho de chamada da VM. Não investigado até o fim. NewPipe: `Collections.binarySearch` fora do escopo do M2. Tasks: `entry …` (IO). Por isso o golden usa o fixture `trivial` em vez de um APK real.
   **Atualização (2026-11-03):** o caminho do WorkManager foi destravado em parte (PR #492). O `Room` agora instancia `<DB>_Impl`, e o guard de main thread passa porque `currentThread`/`myLooper` são worker-aware dentro de tasks de Executor inline (teste `executor_inline_task_has_no_looper_outside_main_thread`, que falha com a correção desfeita). O próximo bloqueio é `lateinit property connectionManager has not been initialized` em `RoomDatabase`: o VM não executa `RoomDatabase.init(DatabaseConfiguration)`, e o runtime do Room usado pelo F-Droid (2.8, `RoomConnectionManager` sobre `androidx.sqlite.SQLiteConnection`) precisa de um driver SQLite de host. Escolher esse driver é uma decisão de arquitetura: ADR antes de código.
 3. ✅ **CLI**: `rd app dump <apk>` (uiautomator XML | `--text` | `--json`) e

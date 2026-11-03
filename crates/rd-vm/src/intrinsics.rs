@@ -76,7 +76,7 @@ const HASH_MAP: &str = "Ljava/util/HashMap;";
 /// `Collections.unmodifiableMap` — mutações → UOE, leituras delegam.
 const UNMODIFIABLE_MAP: &str = "Ljava/util/Collections$UnmodifiableMap;";
 /// M8 (41º gap real): idem para `Collections.singletonList`.
-const SINGLETON_LIST: &str = "Ljava/util/Collections$SingletonList;";
+pub(crate) const SINGLETON_LIST: &str = "Ljava/util/Collections$SingletonList;";
 /// M8 (43º gap real): idem para `Collections.unmodifiableSet`.
 const UNMODIFIABLE_SET: &str = "Ljava/util/Collections$UnmodifiableSet;";
 const WEAK_MAP: &str = "Ljava/util/WeakHashMap;";
@@ -468,6 +468,10 @@ fn call_static_intrinsic_rooted(
     }
     // Resources/Locale/LocaleList statics (android_res.rs)
     if let Some(v) = crate::android_res::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
+    // javax.net socket factories (jnet.rs).
+    if let Some(v) = crate::jnet::static_intrinsic(vm, class, name, sig)? {
         return Ok(Some(v));
     }
     // java.util.Collections extras (collections.rs)
@@ -4027,6 +4031,41 @@ fn instance_intrinsic_dispatch(
         {
             return Ok(Some(v));
         }
+    }
+    // java.io.ObjectStreamField (metadados de serialização): a classe não
+    // está no DEX de APK nenhum e é usada apenas como descritor de campo.
+    if recv_class == "Ljava/io/ObjectStreamField;" {
+        match (name, sig) {
+            ("<init>", "(Ljava/lang/String;Ljava/lang/Class;)V")
+            | ("<init>", "(Ljava/lang/String;Ljava/lang/Class;Z)V") => {
+                let fname = args.first().cloned().unwrap_or(Value::Null);
+                let ftype = args.get(1).cloned().unwrap_or(Value::Null);
+                let _ = vm.heap.put_field(recv, "name", fname);
+                let _ = vm.heap.put_field(recv, "type", ftype);
+                let _ = vm.heap.put_field(recv, "primitive", Value::Int(0));
+                return Ok(Some(Value::Null));
+            }
+            ("getName", "()Ljava/lang/String;") => {
+                return Ok(Some(vm.heap.get_field(recv, "name").unwrap_or(Value::Null)))
+            }
+            ("getType", "()Ljava/lang/Class;") => {
+                return Ok(Some(vm.heap.get_field(recv, "type").unwrap_or(Value::Null)))
+            }
+            ("isPrimitive", "()Z") => {
+                return Ok(Some(Value::Int(0)));
+            }
+            ("getOffset", "()I") => return Ok(Some(Value::Int(0))),
+            _ => {}
+        }
+    }
+    // javax.net socket factories (jnet.rs): construction only.
+    if let Some(v) = crate::jnet::instance_intrinsic(vm, recv_class, name, sig)? {
+        return Ok(Some(v));
+    }
+    // java.util.Collections reverse comparators (collections.rs).
+    if let Some(v) = crate::collections::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
     }
     // java.security.Permission / java.lang.RuntimePermission.
     if let Some(v) =
