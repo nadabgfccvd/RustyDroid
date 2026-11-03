@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793687571105,
+  "lastUpdate": 1793689679586,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -1943,6 +1943,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3334,
             "range": "± 64",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b1a1451b3687b4006d5576280db6cbf4ff57e20a",
+          "message": "feat(xapk): merge split DEX into execution (ADR 022) (#493)\n\nThe install already validated every XAPK split, but execution mounted only\nthe base DEX. Apk::split_dex now carries the DEX of the other splits with\ntheir own zip; dexes_of_apk mounts base first, then split DEX in manifest\norder. The install response reports bundle.split_dex_merged and\nnative_libs_pending; base_only_execution stays true only while split native\nlibs are still not loaded.\n\nTests: rd-apk into_base_carries_split_dex_for_execution;\nrd-agent install_xapk_mounts_split_dex_into_execution.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-03T04:07:24-03:00",
+          "tree_id": "aa81a2b3f6b7c27a6d5dda06682d3113236247e6",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/b1a1451b3687b4006d5576280db6cbf4ff57e20a"
+        },
+        "date": 1793689679179,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3247,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3193,
+            "range": "± 16",
             "unit": "ns/iter"
           }
         ]
