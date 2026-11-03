@@ -704,6 +704,24 @@ fn obj(props: serde_json::Value, required: &[&str]) -> serde_json::Value {
 pub fn tool_defs() -> Vec<ToolDef> {
     let mut defs = vec![
         ToolDef {
+            name: "session_open",
+            description: "ADR 023 (sessões): abre outra sessão de app no processo, com estado isolado (engine, disco virtual, logs, permissões e tela). Devolve `engine_id`; passe-o em `engine_id` das demais tools para atuar nela. Limite padrão 2 (env RD_MCP_MAX_SESSIONS, máximo 8). Erro SESSION_LIMIT ao passar do teto.",
+            schema: obj(serde_json::json!({}), &[]),
+        },
+        ToolDef {
+            name: "session_list",
+            description: "ADR 023 (sessões): lista as sessões abertas no processo, com `engine_id`, se é a padrão, o app instalado ativo e o app em execução. A sessão padrão (sem `engine_id`) vem primeiro.",
+            schema: obj(serde_json::json!({}), &[]),
+        },
+        ToolDef {
+            name: "session_close",
+            description: "ADR 023 (sessões): fecha uma sessão aberta com `session_open` e libera o slot. A sessão padrão não fecha (erro INVALID_ARG). Erro SESSION_NOT_FOUND para `engine_id` desconhecido.",
+            schema: obj(
+                serde_json::json!({ "engine_id": { "type": "string", "description": "id devolvido por session_open ou session_list" } }),
+                &["engine_id"],
+            ),
+        },
+        ToolDef {
             name: "install",
             description:
                 "Instala um APK na sessão (abre, valida o piso API 9 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.",
@@ -1281,6 +1299,13 @@ impl AgentSession {
             "tap_view" => self.tool_tap_view(&args),
             "wait_for_view" => self.tool_wait_for_view(&args),
             "session_info" => self.tool_session_info(&args),
+            // Atendidas pelo `SessionHub` (session_hub.rs). Uma sessão avulsa
+            // não tem outras sessões para abrir: erro explícito, nunca silencioso.
+            "session_open" | "session_list" | "session_close" => Err(RdError::new(
+                "NOT_IMPLEMENTED",
+                format!("tool '{name}' exige o servidor de sessões (rd mcp)"),
+                MODULE_ID,
+            )),
             "logs_tail" => self.tool_logs_tail(&args),
             "last_error" => self.tool_last_error(&args),
             other => {
@@ -3383,9 +3408,9 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
     live: Option<&str>,
 ) -> Result<(), RdError> {
     let reader = std::io::BufReader::new(input);
-    let mut session = AgentSession::new();
+    let mut hub = SessionHub::new();
     if let Some(addr) = live.filter(|a| !a.is_empty()) {
-        let local = session.enable_live(addr)?;
+        let local = hub.default_session().enable_live(addr)?;
         eprintln!("[rd mcp] live viewer: http://{local}/");
     }
     for line in reader.lines() {
@@ -3393,7 +3418,7 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
         if line.trim().is_empty() {
             continue;
         }
-        match handle_message(&mut session, &line) {
+        match handle_message_hub(&mut hub, &line) {
             None => continue, // notification
             Some(Ok(resp)) | Some(Err(resp)) => {
                 writeln!(output, "{resp}")
@@ -3404,7 +3429,7 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
             }
         }
         // server → client notifications (resources/updated) after the reply
-        for n in session.take_notifications() {
+        for n in hub.take_notifications() {
             writeln!(output, "{n}")
                 .and_then(|()| output.flush())
                 .map_err(|e| RdError::new("IO_ERROR", format!("stdout: {e}"), MODULE_ID))?;
@@ -3420,6 +3445,7 @@ include!("observe.rs");
 include!("snapshot.rs");
 include!("ui_tools.rs");
 include!("runtime_tools.rs");
+include!("session_hub.rs");
 
 /// `[width, height]` read from a PNG's IHDR, so reported sizes match the bytes
 /// (portrait 720x1440 or landscape 1440x720).
@@ -3443,7 +3469,7 @@ mod tests {
 
     /// HostOut é GLOBAL no processo (uma sessão por processo — ADR 001); os
     /// testes de sessão se serializam para não roubar o buffer uns dos outros.
-    static SESSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(super) static SESSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// const/32 vAA, lit32 (resid de 32 bits).
     fn op31i_local(op: u8, reg: u8, lit: u32) -> Vec<u16> {
@@ -3527,7 +3553,7 @@ mod tests {
         (arsc.build(), build_axml(&layout_xml), b.finish())
     }
 
-    fn fixture_apk_path() -> String {
+    pub(super) fn fixture_apk_path() -> String {
         let (arsc, layout, dex) = fixture_parts();
         fixture_apk_write(rd_testsupport::apkfix::build_apk_sdk(
             "com.test.mcp",
@@ -3955,7 +3981,7 @@ mod tests {
         );
         assert_eq!(
             tool_defs().len(),
-            47,
+            50,
             "preserve the existing MCP tool contract"
         );
         let _ = std::fs::remove_file(apk_path);
@@ -4304,8 +4330,8 @@ mod tests {
         let tools = r["result"]["tools"].as_array().expect("tools");
         assert_eq!(
             tools.len(),
-            47,
-            "catálogo completo: M5 + AG-09 + M9 + round 6 observe/tap_text (47 tools)"
+            50,
+            "catálogo completo: M5 + AG-09 + M9 + round 6 observe/tap_text + ADR 023 session_open/session_list/session_close (50 tools)"
         );
         for t in tools {
             assert!(t["name"].as_str().is_some());
@@ -4408,7 +4434,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(
             arr[0]["result"]["tools"].as_array().expect("tools").len(),
-            47
+            50
         );
         assert_eq!(arr[1]["result"]["serverInfo"]["name"], SERVER_NAME);
     }
@@ -5721,7 +5747,11 @@ mod tests {
         let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = AgentSession::new();
         let defs = tool_defs();
-        assert_eq!(defs.len(), 47);
+        assert_eq!(
+            defs.len(),
+            50,
+            "ADR 023: 47 + session_open/session_list/session_close"
+        );
         for t in &defs {
             // schema: objeto com properties/required consistentes
             assert!(t.schema["type"] == "object", "{}: schema object", t.name);

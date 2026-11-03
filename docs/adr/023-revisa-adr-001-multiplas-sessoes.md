@@ -32,3 +32,14 @@ A ADR 021 pede dois APKs rodando juntos, um por cima do outro. A opção A (duas
 
 - **Manter uma sessão por processo e abrir um processo por app.** Isolamento total, mas o roteamento de toque entre processos exige um canal novo e duplica o custo de RSS sem o orçamento compartilhado.
 - **Um engine com dois apps no mesmo heap (ADR 021, opção B).** Rejeitada: quebra o isolamento de permissões e dados.
+
+## Estado da implementação (etapa 1)
+
+Registrado na PR que implementa a etapa 1. O texto das decisões acima não muda. Os desvios e pendências ficam aqui, para que o registro seja fiel ao código.
+
+- **Tools (desvio da decisão 2).** A implementação não criou `session_launch` nem `session_tap`. As tools são `session_open`, `session_list` e `session_close`. Todas as tools que atuam sobre um app (`launch`, `tap`, `tap_view`, `find_views`, `install`, `session_info` e as demais) aceitam `engine_id` opcional. Sem `engine_id`, a tool atua sobre a sessão padrão, que é a primeira e a que clientes atuais já usam. Assim a mesma capacidade vem sem duplicar a superfície. O catálogo MCP passa de 47 para 50 tools, e os contratos de contagem foram atualizados (`docs/mcp-tools.md` gerado de novo, `scripts/native-languages-mcp.py`, `rd-cli`/`rd-agent` tests, sentinel baseline).
+- **Limite de sessões.** `RD_MCP_MAX_SESSIONS`, padrão 2, limitado a 1..=8. Com o limite atingido, `session_open` retorna `SESSION_LIMIT`.
+- **Refactor (decisão 4).** `AgentSession` foi separado em `RunningApp` antes do comportamento novo (PR #489).
+- **Roteamento de entrada (decisão 3): NÃO implementado como M10.** Não existe roteador de entrada no módulo M10 (`crates/rd-agent/src/m10_tools.rs` e `crates/rd-vm/src/m10/` tratam sensores, câmera e conectividade). Hoje o toque de uma sessão vai para o `Engine` dessa sessão, por despacho em `SessionHub`, e termina em `framework::touch_app`. Uma sessão não lê o estado de outra. O roteamento pelo M10 continua pendente, sem prazo definido.
+- **Orçamento de memória (decisão 5): NÃO implementado nesta etapa.** O teto por processo continua o da ADR 015, sem divisão por N e sem falha fechada por sessão. Pendência explícita.
+- **Estado global do host (decisão 6).** Auditoria: o único estado mutável de processo em `rd-vm` que pode ser lido durante execução é `DEFAULT_APP_STDOUT` (`intrinsics.rs`), que só semeia engines criados depois (ADR 024, passo 1). O único `thread_local!` é o cache puro de regex compilada (`jregex.rs`), válido entre engines. A execução é síncrona, uma chamada por vez, sem threads por sessão. Teste de regressão: `crates/rd-agent/src/session_hub.rs`, módulo `session_hub_tests`. Cobre isolamento de app instalado entre sessões, toque roteado à sessão que lançou o app (com a sessão padrão recusando o mesmo toque com `NOT_RUNNING`), limite de sessões, fechamento e a recusa de tools de sessão numa sessão avulsa.
