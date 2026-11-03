@@ -1549,6 +1549,14 @@ fn do_invoke(
     }
 }
 
+#[cfg(feature = "virtual-devices")]
+fn m10_dispatch_allowed(vm: &Engine, class: &str) -> bool {
+    // M10 also provides the pure-Java NIO value shim used by camera payloads;
+    // ByteBuffer/Buffer/ByteOrder are not virtual peripherals and must remain
+    // available in the default no-hardware profile.
+    vm.fw.vdev.virtual_hardware_enabled || class.starts_with("Ljava/nio/")
+}
+
 #[inline(never)]
 fn resolve_or_run_host_invoke(
     vm: &mut Engine,
@@ -1604,12 +1612,12 @@ fn resolve_or_run_host_invoke(
         if let Some(v) = crate::m9::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
             return Ok(InvokeTarget::Value(v));
         }
-        // M10 is the opt-in virtual-device profile, not the default Android
-        // framework implementation. Keep the DEX dispatcher aligned with the
-        // intrinsic path: in a no-virtual-hardware run, let GMS/framework (or
-        // the structured unresolved-method path) handle the call instead.
+        // M10 device APIs are opt-in, but its pure-Java NIO value shim is not
+        // hardware-bound. Dispatch through the shared predicate so virtual
+        // peripherals fall through in the no-hardware profile without breaking
+        // ByteBuffer/Buffer/ByteOrder operations.
         #[cfg(feature = "virtual-devices")]
-        if vm.fw.vdev.virtual_hardware_enabled {
+        if m10_dispatch_allowed(vm, &mref.class) {
             if let Some(v) =
                 crate::m10::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)?
             {
@@ -1992,7 +2000,7 @@ fn call_host_shim_layer(
     }
 
     #[cfg(feature = "virtual-devices")]
-    if vm.fw.vdev.virtual_hardware_enabled {
+    if m10_dispatch_allowed(vm, class) {
         if let Some(v) = crate::m10::call_instance(vm, class, name, sig, recv, args)? {
             return Ok(Some(v));
         }
@@ -2045,7 +2053,7 @@ pub(crate) fn inherited_android_host(
                 return Ok(Some(value));
             }
             #[cfg(feature = "virtual-devices")]
-            if vm.fw.vdev.virtual_hardware_enabled {
+            if m10_dispatch_allowed(vm, &ancestor) {
                 if let Some(value) =
                     crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)?
                 {
