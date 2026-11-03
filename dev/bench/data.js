@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793707574326,
+  "lastUpdate": 1793707672112,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2410,6 +2410,42 @@ window.BENCHMARK_DATA = {
           {
             "name": "parse_field_ids_20k",
             "value": 3194,
+            "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1612354df52bba43130892b12c02972b764b1f89",
+          "message": "feat(vm): NewPipe cold start — binarySearch, field hiding, cause chain (#506)\n\nCollections.binarySearch over List; InflateException in the builtin hierarchy; instance fields obey Java field hiding (JLS 8.3); Caused by chain on uncaught exceptions. Each one is the real blocker found by running the golden NewPipe APK end to end.",
+          "timestamp": "2026-11-03T09:07:24-03:00",
+          "tree_id": "8fa3325e78e6d39cea13b17391a54e48b4c72bef",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/1612354df52bba43130892b12c02972b764b1f89"
+        },
+        "date": 1793707671436,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3135,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3143,
             "range": "± 18",
             "unit": "ns/iter"
           }
