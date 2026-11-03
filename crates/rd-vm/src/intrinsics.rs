@@ -1366,10 +1366,24 @@ fn unsafe_singleton(vm: &mut Engine, class: &str) -> Result<crate::heap::ObjRef,
     Ok(obj)
 }
 
-fn unsafe_offset_field(
-    vm: &Engine,
-    args: &[Value],
-) -> Result<(crate::heap::ObjRef, String), VmExit> {
+/// Base sintética de array no modelo de `Unsafe` (o heap não expõe endereços).
+const ARRAY_BASE_OFFSET: i32 = 16;
+/// Escala sintética de índice de array: 8 bytes por elemento, uniforme.
+const ARRAY_INDEX_SCALE: i32 = 8;
+
+/// Slot endereçado por um `long offset` de `Unsafe`.
+///
+/// O heap do VM não tem endereços, então `Unsafe` trabalha sobre um mapa
+/// sintético: `objectFieldOffset`/`staticFieldOffset` registram um offset por
+/// campo, e os offsets a partir de [`ARRAY_BASE_OFFSET`] endereçam elementos de
+/// array (`base + índice * escala`). Um offset fora desses dois espaços é um
+/// erro tipado, nunca um acesso silencioso ao objeto errado.
+enum UnsafeSlot {
+    Field(crate::heap::ObjRef, String),
+    Elem(crate::heap::ObjRef, usize),
+}
+
+fn unsafe_slot(vm: &Engine, args: &[Value]) -> Result<UnsafeSlot, VmExit> {
     let target = args
         .first()
         .and_then(|v| v.as_ref().ok().flatten())
@@ -1383,13 +1397,64 @@ fn unsafe_offset_field(
         .get(1)
         .ok_or_else(|| crate::err::vm_error("INVALID_ARG", "Unsafe field offset missing"))?
         .as_long()?;
-    let (_, field_name, _) = vm.fw.unsafe_offsets.get(&offset).cloned().ok_or_else(|| {
-        crate::err::vm_error(
-            "INVALID_ARG",
-            format!("unknown synthetic field offset {offset}"),
-        )
-    })?;
-    Ok((target, field_name))
+    if let Some((_, field_name, _)) = vm.fw.unsafe_offsets.get(&offset) {
+        return Ok(UnsafeSlot::Field(target, field_name.clone()));
+    }
+    if offset >= ARRAY_BASE_OFFSET as i64 {
+        let scale = ARRAY_INDEX_SCALE as i64;
+        if offset % scale == 0 {
+            let idx = ((offset - ARRAY_BASE_OFFSET as i64) / scale) as usize;
+            if vm.heap.as_array_elems(target).is_ok() {
+                return Ok(UnsafeSlot::Elem(target, idx));
+            }
+        }
+    }
+    Err(crate::err::vm_error(
+        "INVALID_ARG",
+        format!("unknown synthetic field offset {offset}"),
+    )
+    .into())
+}
+
+fn unsafe_read(vm: &Engine, args: &[Value], default: Value) -> Result<Value, VmExit> {
+    match unsafe_slot(vm, args)? {
+        UnsafeSlot::Field(target, name) => Ok(vm.heap.get_field(target, &name).unwrap_or(default)),
+        UnsafeSlot::Elem(target, idx) => {
+            let (elems, _) = vm
+                .heap
+                .as_array_elems(target)
+                .map_err(|e| crate::err::vm_error("VM_TYPE_ERROR", e))?;
+            match elems.get(idx) {
+                Some(v) => Ok(v.clone()),
+                None => Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    format!("Unsafe array index {idx} length {}", elems.len()),
+                ))),
+            }
+        }
+    }
+}
+
+fn unsafe_write(vm: &mut Engine, args: &[Value], value: Value) -> Result<(), VmExit> {
+    match unsafe_slot(vm, args)? {
+        UnsafeSlot::Field(target, name) => {
+            crate::err::put_field_result(vm.heap.put_field(target, &name, value))
+        }
+        UnsafeSlot::Elem(target, idx) => {
+            let elems = vm
+                .heap
+                .array_elems_mut(target)
+                .map_err(|e| crate::err::vm_error("VM_TYPE_ERROR", e))?;
+            if idx >= elems.len() {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
+                    format!("Unsafe array index {idx} length {}", elems.len()),
+                )));
+            }
+            elems[idx] = value;
+            Ok(())
+        }
+    }
 }
 
 fn unsafe_ref_identity_eq(a: &Value, b: &Value) -> bool {
@@ -1445,63 +1510,49 @@ fn unsafe_intrinsic(
             vm.fw.unsafe_offsets.insert(offset, meta);
             Ok(Some(Value::Long(offset)))
         }
+        // Modelo sintético de array: o heap não tem endereços, então o par
+        // (base, escala) é uma constante determinística e o acesso por offset
+        // em array continua fora do modelo — quem tentar recebe um erro
+        // tipado (`unknown synthetic field offset`), não um índice inventado.
+        ("arrayBaseOffset", "(Ljava/lang/Class;)I") => Ok(Some(Value::Int(ARRAY_BASE_OFFSET))),
+        ("arrayIndexScale", "(Ljava/lang/Class;)I") => Ok(Some(Value::Int(ARRAY_INDEX_SCALE))),
+        ("addressSize", "()I") => Ok(Some(Value::Int(8))),
+        ("pageSize", "()I") => Ok(Some(Value::Int(4096))),
         ("getObjectVolatile", "(Ljava/lang/Object;J)Ljava/lang/Object;")
         | ("getObject", "(Ljava/lang/Object;J)Ljava/lang/Object;") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            Ok(Some(
-                vm.heap.get_field(target, &field).unwrap_or(Value::Null),
-            ))
+            Ok(Some(unsafe_read(vm, args, Value::Null)?))
         }
         ("putObjectVolatile", "(Ljava/lang/Object;JLjava/lang/Object;)V")
         | ("putObject", "(Ljava/lang/Object;JLjava/lang/Object;)V") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            let value = args.get(3).cloned().unwrap_or(Value::Null);
-            crate::err::put_field_result(vm.heap.put_field(target, &field, value))?;
+            let value = args.get(2).cloned().unwrap_or(Value::Null);
+            unsafe_write(vm, args, value)?;
             Ok(Some(Value::Null))
         }
         ("getIntVolatile", "(Ljava/lang/Object;J)I") | ("getInt", "(Ljava/lang/Object;J)I") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            Ok(Some(Value::Int(
-                vm.heap
-                    .get_field(target, &field)
-                    .unwrap_or(Value::Int(0))
-                    .as_int()
-                    .unwrap_or(0),
-            )))
+            let value = unsafe_read(vm, args, Value::Int(0))?;
+            Ok(Some(Value::Int(value.as_int().unwrap_or(0))))
         }
         ("putIntVolatile", "(Ljava/lang/Object;JI)V") | ("putInt", "(Ljava/lang/Object;JI)V") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            let value = args.get(3).cloned().unwrap_or(Value::Int(0));
-            crate::err::put_field_result(vm.heap.put_field(target, &field, value))?;
+            let value = args.get(2).cloned().unwrap_or(Value::Int(0));
+            unsafe_write(vm, args, value)?;
             Ok(Some(Value::Null))
         }
         ("getLongVolatile", "(Ljava/lang/Object;J)J") | ("getLong", "(Ljava/lang/Object;J)J") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            Ok(Some(Value::Long(
-                vm.heap
-                    .get_field(target, &field)
-                    .unwrap_or(Value::Long(0))
-                    .as_long()
-                    .unwrap_or(0),
-            )))
+            let value = unsafe_read(vm, args, Value::Long(0))?;
+            Ok(Some(Value::Long(value.as_long().unwrap_or(0))))
         }
         ("putLongVolatile", "(Ljava/lang/Object;JJ)V") | ("putLong", "(Ljava/lang/Object;JJ)V") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            let value = args.get(3).cloned().unwrap_or(Value::Long(0));
-            crate::err::put_field_result(vm.heap.put_field(target, &field, value))?;
+            let value = args.get(2).cloned().unwrap_or(Value::Long(0));
+            unsafe_write(vm, args, value)?;
             Ok(Some(Value::Null))
         }
         ("compareAndSwapObject", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z")
         | ("compareAndSetObject", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            let current = vm.heap.get_field(target, &field).unwrap_or(Value::Null);
-            let expected = args.get(3).cloned().unwrap_or(Value::Null);
+            let current = unsafe_read(vm, args, Value::Null)?;
+            let expected = args.get(2).cloned().unwrap_or(Value::Null);
             if unsafe_ref_identity_eq(&current, &expected) {
-                crate::err::put_field_result(vm.heap.put_field(
-                    target,
-                    &field,
-                    args.get(4).cloned().unwrap_or(Value::Null),
-                ))?;
+                let update = args.get(3).cloned().unwrap_or(Value::Null);
+                unsafe_write(vm, args, update)?;
                 Ok(Some(Value::Int(1)))
             } else {
                 Ok(Some(Value::Int(0)))
@@ -1509,16 +1560,12 @@ fn unsafe_intrinsic(
         }
         ("compareAndSwapInt", "(Ljava/lang/Object;JII)Z")
         | ("compareAndSetInt", "(Ljava/lang/Object;JII)Z") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            let current = vm.heap.get_field(target, &field).unwrap_or(Value::Int(0));
+            let current = unsafe_read(vm, args, Value::Int(0))?;
             if current.as_int().unwrap_or(0)
-                == args.get(3).and_then(|v| v.as_int().ok()).unwrap_or(0)
+                == args.get(2).and_then(|v| v.as_int().ok()).unwrap_or(0)
             {
-                crate::err::put_field_result(vm.heap.put_field(
-                    target,
-                    &field,
-                    args.get(4).cloned().unwrap_or(Value::Int(0)),
-                ))?;
+                let update = args.get(3).cloned().unwrap_or(Value::Int(0));
+                unsafe_write(vm, args, update)?;
                 Ok(Some(Value::Int(1)))
             } else {
                 Ok(Some(Value::Int(0)))
@@ -1526,16 +1573,12 @@ fn unsafe_intrinsic(
         }
         ("compareAndSwapLong", "(Ljava/lang/Object;JJJ)Z")
         | ("compareAndSetLong", "(Ljava/lang/Object;JJJ)Z") => {
-            let (target, field) = unsafe_offset_field(vm, args)?;
-            let current = vm.heap.get_field(target, &field).unwrap_or(Value::Long(0));
+            let current = unsafe_read(vm, args, Value::Long(0))?;
             if current.as_long().unwrap_or(0)
-                == args.get(3).and_then(|v| v.as_long().ok()).unwrap_or(0)
+                == args.get(2).and_then(|v| v.as_long().ok()).unwrap_or(0)
             {
-                crate::err::put_field_result(vm.heap.put_field(
-                    target,
-                    &field,
-                    args.get(5).cloned().unwrap_or(Value::Long(0)),
-                ))?;
+                let update = args.get(3).cloned().unwrap_or(Value::Long(0));
+                unsafe_write(vm, args, update)?;
                 Ok(Some(Value::Int(1)))
             } else {
                 Ok(Some(Value::Int(0)))

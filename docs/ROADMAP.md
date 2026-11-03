@@ -190,9 +190,15 @@ certos); configs específicas (land/locale/density) selecionáveis.
    `TypedArray.getTextArray` sobre arrays do ARSC (#507) e as fábricas
    `javax.net.SocketFactory` (#509) destravaram a cadeia inteira de preferências
    do `App.onCreate`: WorkManager/Room, inflate de `res/xml`, `PreferenceManager`.
+   Em seguida veio o `sun.misc.Unsafe`: os intrínsecos liam seus operandos um
+   índice acima, então **todo `put` gravava um default e todo CAS respondia
+   `false`** — o `ConcurrentHashMap.initTable()` do okhttp girava em falso até
+   queimar o fuel dentro do `App.onCreate` (a queima era silenciosa: `VM_FUEL`
+   só no fim, ~20 min de CPU). Corrigido, com o modelo de elementos de array
+   (`arrayBaseOffset`/`arrayIndexScale`), em `crates/rd-vm/tests/unsafe_cas.rs`.
    O `App.onCreate` **ainda não termina** — o bloqueio atual é
-   `sun.misc.Unsafe.arrayBaseOffset` no `<clinit>` de classes JDK usadas pelo
-   okhttp. Cada um desses passos tem teste próprio
+   `java.util.ResourceBundle.getBundle(String, Locale)` (o `PrettyTime` do
+   NewPipe carrega as unidades de tempo localizadas por *class-based bundle*). Cada um desses passos tem teste próprio
    (`collections_binary_search.rs`, `field_hiding.rs`, `collections_completion.rs`,
    `jnet_socket_factory.rs`) e o e2e `crates/rd-cli/tests/newpipe_oncreate_e2e.rs`
    fixa que os gaps fechados não voltam.
