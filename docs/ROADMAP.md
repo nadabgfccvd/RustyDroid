@@ -809,10 +809,12 @@ MCP: catálogo 32 → 39 tools (`component_service`, `widgets`,
   etapa 1 (sessões com roteamento de entrada). A revisão do ADR 001 que ela exige está
   aceita em [ADR 023](adr/023-revisa-adr-001-multiplas-sessoes.md) (mergeada). Código da
   etapa 1 (refactor `RunningApp`, `engine_id`, `session_launch`) ainda não iniciado.
-  Pré-requisito da etapa 1 (ADR 024, em andamento): o estado host indexado por `ObjRef`
+  Pré-requisito da etapa 1 (ADR 024, concluído em #495, #497, #498 e #499): o estado host indexado por `ObjRef`
   e o destino do System.out saem do thread-local e vão para `HostState`. Passo 1
   (System.out por engine) mergeado em #495. Passo 2 (tabelas de spannable, regex, URI,
   XML, io-chars, anotações e seeds de Random) feito, com teste de dois engines
   intercalados. Passo 3 (contadores e RNG de UUID, #498) feito. Passo 4 (VFS por
-  sessão, `VfsHandle` em `HostState`) feito neste PR: sessões não se veem, `package_clear`
+  sessão, `VfsHandle` em `HostState`) feito em #499: sessões não se veem, `package_clear`
   apaga só o pacote, e relançamento na mesma sessão mantém os arquivos.
+  ADR 025 (Room `init` sobre o SQLite de framework): proposta, com achados da etapa 1
+  verificados no DEX do F-Droid (ver o ADR). Implementação ainda não iniciada.

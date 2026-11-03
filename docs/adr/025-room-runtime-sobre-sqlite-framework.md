@@ -46,3 +46,27 @@ O F-Droid chega em `WorkManagerImpl.getInstance` e falha com `lateinit property 
 
 - Migrações de schema de apps reais (depende de `init` funcionar primeiro).
 - Room com `BundledSQLiteDriver` (nativo). Nenhum dos APKs de referência usa.
+
+## Achados da etapa 1 (2026-11-03, leitura do DEX, sem código)
+
+Verificados no `classes.dex`/`classes2.dex` do F-Droid (`golden-apks/org.fdroid.fdroid.apk`) com baksmali 2.5.2, e no código de `m8.rs`:
+
+1. **Dois caminhos em `RoomDatabase.createConnectionManager$room_runtime`** (`RoomDatabase.smali`, linha 487). Se `createOpenDelegate()` lança `NotImplementedError` (o padrão), o engine usa `RoomConnectionManager(config, Function1, Function2)`, que depende de `config.sqliteDriver`. Se o `_Impl` sobrescreve `createOpenDelegate()`, o engine usa `RoomConnectionManager(config, RoomOpenDelegate, Function2)`, que lê `config.sqliteOpenHelperFactory`, `context`, `name`, `callbacks` e `journalMode`.
+2. **O F-Droid usa o segundo caminho.** `WorkDatabase_Impl` sobrescreve `createOpenDelegate()` (`WorkDatabase_Impl.smali`, linha 443). O padrão do builder é `FrameworkSQLiteOpenHelperFactory` (`RoomDatabase$Builder.smali`, linha 317). Isso confirma o achado original: não há `BundledSQLiteDriver` no caminho.
+3. **O atalho atual descarta a configuração.** `m8::room_builder` (`m8.rs`, perto da linha 2661) guarda só `(dbcls, dbname)`. `build()` aloca o `_Impl` e não chama `init`. `openHelperFactory`, `addCallback`, `addMigrations`, `setQueryExecutor`, `setTransactionExecutor` e `setJournalMode` devolvem `this` sem guardar o valor.
+4. **`useConnection` é `suspend`.** `RoomConnectionManager.smali` recebe `Continuation` e não referencia `kotlinx.coroutines` diretamente. Ainda não foi verificado como o VM executa essas chamadas. É o primeiro ponto a testar na etapa 1.
+
+**Linha de base da CLI em `main` (e983e02), 2026-11-03:**
+
+| APK | Resultado | Exit |
+|---|---|---|
+| `org.tasks.apk` | `MISSING_ENTRY` (`activity LAUNCHER`, sem `--activity`) | 1 |
+| `org.schabi.newpipe.apk` | `NOT_IMPLEMENTED` (`Collections.binarySearch`) | 2 |
+| `org.fdroid.fdroid.apk` | `VM_EXCEPTION`: `lateinit property connectionManager has not been initialized` | 1 |
+
+**Plano concreto da etapa 1** (substitui a descrição genérica acima):
+
+- a. Trocar a tupla de `room_builders` por uma struct que guarda contexto, nome, `openHelperFactory`, callbacks, journal mode, executores, `allowMainThreadQueries` e migrations.
+- b. Em `build()`, criar uma instância DEX de `Landroidx/room/DatabaseConfiguration;` e preencher os campos pelo nome (`heap.put_field`), sem chamar o construtor de muitos parâmetros. Depois chamar `init(config)` no `_Impl`.
+- c. Teste de regressão (`m8`): após `build()`, `connectionManager` não é nulo. Teste de integração com o F-Droid: `WorkDatabase.systemIdInfoDao()` roda sem exceção, ou falha com uma causa nova e registrada.
+- d. Se o `useConnection` exigir mais coroutines do que o VM tem, parar e revisar, como o item 2 da decisão manda.
