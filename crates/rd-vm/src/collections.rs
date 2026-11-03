@@ -32,6 +32,25 @@ fn host_elems(vm: &Engine, v: Option<&Value>) -> Option<Vec<Value>> {
     }
 }
 
+/// Snapshot of a `java.util.List` seen through the interface: host-modelled
+/// lists are copied from `HostObj::List`; any other `List` (a guest class
+/// implementing the interface) is read with `size()`/`get(i)`, which is
+/// exactly the random-access contract `Collections.binarySearch` assumes.
+fn list_snapshot(vm: &mut Engine, list: crate::heap::ObjRef) -> Result<Option<Vec<Value>>, VmExit> {
+    if let Some(HostObj::List { elems }) = vm.fw.objects.get(&list) {
+        return Ok(Some(elems.clone()));
+    }
+    let size = vm.invoke_instance(list, "size", "()I", &[])?;
+    let Ok(size) = size.as_int() else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(size.max(0) as usize);
+    for i in 0..size {
+        out.push(vm.invoke_instance(list, "get", "(I)Ljava/lang/Object;", &[Value::Int(i)])?);
+    }
+    Ok(Some(out))
+}
+
 pub(crate) fn new_list(vm: &mut Engine, class: &str, elems: Vec<Value>) -> Result<Value, VmExit> {
     let r = vm.heap.alloc_instance(class.to_string(), Vec::new())?;
     vm.fw.objects.insert(r, HostObj::List { elems });
@@ -125,6 +144,44 @@ pub(crate) fn static_intrinsic(
                 *elems = sorted;
             }
             Ok(Some(Value::Null))
+        }
+        // `Collections.binarySearch(List, key)` / `(List, key, Comparator)` —
+        // gap real do launch do NewPipe (`Collections.binarySearch` sobre a
+        // lista de chaves de preferência). Contrato do JDK: a lista precisa
+        // estar ordenada; o retorno é o índice do elemento achado ou
+        // `-(ponto de inserção) - 1` quando não existe. A comparação é
+        // `midVal` contra `key` (o mesmo sentido do `Arrays.binarySearch` em
+        // `arrays.rs`), usando `Comparable.compareTo` do guest ou o
+        // `Comparator.compare` quando o overload com comparador é chamado.
+        // A leitura passa pela interface `List` (`size`/`get`): serve tanto
+        // para a lista de host (ArrayList/`List` imutável) quanto para uma
+        // `List` implementada em DEX.
+        ("binarySearch", "(Ljava/util/List;Ljava/lang/Object;)I")
+        | ("binarySearch", "(Ljava/util/List;Ljava/lang/Object;Ljava/util/Comparator;)I") => {
+            let Some(Value::Obj(list)) = args.first().cloned() else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "Collections.binarySearch com lista null",
+                )));
+            };
+            let key = args.get(1).cloned().unwrap_or(Value::Null);
+            let cmp = args.get(2).filter(|v| !matches!(v, Value::Null)).cloned();
+            let Some(items) = list_snapshot(vm, list)? else {
+                return Ok(None);
+            };
+            let (mut lo, mut hi) = (0i32, items.len() as i32 - 1);
+            while lo <= hi {
+                let mid = ((lo + hi) as u32 >> 1) as i32;
+                let c = crate::arrays::compare(vm, cmp.as_ref(), &items[mid as usize], &key)?;
+                if c < 0 {
+                    lo = mid + 1;
+                } else if c > 0 {
+                    hi = mid - 1;
+                } else {
+                    return Ok(Some(Value::Int(mid)));
+                }
+            }
+            Ok(Some(Value::Int(-(lo + 1))))
         }
         ("reverse", "(Ljava/util/List;)V") => {
             if let Some(Value::Obj(r)) = args.first() {
