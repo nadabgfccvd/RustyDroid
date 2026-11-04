@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793766334780,
+  "lastUpdate": 1793766921079,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3130,6 +3130,42 @@ window.BENCHMARK_DATA = {
           {
             "name": "parse_field_ids_20k",
             "value": 1898,
+            "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ad87131fe558103c903613bc71b30d505ea543b",
+          "message": "docs(memory): ADR 031 — DEX e APK compartilhados entre sessões (proposta) (#527)\n\nDesenho, riscos e critérios de aceite para a próxima etapa da ADR 030.\nFato verificado: Dex e Arc<Dex> são Send + Sync.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T01:34:56-03:00",
+          "tree_id": "48d928d8b245a4ef0d4065ec92af247c2ce2728f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5ad87131fe558103c903613bc71b30d505ea543b"
+        },
+        "date": 1793766920652,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3492,
+            "range": "± 229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3381,
             "range": "± 23",
             "unit": "ns/iter"
           }
