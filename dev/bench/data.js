@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793833428697,
+  "lastUpdate": 1793834356734,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3491,6 +3491,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3338,
             "range": "± 31",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d5f6b4c06bcdf36b538c4be1c57d9c0d842b0a0",
+          "message": "docs(adr): ADR 034 resultados e ADR 035 (identidades inteiras no caminho quente) (#537)\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T20:18:44-03:00",
+          "tree_id": "0f2f65602af05e899e549c5f7ccb29c806c898e4",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4d5f6b4c06bcdf36b538c4be1c57d9c0d842b0a0"
+        },
+        "date": 1793834356371,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3287,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3284,
+            "range": "± 7",
             "unit": "ns/iter"
           }
         ]
