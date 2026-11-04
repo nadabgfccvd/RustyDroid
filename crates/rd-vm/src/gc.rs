@@ -620,7 +620,20 @@ impl Engine {
         Some(stats)
     }
 
+    #[inline]
     pub(crate) fn gc_due(&self) -> bool {
+        // ADR 034 C: caminho rápido, mesmo teste de `gc_due_slow` (lido antes).
+        if !self.gc_frames.is_empty()
+            && self.heap.used() <= self.gc_stats.last_used_after
+            && self.heap.len() - self.heap.free_slots() <= self.gc_slots_after
+        {
+            return false;
+        }
+        self.gc_due_slow()
+    }
+
+    #[inline(never)]
+    fn gc_due_slow(&self) -> bool {
         let slots = self.heap.len() - self.heap.free_slots();
         // A live/pinned heap may remain above a pressure watermark. Never
         // collect every interpreter instruction when the previous GC could

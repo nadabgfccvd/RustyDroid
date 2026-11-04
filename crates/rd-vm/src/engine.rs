@@ -16,6 +16,20 @@ use crate::interp;
 use crate::intrinsics;
 use crate::value::Value;
 
+/// ADR 034 A: receptores distintos memoizados por site de `invoke`.
+pub(crate) const INVOKE_SITE_WAYS: usize = 4;
+
+/// ADR 034 C: teto de buffers de registradores guardados no pool.
+pub(crate) const REG_POOL_MAX: usize = 256;
+
+/// Entrada de cache de site: decisão DEX-first para um receptor.
+pub(crate) struct InvokeSite {
+    pub(crate) recv: Arc<str>,
+    /// `Some((dex, classe, método))` quando o despacho DEX-first vence;
+    /// `None` quando o site cai para a cadeia host.
+    pub(crate) target: Option<(usize, ClassDef, EncodedMethod)>,
+}
+
 pub const ACC_STATIC: u32 = 0x0008;
 pub const ACC_NATIVE: u32 = 0x0100;
 pub const ACC_ABSTRACT: u32 = 0x0400;
@@ -256,7 +270,14 @@ pub struct Engine {
     pub(crate) launch_trace: Option<LaunchTrace>,
     /// AG-09: cobertura de métodos — chave `(dex_idx << 32) | method_idx`
     /// de cada corpo DEX que chegou a executar neste Engine.
-    pub(crate) coverage: HashSet<u64>,
+    pub(crate) coverage: rustc_hash::FxHashSet<u64>,
+    /// ADR 034 A: decisão DEX-first de `invoke` memoizada por site
+    /// `(dex_idx, method_idx, opcode)`, com até `INVOKE_SITE_WAYS` receptores.
+    pub(crate) invoke_sites: rustc_hash::FxHashMap<(usize, u32, u8), Vec<InvokeSite>>,
+    /// ADR 034 C: buffers de raízes reaproveitados entre frames DEX.
+    pub(crate) gc_frame_pool: Vec<Vec<crate::heap::ObjRef>>,
+    /// ADR 034 C: buffers de registradores de frames DEX reaproveitados.
+    pub(crate) reg_pool: Vec<Vec<crate::value::Value>>,
     /// (dex_idx, method_idx) de cada frame ativo; o rótulo textual é gerado
     /// só quando um diagnóstico o lê (`label_of`), sem `format!` por chamada.
     pub(crate) frame_labels: Vec<(usize, u32)>,
@@ -400,7 +421,10 @@ impl Engine {
             launch_trace: std::env::var_os("RD_LAUNCH_TRACE")
                 .is_some()
                 .then(LaunchTrace::default),
-            coverage: HashSet::new(),
+            coverage: rustc_hash::FxHashSet::default(),
+            invoke_sites: rustc_hash::FxHashMap::default(),
+            gc_frame_pool: Vec::new(),
+            reg_pool: Vec::new(),
             frame_labels: Vec::new(),
             threads: Default::default(),
             monitors: Default::default(),
@@ -914,16 +938,18 @@ impl Engine {
             self.heap.gc_host_enter(true);
         }
         self.heap.gc_guest_enter();
-        self.gc_frames.push(
-            ins.iter()
-                .filter_map(|v| match v {
-                    Value::Obj(r) => Some(*r),
-                    _ => None,
-                })
-                .collect(),
-        );
+        let mut roots = self.gc_frame_pool.pop().unwrap_or_default();
+        roots.clear();
+        roots.extend(ins.iter().filter_map(|v| match v {
+            Value::Obj(r) => Some(*r),
+            _ => None,
+        }));
+        self.gc_frames.push(roots);
         let mut ret = interp::exec_frame(self, dex_idx, frame_super, code.clone(), ins);
-        self.gc_frames.pop();
+        if let Some(mut done) = self.gc_frames.pop() {
+            done.clear();
+            self.gc_frame_pool.push(done);
+        }
         self.heap.gc_scope_restore(scope_depth);
         // A guest allocation returned into a Rust host temporary must survive
         // the host's next guest callback, even before it is stored in a table.
