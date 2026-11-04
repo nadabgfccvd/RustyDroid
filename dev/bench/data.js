@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793832585034,
+  "lastUpdate": 1793832613014,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3419,6 +3419,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1785,
             "range": "± 104",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4c54936eec2eb9bccc45fee71c5dbbe9416bb1ee",
+          "message": "docs(adr): ADR 034 — caminho quente de invoke (proposta) (#535)\n\nProposta de desenho para a próxima fatia de desempenho: cache de decisão\nDEX-first por site de invoke, coverage com FxHash, custos fixos por chamada\n(gc_frames, gc_due, cp.code). Inclui medições da rodada atual, a convenção\nde medição com observe on/off e critérios de aceite pareados.\n\nDocs only. Implementação em PR separado após esta ADR ser mergeada.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T19:49:33-03:00",
+          "tree_id": "e6b9c4c19912d1cc56e47a9a90b65877e4900609",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4c54936eec2eb9bccc45fee71c5dbbe9416bb1ee"
+        },
+        "date": 1793832612567,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3238,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3307,
+            "range": "± 124",
             "unit": "ns/iter"
           }
         ]
