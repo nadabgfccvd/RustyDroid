@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793754661195,
+  "lastUpdate": 1793763247173,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3023,6 +3023,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3351,
             "range": "± 19",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2bad5248f01e9e8c07fc99b612a337cf13f2725c",
+          "message": "docs(memory): composição do RSS e próximos passos (ADR 029, proposto) (#524)\n\n* docs(memory): composição do RSS e próximos passos (ADR 029, proposto)\n\nAmostragem de malloc no primeiro quadro do F-Droid (build debug): buffers de\nDEX ~14 MB, instruções decodificadas ~11 MB, índice de classes, Vec<Value>,\níndices de ids e caches. Ressalva: bytes pedidos, não residentes.\n\nRegistra as opções e a ordem dos próximos passos: contar construções de índice\nde classes, medir sessões no mesmo processo com DexBacking compartilhado,\ndescartar o código bruto no caminho da VM. Nenhum código muda nesta ADR.\nAtualiza docs/gc.md com o resumo da composição.\n\nAI usage: medições e texto com assistência de IA; números vindos de amostragem\nlocal reproduzível (fora do repo).\n\n* docs(memory): corrige composição do RSS após amostragem exata (ADR 029)\n\nGrandes alocações agora são contadas exatas. Retira a atribuição de 8 MB ao\níndice de classes (ruído de amostragem). Registra o APK inteiro lido em memória\n(12 MB) como primeiro candidato, e o resolve_cache (~5 MB) como segundo.\n\n* docs(memory): ação 1 da ADR 029 medida sem ganho (APK paginado)\n\nApk::open_paged no caminho da CLI: pico 172 168 KB contra 169 252 KB (v5),\nsaída idêntica. Estimativa de 12 MB refutada; mudança revertida.\n\n---------\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T00:33:33-03:00",
+          "tree_id": "15959921fa68877f5e1f36261f7780acfde52085",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/2bad5248f01e9e8c07fc99b612a337cf13f2725c"
+        },
+        "date": 1793763246349,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3209,
+            "range": "± 62",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3210,
+            "range": "± 67",
             "unit": "ns/iter"
           }
         ]
