@@ -352,6 +352,12 @@ impl Engine {
     }
 
     pub fn new(dexes: Vec<rd_dex::Dex>, config: VmConfig) -> Self {
+        Self::new_shared(dexes.into_iter().map(std::sync::Arc::new).collect(), config)
+    }
+
+    /// Engine sobre DEX compartilhados entre sessões (ADR 031). Mesmo estado
+    /// inicial que [`Engine::new`]; só muda quem é dono dos DEX.
+    pub fn new_shared(dexes: Vec<std::sync::Arc<rd_dex::Dex>>, config: VmConfig) -> Self {
         // Issue #230 / ADR 024: o estado host indexado por `ObjRef` vive em
         // `HostState`, então um engine novo já nasce com tabelas vazias.
         let budget = config.heap_budget;
@@ -360,7 +366,7 @@ impl Engine {
             native: None,
             #[cfg(feature = "native")]
             native_active: false,
-            cp: Classpath::new(dexes),
+            cp: Classpath::new_shared(dexes),
             heap: Heap::new(budget),
             config,
             statics: HashMap::new(),

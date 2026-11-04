@@ -237,6 +237,7 @@ impl AgentSession {
             version_code: manifest.version_code,
             manifest,
             apk: None,
+            shared: None,
             source_path: Some(apk_file.to_path_buf()),
             snapshot_key: Some(key),
             perms,
