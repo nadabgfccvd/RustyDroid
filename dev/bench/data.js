@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793763247173,
+  "lastUpdate": 1793765128344,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3059,6 +3059,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3210,
             "range": "± 67",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "858b6357c08b6334228830a7145ee96b4df9c053",
+          "message": "perf(vm): chave do resolve_cache com nomes internados (ADR 029) (#525)\n\nA chave era (String, String, String) e era alocada a cada resolve_method,\nmesmo no acerto do cache. Agora usa Arc<str> de um interner por Classpath:\na busca não aloca depois do primeiro uso do nome.\n\nMedido (debug, primeiro quadro F-Droid, MALLOC_ARENA_MAX=1): pico 169 216 KB\n-> 163 156 KB (-3,6%); captura de tela idêntica (39 082 bytes, mesmos pixels).\nrd-vm --lib: 188 passed.\n\nAI usage: mudança e medição com assistência de IA; números de VmHWM locais.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T01:05:09-03:00",
+          "tree_id": "9fe76c4e4d1fb56b1ec4c8dce870ede4c9a9dc8f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/858b6357c08b6334228830a7145ee96b4df9c053"
+        },
+        "date": 1793765127767,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3558,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3559,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
