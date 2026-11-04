@@ -73,6 +73,23 @@ jobs:
           npx --yes markdownlint-cli2@0.23.3 "**/*.md" "#node_modules" \
             || echo "::warning::markdownlint found issues (advisory only)"
 
+  # deny.toml é a política executável (fontes, licenças, bans) e estava sem
+  # nenhuma execução no CI. cargo-deny fixado na versão para resultados
+  # reprodutíveis.
+  supply-chain:
+    name: Supply chain (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2
+        with:
+          tool: cargo-deny@0.20.2
+      # `advisories` ainda não bloqueia: RUSTSEC-2026-0206 (rustybuzz, não
+      # mantido, sem upgrade seguro) exige decisão de substituição (harfrust)
+      # ou de aceite com prazo. Não é ignorado silenciosamente.
+      - name: cargo deny (bans, licenses, sources)
+        run: cargo deny --locked check bans licenses sources
+
   rust:
     name: Rust (stable)
     runs-on: ubuntu-latest
