@@ -46585,9 +46585,7 @@ fn p36e_media_metadata_instance(
                 Value::Obj(other) if other == recv => {
                     return Ok(Some(Value::Int(1)));
                 }
-                Value::Obj(other)
-                    if vm.cp.is_subtype(class_of(vm, other), P36E_MEDIA_METADATA) =>
-                {
+                Value::Obj(other) if vm.cp.is_subtype(class_of(vm, other), P36E_MEDIA_METADATA) => {
                     other
                 }
                 _ => return Ok(Some(Value::Int(0))),
