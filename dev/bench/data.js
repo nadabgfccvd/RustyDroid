@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793773977678,
+  "lastUpdate": 1793779902514,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3275,6 +3275,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3395,
             "range": "± 14",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a38984194c745a82f9b2e18f14af00e399d1c770",
+          "message": "perf(vm): cache de código decodificado compartilhado entre sessões (ADR 032) (#531)\n\nDecodeCache guarda code_item e class_data por (dex, offset) e é compartilhado\npelos Classpath de um mesmo conjunto de DEX (ADR 031). Cada Classpath mantém um\nL1 local; o lock só entra em miss. O cache vive por Weak junto com os DEX.\n\nMedição (debug, rd mcp, VmHWM, mesmo APK):\n- 2 sessões: 256 708 KB -> 238 432 KB (-7,1%)\n- custo marginal da 2ª sessão: 80,4 MB -> 61,0 MB (-24,1%)\n- 1 sessão: +1,1 MB (+0,6%, ruído)\n- screenshots idênticas à base\n\nTestes: rd-vm 946 (lib 189), rd-agent 112 lib + integração; clippy -D warnings\ne fmt limpos.\n\nDisclosure de IA: código e texto escritos com apoio de IA; revisados, testados\ne medidos localmente.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T05:11:14-03:00",
+          "tree_id": "a61e10082630d2fa59d8bae2793530df0c65d495",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a38984194c745a82f9b2e18f14af00e399d1c770"
+        },
+        "date": 1793779902093,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3143,
+            "range": "± 57",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3109,
+            "range": "± 90",
             "unit": "ns/iter"
           }
         ]
