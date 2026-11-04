@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793832613014,
+  "lastUpdate": 1793833428697,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3455,6 +3455,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3307,
             "range": "± 124",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b32cfbe4787a3bede65cb075050bc810e6481328",
+          "message": "perf(vm): ADR 034 — invoke-site cache, pooled frame buffers, FxHash coverage (#536)\n\n* perf(vm): ADR 034 — invoke-site cache, pooled frame buffers, FxHash coverage\n\n- Per-site memo of the DEX-first invoke decision, keyed by (dex, method,\n  opcode) and the receiver class (up to 4 receivers per site). The DEX is\n  immutable after the Classpath is built, so the memo is exact.\n- Register and argument buffers come from an Engine pool instead of one\n  allocation per frame; the invoke no longer copies its argument slice\n  (raw.to_vec) before the call.\n- GC root buffers are pooled as well; gc_due checks the cheap condition first.\n- coverage uses FxHashSet.\n\nMeasured on the same box, observe on, 6 alternating pairs (median):\nlaunch 640 -> 599 ms, tap_text 495 -> 471 ms, key 440 -> 399 ms.\nGolden regression (2 cycles, 17 steps) passes; screen parity identical\nexcept session_id and gc pause timing.\n\n* fix(vm): clippy needless_borrow on the frame register buffer\n\n* fix(vm): clippy ptr_arg on the frame register buffer\n\n---------\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T20:03:28-03:00",
+          "tree_id": "d3b30f512fce3d4857db0ab5af2711584fabe180",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/b32cfbe4787a3bede65cb075050bc810e6481328"
+        },
+        "date": 1793833428007,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3334,
+            "range": "± 43",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3338,
+            "range": "± 31",
             "unit": "ns/iter"
           }
         ]
