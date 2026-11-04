@@ -138,3 +138,42 @@ Itens **fora** desta ADR, registrados para decisão posterior:
   ruído está registrado. Micro-mudanças abaixo de ~3% não são aceitas sem prova.
 - A decisão de cache por site introduz estado por sessão. Ele é derivado de DEX imutável e
   pode ser descartado a qualquer momento sem mudar resultados, só desempenho.
+
+## Resultados (implementação, PR #536)
+
+Mesma caixa, binário de release, observe on, `mcp_bench.py` (mediana das execuções), pares
+alternados:
+
+| Medida | Base (`rd-s8`) | Com ADR 034 (`rd-s11`) | Variação |
+|---|---|---|---|
+| `launch` | 640 ms | 599 ms | −6% |
+| `tap_text` | 495 ms | 471 ms | −5% |
+| `key` (BACK) | 440 ms | 399 ms | −9% |
+| CPU do launch (`cpu_launch.py`, média) | ~485 ms | ~475 ms | ~−2% |
+
+Testes: `rd-vm` 193 e `rd-agent` 112 passando; `comprix-regression.py --cycles 2` com
+sucesso (17 passos); paridade de telas (`seq_compare.py`) idêntica, exceto `session_id` e
+tempo de pausa do GC.
+
+Os alvos continuam longe: `launch` está ~1,33× acima de 450 ms e a ferramenta ~1,4× acima de
+345 ms (observe on). Os ganhos desta ADR são reais, mas pequenos.
+
+### Item D (chave de campo memoizada por site): medido e revertido
+
+Implementado e medido (`rd-s11` → `rd-s13`): `launch` 601 → 583 ms, `tap_text` 461 → 464 ms,
+`key` 406 → 409 ms. Sem ganho mensurável acima do ruído (±3%). Pela regra desta ADR (micro-
+mudanças abaixo de ~3% não são aceitas sem prova), o item D foi **revertido** e não entrou
+no `main`. O perfil mostrou o motivo: `qualified_field_key` não é um custo dominante no
+caminho medido.
+
+### Observe e navegação
+
+Medições com `observe` ligado e desligado (mesmo binário):
+
+- `observe` sozinho: ~3 ms (a extração de texto não é o gargalo).
+- Com observe **desligado**, um toque por coordenadas retorna em ~16 ms; o trabalho da troca
+  de tela aparece no `observe` seguinte (~458 ms). Ou seja, a tela nova custa o mesmo, só
+  muda em qual chamada aparece.
+
+Conclusão: o tempo por ferramenta é o trabalho do próprio app para montar a tela nova. Ele
+se decompõe em chamadas DEX (ver ADR 035) e não no pipeline de observe.
