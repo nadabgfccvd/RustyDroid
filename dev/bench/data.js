@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793772455906,
+  "lastUpdate": 1793773109174,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3203,6 +3203,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3192,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8f6a22d2455fc3a58c52061ea674dd5bb339be12",
+          "message": "docs(memory): ADR 030 — estado atualizado (passo 1 feito na ADR 031) (#529)\n\nRegistra o resultado do compartilhamento de DEX/APK (PR #528): custo marginal da\n2ª sessão 127,9 MB -> 80,9 MB (-36,7%). Passos 2 e 3 seguem pendentes.\n\nDisclosure de IA: texto redigido com apoio de IA; links e varredura de token\nverificados localmente com scripts/check_md_links.py.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T03:18:10-03:00",
+          "tree_id": "af90de2f1c22cc0eb630b29ffffec461b8fe9a04",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/8f6a22d2455fc3a58c52061ea674dd5bb339be12"
+        },
+        "date": 1793773108744,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3445,
+            "range": "± 311",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3392,
+            "range": "± 18",
             "unit": "ns/iter"
           }
         ]
