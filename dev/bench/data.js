@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793773109174,
+  "lastUpdate": 1793773977678,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3239,6 +3239,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3392,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0e5fe7c57ba299544bce4fdc507e2b0637c33299",
+          "message": "docs(memory): ADR 032 — cache de código decodificado compartilhado (proposta) (#530)\n\nDesenho, riscos e critérios de aceite para a opção 2 da ADR 030. Medição\npendente: a economia é estimativa.\n\nDisclosure de IA: texto redigido com apoio de IA; links verificados localmente.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T03:32:30-03:00",
+          "tree_id": "7eedd7d933de9225e3c3696a025b4011cc685517",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/0e5fe7c57ba299544bce4fdc507e2b0637c33299"
+        },
+        "date": 1793773977277,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3393,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3395,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
