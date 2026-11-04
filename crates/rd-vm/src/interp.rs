@@ -62,10 +62,35 @@ pub(crate) fn exec_frame(
         )
         .into());
     }
-    let mut regs = vec![Value::Null; nregs];
-    for (slot, v) in regs[nregs - ins_size..].iter_mut().zip(ins) {
+    // ADR 034 C: o vetor de registradores vem de um pool do Engine (antes,
+    // uma alocação por frame). Mesmo conteúdo inicial: Null + argumentos.
+    let mut regs = vm.reg_pool.pop().unwrap_or_default();
+    regs.clear();
+    regs.resize(nregs, Value::Null);
+    let mut ins = ins;
+    for (slot, v) in regs[nregs - ins_size..].iter_mut().zip(ins.drain(..)) {
         *slot = v;
     }
+    ins.clear();
+    if vm.reg_pool.len() < crate::engine::REG_POOL_MAX {
+        vm.reg_pool.push(ins);
+    }
+    let result = exec_frame_regs(vm, dex_idx, frame_super, code, &mut regs);
+    regs.clear();
+    if vm.reg_pool.len() < crate::engine::REG_POOL_MAX {
+        vm.reg_pool.push(regs);
+    }
+    result
+}
+
+/// Corpo do frame com os registradores já preenchidos (ver `exec_frame`).
+fn exec_frame_regs(
+    vm: &mut Engine,
+    dex_idx: usize,
+    frame_super: Option<&str>,
+    code: Arc<CodeItem>,
+    regs: &mut Vec<Value>,
+) -> Result<Value, VmExit> {
     let mut last_result = Value::Null;
     let mut pending_exc: Option<Throwable> = None;
     let mut pc: usize = 0;
@@ -184,9 +209,9 @@ pub(crate) fn exec_frame(
                         .insert((owner, fname.clone()), regs[*a as usize].clone());
                 }
                 0x6E..=0x72 | 0x74..=0x78 => {
-                    let (midx, slots) = extract_invoke_args(insn, &regs)?;
+                    let (midx, slots) = extract_invoke_args(&mut vm.reg_pool, insn, regs)?;
                     let invoke_op = insn.opcode;
-                    match do_invoke(vm, dex_idx, frame_super, invoke_op, midx, &slots) {
+                    match do_invoke(vm, dex_idx, frame_super, invoke_op, midx, slots) {
                         Ok(v) => last_result = v,
                         Err(VmExit::Exception(t)) => throw!(t),
                         Err(e) => return Err(e),
@@ -198,7 +223,7 @@ pub(crate) fn exec_frame(
                     &code,
                     cur_pc,
                     insn,
-                    &mut regs,
+                    regs,
                     &mut last_result,
                     &mut pending_exc,
                     pc,
@@ -1053,23 +1078,32 @@ fn finish_sget(vm: &mut Engine, owner: &str, fname: &str, ftype: &str) -> Result
 }
 
 #[inline(never)]
-fn extract_invoke_args(insn: &Insn, regs: &[Value]) -> Result<(u32, Vec<Value>), VmExit> {
+fn extract_invoke_args(
+    pool: &mut Vec<Vec<Value>>,
+    insn: &Insn,
+    regs: &[Value],
+) -> Result<(u32, Vec<Value>), VmExit> {
+    // ADR 034 C: o vetor de argumentos vem do pool de buffers do Engine.
+    let mut out = pool.pop().unwrap_or_default();
+    out.clear();
     match &insn.kind {
         Kind::Invoke35c {
             count,
             idx,
             regs: rr,
-        } => Ok((
-            *idx as u32,
-            rr[..*count as usize]
-                .iter()
-                .map(|r| regs[*r as usize].clone())
-                .collect::<Vec<_>>(),
-        )),
+        } => {
+            out.extend(
+                rr[..*count as usize]
+                    .iter()
+                    .map(|r| regs[*r as usize].clone()),
+            );
+            Ok((*idx as u32, out))
+        }
         Kind::InvokeRange3rc { count, idx, start } => {
             let s = *start as usize;
             let n = *count as usize;
-            Ok((*idx as u32, regs[s..s + n].to_vec()))
+            out.extend_from_slice(&regs[s..s + n]);
+            Ok((*idx as u32, out))
         }
         _ => bad_kind(insn),
     }
@@ -1598,12 +1632,48 @@ fn do_invoke(
     frame_super: Option<&str>,
     invoke_op: u8,
     method_idx: u32,
-    raw: &[Value],
+    raw: Vec<Value>,
 ) -> Result<Value, VmExit> {
-    match resolve_or_run_host_invoke(vm, dex_idx, frame_super, invoke_op, method_idx, raw)? {
+    // ADR 034 C: o vetor de argumentos já é próprio; o alvo DEX o recebe por
+    // movimento (antes, `raw.to_vec()` copiava o mesmo conteúdo).
+    match resolve_or_run_host_invoke(vm, dex_idx, frame_super, invoke_op, method_idx, &raw)? {
         InvokeTarget::Value(v) => Ok(v),
-        InvokeTarget::Dex(d2, def, m) => vm.call(d2, def, &m, raw.to_vec()),
+        InvokeTarget::Dex(d2, def, m) => vm.call(d2, def, &m, raw),
     }
+}
+
+/// ADR 034 A: despacho DEX-first de uma invoke (sem cache). Retorna o alvo
+/// DEX concreto quando a override do DEX da app vence os shims host; `None`
+/// para cair na cadeia host. Mesmas condições da versão anterior, inalteradas.
+fn dex_first_target(
+    cp: &mut crate::classpath::Classpath,
+    mref_class: &str,
+    mref_name: &str,
+    mref_proto: &str,
+    recv_class: &str,
+    is_direct: bool,
+    is_super: bool,
+) -> Option<(
+    usize,
+    rd_dex::classes::ClassDef,
+    rd_dex::methods::EncodedMethod,
+)> {
+    if is_direct || is_super || mref_name == "<init>" {
+        return None;
+    }
+    if cp.find_class(mref_class).is_none() || !cp.is_dex_only_chain(recv_class) {
+        return None;
+    }
+    let (d2, def, m) = cp.resolve_method(recv_class, mref_name, mref_proto)?;
+    let has_impl = m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0;
+    if !has_impl || (m.access_flags & ACC_STATIC) != 0 {
+        return None;
+    }
+    let decl = cp.type_str(d2, def.class_idx);
+    if is_bundled_shim_owner(&decl) || decl.starts_with("Landroid/") || decl.starts_with("Ljava/") {
+        return None;
+    }
+    Some((d2, def, m))
 }
 
 #[inline(never)]
@@ -1809,24 +1879,40 @@ fn resolve_or_run_host_invoke(
     // invoke passava pela cadeia inteira de `instance_intrinsic_dispatch`
     // (~40 handlers, ~36% do tempo de launch/tap). Chamadas cuja declaração é
     // de tipo de plataforma (ex.: `java/util/List`) seguem pela cadeia host.
-    if !is_direct
-        && !is_super
-        && mref.name != "<init>"
-        && vm.cp.find_class(&mref.class).is_some()
-        && vm.cp.is_dex_only_chain(&recv_class)
-    {
-        if let Some((d2, def, m)) = vm.cp.resolve_method(&recv_class, &mref.name, &mref.proto) {
-            let has_impl = m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0;
-            if has_impl && (m.access_flags & ACC_STATIC) == 0 {
-                let decl = vm.cp.type_str(d2, def.class_idx);
-                if !is_bundled_shim_owner(&decl)
-                    && !decl.starts_with("Landroid/")
-                    && !decl.starts_with("Ljava/")
-                {
-                    return Ok(InvokeTarget::Dex(d2, def, m));
-                }
+    // ADR 034 A: a decisão DEX-first depende só do site (opcode, dex, método) e
+    // da classe do receptor; o DEX é imutável durante a sessão (o Classpath só
+    // é montado no construtor), então o resultado é memoizado por site.
+    let site = (dex_idx, method_idx, invoke_op);
+    let cached = vm.invoke_sites.get(&site).and_then(|entries| {
+        entries
+            .iter()
+            .find(|e| std::sync::Arc::ptr_eq(&e.recv, &recv_class) || e.recv == recv_class)
+            .map(|e| e.target.clone())
+    });
+    let dex_target = match cached {
+        Some(t) => t,
+        None => {
+            let t = dex_first_target(
+                &mut vm.cp,
+                &mref.class,
+                &mref.name,
+                &mref.proto,
+                &recv_class,
+                is_direct,
+                is_super,
+            );
+            let entries = vm.invoke_sites.entry(site).or_default();
+            if entries.len() < crate::engine::INVOKE_SITE_WAYS {
+                entries.push(crate::engine::InvokeSite {
+                    recv: recv_class.clone(),
+                    target: t.clone(),
+                });
             }
+            t
         }
+    };
+    if let Some((d2, def, m)) = dex_target {
+        return Ok(InvokeTarget::Dex(d2, def, m));
     }
     // intrínseco de instância (String/StringBuilder/Throwable/Object)
     if let Some(v) = {
