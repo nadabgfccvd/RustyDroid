@@ -1,7 +1,6 @@
 # ADR 032 — Cache de código decodificado compartilhado entre sessões
 
-- **Status:** proposto (desenho e critérios de aceite; implementação em PR de código
-  separado, após esta ADR ser mergeada) · **Data:** 2026-11-04
+- **Status:** aceito e implementado nesta PR (medição abaixo) · **Data:** 2026-11-04
 - **Escopo:** `crates/rd-vm/src/classpath.rs` (`code_cache`, `class_data_cache`, `code()`,
   `class_data()`), `crates/rd-agent/src/apk_share.rs` (`SharedApk`)
 - **Relacionados:** ADR 030 (opção 2: código decodificado), ADR 031 (DEX compartilhados,
@@ -72,3 +71,47 @@ processo só, não duas sessões. Por isso a economia abaixo é estimativa.
 - Se a meta for atingida, o custo marginal fica perto de 70 MB. Para 6 sessões em 200 MB
   seriam necessários ≈ 33 MB por sessão. A distância restante exige atacar o estado de
   objetos (ADR 030, opções 3 e 4).
+
+## Implementação
+
+- `rd-vm/src/classpath.rs`: `DecodeCache` (dois `Mutex<HashMap>`: código e `class_data`).
+  `Classpath` guarda um `Arc<DecodeCache>` e continua com o L1 local (`code_cache`,
+  `class_data_cache`). Leitura quente sem lock, igual antes. Em miss local, consulta o
+  L2 compartilhado; em miss total, decodifica fora do lock e publica com `entry().or_insert`,
+  então dois `Classpath` concorrentes ficam com o mesmo `Arc`.
+- `rd-vm/src/engine.rs`: `Engine::new_with_decode`. `Engine::new` e `new_shared` mantêm a
+  assinatura.
+- `rd-agent/src/apk_share.rs`: `SharedApk::dexes` devolve `(Vec<Arc<Dex>>, Arc<DecodeCache>)`.
+  O cache nasce junto com a montagem dos DEX e é guardado por `Weak`. Se os DEX são
+  remontados, o cache é novo, então os índices de DEX nunca apontam para outro conjunto.
+- Testes: `rd-vm` `decode_cache_is_shared_between_classpaths_of_the_same_dexes`
+  (`Arc::ptr_eq` para `class_data` e `code`; sem cache, decodifica de novo com o mesmo
+  conteúdo). `rd-agent` `decode_cache_follows_dex_lifetime` (reuso enquanto há DEX vivo;
+  liberação quando não há nenhum `Arc`).
+
+## Medição (debug, `rd mcp`, `VmHWM`, mesmo APK, install + launch + screenshot)
+
+Base = `main` em `0e5fe7c` (já inclui a ADR 031). A base de 303 628 KB da ADR 031 era anterior
+a ela e não serve como comparação.
+
+| Binário | 1 sessão | 2 sessões | Custo marginal da 2ª |
+|---|---|---|---|
+| base `0e5fe7c` | 176 288 KB | 256 708 KB | 80 420 KB |
+| ADR 032 | 177 420 KB | 238 432 KB | 61 012 KB |
+
+- Redução do pico com 2 sessões: 18 276 KB (−7,1%). Redução do custo marginal da 2ª sessão:
+  19 408 KB (−24,1%).
+- Uma sessão: +1 132 KB (+0,6%). Dentro da faixa de ruído das rodadas anteriores (até ~800 KB
+  entre rodadas do mesmo binário); não é ganho nem perda comprovados.
+- Screenshots de 1 e 2 sessões idênticas entre a base e a mudança (`cmp`).
+- Tempo de `launch` (ruído do ambiente): base 316–320 s e mudança 309 s na 1ª sessão. Não há
+  regressão visível; a medição não é de precisão de tempo. A medição de tempo do ambiente
+  é mais lenta que nas rodadas da ADR 031 (247–268 s), para as duas builds.
+
+## Critérios de aceite (verificação)
+
+- Custo marginal da 2ª sessão cai ≥ 10 MB em relação à base: ATENDIDO (19,4 MB).
+- Screenshots idênticas: ATENDIDO.
+- Testes `rd-vm` e `rd-agent`: ver registro da PR.
+- API pública de `Classpath`: sem mudança (só `new_shared_with_decode` e `DecodeCache` novos).
+

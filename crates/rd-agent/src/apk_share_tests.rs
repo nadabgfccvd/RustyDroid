@@ -43,8 +43,9 @@ fn sessions_on_same_file_share_apk_and_dex_arcs() {
     assert!(Arc::ptr_eq(&a, &b), "mesmo arquivo: mesmo registro");
     assert!(Arc::ptr_eq(&a.apk, &b.apk), "mesmo Arc<Apk>");
 
-    let d1 = a.dexes(dexes_of_apk).expect("monta DEX");
-    let d2 = b.dexes(dexes_of_apk).expect("reusa DEX");
+    let (d1, c1) = a.dexes(dexes_of_apk).expect("monta DEX");
+    let (d2, c2) = b.dexes(dexes_of_apk).expect("reusa DEX");
+    assert!(Arc::ptr_eq(&c1, &c2), "mesmo cache de decodificação");
     assert!(!d1.is_empty());
     assert_eq!(d1.len(), d2.len());
     for (x, y) in d1.iter().zip(&d2) {
@@ -124,7 +125,7 @@ fn failed_dex_mount_is_not_cached() {
         panic!("depois de montar, não deve montar de novo");
     });
     assert_eq!(calls, 2, "a falha não ficou em cache; o sucesso sim");
-    let (s, t) = (second.unwrap(), third.unwrap());
+    let (s, t) = (second.unwrap().0, third.unwrap().0);
     for (x, y) in s.iter().zip(&t) {
         assert!(Arc::ptr_eq(x, y));
     }
@@ -136,4 +137,23 @@ fn failed_dex_mount_is_not_cached() {
     });
     assert!(fourth.is_ok());
     assert_eq!(calls, 3, "sem Arc vivo, os DEX saem da memória e remontam");
+}
+
+#[test]
+fn decode_cache_follows_dex_lifetime() {
+    let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let path = share_apk_path("decode");
+    let apk = rd_apk::Apk::from_bytes(std::fs::read(&path).unwrap()).expect("apk");
+    let shared = apk_share::SharedApk::new(apk, None);
+    // Enquanto os DEX estão vivos (um engine os segura), o cache é o mesmo.
+    let (d1, c1) = shared.dexes(dexes_of_apk).expect("monta");
+    let (d2, c2) = shared.dexes(dexes_of_apk).expect("reusa");
+    assert!(Arc::ptr_eq(&c1, &c2));
+    assert!(Arc::ptr_eq(&d1[0], &d2[0]));
+    // Sem nenhum Arc vivo, o cache sai da memória (Weak não sobrevive).
+    let weak = Arc::downgrade(&c1);
+    drop((d1, d2, c1, c2));
+    assert!(weak.upgrade().is_none(), "cache de decodificação liberado");
+    let (_d3, c3) = shared.dexes(dexes_of_apk).expect("remonta");
+    assert!(!weak.upgrade().is_some_and(|c| Arc::ptr_eq(&c, &c3)));
 }

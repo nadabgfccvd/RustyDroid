@@ -24,6 +24,7 @@ use rd_apk::xapk::SplitSummary;
 use rd_apk::Apk;
 use rd_apk::RdError;
 use rd_dex::Dex;
+use rd_vm::classpath::DecodeCache;
 
 /// Identidade de um arquivo de APK no disco.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -61,6 +62,9 @@ pub(crate) struct SharedApk {
     /// DEX montados, na ordem de `dexes_of_apk`, só como `Weak`: quem segura
     /// os `Arc<Dex>` são os engines em execução.
     dexes: Mutex<Option<Vec<Weak<Dex>>>>,
+    /// Cache de decodificação (ADR 032) criado junto com esta montagem de DEX.
+    /// Também só como `Weak`: vive enquanto houver engine com ele.
+    decode: Mutex<Weak<DecodeCache>>,
 }
 
 impl SharedApk {
@@ -69,26 +73,41 @@ impl SharedApk {
             apk: Arc::new(apk),
             bundle_splits,
             dexes: Mutex::new(None),
+            decode: Mutex::new(Weak::new()),
         })
     }
 
-    /// DEX montados deste APK. Se ainda houver engine com os DEX vivos,
-    /// devolve os mesmos `Arc<Dex>`; senão monta de novo com `mount`.
-    /// Falha de montagem não é guardada.
+    /// DEX montados deste APK e o cache de decodificação que os acompanha
+    /// (ADR 032). Se ainda houver engine com os DEX vivos, devolve os mesmos
+    /// `Arc`s; senão monta de novo com `mount` e cria um cache novo. Falha de
+    /// montagem não é guardada.
     pub(crate) fn dexes(
         &self,
         mount: impl FnOnce(&Apk) -> Result<Vec<Dex>, RdError>,
-    ) -> Result<Vec<Arc<Dex>>, RdError> {
+    ) -> Result<(Vec<Arc<Dex>>, Arc<DecodeCache>), RdError> {
         let mut slot = self.dexes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut decode_slot = self.decode.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(weak) = slot.as_ref() {
             let alive: Option<Vec<Arc<Dex>>> = weak.iter().map(Weak::upgrade).collect();
             if let Some(d) = alive {
-                return Ok(d);
+                // Cache ainda vivo: reusa. Se morreu, o conjunto de DEX continua
+                // válido, então o cache novo só começa vazio.
+                let decode = match decode_slot.upgrade() {
+                    Some(c) => c,
+                    None => {
+                        let c = Arc::new(DecodeCache::default());
+                        *decode_slot = Arc::downgrade(&c);
+                        c
+                    }
+                };
+                return Ok((d, decode));
             }
         }
         let mounted: Vec<Arc<Dex>> = mount(&self.apk)?.into_iter().map(Arc::new).collect();
+        let decode = Arc::new(DecodeCache::default());
+        *decode_slot = Arc::downgrade(&decode);
         *slot = Some(mounted.iter().map(Arc::downgrade).collect());
-        Ok(mounted)
+        Ok((mounted, decode))
     }
 }
 

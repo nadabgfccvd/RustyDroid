@@ -358,6 +358,20 @@ impl Engine {
     /// Engine sobre DEX compartilhados entre sessões (ADR 031). Mesmo estado
     /// inicial que [`Engine::new`]; só muda quem é dono dos DEX.
     pub fn new_shared(dexes: Vec<std::sync::Arc<rd_dex::Dex>>, config: VmConfig) -> Self {
+        Self::new_with_decode(
+            dexes,
+            std::sync::Arc::new(crate::classpath::DecodeCache::default()),
+            config,
+        )
+    }
+
+    /// Engine sobre DEX compartilhados e um cache de decodificação compartilhado
+    /// (ADR 032). `decode` deve ter sido criado para esse mesmo conjunto de DEX.
+    pub fn new_with_decode(
+        dexes: Vec<std::sync::Arc<rd_dex::Dex>>,
+        decode: std::sync::Arc<crate::classpath::DecodeCache>,
+        config: VmConfig,
+    ) -> Self {
         // Issue #230 / ADR 024: o estado host indexado por `ObjRef` vive em
         // `HostState`, então um engine novo já nasce com tabelas vazias.
         let budget = config.heap_budget;
@@ -366,7 +380,7 @@ impl Engine {
             native: None,
             #[cfg(feature = "native")]
             native_active: false,
-            cp: Classpath::new_shared(dexes),
+            cp: Classpath::new_shared_with_decode(dexes, decode),
             heap: Heap::new(budget),
             config,
             statics: HashMap::new(),
