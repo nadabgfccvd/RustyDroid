@@ -128,7 +128,7 @@ fn exec_frame_regs(
         let collect = vm.gc_due();
         if may_call || collect {
             vm.publish_frame_roots(
-                &regs,
+                regs,
                 &last_result,
                 pending_exc.as_ref().and_then(|e| e.obj),
             );
