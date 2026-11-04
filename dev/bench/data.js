@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793779902514,
+  "lastUpdate": 1793779929512,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3311,6 +3311,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3109,
             "range": "± 90",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65bedb619f42572ced4ccacc273bc4db21b77a29",
+          "message": "docs(memory): ADR 033 — layout de campos de instância por classe (proposta) (#532)\n\nDesenho e critérios para a opção 3 da ADR 030. Economia estimada, não medida.\n\nDisclosure de IA: texto redigido com apoio de IA; links verificados localmente.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T05:11:17-03:00",
+          "tree_id": "3af7b148ba86933a4a21d4a93baacc357381b71d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/65bedb619f42572ced4ccacc273bc4db21b77a29"
+        },
+        "date": 1793779927300,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3287,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3283,
+            "range": "± 21",
             "unit": "ns/iter"
           }
         ]
