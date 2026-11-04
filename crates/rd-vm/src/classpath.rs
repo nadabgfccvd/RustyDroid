@@ -44,14 +44,33 @@ type FieldRefCache = std::cell::RefCell<HashMap<(usize, u32), Arc<(String, Strin
 type ResolveKey = (Arc<str>, Arc<str>, Arc<str>);
 type ResolveCache = HashMap<ResolveKey, Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)>>;
 
+/// Caches de decodificação compartilhados por todos os `Classpath` que usam o
+/// mesmo conjunto de DEX (ADR 032). As chaves usam o índice do DEX dentro desse
+/// conjunto, então o cache vale só para esse conjunto e nunca é global. O
+/// conteúdo é função pura dos bytes, então dois `Classpath` veem o mesmo resultado.
+/// (índice do dex, class_idx) → class_data já decodificado.
+pub type ClassDataMap = HashMap<(usize, u32), Option<Arc<ClassData>>>;
+
+#[derive(Debug, Default)]
+pub struct DecodeCache {
+    /// (índice do dex, offset do code_item) → parse
+    code: std::sync::Mutex<HashMap<(usize, usize), Arc<CodeItem>>>,
+    /// (índice do dex, class_idx) → class_data
+    class_data: std::sync::Mutex<ClassDataMap>,
+}
+
 #[derive(Debug, Default)]
 pub struct Classpath {
     /// DEX montados. `Arc` permite que sessões do mesmo APK compartilhem os
     /// mesmos bytes e tabelas (ADR 031); cada `Classpath` só lê.
     pub dexes: Vec<Arc<Dex>>,
-    /// (índice do dex, offset do code_item) → parse em cache
+    /// Cache de decodificação compartilhado com os outros `Classpath` do mesmo
+    /// conjunto de DEX (ADR 032).
+    decode: Arc<DecodeCache>,
+    /// Cópia local (L1) do que este `Classpath` já usou: a leitura quente
+    /// não toma lock.
     code_cache: HashMap<(usize, usize), Arc<CodeItem>>,
-    /// (índice do dex, class_idx) → class_data em cache
+    /// L1 de class_data (ver `code_cache`).
     class_data_cache: HashMap<(usize, u32), Option<Arc<ClassData>>>,
     /// ADR 008 Stage 4 (hot-path subset): method_id → resolved ref cache.
     /// `method_ref` used to rebuild the proto descriptor + parameter type
@@ -86,8 +105,16 @@ impl Classpath {
     /// imutáveis depois de montados; o cache de decodificação continua por
     /// `Classpath`.
     pub fn new_shared(dexes: Vec<Arc<Dex>>) -> Self {
+        Self::new_shared_with_decode(dexes, Arc::new(DecodeCache::default()))
+    }
+
+    /// Como [`Classpath::new_shared`], mas com um cache de decodificação já
+    /// existente. Só é correto quando `decode` foi criado para esse mesmo
+    /// conjunto de DEX, na mesma ordem (ADR 032).
+    pub fn new_shared_with_decode(dexes: Vec<Arc<Dex>>, decode: Arc<DecodeCache>) -> Self {
         Classpath {
             dexes,
+            decode,
             code_cache: HashMap::new(),
             class_data_cache: HashMap::new(),
             method_ref_cache: std::cell::RefCell::new(HashMap::new()),
@@ -195,8 +222,28 @@ impl Classpath {
         if let Some(cached) = self.class_data_cache.get(&key) {
             return Ok(cached.clone());
         }
+        let shared = self
+            .decode
+            .class_data
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+            .cloned();
+        if let Some(hit) = shared {
+            self.class_data_cache.insert(key, hit.clone());
+            return Ok(hit);
+        }
         let parsed = self.dexes[dex_idx].class_data(def)?;
         let arc = parsed.map(Arc::new);
+        // Se outro Classpath já publicou, usa o mesmo Arc (ADR 032).
+        let arc = self
+            .decode
+            .class_data
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(key)
+            .or_insert(arc)
+            .clone();
         self.class_data_cache.insert(key, arc.clone());
         Ok(arc)
     }
@@ -210,10 +257,29 @@ impl Classpath {
         if let Some(cached) = self.code_cache.get(&key) {
             return Ok(Some(cached.clone()));
         }
+        let shared = self
+            .decode
+            .code
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+            .cloned();
+        if let Some(hit) = shared {
+            self.code_cache.insert(key, hit.clone());
+            return Ok(Some(hit));
+        }
         let parsed = self.dexes[dex_idx].code(code_off)?;
         match parsed {
             Some(ci) => {
-                let arc = Arc::new(ci);
+                // Se outro Classpath já publicou, usa o mesmo Arc (ADR 032).
+                let arc = self
+                    .decode
+                    .code
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .entry(key)
+                    .or_insert_with(|| Arc::new(ci))
+                    .clone();
                 self.code_cache.insert(key, arc.clone());
                 Ok(Some(arc))
             }
@@ -3719,5 +3785,46 @@ mod tests {
         assert!(!cp.is_subtype("[I", "[J"));
         // não-relacionado: Integer[] não é CharSequence[]
         assert!(!cp.is_subtype("[Ljava/lang/Integer;", "[Ljava/lang/CharSequence;"));
+    }
+}
+
+#[cfg(test)]
+mod decode_cache_tests {
+    use super::*;
+    use rd_testsupport::vm::DexBuilder;
+
+    /// ADR 032: dois `Classpath` sobre o mesmo conjunto de DEX e o mesmo cache de
+    /// decodificação recebem o mesmo `Arc` (sem decodificar de novo). Um `Classpath`
+    /// sem cache compartilhado decodifica por conta própria, com o mesmo conteúdo.
+    #[test]
+    fn decode_cache_is_shared_between_classpaths_of_the_same_dexes() {
+        let mut b = DexBuilder::new();
+        let c = b.class("LDecodeShared;", "Ljava/lang/Object;");
+        let body = b.code(1, 0, 0, vec![0x000e]);
+        b.direct(c, "run", "V", vec![], 0x9, Some(body));
+        let dex = Arc::new(Dex::parse(b.finish()).unwrap());
+
+        let decode = Arc::new(DecodeCache::default());
+        let mut first = Classpath::new_shared_with_decode(vec![dex.clone()], decode.clone());
+        let mut second = Classpath::new_shared_with_decode(vec![dex.clone()], decode.clone());
+
+        let (di, def) = first.find_class("LDecodeShared;").expect("classe");
+        let def = *def;
+        let data_a = first.class_data(di, &def).unwrap().unwrap();
+        let data_b = second.class_data(di, &def).unwrap().unwrap();
+        assert!(Arc::ptr_eq(&data_a, &data_b), "class_data compartilhado");
+
+        let off = data_a.direct_methods[0].code_off;
+        let code_a = first.code(di, off).unwrap().unwrap();
+        let code_b = second.code(di, off).unwrap().unwrap();
+        assert!(Arc::ptr_eq(&code_a, &code_b), "code_item compartilhado");
+
+        let mut solo = Classpath::new_shared(vec![dex.clone()]);
+        let code_solo = solo.code(di, off).unwrap().unwrap();
+        assert!(
+            !Arc::ptr_eq(&code_a, &code_solo),
+            "sem cache: decodifica de novo"
+        );
+        assert_eq!(code_a.instructions.len(), code_solo.instructions.len());
     }
 }

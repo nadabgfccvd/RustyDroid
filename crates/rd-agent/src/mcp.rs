@@ -1605,12 +1605,19 @@ impl AgentSession {
         } else {
             let t_mount = std::time::Instant::now();
             // ADR 031: DEX do APK compartilhado são montados uma vez por arquivo.
-            let dexes: Vec<std::sync::Arc<rd_dex::Dex>> = match &shared {
+            // ADR 032: o cache de decodificação acompanha a montagem dos DEX.
+            let (dexes, decode): (
+                Vec<std::sync::Arc<rd_dex::Dex>>,
+                std::sync::Arc<rd_vm::classpath::DecodeCache>,
+            ) = match &shared {
                 Some(s) => s.dexes(dexes_of_apk)?,
-                None => dexes_of_apk(&resources)?
-                    .into_iter()
-                    .map(std::sync::Arc::new)
-                    .collect(),
+                None => (
+                    dexes_of_apk(&resources)?
+                        .into_iter()
+                        .map(std::sync::Arc::new)
+                        .collect(),
+                    std::sync::Arc::new(rd_vm::classpath::DecodeCache::default()),
+                ),
             };
             phase("dex_mount_total", t_mount);
             let t_new = std::time::Instant::now();
@@ -1620,7 +1627,7 @@ impl AgentSession {
                 heap_budget: self.heap_budget,
                 ..VmConfig::app_runtime()
             };
-            let mut e = Engine::new_shared(dexes, config);
+            let mut e = Engine::new_with_decode(dexes, decode, config);
             phase("engine_new", t_new);
             e.set_resources_arc(resources);
             e
