@@ -3394,9 +3394,13 @@ fn call_host_instance_rooted(
                 Some(HostObj::Activity { intent, .. }) => *intent,
                 _ => None,
             };
+            // Sem intent (nunca definido, ou `setIntent(null)`), a AOSP devolve
+            // null: é o caso de um IntentRouter que consumiu o intent e o
+            // limpou, e de código AndroidX que lê getIntent() durante a
+            // composição inicial (RELATORIO F-Droid, `getDefaultViewModelCreationExtras`).
             match intent {
                 Some(i) => Ok(Some(Value::Obj(i))),
-                None => Err(not_impl("getIntent antes do launch")),
+                None => Ok(Some(Value::Null)),
             }
         }
         // `setIntent` replaces the launch intent (AOSP: Activity.mIntent).
@@ -5077,10 +5081,6 @@ fn m8_prefs_get_all(vm: &mut Engine, prefs: ObjRef) -> Result<ObjRef, VmExit> {
     }
     vm.fw.objects.insert(map, HostObj::Map { entries });
     Ok(map)
-}
-
-fn not_impl(what: &str) -> VmExit {
-    crate::err::not_implemented(what).into()
 }
 
 fn class_name_of(vm: &Engine, cls: ObjRef) -> Result<String, VmExit> {
