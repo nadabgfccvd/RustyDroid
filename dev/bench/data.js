@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793766921079,
+  "lastUpdate": 1793772455906,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3167,6 +3167,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3381,
             "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bedbb986a3e3ce47b9eed5c28d6a5f2c15e592cd",
+          "message": "perf(agent): APK e DEX compartilhados entre sessões do mesmo arquivo (ADR 031) (#528)\n\nSessões do rd mcp que instalam o mesmo arquivo reusam o Arc<Apk> e os\nArc<Dex> montados, em vez de ler e parsear de novo. Os DEX são guardados como\nWeak: o custo sai da memória quando o último engine para.\n\n- rd-vm: Classpath::dexes é Vec<Arc<Dex>>; novos Classpath::new_shared e\n  Engine::new_shared (new continua igual).\n- rd-agent: registro ApkKey -> Weak<SharedApk> (caminho canônico, tamanho, mtime).\n- Medição (debug, mesmo APK, install+launch+screenshot): 2 sessões 303,6 MB ->\n  256,9 MB; custo marginal da 2ª sessão 128 MB -> 80 MB. 1 sessão sem mudança.\n- Testes: reuso de Arc entre sessões, liberação ao fechar, arquivo alterado\n  não reusado, falha de montagem não cacheada.\n\nDisclosure de IA: código e texto escritos com apoio de IA; revisados, testados\ne medidos localmente.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T03:07:17-03:00",
+          "tree_id": "44485a0084ab8650ac7d732492b7dc1a11643b5c",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/bedbb986a3e3ce47b9eed5c28d6a5f2c15e592cd"
+        },
+        "date": 1793772455499,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3292,
+            "range": "± 458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3192,
+            "range": "± 20",
             "unit": "ns/iter"
           }
         ]
