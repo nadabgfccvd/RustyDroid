@@ -8031,7 +8031,7 @@ fn activity_component_name_uses_package_and_runtime_class() {
         activity,
         "setTitle",
         "(Ljava/lang/CharSequence;)V",
-        &[Value::StrPlaceholder("Custom title".to_string())],
+        &[Value::StrPlaceholder(Box::new("Custom title".to_string()))],
     )
     .unwrap();
     let Value::Obj(title) = e

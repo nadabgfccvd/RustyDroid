@@ -595,7 +595,7 @@ impl Engine {
             .iter()
             .map(|v| match v {
                 Value::StrPlaceholder(s) => {
-                    intrinsics::alloc_string(self, s.clone()).map(Value::Obj)
+                    intrinsics::alloc_string(self, s.as_ref().clone()).map(Value::Obj)
                 }
                 other => Ok(other.clone()),
             })
@@ -679,7 +679,7 @@ impl Engine {
             .iter()
             .map(|v| match v {
                 Value::StrPlaceholder(s) => {
-                    intrinsics::alloc_string(self, s.clone()).map(Value::Obj)
+                    intrinsics::alloc_string(self, s.as_ref().clone()).map(Value::Obj)
                 }
                 other => Ok(other.clone()),
             })

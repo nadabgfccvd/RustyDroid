@@ -545,7 +545,10 @@ pub(super) fn instance_call(
             "build" => {
                 let mut fields = Vec::new();
                 if let Ok(crate::heap::HeapObj::Instance { fields: src, .. }) = vm.heap.get(recv) {
-                    fields = src.clone();
+                    fields = src
+                        .iter()
+                        .map(|(n, v)| (n.to_string(), v.clone()))
+                        .collect();
                 }
                 Ok(Some(Value::Obj(alloc_with(vm, MEDIA_METADATA, fields)?)))
             }

@@ -84,7 +84,19 @@ pub enum Kind {
         proto: u16,
     },
     /// payload alinhado (packed/sparse-switch, fill-array-data).
-    Payload(Payload),
+    /// Boxed: the switch/array tables are rare, and an inline `Payload` (two Vecs)
+    /// would make every decoded instruction 40+ bytes larger.
+    Payload(Box<Payload>),
+}
+
+impl Kind {
+    /// The payload pseudo-instruction's data, if this is one.
+    pub fn payload(&self) -> Option<&Payload> {
+        match self {
+            Kind::Payload(p) => Some(p),
+            _ => None,
+        }
+    }
 }
 
 /// Pseudoinstruções (dados embutidos na stream de código).
@@ -984,7 +996,7 @@ fn decode_payload(insns: &[u16], addr: usize, kind: PayloadKind) -> RdResult<(In
             opcode: 0,
             fmt: Format::F10x,
             size,
-            kind: Kind::Payload(payload),
+            kind: Kind::Payload(Box::new(payload)),
         },
         size,
     ))
@@ -1016,6 +1028,30 @@ fn parse_catch_handler(data: &[u8], off: usize) -> RdResult<CatchHandler> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regressão de memória (ADR 028): cada instrução decodificada ocupa 32 bytes
+    /// (antes, 64, porque `Payload` era embutido em `Kind`). Um payload também
+    /// precisa continuar acessível pelo acessor, não só pelo `match` direto.
+    #[test]
+    fn decoded_instruction_entry_stays_compact() {
+        assert!(
+            std::mem::size_of::<Kind>() <= 16,
+            "Kind = {}",
+            std::mem::size_of::<Kind>()
+        );
+        assert!(
+            std::mem::size_of::<(usize, Insn)>() <= 32,
+            "(usize, Insn) = {}",
+            std::mem::size_of::<(usize, Insn)>()
+        );
+        let insns = [0x0100u16, 0x0001, 0x0005, 0x0000, 0xFFFE, 0xFFFF];
+        let (i, _) = decode_at(&insns, 0).unwrap();
+        assert!(matches!(
+            i.kind.payload(),
+            Some(Payload::PackedSwitch { .. })
+        ));
+        assert!(Kind::Plain.payload().is_none());
+    }
 
     #[test]
     fn decodes_12x_move() {
@@ -1078,12 +1114,9 @@ mod tests {
         let insns = [0x0100u16, 0x0001, 0x0005, 0x0000, 0xFFFE, 0xFFFF];
         let (i, size) = decode_at(&insns, 0).unwrap();
         assert_eq!(size, 6);
-        match i.kind {
-            Kind::Payload(Payload::PackedSwitch {
-                first_key,
-                ref targets,
-            }) => {
-                assert_eq!(first_key, 5);
+        match i.kind.payload() {
+            Some(Payload::PackedSwitch { first_key, targets }) => {
+                assert_eq!(*first_key, 5);
                 assert_eq!(*targets, vec![-2]);
             }
             other => panic!("kind errado: {other:?}"),
@@ -1096,8 +1129,8 @@ mod tests {
         let insns = [0x0200u16, 0x0001, 0x0001, 0x0000, 0x0008, 0x0000];
         let (i, size) = decode_at(&insns, 0).unwrap();
         assert_eq!(size, 6);
-        match i.kind {
-            Kind::Payload(Payload::SparseSwitch {
+        match i.kind.payload() {
+            Some(Payload::SparseSwitch {
                 ref keys,
                 ref targets,
             }) => {
@@ -1115,14 +1148,14 @@ mod tests {
         let insns = [0x0300u16, 0x0001, 0x0003, 0x0000, 0x0201, 0x0003];
         let (i, size) = decode_at(&insns, 0).unwrap();
         assert_eq!(size, 6);
-        match i.kind {
-            Kind::Payload(Payload::ArrayData {
+        match i.kind.payload() {
+            Some(Payload::ArrayData {
                 element_width,
                 element_count,
-                ref data,
+                data,
             }) => {
-                assert_eq!(element_width, 1);
-                assert_eq!(element_count, 3);
+                assert_eq!(*element_width, 1);
+                assert_eq!(*element_count, 3);
                 assert_eq!(*data, vec![0x01, 0x02, 0x03, 0x00]);
             }
             other => panic!("kind errado: {other:?}"),

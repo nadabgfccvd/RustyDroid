@@ -230,7 +230,7 @@ pub fn parse_arg_value(lit: &str, param_type: &str) -> Result<Value, String> {
                 lit
             };
             let unescaped = unescaped_java(unquoted);
-            Ok(Value::StrPlaceholder(unescaped))
+            Ok(Value::StrPlaceholder(Box::new(unescaped)))
         }
         t if t.starts_with('L') || t.starts_with('[') => {
             if lit == "null" {
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(parse_arg_value("'A'", "C"), Ok(Value::Int(0x41)));
         assert_eq!(
             parse_arg_value("\"oi\\n\"", "Ljava/lang/String;"),
-            Ok(Value::StrPlaceholder("oi\n".into()))
+            Ok(Value::StrPlaceholder(Box::new("oi\n".into())))
         );
         assert_eq!(
             parse_arg_value("null", "Ljava/lang/String;"),

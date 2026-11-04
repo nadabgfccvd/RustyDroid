@@ -18,7 +18,7 @@ pub enum Value {
     WideHi,
     /// texto de string ainda não alocado no heap (entrada de `parse_arg_value`);
     /// o Engine converte para `Obj` no momento da invocação
-    StrPlaceholder(String),
+    StrPlaceholder(Box<String>),
 }
 
 impl Value {

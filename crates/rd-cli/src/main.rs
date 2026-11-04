@@ -854,7 +854,10 @@ fn dexes_of_apk(apk: &Apk) -> Result<Vec<(String, Dex)>, RdError> {
             .zip
             .read_entry(entry)
             .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
-        let d = Dex::parse(bytes).map_err(dex_err)?;
+        // Runtime path: strings and the adler32 are deferred (ADR 008 stage 1b),
+        // the same mount the MCP agent uses. The eager decode kept every string
+        // of a 20 MB multi-dex app resident for the whole run.
+        let d = Dex::parse_unverified(bytes).map_err(dex_err)?;
         out.push((name.clone(), d));
     }
     if out.is_empty() {
@@ -1935,6 +1938,22 @@ fn cmd_app_dump(
 fn cmd_app_shot(path: &Path, activity: Option<&str>, out: &Path) -> Result<(), RdError> {
     let (mut eng, _activity, _package) = boot_app(path, activity, false, None)?;
     let draw_result = eng.draw_frame();
+    // Diagnóstico de memória (RD_MEM_REPORT=1): contadores do heap da VM no
+    // fim do primeiro quadro. Desligado por padrão.
+    if std::env::var_os("RD_MEM_REPORT").is_some() {
+        let h = &eng.heap;
+        eprintln!(
+            "[rd mem] heap used={} peak={} budget={} objects={} free_slots={} interned_names={}",
+            h.used(),
+            h.peak(),
+            h.budget(),
+            h.len(),
+            h.free_slots(),
+            h.interned_names()
+        );
+        let (bodies, insns) = eng.cp.decoded_code_stats();
+        eprintln!("[rd mem] decoded code bodies={bodies} instructions={insns}");
+    }
     let tree = eng.view_tree().ok_or_else(|| {
         RdError::new(
             "INVALID_FORMAT",

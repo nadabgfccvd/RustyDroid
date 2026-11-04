@@ -16336,7 +16336,10 @@ fn tr_clone_transition(vm: &mut Engine, transition: ObjRef) -> Result<ObjRef, Vm
         (class, fields)
     };
     let class = class.to_string();
-    let fields = fields.to_vec();
+    let fields: Vec<(String, Value)> = fields
+        .iter()
+        .map(|(n, v)| (n.to_string(), v.clone()))
+        .collect();
     let clone = alloc_obj(vm, &class, fields)?;
     let animators = Value::Obj(tr_new_list(vm, Vec::new())?);
     put(vm, clone, "mAnimators", animators)?;
@@ -40209,7 +40212,10 @@ fn p35e_clone_date(vm: &mut Engine, date: Value) -> Result<Value, VmExit> {
     // Reconstructing java.util.Date from getTime() would lose both.
     if let Ok((class, fields)) = vm.heap.as_instance(date) {
         let class = class.to_string();
-        let fields = fields.to_vec();
+        let fields: Vec<(String, Value)> = fields
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.clone()))
+            .collect();
         return Ok(Value::Obj(alloc_obj(vm, &class, fields)?));
     }
     let time = vm.invoke_instance(date, "getTime", "()J", &[])?;

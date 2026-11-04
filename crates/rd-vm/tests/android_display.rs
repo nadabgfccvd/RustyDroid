@@ -477,7 +477,7 @@ fn display_listener_callbacks_event_masks_dedup_and_gc_reachability() {
     .unwrap();
     vm.gc();
     assert!(
-        matches!(vm.heap.get(l_all), Ok(HeapObj::Instance { class, .. }) if class == rd_vm::gc::FREED_CLASS)
+        matches!(vm.heap.get(l_all), Ok(HeapObj::Instance { class, .. }) if &**class == rd_vm::gc::FREED_CLASS)
     );
 
     assert_eq!(
