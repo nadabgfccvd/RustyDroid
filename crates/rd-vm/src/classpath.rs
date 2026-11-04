@@ -46,7 +46,9 @@ type ResolveCache = HashMap<ResolveKey, Option<(usize, ClassDef, rd_dex::methods
 
 #[derive(Debug, Default)]
 pub struct Classpath {
-    pub dexes: Vec<Dex>,
+    /// DEX montados. `Arc` permite que sessões do mesmo APK compartilhem os
+    /// mesmos bytes e tabelas (ADR 031); cada `Classpath` só lê.
+    pub dexes: Vec<Arc<Dex>>,
     /// (índice do dex, offset do code_item) → parse em cache
     code_cache: HashMap<(usize, usize), Arc<CodeItem>>,
     /// (índice do dex, class_idx) → class_data em cache
@@ -77,6 +79,13 @@ impl Classpath {
     }
 
     pub fn new(dexes: Vec<Dex>) -> Self {
+        Self::new_shared(dexes.into_iter().map(Arc::new).collect())
+    }
+
+    /// Classpath sobre DEX já montados e compartilhados (ADR 031). Os DEX são
+    /// imutáveis depois de montados; o cache de decodificação continua por
+    /// `Classpath`.
+    pub fn new_shared(dexes: Vec<Arc<Dex>>) -> Self {
         Classpath {
             dexes,
             code_cache: HashMap::new(),
@@ -3527,11 +3536,13 @@ mod tests {
                     .iter()
                     .position(|def| cp.dexes[0].type_str(def.class_idx) == "LWalk8;")
                     .unwrap();
-                cp.dexes[0].class_defs[a].superclass_idx = cp.dexes[0].class_defs[b].class_idx;
+                let b_class_idx = cp.dexes[0].class_defs[b].class_idx;
+                Arc::make_mut(&mut cp.dexes[0]).class_defs[a].superclass_idx = b_class_idx;
             } else if pass == 2 {
                 // Malformed interface data must keep the old tolerant fallback.
-                cp.dexes[0].class_defs[0].interfaces_off = u32::MAX;
-                cp.dexes[0].class_defs[0].superclass_idx = u32::MAX;
+                let d0 = Arc::make_mut(&mut cp.dexes[0]);
+                d0.class_defs[0].interfaces_off = u32::MAX;
+                d0.class_defs[0].superclass_idx = u32::MAX;
             }
             for sub in &types {
                 for sup in &types {
@@ -3557,7 +3568,7 @@ mod tests {
         let count = cp.dexes[0].method_ids.len() as u32;
         for pass in 0..2 {
             if pass == 1 {
-                cp.dexes[0].method_ids[0].name_idx = u32::MAX;
+                Arc::make_mut(&mut cp.dexes[0]).method_ids[0].name_idx = u32::MAX;
             }
             for index in (0..count + 2).chain([rd_dex::strings::NO_INDEX]) {
                 let owned = cp.dexes[0]

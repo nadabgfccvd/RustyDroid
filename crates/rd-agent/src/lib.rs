@@ -7,6 +7,7 @@
 //! Lei 1 (sem falha silenciosa): falhas fora do contrato respondem tipadas.
 
 pub mod api_usage;
+mod apk_share;
 pub mod mcp;
 pub mod suite;
 

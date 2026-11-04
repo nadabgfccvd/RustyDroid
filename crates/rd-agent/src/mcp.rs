@@ -21,6 +21,7 @@ use std::io::BufRead;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::apk_share;
 use rd_apk::manifest::ComponentKind;
 use rd_apk::{Apk, RdError};
 use rd_framework::fd_behavior::SwitchTable;
@@ -347,6 +348,9 @@ pub struct InstalledApp {
     /// The fully opened APK. `None` only after an ADR 009 snapshot fast
     /// install; loaded on first real use via [`InstalledApp::apk`].
     pub apk: Option<std::sync::Arc<Apk>>,
+    /// ADR 031: APK e DEX montados, compartilhados com outras sessões que
+    /// instalaram o mesmo arquivo. `None` no caminho de snapshot.
+    pub(crate) shared: Option<std::sync::Arc<crate::apk_share::SharedApk>>,
     /// Where the APK was installed from (lazy load / re-fingerprint).
     pub source_path: Option<PathBuf>,
     /// ADR 009 content fingerprint, once known.
@@ -1405,32 +1409,49 @@ impl AgentSession {
                 return Ok(res);
             }
         }
-        let t_read = std::time::Instant::now();
-        let bytes = std::fs::read(&apk_file).map_err(|e| {
-            RdError::new(
-                "IO_ERROR",
-                format!("lendo {}: {e}", apk_file.display()),
-                MODULE_ID,
-            )
-            .with_suggestion("confira o caminho absoluto do APK")
-        })?;
-        phase("install_fs_read", t_read);
-        let t_open = std::time::Instant::now();
-        // XAPK: todos os splits são validados; o base é o APK instalado.
-        let (apk, bundle_splits) = Apk::from_bytes_with_splits(bytes)
-            .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
-        phase("install_apk_from_bytes", t_open);
-        // piso de API é contrato (ADR 016: 9): instalação recusa com erro tipado
-        if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } = apk.floor_status() {
-            let suggestion = format!("use um APK com minSdkVersion ≥ {floor}");
-            return Err(agent_error(
-                "BELOW_FLOOR",
-                format!(
-                    "minSdkVersion={min_sdk} abaixo do piso {floor} — o app não roda neste runtime"
-                ),
-                Some(&suggestion),
-            ));
-        }
+        // ADR 031: o mesmo arquivo já aberto por outra sessão é reusado (sem
+        // reler nem reparsear). A chave inclui caminho canônico, tamanho e mtime.
+        let key = apk_share::ApkKey::of(&apk_file).ok();
+        let shared = match key.as_ref().and_then(apk_share::lookup) {
+            Some(hit) => hit,
+            None => {
+                let t_read = std::time::Instant::now();
+                let bytes = std::fs::read(&apk_file).map_err(|e| {
+                    RdError::new(
+                        "IO_ERROR",
+                        format!("lendo {}: {e}", apk_file.display()),
+                        MODULE_ID,
+                    )
+                    .with_suggestion("confira o caminho absoluto do APK")
+                })?;
+                phase("install_fs_read", t_read);
+                let t_open = std::time::Instant::now();
+                // XAPK: todos os splits são validados; o base é o APK instalado.
+                let (apk, bundle_splits) = Apk::from_bytes_with_splits(bytes)
+                    .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?;
+                phase("install_apk_from_bytes", t_open);
+                let shared = apk_share::SharedApk::new(apk, bundle_splits);
+                // piso de API é contrato (ADR 016: 9): instalação recusa com erro tipado
+                if let rd_apk::FloorStatus::BelowFloor { min_sdk, floor } =
+                    shared.apk.floor_status()
+                {
+                    let suggestion = format!("use um APK com minSdkVersion ≥ {floor}");
+                    return Err(agent_error(
+                        "BELOW_FLOOR",
+                        format!(
+                            "minSdkVersion={min_sdk} abaixo do piso {floor} — o app não roda neste runtime"
+                        ),
+                        Some(&suggestion),
+                    ));
+                }
+                if let Some(k) = key {
+                    apk_share::register(k, &shared);
+                }
+                shared
+            }
+        };
+        let apk = shared.apk.clone();
+        let bundle_splits = shared.bundle_splits.clone();
         // Tudo validado — SÓ AGORA muta o estado (instalação transacional:
         // falha de parse/floor/sandbox não deixa registro pela metade).
         let manifest = apk.manifest.clone();
@@ -1450,7 +1471,8 @@ impl AgentSession {
             version_name: manifest.version_name.clone(),
             version_code: manifest.version_code,
             manifest: manifest.clone(),
-            apk: Some(std::sync::Arc::new(apk)),
+            apk: Some(apk),
+            shared: Some(shared),
             source_path: Some(apk_file.clone()),
             snapshot_key: None,
             perms,
@@ -1545,6 +1567,9 @@ impl AgentSession {
                 .collect();
             (app.apk()?, granted)
         };
+        let shared = self
+            .find_installed(package_out)
+            .and_then(|a| a.shared.clone());
         // M8 (38º gap): Application do manifest como no boot_app do CLI.
         let app_desc = resources.manifest.application.name.as_ref().map(|name| {
             let abs = if let Some(rel) = name.strip_prefix('.') {
@@ -1579,7 +1604,14 @@ impl AgentSession {
             }
         } else {
             let t_mount = std::time::Instant::now();
-            let dexes = dexes_of_apk(&resources)?;
+            // ADR 031: DEX do APK compartilhado são montados uma vez por arquivo.
+            let dexes: Vec<std::sync::Arc<rd_dex::Dex>> = match &shared {
+                Some(s) => s.dexes(dexes_of_apk)?,
+                None => dexes_of_apk(&resources)?
+                    .into_iter()
+                    .map(std::sync::Arc::new)
+                    .collect(),
+            };
             phase("dex_mount_total", t_mount);
             let t_new = std::time::Instant::now();
             // App runtime host: `rd mcp` serves on a normal-stack thread, so it
@@ -1588,7 +1620,7 @@ impl AgentSession {
                 heap_budget: self.heap_budget,
                 ..VmConfig::app_runtime()
             };
-            let mut e = Engine::new(dexes, config);
+            let mut e = Engine::new_shared(dexes, config);
             phase("engine_new", t_new);
             e.set_resources_arc(resources);
             e
@@ -6411,4 +6443,5 @@ mod tests {
     }
     include!("ui_tools_tests.rs");
     include!("runtime_tools_tests.rs");
+    include!("apk_share_tests.rs");
 }
