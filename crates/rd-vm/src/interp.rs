@@ -89,7 +89,7 @@ fn exec_frame_regs(
     dex_idx: usize,
     frame_super: Option<&str>,
     code: Arc<CodeItem>,
-    regs: &mut Vec<Value>,
+    regs: &mut [Value],
 ) -> Result<Value, VmExit> {
     let mut last_result = Value::Null;
     let mut pending_exc: Option<Throwable> = None;
@@ -127,11 +127,7 @@ fn exec_frame_regs(
         let may_call = matches!(insn.opcode, 0x22 | 0x60..=0x78);
         let collect = vm.gc_due();
         if may_call || collect {
-            vm.publish_frame_roots(
-                regs,
-                &last_result,
-                pending_exc.as_ref().and_then(|e| e.obj),
-            );
+            vm.publish_frame_roots(regs, &last_result, pending_exc.as_ref().and_then(|e| e.obj));
         }
         if collect {
             vm.maybe_gc();
