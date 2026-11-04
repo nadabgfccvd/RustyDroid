@@ -76,6 +76,20 @@ Nenhuma mudança de compartilhamento nesta rodada. Próximos passos, em ordem:
    com o amostrador da ADR 029, rodando duas sessões.
 3. Só então escolher entre o layout por classe (opção 3) e a redução do estado de execução.
 
+## Medição em release: bloqueada nesta sandbox
+
+Tentativas de build `--release -p rd-cli` (sandbox com 2 GB de RAM):
+
+- perfil do repositório (thin LTO, `codegen-units=1`): `rustc` de `rd-vm` foi morto pelo
+  OOM com ~1,4 GB de RSS (já na ADR 008);
+- `lto=false`, `codegen-units=16`: mesmo OOM, mesmo tamanho de processo;
+- `lto=false`, `codegen-units=256`: mesmo OOM.
+
+O pico do `rustc` em `rd-vm` está antes da geração de código, então não depende do número
+de unidades. O número de release continua desconhecido. Para medir, é preciso uma máquina
+com ao menos 4 GB livres: `cargo build --release -p rd-cli` e depois `rd app shot` com
+`VmHWM`, mesmo driver da seção de medição.
+
 ## Consequências
 
 - O número honesto hoje é: uma sessão do `rd mcp` ocupa cerca de 176 MB de pico, e cada
