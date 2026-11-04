@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793779929512,
+  "lastUpdate": 1793810502763,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3347,6 +3347,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3283,
             "range": "± 21",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d3fd06105529817d29ea9087be522f26c1246f8b",
+          "message": "Merge pull request #533 from nadabgfccvd/fix/vm-monitores-getintent-deny\n\nrd-vm: monitores reais, const-class primitivo, getIntent null e cargo-deny no CI",
+          "timestamp": "2026-11-04T13:41:21-03:00",
+          "tree_id": "98c861b76c407c18da7ff15c85c60a1b2c7d89d4",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/d3fd06105529817d29ea9087be522f26c1246f8b"
+        },
+        "date": 1793810501463,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1780,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1764,
+            "range": "± 33",
             "unit": "ns/iter"
           }
         ]
