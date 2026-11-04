@@ -2,8 +2,9 @@
 //! mais DEX (APK real = classes.dex/classes2.dex/…). Cache de `CodeItem`
 //! parseado por offset (loops invocam o mesmo método repetidamente).
 
-use std::collections::HashMap;
 use std::sync::Arc;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use rd_dex::classes::{ClassData, ClassDef};
 use rd_dex::code::CodeItem;
@@ -35,26 +36,28 @@ pub struct MethodRef {
 }
 
 /// method_id (dex, idx) -> resolved method reference (ADR 008 Stage 1b).
-type MethodRefCache = std::cell::RefCell<HashMap<(usize, u32), Arc<MethodRef>>>;
+/// Índice por (dex, id): `Vec` por DEX indexado pelo id (sem hash).
+type MethodRefCache = std::cell::RefCell<Vec<Vec<Option<Arc<MethodRef>>>>>;
 /// field_id (dex, idx) -> (class, name, type) reference.
-type FieldRefCache = std::cell::RefCell<HashMap<(usize, u32), Arc<(String, String, String)>>>;
+type FieldRefCache = std::cell::RefCell<Vec<Vec<Option<Arc<(String, String, String)>>>>>;
 /// (class, name, proto) -> virtual resolution result.
 /// Chave de `resolve_cache`: nomes internados (ADR 029). Antes eram três
 /// `String`s, alocadas em toda chamada, mesmo no acerto do cache.
 type ResolveKey = (Arc<str>, Arc<str>, Arc<str>);
-type ResolveCache = HashMap<ResolveKey, Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)>>;
+type ResolveCache =
+    FxHashMap<ResolveKey, Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)>>;
 
 /// Caches de decodificação compartilhados por todos os `Classpath` que usam o
 /// mesmo conjunto de DEX (ADR 032). As chaves usam o índice do DEX dentro desse
 /// conjunto, então o cache vale só para esse conjunto e nunca é global. O
 /// conteúdo é função pura dos bytes, então dois `Classpath` veem o mesmo resultado.
 /// (índice do dex, class_idx) → class_data já decodificado.
-pub type ClassDataMap = HashMap<(usize, u32), Option<Arc<ClassData>>>;
+pub type ClassDataMap = FxHashMap<(usize, u32), Option<Arc<ClassData>>>;
 
 #[derive(Debug, Default)]
 pub struct DecodeCache {
     /// (índice do dex, offset do code_item) → parse
-    code: std::sync::Mutex<HashMap<(usize, usize), Arc<CodeItem>>>,
+    code: std::sync::Mutex<FxHashMap<(usize, usize), Arc<CodeItem>>>,
     /// (índice do dex, class_idx) → class_data
     class_data: std::sync::Mutex<ClassDataMap>,
 }
@@ -69,9 +72,9 @@ pub struct Classpath {
     decode: Arc<DecodeCache>,
     /// Cópia local (L1) do que este `Classpath` já usou: a leitura quente
     /// não toma lock.
-    code_cache: HashMap<(usize, usize), Arc<CodeItem>>,
+    code_cache: FxHashMap<(usize, usize), Arc<CodeItem>>,
     /// L1 de class_data (ver `code_cache`).
-    class_data_cache: HashMap<(usize, u32), Option<Arc<ClassData>>>,
+    class_data_cache: FxHashMap<(usize, u32), Option<Arc<ClassData>>>,
     /// ADR 008 Stage 4 (hot-path subset): method_id → resolved ref cache.
     /// `method_ref` used to rebuild the proto descriptor + parameter type
     /// strings on *every* invoke; the cache makes repeat invokes O(1).
@@ -81,13 +84,25 @@ pub struct Classpath {
     /// for the lifetime of an Engine, so this can never go stale).
     resolve_cache: ResolveCache,
     /// Interner dos nomes usados nas chaves de `resolve_cache` (ADR 029).
-    resolve_names: std::collections::HashSet<Arc<str>>,
+    resolve_names: FxHashSet<Arc<str>>,
+    /// descriptor -> raw first-match position (dex, class_def), without the
+    /// platform-stub shadow rule. Used by subtype/superclass/interface walks.
+    raw_class_cache: std::cell::RefCell<FxHashMap<String, Option<(usize, usize)>>>,
+    /// Memo de `is_subtype` (sub → sup → resultado). Válido porque os DEX são
+    /// imutáveis depois de montados (ADR 031). Quem edita metadados in-place
+    /// (só testes) deve chamar `invalidate_subtype_memo`.
+    subtype_memo: std::cell::RefCell<FxHashMap<String, FxHashMap<String, bool>>>,
+    /// Memo de `is_dex_only_chain`: mesmo ciclo de vida do `subtype_memo`.
+    dex_only_memo: std::cell::RefCell<FxHashMap<String, bool>>,
+    /// Memo de "a classe (do DEX) declara campo de instância com este nome"
+    /// (sombreamento de campos, `Engine::qualified_field_key`). DEX imutáveis.
+    declares_field_memo: std::cell::RefCell<FxHashMap<String, FxHashMap<String, bool>>>,
     /// descriptor -> (dex, class_def position) memo for `find_class`
     /// (ADR 008 Stage 1b). NOTE: unlike subtype results (which a test
     /// deliberately mutates DEX metadata to re-check), class *identity*
     /// lookup is only memoized as an index pair and re-borrowed from the
     /// live DEX each call, so in-place def edits stay visible.
-    find_class_cache: std::cell::RefCell<HashMap<String, Option<(usize, usize)>>>,
+    find_class_cache: std::cell::RefCell<FxHashMap<String, Option<(usize, usize)>>>,
 }
 
 impl Classpath {
@@ -115,19 +130,48 @@ impl Classpath {
         Classpath {
             dexes,
             decode,
-            code_cache: HashMap::new(),
-            class_data_cache: HashMap::new(),
-            method_ref_cache: std::cell::RefCell::new(HashMap::new()),
-            field_ref_cache: std::cell::RefCell::new(HashMap::new()),
-            resolve_cache: HashMap::new(),
-            resolve_names: std::collections::HashSet::new(),
-            find_class_cache: std::cell::RefCell::new(HashMap::new()),
+            code_cache: FxHashMap::default(),
+            class_data_cache: FxHashMap::default(),
+            method_ref_cache: std::cell::RefCell::new(Vec::new()),
+            field_ref_cache: std::cell::RefCell::new(Vec::new()),
+            resolve_cache: FxHashMap::default(),
+            resolve_names: FxHashSet::default(),
+            raw_class_cache: std::cell::RefCell::new(FxHashMap::default()),
+            subtype_memo: std::cell::RefCell::new(FxHashMap::default()),
+            dex_only_memo: std::cell::RefCell::new(FxHashMap::default()),
+            declares_field_memo: std::cell::RefCell::new(FxHashMap::default()),
+            find_class_cache: std::cell::RefCell::new(FxHashMap::default()),
         }
+    }
+
+    /// Grava `value` em `cache[dex_idx][idx]`, dimensionando a linha para a
+    /// tabela inteira do DEX (`table_len`) na primeira escrita.
+    fn slot_store<T>(
+        cache: &mut Vec<Vec<Option<T>>>,
+        table_len: usize,
+        dex_idx: usize,
+        idx: u32,
+        value: T,
+    ) {
+        if cache.len() <= dex_idx {
+            cache.resize_with(dex_idx + 1, Vec::new);
+        }
+        let row = &mut cache[dex_idx];
+        let need = table_len.max(idx as usize + 1);
+        if row.len() < need {
+            row.resize_with(need, || None);
+        }
+        row[idx as usize] = Some(value);
     }
 
     /// method_id cru (class/name/idx) — cached (ADR 008 Stage 4 subset).
     pub fn method_ref(&self, dex_idx: usize, idx: u32) -> RdResult<Arc<MethodRef>> {
-        if let Some(cached) = self.method_ref_cache.borrow().get(&(dex_idx, idx)) {
+        if let Some(Some(cached)) = self
+            .method_ref_cache
+            .borrow()
+            .get(dex_idx)
+            .and_then(|row| row.get(idx as usize))
+        {
             return Ok(cached.clone());
         }
         let dex = &self.dexes[dex_idx];
@@ -148,27 +192,51 @@ impl Classpath {
             param_types,
             return_type: ret,
         });
-        self.method_ref_cache
-            .borrow_mut()
-            .insert((dex_idx, idx), out.clone());
+        Self::slot_store(
+            &mut self.method_ref_cache.borrow_mut(),
+            dex.method_ids.len(),
+            dex_idx,
+            idx,
+            out.clone(),
+        );
         Ok(out)
     }
 
-    /// field_id cru → (classe, nome, tipo).
+    /// field_id cru → (classe, nome, tipo). Clona as strings; prefira
+    /// [`Classpath::field_ref_shared`] no caminho quente.
     pub fn field_ref(&self, dex_idx: usize, idx: u32) -> RdResult<(String, String, String)> {
-        if let Some(cached) = self.field_ref_cache.borrow().get(&(dex_idx, idx)) {
-            return Ok((**cached).clone());
+        Ok((*self.field_ref_shared(dex_idx, idx)?).clone())
+    }
+
+    /// field_id cru → (classe, nome, tipo) compartilhado (ADR 008): acerto de
+    /// cache é só um `Arc::clone`, sem alocar as três strings.
+    pub fn field_ref_shared(
+        &self,
+        dex_idx: usize,
+        idx: u32,
+    ) -> RdResult<Arc<(String, String, String)>> {
+        if let Some(Some(cached)) = self
+            .field_ref_cache
+            .borrow()
+            .get(dex_idx)
+            .and_then(|row| row.get(idx as usize))
+        {
+            return Ok(cached.clone());
         }
         let dex = &self.dexes[dex_idx];
         let f = dex.field(idx)?;
-        let out = (
+        let out = Arc::new((
             dex.type_str(f.class_idx as u32).to_string(),
             dex.string(f.name_idx).to_string(),
             dex.type_str(f.type_idx as u32).to_string(),
+        ));
+        Self::slot_store(
+            &mut self.field_ref_cache.borrow_mut(),
+            dex.field_ids.len(),
+            dex_idx,
+            idx,
+            out.clone(),
         );
-        self.field_ref_cache
-            .borrow_mut()
-            .insert((dex_idx, idx), Arc::new(out.clone()));
         Ok(out)
     }
 
@@ -179,6 +247,38 @@ impl Classpath {
 
     pub fn type_str(&self, dex_idx: usize, idx: u32) -> String {
         self.dexes[dex_idx].type_str(idx).to_string()
+    }
+
+    /// Posição crua (dex, class_def) do primeiro DEX que define `desc`, sem a
+    /// regra de stub de plataforma sombreado. Memoizado; a def é relida viva.
+    fn raw_class_pos(&self, desc: &str) -> Option<(usize, usize)> {
+        if let Some(hit) = self.raw_class_cache.borrow().get(desc) {
+            return *hit;
+        }
+        let mut found = None;
+        let mut cacheable = true;
+        for (i, dex) in self.dexes.iter().enumerate() {
+            if let Some(def) = dex.find_class(desc) {
+                match dex.class_defs.iter().position(|d| std::ptr::eq(d, def)) {
+                    Some(ci) => found = Some((i, ci)),
+                    None => cacheable = false,
+                }
+                break;
+            }
+        }
+        if cacheable {
+            self.raw_class_cache
+                .borrow_mut()
+                .insert(desc.to_string(), found);
+        }
+        found
+    }
+
+    /// Definição crua de `desc` (ver [`Classpath::raw_class_pos`]).
+    fn raw_class(&self, desc: &str) -> Option<(&Arc<Dex>, &ClassDef)> {
+        let (di, ci) = self.raw_class_pos(desc)?;
+        let dex = &self.dexes[di];
+        Some((dex, &dex.class_defs[ci]))
     }
 
     /// Procura a classe por descritor em todos os dex → (dex_idx, def).
@@ -597,54 +697,60 @@ impl Classpath {
 
     /// Superclasse de um descritor de classe ("" se nenhuma/raiz).
     pub fn superclass_of(&self, class_desc: &str) -> Option<String> {
-        for dex in &self.dexes {
-            if let Some(def) = dex.find_class(class_desc) {
-                let s = dex.type_str(def.superclass_idx);
-                if s.is_empty() || s == "?" {
-                    return None;
-                }
-                return Some(s.to_string());
-            }
+        self.superclass_ref(class_desc).map(str::to_string)
+    }
+
+    /// Superclasse sem alocar (empréstimo do DEX).
+    fn superclass_ref(&self, class_desc: &str) -> Option<&str> {
+        let (dex, def) = self.raw_class(class_desc)?;
+        let s = dex.type_str(def.superclass_idx);
+        if s.is_empty() || s == "?" {
+            return None;
         }
-        None
+        Some(s)
     }
 
     /// Interfaces declaradas por uma classe/interface (class_def.interfaces_off).
     /// Vazio para classes de plataforma fora do DEX (String, etc. — cobertas
     /// por `builtin_interfaces`).
     pub fn interfaces_of(&self, class_desc: &str) -> Vec<String> {
-        for dex in &self.dexes {
-            if let Some(def) = dex.find_class(class_desc) {
-                return dex
-                    .interfaces(def)
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|t| dex.type_str(*t).to_string())
-                    .collect();
-            }
-        }
-        Vec::new()
+        self.interfaces_ref(class_desc)
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Interfaces declaradas, emprestadas do DEX (sem alocar strings).
+    fn interfaces_ref(&self, class_desc: &str) -> Vec<&str> {
+        let Some((dex, def)) = self.raw_class(class_desc) else {
+            return Vec::new();
+        };
+        dex.interfaces(def)
+            .unwrap_or_default()
+            .iter()
+            .map(|t| dex.type_str(*t))
+            .collect()
     }
 
     /// Closure de interfaces: `sup` é interface de `start` (direta ou via
     /// superinterfaces, com guard de ciclo e cap de profundidade) — issue #26.
-    fn interface_closure_contains(&self, mut queue: Vec<String>, sup: &str) -> bool {
-        let mut visited: std::collections::HashSet<String> = queue.iter().cloned().collect();
+    fn interface_closure_contains<'a>(&'a self, mut queue: Vec<&'a str>, sup: &str) -> bool {
+        let mut visited: FxHashSet<&'a str> = queue.iter().copied().collect();
         let mut budget = 64;
         while let Some(cur) = queue.pop() {
             if cur == sup {
                 return true;
             }
             // host (JDK/platform) interfaces: builtin super-interface closure
-            if builtin_interfaces(&cur).is_some_and(|v| v.contains(&sup)) {
+            if builtin_interfaces(cur).is_some_and(|v| v.contains(&sup)) {
                 return true;
             }
             budget -= 1;
             if budget == 0 {
                 return false;
             }
-            for next in self.interfaces_of(&cur) {
-                if visited.insert(next.clone()) {
+            for next in self.interfaces_ref(cur) {
+                if visited.insert(next) {
                     queue.push(next);
                 }
             }
@@ -658,7 +764,81 @@ impl Classpath {
     /// as interfaces declaradas de cada classe da cadeia (com memo? não —
     /// closure BFS por chamada, cap de orçamento). Interfaces de plataforma
     /// (CharSequence/Comparable/…) vêm da tabela builtin.
+    /// `true` quando a cadeia de superclasses de `cls` é inteiramente do DEX da
+    /// app e termina em `Object` (memoizado). Só nesse caso a instância não tem
+    /// estado de plataforma: um override concreto do DEX é a dispatch virtual do JVM.
+    /// Qualquer superclasse de plataforma (ex.: subclasse DEX de `ArrayDeque`)
+    /// faz devolver `false`, e a chamada segue pela cadeia host.
+    pub fn is_dex_only_chain(&self, cls: &str) -> bool {
+        if let Some(hit) = self.dex_only_memo.borrow().get(cls) {
+            return *hit;
+        }
+        let mut out = false;
+        let mut cur = cls.to_string();
+        for _ in 0..64 {
+            if cur == "Ljava/lang/Object;" {
+                out = true;
+                break;
+            }
+            if self.find_class(&cur).is_none() {
+                break;
+            }
+            match self.superclass_of(&cur) {
+                Some(sup) => cur = sup,
+                None => break,
+            }
+        }
+        self.dex_only_memo.borrow_mut().insert(cls.to_string(), out);
+        out
+    }
+
     pub fn is_subtype(&self, sub: &str, sup: &str) -> bool {
+        if sub == sup {
+            return true;
+        }
+        if let Some(hit) = self
+            .subtype_memo
+            .borrow()
+            .get(sub)
+            .and_then(|inner| inner.get(sup))
+        {
+            return *hit;
+        }
+        let out = self.is_subtype_uncached(sub, sup);
+        self.subtype_memo
+            .borrow_mut()
+            .entry(sub.to_string())
+            .or_default()
+            .insert(sup.to_string(), out);
+        out
+    }
+
+    /// Descarta o memo de `is_subtype`. Obrigatório após editar DEX in-place
+    /// (produção não faz isso: os DEX são imutáveis depois de montados).
+    pub fn invalidate_subtype_memo(&mut self) {
+        self.dex_only_memo.get_mut().clear();
+        self.subtype_memo.get_mut().clear();
+        self.declares_field_memo.get_mut().clear();
+    }
+
+    /// Memo de "declara campo de instância" (ver `declares_field_memo`).
+    pub fn declares_field_memo_get(&self, class_desc: &str, fname: &str) -> Option<bool> {
+        self.declares_field_memo
+            .borrow()
+            .get(class_desc)
+            .and_then(|inner| inner.get(fname))
+            .copied()
+    }
+
+    pub fn declares_field_memo_put(&self, class_desc: &str, fname: &str, value: bool) {
+        self.declares_field_memo
+            .borrow_mut()
+            .entry(class_desc.to_string())
+            .or_default()
+            .insert(fname.to_string(), value);
+    }
+
+    fn is_subtype_uncached(&self, sub: &str, sup: &str) -> bool {
         let (mut sub, mut sup) = (sub, sup);
         if sub == sup {
             return true;
@@ -714,18 +894,14 @@ impl Classpath {
             if cur == sup {
                 return true;
             }
-            let Some((dex, def)) = self
-                .dexes
-                .iter()
-                .find_map(|dex| dex.find_class(cur).map(|def| (dex, def)))
-            else {
+            let Some((dex, def)) = self.raw_class(cur) else {
                 return false;
             };
-            let interfaces = dex
+            let interfaces: Vec<&str> = dex
                 .interfaces(def)
                 .unwrap_or_default()
                 .iter()
-                .map(|t| dex.type_str(*t).to_string())
+                .map(|t| dex.type_str(*t))
                 .collect();
             if self.interface_closure_contains(interfaces, sup) {
                 return true;
@@ -3604,11 +3780,13 @@ mod tests {
                     .unwrap();
                 let b_class_idx = cp.dexes[0].class_defs[b].class_idx;
                 Arc::make_mut(&mut cp.dexes[0]).class_defs[a].superclass_idx = b_class_idx;
+                cp.invalidate_subtype_memo();
             } else if pass == 2 {
                 // Malformed interface data must keep the old tolerant fallback.
                 let d0 = Arc::make_mut(&mut cp.dexes[0]);
                 d0.class_defs[0].interfaces_off = u32::MAX;
                 d0.class_defs[0].superclass_idx = u32::MAX;
+                cp.invalidate_subtype_memo();
             }
             for sub in &types {
                 for sup in &types {

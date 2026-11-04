@@ -32,9 +32,9 @@ const OOME: &str = "Ljava/lang/OutOfMemoryError;";
 /// can see WHERE a guest spins instead of only that it did.
 fn fuel_stack(vm: &Engine) -> String {
     let mut out = String::from("; pilha no esgotamento (innermost primeiro):");
-    for l in vm.frame_labels.iter().rev().take(24) {
+    for &(d, mi) in vm.frame_labels.iter().rev().take(24) {
         out.push_str("\n  at ");
-        out.push_str(l);
+        out.push_str(&vm.label_of(d, mi));
     }
     if vm.frame_labels.len() > 24 {
         out.push_str(&format!("\n  ... +{} frames", vm.frame_labels.len() - 24));
@@ -161,10 +161,11 @@ pub(crate) fn exec_frame(
                     let Kind::RegIndex(a, i) = &insn.kind else {
                         return bad_kind(insn);
                     };
-                    let (ref_class, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
-                    let owner = step!(vm.resolve_static_owner(&ref_class, &fname));
+                    let fr = vm.cp.field_ref_shared(dex_idx, *i as u32)?;
+                    let (ref_class, fname, ftype) = (&fr.0, &fr.1, &fr.2);
+                    let owner = step!(vm.resolve_static_owner(ref_class, fname));
                     step!(vm.ensure_initialized(&owner));
-                    let v = step!(finish_sget(vm, &owner, &fname, &ftype));
+                    let v = step!(finish_sget(vm, &owner, fname, ftype));
                     let wide = matches!(v, Value::Long(_) | Value::Double(_));
                     regs[*a as usize] = v;
                     if wide {
@@ -175,10 +176,12 @@ pub(crate) fn exec_frame(
                     let Kind::RegIndex(a, i) = &insn.kind else {
                         return bad_kind(insn);
                     };
-                    let (ref_class, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
-                    let owner = step!(vm.resolve_static_owner(&ref_class, &fname));
+                    let fr = vm.cp.field_ref_shared(dex_idx, *i as u32)?;
+                    let (ref_class, fname, _ftype) = (&fr.0, &fr.1, &fr.2);
+                    let owner = step!(vm.resolve_static_owner(ref_class, fname));
                     step!(vm.ensure_initialized(&owner));
-                    vm.statics.insert((owner, fname), regs[*a as usize].clone());
+                    vm.statics
+                        .insert((owner, fname.clone()), regs[*a as usize].clone());
                 }
                 0x6E..=0x72 | 0x74..=0x78 => {
                     let (midx, slots) = extract_invoke_args(insn, &regs)?;
@@ -507,8 +510,8 @@ pub(crate) fn exec_frame(
                                 "[cast] {} pc={cur_pc}: {cls} -> {target}",
                                 vm.frame_labels
                                     .last()
-                                    .map(String::as_str)
-                                    .unwrap_or("<unknown>")
+                                    .map(|&(d, mi)| vm.label_of(d, mi))
+                                    .unwrap_or_else(|| "<unknown>".to_string())
                             );
                         }
                         throw_exc!(CCE, format!("{cls} cannot be cast to {target}"));
@@ -860,7 +863,8 @@ pub(crate) fn exec_frame(
                 let Kind::RegRegIndex(a, b, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let (fclass, fname, ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                let fr = vm.cp.field_ref_shared(dex_idx, *i as u32)?;
+                let (fclass, fname, ftype) = (&fr.0, &fr.1, &fr.2);
                 let r = step!(match regs[*b as usize].as_ref() {
                     Ok(None) => Err(VmExit::Exception(
                         vm.vm_exception(NPE, &format!("iget '{fname}' em null"))?,
@@ -870,11 +874,11 @@ pub(crate) fn exec_frame(
                 });
                 // Field hiding (JLS 8.3): nome ambíguo na hierarquia → slot
                 // qualificado pela classe declarante (`decl#nome`).
-                let fkey = step!(vm.qualified_field_key(r, &fclass, &fname));
+                let fkey = step!(vm.qualified_field_key(r, fclass, fname));
                 let fname = fkey.as_deref().unwrap_or(fname.as_str());
                 let v = match vm.heap.get_field(r, fname) {
                     Ok(v) => v,
-                    Err(_) => default_for(&ftype), // campo nunca escrito → default
+                    Err(_) => default_for(ftype), // campo nunca escrito → default
                 };
                 regs[*a as usize] = v;
                 if matches!(regs[*a as usize], Value::Long(_) | Value::Double(_)) {
@@ -886,7 +890,8 @@ pub(crate) fn exec_frame(
                 let Kind::RegRegIndex(a, b, i) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                let (fclass, fname, _ftype) = vm.cp.field_ref(dex_idx, *i as u32)?;
+                let fr = vm.cp.field_ref_shared(dex_idx, *i as u32)?;
+                let (fclass, fname, _ftype) = (&fr.0, &fr.1, &fr.2);
                 let r = step!(match regs[*b as usize].as_ref() {
                     Ok(None) => Err(VmExit::Exception(
                         vm.vm_exception(NPE, &format!("iput '{fname}' em null"))?,
@@ -894,7 +899,7 @@ pub(crate) fn exec_frame(
                     Ok(Some(r)) => Ok(r),
                     Err(e) => Err(e.into()),
                 });
-                let fkey = step!(vm.qualified_field_key(r, &fclass, &fname));
+                let fkey = step!(vm.qualified_field_key(r, fclass, fname));
                 let fname = fkey.as_deref().unwrap_or(fname.as_str()).to_string();
                 // issue #49: OOM de campo novo no iput é OutOfMemoryError
                 // CAPTURÁVEL (antes: VM_TYPE_ERROR mentiroso e run-killer)
@@ -1782,7 +1787,7 @@ fn resolve_or_run_host_invoke(
         }
         Ok(Some(r)) => r,
     };
-    let recv_class = vm.heap.class_of(recv)?.to_string();
+    let recv_class: std::sync::Arc<str> = vm.heap.class_arc_of(recv)?;
 
     // `invoke-super Object.equals` from an AndroidX base implementation
     // (Fragment.equals is a final identity wrapper) must execute Object's
@@ -1798,6 +1803,31 @@ fn resolve_or_run_host_invoke(
         )));
     }
 
+    // Override concreto declarado no DEX da APP: quando a método-referência e o
+    // receptor são classes do DEX da app, o override concreto vence os shims
+    // host, como manda a dispatch virtual do JVM (#315 item 3). Antes, toda
+    // invoke passava pela cadeia inteira de `instance_intrinsic_dispatch`
+    // (~40 handlers, ~36% do tempo de launch/tap). Chamadas cuja declaração é
+    // de tipo de plataforma (ex.: `java/util/List`) seguem pela cadeia host.
+    if !is_direct
+        && !is_super
+        && mref.name != "<init>"
+        && vm.cp.find_class(&mref.class).is_some()
+        && vm.cp.is_dex_only_chain(&recv_class)
+    {
+        if let Some((d2, def, m)) = vm.cp.resolve_method(&recv_class, &mref.name, &mref.proto) {
+            let has_impl = m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0;
+            if has_impl && (m.access_flags & ACC_STATIC) == 0 {
+                let decl = vm.cp.type_str(d2, def.class_idx);
+                if !is_bundled_shim_owner(&decl)
+                    && !decl.starts_with("Landroid/")
+                    && !decl.starts_with("Ljava/")
+                {
+                    return Ok(InvokeTarget::Dex(d2, def, m));
+                }
+            }
+        }
+    }
     // intrínseco de instância (String/StringBuilder/Throwable/Object)
     if let Some(v) = {
         let _t0 = vm.trace_start();
@@ -1820,7 +1850,7 @@ fn resolve_or_run_host_invoke(
     // of the receiver) matches the intrinsic declared with the receiver type.
     if let Some((params, ret)) = mref.proto.rsplit_once(')') {
         if ret.starts_with('L')
-            && ret != recv_class
+            && ret != &*recv_class
             && vm.cp.find_class(&recv_class).is_none()
             && vm.cp.is_subtype(&recv_class, ret)
         {
@@ -1862,7 +1892,7 @@ fn resolve_or_run_host_invoke(
                 str::to_string,
             )
         } else {
-            recv_class.clone()
+            recv_class.to_string()
         };
         if let Some((d2, def, m)) = vm.cp.resolve_method(&poly_target, &mref.name, &mref.proto) {
             let has_impl = m.code_off != 0 || (m.access_flags & ACC_NATIVE) != 0;
@@ -1901,7 +1931,7 @@ fn resolve_or_run_host_invoke(
     // aqui foram removidos a favor desta resolução por `recv_class`, porque
     // `call_host_shim_layer` (chamado logo abaixo com `mref.class`) já é a
     // cadeia completa m9→m10→m8→androidx→gms.
-    if !is_direct && !is_super && recv_class != mref.class {
+    if !is_direct && !is_super && &*recv_class != mref.class.as_str() {
         if let Some(v) =
             call_host_shim_layer(vm, &recv_class, &mref.name, &mref.proto, recv, &slots[1..])?
         {
@@ -1926,7 +1956,7 @@ fn resolve_or_run_host_invoke(
                 }
             }
         }
-        let host_start = if !is_direct && !is_super {
+        let host_start: &str = if !is_direct && !is_super {
             &recv_class
         } else {
             &mref.class
@@ -1939,7 +1969,7 @@ fn resolve_or_run_host_invoke(
         // Receiver-first, then the declaring class: platform implementations such as
         // `Landroid/content/SharedPreferencesImpl;` may have no shim of their own, while
         // the declaring interface (`Landroid/content/SharedPreferences;`) does (CI #315).
-        if host_start != &mref.class {
+        if host_start != mref.class.as_str() {
             if let Some(value) =
                 inherited_android_host(vm, &mref.class, &mref.name, &mref.proto, recv, &slots[1..])?
             {
@@ -1999,7 +2029,7 @@ fn resolve_or_run_host_invoke(
         // direct (<init>/private): NÃO despacha virtualmente
         mref.class.clone()
     } else {
-        recv_class.clone()
+        recv_class.to_string()
     };
 
     let _t0 = vm.trace_start();
@@ -2104,7 +2134,7 @@ pub(crate) fn inherited_android_host(
     let mut visited = std::collections::BTreeSet::new();
     // Receiver concrete class for the per-ancestor DEX-override gates
     // (issue #228 saved-state handler).
-    let recv_class = vm.heap.class_of(recv)?.to_string();
+    let recv_class: std::sync::Arc<str> = vm.heap.class_arc_of(recv)?;
     for _ in 0..16 {
         if !visited.insert(ancestor.clone()) {
             break;

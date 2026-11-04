@@ -683,6 +683,7 @@ dependencies = [
  "rd-render",
  "rd-testsupport",
  "regex",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]

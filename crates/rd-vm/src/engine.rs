@@ -216,7 +216,7 @@ pub(crate) struct LaunchTrace {
     string_calls: std::cell::Cell<u64>,
     /// v2: tempo de intrinsic por classe declarante (descritor) — o
     /// balde agregado sozinho não diz QUAIS stubs custam ~5,7 µs.
-    intrinsic_by_class: std::cell::RefCell<std::collections::HashMap<String, (u64, u64)>>,
+    intrinsic_by_class: std::cell::RefCell<rustc_hash::FxHashMap<String, (u64, u64)>>,
 }
 
 impl LaunchTrace {
@@ -240,7 +240,7 @@ pub struct Engine {
     pub heap: Heap,
     pub config: VmConfig,
     /// (classe, campo) → valor
-    pub statics: HashMap<(String, String), Value>,
+    pub statics: rustc_hash::FxHashMap<(String, String), Value>,
     clinit_done: HashSet<String>,
     clinit_running: HashSet<String>,
     /// classes cujo `<clinit>` falhou — JLS 12.4.2: acessos seguintes levantam
@@ -257,7 +257,9 @@ pub struct Engine {
     /// AG-09: cobertura de métodos — chave `(dex_idx << 32) | method_idx`
     /// de cada corpo DEX que chegou a executar neste Engine.
     pub(crate) coverage: HashSet<u64>,
-    pub(crate) frame_labels: Vec<String>,
+    /// (dex_idx, method_idx) de cada frame ativo; o rótulo textual é gerado
+    /// só quando um diagnóstico o lê (`label_of`), sem `format!` por chamada.
+    pub(crate) frame_labels: Vec<(usize, u32)>,
     /// Cooperative green threads (threads.rs)
     pub threads: crate::threads::Threads,
     /// Monitores mantidos (`monitor-enter`/`exit`); só entradas vivas ocupam RAM.
@@ -385,7 +387,7 @@ impl Engine {
             cp: Classpath::new_shared_with_decode(dexes, decode),
             heap: Heap::new(budget),
             config,
-            statics: HashMap::new(),
+            statics: rustc_hash::FxHashMap::default(),
             clinit_done: HashSet::new(),
             clinit_running: HashSet::new(),
             clinit_failed: HashSet::new(),
@@ -895,17 +897,18 @@ impl Engine {
         // Ponto de partida DEX-corrto do invoke-super: a SUPER da classe que
         // DECLARA o frame atual (não `super(mref.class)` — Dalvik Reference).
         // Resolvido aqui onde temos o ClassDef do frame em mãos.
-        let frame_super = {
-            let dex = &self.cp.dexes[dex_idx];
-            let s = dex.type_str(def.superclass_idx).to_string();
+        // `Arc<Dex>` local: o empréstimo da superclasse não prende `self`, então
+        // não há `String` por chamada (antes: um `to_string()` a cada invoke).
+        let dex_rc = self.cp.dexes[dex_idx].clone();
+        let frame_super: Option<&str> = {
+            let s = dex_rc.type_str(def.superclass_idx);
             if s.is_empty() || s == "?" {
                 None
             } else {
                 Some(s)
             }
         };
-        let frame_label = self.method_label(dex_idx, m);
-        self.frame_labels.push(frame_label);
+        self.frame_labels.push((dex_idx, m.method_idx));
         let scope_depth = self.heap.gc_scope_depth();
         if self.gc_frames.is_empty() {
             self.heap.gc_host_enter(true);
@@ -919,7 +922,7 @@ impl Engine {
                 })
                 .collect(),
         );
-        let mut ret = interp::exec_frame(self, dex_idx, frame_super.as_deref(), code.clone(), ins);
+        let mut ret = interp::exec_frame(self, dex_idx, frame_super, code.clone(), ins);
         self.gc_frames.pop();
         self.heap.gc_scope_restore(scope_depth);
         // A guest allocation returned into a Rust host temporary must survive
@@ -1061,9 +1064,14 @@ impl Engine {
     }
 
     pub(super) fn method_label(&self, dex_idx: usize, m: &EncodedMethod) -> String {
-        match self.cp.method_ref(dex_idx, m.method_idx) {
+        self.label_of(dex_idx, m.method_idx)
+    }
+
+    /// Rótulo `Classe->nome(proto)` de um método (mesmo texto de `method_label`).
+    pub(crate) fn label_of(&self, dex_idx: usize, method_idx: u32) -> String {
+        match self.cp.method_ref(dex_idx, method_idx) {
             Ok(r) => format!("{}->{}{}", r.class, r.name, r.proto),
-            Err(_) => format!("method@{}", m.method_idx),
+            Err(_) => format!("method@{method_idx}"),
         }
     }
 
@@ -1442,13 +1450,12 @@ impl Engine {
         decl_class: &str,
         fname: &str,
     ) -> Result<Option<String>, VmExit> {
+        // Fast path (sem alocar): receptor exatamente da classe declarante.
         let recv_class = match self.heap.class_of(recv) {
+            Ok(c) if c == decl_class => return Ok(None),
             Ok(c) => c.to_string(),
             Err(_) => return Ok(None),
         };
-        if recv_class == decl_class {
-            return Ok(None);
-        }
         let mut cur = recv_class;
         for _ in 0..16 {
             if cur == decl_class {
@@ -1469,6 +1476,19 @@ impl Engine {
     /// Classes de plataforma (sem DEX) respondem `false`: elas não participam
     /// do heap por campo e não criam ambiguidade de nome.
     fn class_declares_field(&mut self, class_desc: &str, fname: &str) -> Result<bool, VmExit> {
+        if let Some(hit) = self.cp.declares_field_memo_get(class_desc, fname) {
+            return Ok(hit);
+        }
+        let out = self.class_declares_field_uncached(class_desc, fname)?;
+        self.cp.declares_field_memo_put(class_desc, fname, out);
+        Ok(out)
+    }
+
+    fn class_declares_field_uncached(
+        &mut self,
+        class_desc: &str,
+        fname: &str,
+    ) -> Result<bool, VmExit> {
         let Some((dex_idx, def)) = self.cp.find_class(class_desc) else {
             return Ok(false);
         };
@@ -1480,8 +1500,8 @@ impl Engine {
             if f.field_idx == rd_dex::strings::NO_INDEX {
                 continue;
             }
-            if let Ok((_, name, _)) = self.cp.field_ref(dex_idx, f.field_idx) {
-                if name == fname {
+            if let Ok(fr) = self.cp.field_ref_shared(dex_idx, f.field_idx) {
+                if fr.1 == fname {
                     return Ok(true);
                 }
             }

@@ -374,14 +374,21 @@ fn b64(data: &[u8]) -> String {
     out
 }
 fn unb64(s: &str) -> Vec<u8> {
-    let mut out = Vec::new();
+    // Tabela de 256 entradas (antes: busca linear de 64 bytes por caractere).
+    let mut table = [u8::MAX; 256];
+    for (i, &b) in B64.iter().enumerate() {
+        table[b as usize] = i as u8;
+    }
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
     let mut buf = 0u32;
     let mut bits = 0;
     for ch in s.bytes() {
-        let Some(v) = B64.iter().position(|&b| b == ch) else {
+        let v = table[ch as usize];
+        if v == u8::MAX {
             continue;
-        };
-        buf = (buf << 6) | v as u32;
+        }
+        let v = v as u32;
+        buf = (buf << 6) | v;
         bits += 6;
         if bits >= 8 {
             bits -= 8;

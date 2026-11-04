@@ -69,8 +69,8 @@ pub(crate) fn instance_intrinsic(
     // `rd_trace`. Uncaught-exception logging prints it.
     if name == "<init>" && vm.config.exception_trace {
         let mut trace = String::new();
-        for label in vm.frame_labels.iter().rev().take(16) {
-            let _ = write!(&mut trace, "\n  at {label}");
+        for &(d, mi) in vm.frame_labels.iter().rev().take(16) {
+            let _ = write!(&mut trace, "\n  at {}", vm.label_of(d, mi));
         }
         let t = crate::intrinsics::alloc_string(vm, trace)?;
         put(vm, recv, "rd_trace", Value::Obj(t))?;

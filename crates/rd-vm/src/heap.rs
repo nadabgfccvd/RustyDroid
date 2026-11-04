@@ -76,6 +76,11 @@ pub struct OomError {
     pub budget: usize,
 }
 
+thread_local! {
+    /// `Arc<str>` único de `java/lang/String`, para `class_arc_of` sem alocar.
+    static STRING_CLASS: std::sync::Arc<str> = std::sync::Arc::from("Ljava/lang/String;");
+}
+
 #[derive(Debug, Default)]
 pub struct Heap {
     budget: usize,
@@ -88,7 +93,7 @@ pub struct Heap {
     /// Slots freed by the GC, reused LIFO by `alloc` (see `gc.rs`).
     free: Vec<ObjRef>,
     young: Vec<bool>,
-    remembered: std::collections::HashSet<ObjRef>,
+    remembered: rustc_hash::FxHashSet<ObjRef>,
     // Some = host scope (pin allocations); None = guest execution.
     gc_scopes: Vec<Option<Vec<ObjRef>>>,
     births: Vec<u64>,
@@ -96,7 +101,7 @@ pub struct Heap {
     existing_cutoffs: Vec<(usize, u64)>,
     /// Interned class descriptors and field names (`intern`). Names are never
     /// removed: the set is bounded by the classes and fields the app touches.
-    names: std::collections::HashSet<Arc<str>>,
+    names: rustc_hash::FxHashSet<Arc<str>>,
 }
 
 impl Heap {
@@ -505,6 +510,17 @@ impl Heap {
             HeapObj::Instance { class, .. } => Ok(class),
             HeapObj::Str(_) => Ok("Ljava/lang/String;"),
             HeapObj::Array { elem_class, .. } => Ok(elem_class),
+        }
+    }
+
+    /// Como [`Heap::class_of`], mas devolve um `Arc<str>` (clone barato para
+    /// instâncias e strings). O dispatch de invoke usa isto para não alocar um
+    /// `String` por chamada.
+    pub fn class_arc_of(&self, r: ObjRef) -> Result<std::sync::Arc<str>, String> {
+        match self.get(r)? {
+            HeapObj::Instance { class, .. } => Ok(class.clone()),
+            HeapObj::Str(_) => Ok(STRING_CLASS.with(std::sync::Arc::clone)),
+            HeapObj::Array { elem_class, .. } => Ok(std::sync::Arc::from(elem_class.as_str())),
         }
     }
 
