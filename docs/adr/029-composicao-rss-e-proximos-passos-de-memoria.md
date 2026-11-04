@@ -77,9 +77,13 @@ instruções.
 
 Nesta rodada, não se altera representação. Próximos passos, em ordem:
 
-1. Abrir o APK do caminho de execução com o leitor paginado (ganho estimado ~12 MB) e
-   medir o primeiro quadro antes e depois.
+1. ~~Abrir o APK com leitor paginado~~: medido, sem ganho (172 MB contra 169 MB); revertido.
 0. Reduzir a chave do `resolve_cache` (~4,9 MB).
+
+**Resultado da ação 1 (medido, sem ganho):** `Apk::open_paged` no caminho da CLI deu
+pico de 172 168 KB contra 169 252 KB da v5 (mesmo modo, `MALLOC_ARENA_MAX=1`, debug).
+Saída idêntica (39 082 bytes). A mudança foi revertida. A estimativa de 12 MB foi
+refutada pela medição.
 2. Medir duas sessões no mesmo processo com o mesmo APK, com e sem `DexBacking`
    compartilhado. Esse número decide se o alvo de sessões é alcançável por
    compartilhamento.
