@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793765128344,
+  "lastUpdate": 1793766334780,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3095,6 +3095,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3559,
             "range": "± 14",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e464fe7e4f24a1c750b6932d6310fbe88ae1de0e",
+          "message": "docs(memory): ADR 030 — custo marginal de sessões e caminho para o alvo (#526)\n\n* docs(memory): ADR 030 — custo marginal de sessões e caminho para o alvo; ADR 029 com resultados\n\nMedido no rd mcp (debug): 1 sessão 175 744 KB; 2 sessões 303 748 KB; custo marginal\n≈128 MB por sessão. Alvo de 6 sessões em 200 MB exige ≈33 MB marginal; compartilhamento\nde DEX/APK e layout não bastam sozinhos (estimativas registradas, não medidas).\n\nADR 029: resultado medido da chave do resolve_cache (−4,2 MB médio, duas rodadas\npareadas) e decisão de não descartar o código bruto (Lei 2).\n\nAI usage: medições e texto com assistência de IA; drive.py fora do repositório.\n\n* docs(memory): ADR 030 — build release bloqueado por OOM nesta sandbox\n\nrustc de rd-vm em release morre com ~1,4 GB de RSS (LTO thin/cgu=1, cgu=16 e\ncgu=256 testados). Número de release fica pendente de máquina com mais RAM.\n\n---------\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-04T01:25:05-03:00",
+          "tree_id": "44fa8d50698e533c78d2ea0369d65a81c1085a16",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e464fe7e4f24a1c750b6932d6310fbe88ae1de0e"
+        },
+        "date": 1793766334174,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1835,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1898,
+            "range": "± 23",
             "unit": "ns/iter"
           }
         ]
