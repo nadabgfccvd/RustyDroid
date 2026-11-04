@@ -14,6 +14,7 @@ pub use crate::android_display::{
 };
 
 const STRING: &str = "Ljava/lang/String;";
+const CHAR_SEQUENCE: &str = "Ljava/lang/CharSequence;";
 const SB: &str = "Ljava/lang/StringBuilder;";
 const OBJECT: &str = "Ljava/lang/Object;";
 /// M8 (compat real): primeiro gap de launch do app real org.primftpd 8.2.
@@ -3481,6 +3482,9 @@ fn deque_supported(name: &str, sig: &str) -> bool {
             | ("removeFirst", "()Ljava/lang/Object;")
             | ("removeLast", "()Ljava/lang/Object;")
             | ("pollFirst", "()Ljava/lang/Object;")
+            | ("poll", "()Ljava/lang/Object;")
+            | ("peek", "()Ljava/lang/Object;")
+            | ("element", "()Ljava/lang/Object;")
             | ("pollLast", "()Ljava/lang/Object;")
             | ("getFirst", "()Ljava/lang/Object;")
             | ("getLast", "()Ljava/lang/Object;")
@@ -3613,7 +3617,7 @@ fn deque_intrinsic(
             }
             Ok(Some(elems.pop().expect("não-vazio verificado")))
         }
-        ("pollFirst", _) => {
+        ("pollFirst", _) | ("poll", _) => {
             let elems = list_elems(vm, recv)?;
             Ok(if elems.is_empty() {
                 Some(Value::Null)
@@ -3625,7 +3629,7 @@ fn deque_intrinsic(
             let elems = list_elems(vm, recv)?;
             Ok(Some(elems.pop().unwrap_or(Value::Null)))
         }
-        ("getFirst", _) => {
+        ("getFirst", _) | ("element", _) => {
             let elems = list_elems(vm, recv)?;
             match elems.first() {
                 Some(v) => Ok(Some(v.clone())),
@@ -3639,7 +3643,7 @@ fn deque_intrinsic(
                 None => Err(deque_empty_nse()),
             }
         }
-        ("peekFirst", _) => {
+        ("peekFirst", _) | ("peek", _) => {
             let v = list_elems(vm, recv)?.first().cloned();
             Ok(Some(v.unwrap_or(Value::Null)))
         }
@@ -4260,7 +4264,90 @@ fn call_instance_intrinsic_mref_rooted(
     Ok(None)
 }
 
+/// Entrada do dispatch de métodos de instância de plataforma.
+///
+/// Receivers `java/lang/String` com os métodos quentes `charAt`/`length`
+/// (`String` ou `CharSequence` como mref) vão direto para a implementação
+/// de String: nenhum handler da cadeia abaixo casa esses pares (a cadeia
+/// gateia por classe/nome e o braço de String é o único que os reivindica —
+/// ver `RD_STR_SHADOW`, que verifica isso a cada chamada em builds de validação).
 fn instance_intrinsic_dispatch(
+    vm: &mut Engine,
+    recv_class: &str,
+    mref_class: &str,
+    name: &str,
+    sig: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if recv_class == STRING
+        && (mref_class == STRING || mref_class == CHAR_SEQUENCE)
+        && matches!((name, sig), ("charAt", "(I)C") | ("length", "()I"))
+    {
+        let fast = string_hot_intrinsic(vm, name, recv, args)?;
+        if !shadow_string_checks() {
+            return Ok(fast);
+        }
+        let full =
+            instance_intrinsic_dispatch_full(vm, recv_class, mref_class, name, sig, recv, args)?;
+        if fast != full {
+            panic!("RD_STR_SHADOW mismatch {name}{sig}: fast={fast:?} full={full:?}");
+        }
+        return Ok(full);
+    }
+    instance_intrinsic_dispatch_full(vm, recv_class, mref_class, name, sig, recv, args)
+}
+
+/// `RD_STR_SHADOW=1`: validação — compara o caminho direto com a cadeia completa.
+fn shadow_string_checks() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("RD_STR_SHADOW").is_some())
+}
+
+/// `charAt`/`length` de String, compartilhados entre o caminho direto e o braço do match.
+fn string_hot_intrinsic(
+    vm: &mut Engine,
+    name: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    match name {
+        "length" => string_length(vm, recv),
+        _ => string_char_at(vm, recv, args),
+    }
+}
+
+fn string_length(vm: &mut Engine, recv: crate::heap::ObjRef) -> Result<Option<Value>, VmExit> {
+    let s = vm.heap.as_str(recv)?;
+    // ASCII: 1 byte = 1 UTF-16 unit, sem re-codificar a string a cada chamada.
+    let n = if s.is_ascii() {
+        s.len()
+    } else {
+        s.encode_utf16().count()
+    };
+    Ok(Some(Value::Int(n as i32)))
+}
+
+fn string_char_at(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let s = vm.heap.as_str(recv)?;
+    let idx = args[0].as_int()? as usize;
+    let Some(unit) = utf16_unit_at(s, idx) else {
+        let length = s.encode_utf16().count();
+        return Err(exception(
+            vm,
+            "Ljava/lang/StringIndexOutOfBoundsException;",
+            format!("index {idx}, length {length}"),
+        )
+        .into());
+    };
+    Ok(Some(Value::Int(unit as i32)))
+}
+
+fn instance_intrinsic_dispatch_full(
     vm: &mut Engine,
     recv_class: &str,
     mref_class: &str,
@@ -4784,6 +4871,18 @@ fn instance_intrinsic_dispatch(
     }
     // DEX subclasses of AtomicInteger/AtomicReference (Compose's AtomicInt,
     // …) dispatch through the declaring class: the state field is the same
+    instance_intrinsic_core(vm, recv_class, mref_class, name, sig, recv, args)
+}
+
+fn instance_intrinsic_core(
+    vm: &mut Engine,
+    recv_class: &str,
+    mref_class: &str,
+    name: &str,
+    sig: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
     let recv_class = if mref_class == ATOMIC_INT || mref_class == ATOMIC_REF {
         mref_class
     } else {
@@ -5619,10 +5718,7 @@ fn instance_intrinsic_dispatch(
                 .map_err(crate::err::oom_throwable)?;
             Ok(Some(Value::Null))
         }
-        (STRING, "length", "()I") => {
-            let s = vm.heap.as_str(recv)?;
-            Ok(Some(Value::Int(s.encode_utf16().count() as i32)))
-        }
+        (STRING, "length", "()I") => string_length(vm, recv),
         (STRING, "isEmpty", "()Z") => {
             let s = vm.heap.as_str(recv)?;
             Ok(Some(Value::Int(s.is_empty() as i32)))
@@ -5658,20 +5754,7 @@ fn instance_intrinsic_dispatch(
             }
             Ok(Some(Value::Null))
         }
-        (STRING, "charAt", "(I)C") => {
-            let s = vm.heap.as_str(recv)?;
-            let idx = args[0].as_int()? as usize;
-            let Some(unit) = utf16_unit_at(s, idx) else {
-                let length = s.encode_utf16().count();
-                return Err(exception(
-                    vm,
-                    "Ljava/lang/StringIndexOutOfBoundsException;",
-                    format!("index {idx}, length {length}"),
-                )
-                .into());
-            };
-            Ok(Some(Value::Int(unit as i32)))
-        }
+        (STRING, "charAt", "(I)C") => string_char_at(vm, recv, args),
         (STRING, "hashCode", "()I") => {
             // algoritmo especificado em java.lang.String.hashCode (unidades UTF-16)
             let s = vm.heap.as_str(recv)?;
@@ -6203,14 +6286,62 @@ fn map_entries_via_iteration(
 fn utf16_unit_at(s: &str, index: usize) -> Option<u16> {
     if index < s.len() && s.as_bytes()[..=index].is_ascii() {
         Some(u16::from(s.as_bytes()[index]))
-    } else {
+    } else if s.len() < 64 {
         s.encode_utf16().nth(index)
+    } else {
+        utf16_units_cached(s, index)
     }
+}
+
+thread_local! {
+    /// Último texto longo com prefixo não-ASCII e suas unidades UTF-16. Um
+    /// laço `charAt(i)` sobre a mesma string deixa de decodificar do início a
+    /// cada chamada. A chave é o próprio conteúdo (comparação exata), então
+    /// nunca há resposta de outra string.
+    static UTF16_LAST: std::cell::RefCell<Option<(String, Vec<u16>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn utf16_units_cached(s: &str, index: usize) -> Option<u16> {
+    UTF16_LAST.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let hit = matches!(slot.as_ref(), Some((src, _)) if src == s);
+        if !hit {
+            *slot = Some((s.to_string(), s.encode_utf16().collect()));
+        }
+        slot.as_ref()
+            .and_then(|(_, units)| units.get(index).copied())
+    })
 }
 
 #[cfg(test)]
 mod utf16_optimization_tests {
     use super::*;
+
+    #[test]
+    fn long_text_char_at_cache_matches_reference_and_tracks_string_changes() {
+        let a: String = "ação 🌳 Ω ".repeat(40);
+        let b: String = "abc".repeat(40);
+        let ra: Vec<u16> = a.encode_utf16().collect();
+        let rb: Vec<u16> = b.encode_utf16().collect();
+        for index in (0..ra.len() + 2).chain([usize::MAX]) {
+            assert_eq!(
+                utf16_unit_at(&a, index),
+                ra.get(index).copied(),
+                "a {index}"
+            );
+            assert_eq!(
+                utf16_unit_at(&b, index),
+                rb.get(index).copied(),
+                "b {index}"
+            );
+            assert_eq!(
+                utf16_unit_at(&a, index),
+                ra.get(index).copied(),
+                "a again {index}"
+            );
+        }
+    }
 
     #[test]
     fn allocation_free_char_at_matches_all_utf16_units_and_invalid_indices() {

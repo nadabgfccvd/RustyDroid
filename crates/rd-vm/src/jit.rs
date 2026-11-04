@@ -213,14 +213,14 @@ fn format_fuel_error(vm: &Engine, top_label: Option<&str>) -> VmExit {
         stack.push_str(lbl);
         shown += 1;
     }
-    for l in vm
+    for &(d, mi) in vm
         .frame_labels
         .iter()
         .rev()
         .take(24usize.saturating_sub(shown))
     {
         stack.push_str("\n  at ");
-        stack.push_str(l);
+        stack.push_str(&vm.label_of(d, mi));
         shown += 1;
     }
     let total = vm.frame_labels.len() + usize::from(top_label.is_some());

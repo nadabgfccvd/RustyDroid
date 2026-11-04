@@ -224,8 +224,9 @@ fn idx_oob(msg: impl Into<String>) -> VmExit {
 fn assertion(msg: impl Into<String>) -> VmExit {
     throw("Ljava/lang/AssertionError;", msg)
 }
-fn class_of(vm: &Engine, r: ObjRef) -> String {
-    vm.heap.class_of(r).unwrap_or("").to_string()
+/// Classe do objeto como `&str` emprestado do heap (sem alocar a cada gate).
+fn class_of(vm: &Engine, r: ObjRef) -> &str {
+    vm.heap.class_of(r).unwrap_or("")
 }
 fn obj(v: Option<&Value>) -> Option<ObjRef> {
     match v {
@@ -1667,7 +1668,7 @@ fn keychain_static(
             if let Some(issuers) = args.get(3) {
                 for issuer in array_elems(vm, Some(issuers)) {
                     if let Value::Obj(r) = issuer {
-                        let c = class_of(vm, r);
+                        let c = class_of(vm, r).to_string();
                         if c != "Ljavax/security/auth/x500/X500Principal;" {
                             let shown = crate::intrinsics::object_to_string(vm, r)?;
                             return Err(iae(format!(
@@ -5884,7 +5885,7 @@ fn type_reference_instance(
         }
         "equals" => bool_value(match oarg(args, 0) {
             Some(o) => {
-                (vm.cp.is_subtype(&class_of(vm, o), TYPE_REFERENCE)
+                (vm.cp.is_subtype(class_of(vm, o), TYPE_REFERENCE)
                     || class_of(vm, o) == TYPE_REFERENCE)
                     && type_references_equal(vm, &Value::Obj(recv), &Value::Obj(o))
             }
@@ -5934,7 +5935,7 @@ fn make_native_key(
 }
 fn native_key_of(vm: &Engine, v: &Value) -> Option<ObjRef> {
     let r = obj(Some(v))?;
-    let class = class_of(vm, r);
+    let class = class_of(vm, r).to_string();
     if class == CAMERA_METADATA_NATIVE_KEY {
         Some(r)
     } else if matches!(
@@ -7408,7 +7409,7 @@ fn anim_type_desc(vm: &Engine, value: &Value) -> String {
         Value::Float(_) => "F".to_string(),
         Value::Long(_) => "J".to_string(),
         Value::Double(_) => "D".to_string(),
-        Value::Obj(r) => class_of(vm, *r),
+        Value::Obj(r) => class_of(vm, *r).to_string(),
         _ => "Ljava/lang/Object;".to_string(),
     }
 }
@@ -7575,7 +7576,7 @@ fn anim_keyframe_kind(vm: &Engine, kf: ObjRef) -> i32 {
     if kind != 0 {
         return kind;
     }
-    match class_of(vm, kf).as_str() {
+    match class_of(vm, kf) {
         KEYFRAME_INT => ANIM_KIND_INT,
         KEYFRAME_FLOAT => ANIM_KIND_FLOAT,
         _ => ANIM_KIND_OBJECT,
@@ -7804,7 +7805,7 @@ fn anim_evaluate_interval(
     let kind = field_int(vm, holder, "rd_kind");
     let evaluator = get(vm, holder, "rd_evaluator");
     if let Value::Obj(evaluator_ref) = evaluator {
-        let evaluator_class = class_of(vm, evaluator_ref);
+        let evaluator_class = class_of(vm, evaluator_ref).to_string();
         let result = match evaluator_class.as_str() {
             INT_EVALUATOR => {
                 let s = anim_number_int(vm, start)
@@ -8072,7 +8073,7 @@ fn anim_handler_process(vm: &mut Engine, frame_time_ms: i64) -> Result<(), VmExi
                 continue;
             }
         }
-        let callback_class = class_of(vm, callback);
+        let callback_class = class_of(vm, callback).to_string();
         if vm.cp.is_subtype(&callback_class, VALUE_ANIMATOR) {
             // ValueAnimator.doAnimationFrame is final. Calling the host
             // state machine directly also works for DEX subclasses, whose
@@ -8126,7 +8127,7 @@ fn anim_invoke_lifecycle_listener(
     animator: ObjRef,
     reverse: Option<bool>,
 ) -> Result<(), VmExit> {
-    let class = class_of(vm, listener);
+    let class = class_of(vm, listener).to_string();
     if matches!(
         class.as_str(),
         ANIMATOR_LISTENER | ANIMATOR_PAUSE_LISTENER | ANIMATOR_LISTENER_ADAPTER
@@ -8310,7 +8311,7 @@ fn anim_init_animator(vm: &mut Engine, r: ObjRef) -> Result<(), VmExit> {
     anim_put_bool(vm, r, "rd_auto_cancel", false)
 }
 fn anim_is_object_animator(vm: &Engine, r: ObjRef) -> bool {
-    let class = class_of(vm, r);
+    let class = class_of(vm, r).to_string();
     class == OBJECT_ANIMATOR || vm.cp.is_subtype(&class, OBJECT_ANIMATOR)
 }
 fn anim_method_name(prefix: &str, property_name: &str) -> Option<String> {
@@ -8466,7 +8467,7 @@ fn anim_pvh_apply(vm: &mut Engine, holder: ObjRef, target: ObjRef) -> Result<(),
     let animated = get(vm, holder, "rd_animated");
     let property = get(vm, holder, "rd_property");
     if let Value::Obj(property_ref) = property {
-        let class = class_of(vm, property_ref);
+        let class = class_of(vm, property_ref).to_string();
         if kind == ANIM_KIND_INT && vm.cp.is_subtype(&class, ANDROID_INT_PROPERTY) {
             if let Some(value) = anim_number_int(vm, &animated) {
                 match vm.invoke_instance(
@@ -8942,7 +8943,7 @@ fn anim_auto_cancel_based_on(vm: &mut Engine, animator: ObjRef) -> Result<(), Vm
     Ok(())
 }
 fn anim_clone_animator(vm: &mut Engine, animator: ObjRef) -> Result<ObjRef, VmExit> {
-    let class = class_of(vm, animator);
+    let class = class_of(vm, animator).to_string();
     let clone = alloc_obj(vm, &class, Vec::new())?;
     anim_init_animator(vm, clone)?;
     for field in [
@@ -10136,7 +10137,7 @@ fn android_property_instance(
         ("getType", "()Ljava/lang/Class;") => get(vm, recv, "rd_type"),
         ("isReadOnly", "()Z") => Value::Int(0),
         ("set", "(Ljava/lang/Object;Ljava/lang/Object;)V") => {
-            let runtime_class = class_of(vm, recv);
+            let runtime_class = class_of(vm, recv).to_string();
             let target = args.first().cloned().unwrap_or(Value::Null);
             let new_value = args.get(1).cloned().unwrap_or(Value::Null);
             if vm.cp.is_subtype(&runtime_class, ANDROID_INT_PROPERTY) {
@@ -13240,7 +13241,7 @@ fn af_fill_response_builder_instance(
 
 fn af_is_subtype(vm: &Engine, value: &Value, expected: &str) -> bool {
     match value {
-        Value::Obj(r) => vm.cp.is_subtype(&class_of(vm, *r), expected),
+        Value::Obj(r) => vm.cp.is_subtype(class_of(vm, *r), expected),
         _ => false,
     }
 }
@@ -14791,7 +14792,7 @@ fn tr_ensure_transition(vm: &mut Engine, r: ObjRef) -> Result<(), VmExit> {
     if field_bool(vm, r, "rdTransitionInit") {
         return Ok(());
     }
-    let class = class_of(vm, r);
+    let class = class_of(vm, r).to_string();
     let name = tr_binary_name(&class);
     put(vm, r, "rdTransitionInit", Value::Int(1))?;
     let name_value = jstr(vm, name)?;
@@ -14955,7 +14956,7 @@ fn transition_values_instance(
             let Some(other) = obj(args.first()) else {
                 return Ok(Some(Value::Int(0)));
             };
-            if !vm.cp.is_subtype(&class_of(vm, other), TRANSITION_VALUES) {
+            if !vm.cp.is_subtype(class_of(vm, other), TRANSITION_VALUES) {
                 return Ok(Some(Value::Int(0)));
             }
             tr_ensure_values(vm, other)?;
@@ -15197,7 +15198,7 @@ fn tr_capture_propagation_values(
 ) -> Result<(), VmExit> {
     tr_ensure_transition(vm, transition)?;
     let is_set = {
-        let class = class_of(vm, transition);
+        let class = class_of(vm, transition).to_string();
         vm.cp.is_subtype(&class, TRANSITION_SET)
     };
     if let Some(propagation) = field_obj(vm, transition, "mPropagation") {
@@ -15323,12 +15324,12 @@ fn tr_capture_hierarchy(
     }
     let parent = tr_view_parent(vm, view)?;
     if let Some(parent_ref) = obj(Some(&parent)) {
-        let parent_class = class_of(vm, parent_ref);
+        let parent_class = class_of(vm, parent_ref).to_string();
         if vm.cp.is_subtype(&parent_class, "Landroid/view/ViewGroup;") {
             tr_capture_one(vm, transition, view, start, maps)?;
         }
     }
-    let view_class = class_of(vm, view);
+    let view_class = class_of(vm, view).to_string();
     if vm.cp.is_subtype(&view_class, "Landroid/view/ViewGroup;") {
         if tr_list_contains(
             vm,
@@ -15647,7 +15648,7 @@ fn tr_animator_set_duration(
     animator: ObjRef,
     duration: i64,
 ) -> Result<(), VmExit> {
-    let class = class_of(vm, animator);
+    let class = class_of(vm, animator).to_string();
     if vm.cp.is_subtype(&class, VALUE_ANIMATOR) {
         if duration < 0 {
             return Err(iae(format!(
@@ -15666,7 +15667,7 @@ fn tr_animator_set_duration(
     Ok(())
 }
 fn tr_animator_get_start_delay(vm: &mut Engine, animator: ObjRef) -> Result<i64, VmExit> {
-    let class = class_of(vm, animator);
+    let class = class_of(vm, animator).to_string();
     if vm.cp.is_subtype(&class, VALUE_ANIMATOR) {
         return Ok(anim_long_or(vm, animator, "rd_start_delay", 0));
     }
@@ -15683,7 +15684,7 @@ fn tr_animator_set_start_delay(
     animator: ObjRef,
     delay: i64,
 ) -> Result<(), VmExit> {
-    let class = class_of(vm, animator);
+    let class = class_of(vm, animator).to_string();
     if vm.cp.is_subtype(&class, VALUE_ANIMATOR) {
         put(vm, animator, "rd_start_delay", Value::Long(delay.max(0)))?;
         return Ok(());
@@ -15696,7 +15697,7 @@ fn tr_animator_set_interpolator(
     animator: ObjRef,
     interpolator: Value,
 ) -> Result<(), VmExit> {
-    let class = class_of(vm, animator);
+    let class = class_of(vm, animator).to_string();
     if vm.cp.is_subtype(&class, VALUE_ANIMATOR) {
         put(vm, animator, "rd_interpolator", interpolator)?;
         return Ok(());
@@ -15777,7 +15778,7 @@ fn tr_set_children(vm: &Engine, transition: ObjRef) -> Vec<ObjRef> {
         .collect()
 }
 fn tr_is_set(vm: &Engine, transition: ObjRef) -> bool {
-    let class = class_of(vm, transition);
+    let class = class_of(vm, transition).to_string();
     vm.cp.is_subtype(&class, TRANSITION_SET)
 }
 fn tr_run_animators(vm: &mut Engine, transition: ObjRef) -> Result<(), VmExit> {
@@ -15863,7 +15864,7 @@ fn tr_is_transition_required(
     start: Option<ObjRef>,
     end: Option<ObjRef>,
 ) -> Result<bool, VmExit> {
-    let class = class_of(vm, transition);
+    let class = class_of(vm, transition).to_string();
     if vm.cp.is_subtype(&class, TRANSITION_VISIBILITY) && !tr_is_set(vm, transition) {
         return tr_visibility_is_required(vm, start, end);
     }
@@ -16710,7 +16711,7 @@ fn tr_rect_values(vm: &Engine, value: &Value) -> Option<[i32; 4]> {
     let rect = obj(Some(value))?;
     if !vm
         .cp
-        .is_subtype(&class_of(vm, rect), "Landroid/graphics/Rect;")
+        .is_subtype(class_of(vm, rect), "Landroid/graphics/Rect;")
     {
         return None;
     }
@@ -18217,7 +18218,7 @@ fn transition_instance(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     tr_ensure_transition(vm, recv)?;
-    let class = class_of(vm, recv);
+    let class = class_of(vm, recv).to_string();
     let is_set = vm.cp.is_subtype(&class, TRANSITION_SET);
     let is_visibility = vm.cp.is_subtype(&class, TRANSITION_VISIBILITY);
     let is_fade = vm.cp.is_subtype(&class, TRANSITION_FADE);
@@ -25588,7 +25589,7 @@ pub(crate) fn partial57_instance(
     // through a test harness class label that is not one of the exact class
     // constants above. Fall back based on the receiver's actual class when it
     // is one of this batch's classes.
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p57_class(&actual) {
         return partial57_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -26024,7 +26025,7 @@ fn p49_value_array_equal(vm: &Engine, a: &Value, b: &Value) -> bool {
 fn p49_other(vm: &Engine, recv: ObjRef, args: &[Value], class: &str) -> Option<ObjRef> {
     match args.first() {
         Some(Value::Obj(r)) if *r != recv || true => {
-            if vm.cp.is_subtype(&class_of(vm, *r), class) {
+            if vm.cp.is_subtype(class_of(vm, *r), class) {
                 Some(*r)
             } else {
                 None
@@ -28645,7 +28646,7 @@ fn p49_sound_trigger_instance(
                     if !p49_sound_model_equal(vm, recv, other)? {
                         return Ok(Some(bool_value(false)));
                     }
-                    if !vm.cp.is_subtype(&class_of(vm, other), P49_KEYPHRASE_SOUND_MODEL) {
+                    if !vm.cp.is_subtype(class_of(vm, other), P49_KEYPHRASE_SOUND_MODEL) {
                         return Ok(Some(bool_value(false)));
                     }
                     Ok(Some(bool_value(p49_value_array_equal_deep(
@@ -30425,7 +30426,7 @@ fn p49_mac_long(vm: &Engine, recv: ObjRef) -> i64 {
 
 fn p49_mac_long_from_obj_value(vm: &Engine, value: &Value) -> Option<i64> {
     match value {
-        Value::Obj(r) if vm.cp.is_subtype(&class_of(vm, *r), P49_MAC_ADDRESS) => {
+        Value::Obj(r) if vm.cp.is_subtype(class_of(vm, *r), P49_MAC_ADDRESS) => {
             Some(p49_mac_long(vm, *r))
         }
         _ => None,
@@ -32055,7 +32056,7 @@ pub(crate) fn partial49_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p49_class(&actual) {
         return partial49_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -33800,7 +33801,7 @@ pub(crate) fn partial41_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p41_class(&actual) {
         return partial41_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -35368,7 +35369,7 @@ pub(crate) fn partial35_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p35_class(&actual) {
         return partial35_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -37415,7 +37416,7 @@ pub(crate) fn partial35b_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p35b_class(&actual) {
         return partial35b_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -38312,7 +38313,7 @@ fn p35c_location_instance(
             if other == recv {
                 return Ok(Some(Value::Int(1)));
             }
-            if !vm.cp.is_subtype(&class_of(vm, other), P35C_LOCATION) {
+            if !vm.cp.is_subtype(class_of(vm, other), P35C_LOCATION) {
                 return Ok(Some(Value::Int(0)));
             }
             let mask = p35c_location_mask(vm, recv);
@@ -38701,7 +38702,7 @@ fn p35c_slice_spec_instance(
             let Some(other) = oarg(args, 0) else {
                 return Ok(Some(Value::Int(0)));
             };
-            if !vm.cp.is_subtype(&class_of(vm, other), P35C_SLICE_SPEC) {
+            if !vm.cp.is_subtype(class_of(vm, other), P35C_SLICE_SPEC) {
                 return Ok(Some(Value::Int(0)));
             }
             if !matches!(get(vm, recv, "mType"), Value::Obj(_)) {
@@ -38737,7 +38738,7 @@ fn p35c_slice_spec_instance(
 fn p35c_cast(vm: &Engine, value: Value, expected: &str) -> Result<Value, VmExit> {
     match &value {
         Value::Null => Ok(value),
-        Value::Obj(reference) if vm.cp.is_subtype(&class_of(vm, *reference), expected) => Ok(value),
+        Value::Obj(reference) if vm.cp.is_subtype(class_of(vm, *reference), expected) => Ok(value),
         _ => Err(throw("Ljava/lang/ClassCastException;", "")),
     }
 }
@@ -38754,7 +38755,7 @@ fn p35c_slice_action_part(
     let Value::Obj(pair) = payload else {
         return Err(npe(""));
     };
-    if !vm.cp.is_subtype(&class_of(vm, pair), "Landroid/util/Pair;") {
+    if !vm.cp.is_subtype(class_of(vm, pair), "Landroid/util/Pair;") {
         return Err(throw("Ljava/lang/ClassCastException;", ""));
     }
     p35c_cast(vm, get(vm, pair, field), expected)
@@ -39304,7 +39305,7 @@ pub(crate) fn partial35c_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p35c_class(&actual) {
         return partial35c_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -39823,7 +39824,7 @@ fn p35d_gsm_cell_location_instance(
             // AOSP catches the ClassCastException from its cast.
             if !vm
                 .cp
-                .is_subtype(&class_of(vm, other), P35D_GSM_CELL_LOCATION)
+                .is_subtype(class_of(vm, other), P35D_GSM_CELL_LOCATION)
             {
                 return Ok(Some(Value::Int(0)));
             }
@@ -39887,7 +39888,7 @@ pub(crate) fn partial35d_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p35d_class(&actual) {
         return partial35d_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -40732,7 +40733,7 @@ pub(crate) fn partial35e_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p35e_class(&actual) {
         return partial35e_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -41835,7 +41836,7 @@ pub(crate) fn partial36a_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p36a_class(&actual) {
         return partial36a_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -41972,7 +41973,7 @@ fn p36b_camera_size_instance(
                 return Ok(Some(Value::Int(0)));
             };
             Value::Int(
-                (vm.cp.is_subtype(&class_of(vm, other), P36B_CAMERA_SIZE)
+                (vm.cp.is_subtype(class_of(vm, other), P36B_CAMERA_SIZE)
                     && field_int(vm, recv, "width") == field_int(vm, other, "width")
                     && field_int(vm, recv, "height") == field_int(vm, other, "height"))
                     as i32,
@@ -42005,7 +42006,7 @@ fn p36b_camera_area_instance(
             let Some(other) = oarg(args, 0) else {
                 return Ok(Some(Value::Int(0)));
             };
-            if !vm.cp.is_subtype(&class_of(vm, other), P36B_CAMERA_AREA) {
+            if !vm.cp.is_subtype(class_of(vm, other), P36B_CAMERA_AREA) {
                 return Ok(Some(Value::Int(0)));
             }
             let rect = get(vm, recv, "rect");
@@ -42158,7 +42159,7 @@ pub(crate) fn partial36b_instance(
             }
         }
     }
-    let actual = class_of(vm, recv);
+    let actual = class_of(vm, recv).to_string();
     if actual != recv_class && actual != mref_class && p36b_class(&actual) {
         return partial36b_instance_for_class(vm, &actual, name, sig, recv, args);
     }
@@ -44068,7 +44069,7 @@ fn p36d_bt_device_instance(
             let Some(other) = oarg(args, 0) else {
                 return Ok(Some(Value::Int(0)));
             };
-            if !vm.cp.is_subtype(&class_of(vm, other), P36D_BT_DEVICE) {
+            if !vm.cp.is_subtype(class_of(vm, other), P36D_BT_DEVICE) {
                 Value::Int(0)
             } else {
                 let address = get(vm, recv, "mAddress");
@@ -46096,7 +46097,7 @@ fn p36e_media_description_instance(
         ("equals", "(Ljava/lang/Object;)Z") => {
             let other = match p36a_value(args, 0) {
                 Value::Obj(other)
-                    if vm.cp.is_subtype(&class_of(vm, other), P36E_MEDIA_DESCRIPTION) =>
+                    if vm.cp.is_subtype(class_of(vm, other), P36E_MEDIA_DESCRIPTION) =>
                 {
                     other
                 }
@@ -46584,9 +46585,7 @@ fn p36e_media_metadata_instance(
                 Value::Obj(other) if other == recv => {
                     return Ok(Some(Value::Int(1)));
                 }
-                Value::Obj(other)
-                    if vm.cp.is_subtype(&class_of(vm, other), P36E_MEDIA_METADATA) =>
-                {
+                Value::Obj(other) if vm.cp.is_subtype(class_of(vm, other), P36E_MEDIA_METADATA) => {
                     other
                 }
                 _ => return Ok(Some(Value::Int(0))),
@@ -46776,7 +46775,7 @@ fn p36e_media_metadata_builder_instance(
                     };
                     if !vm
                         .cp
-                        .is_subtype(&class_of(vm, bitmap), "Landroid/graphics/Bitmap;")
+                        .is_subtype(class_of(vm, bitmap), "Landroid/graphics/Bitmap;")
                     {
                         continue;
                     }
@@ -47231,7 +47230,7 @@ fn p36e_queue_item_instance(
         }
         ("equals", "(Ljava/lang/Object;)Z") => {
             let other = match p36a_value(args, 0) {
-                Value::Obj(other) if vm.cp.is_subtype(&class_of(vm, other), P36E_QUEUE_ITEM) => {
+                Value::Obj(other) if vm.cp.is_subtype(class_of(vm, other), P36E_QUEUE_ITEM) => {
                     other
                 }
                 _ => return Ok(Some(Value::Int(0))),
@@ -48210,7 +48209,7 @@ fn p36e_audio_effect_descriptor_instance(
                 }
                 Value::Obj(other)
                     if vm.cp
-                        .is_subtype(&class_of(vm, other), P36E_AUDIO_EFFECT_DESCRIPTOR) =>
+                        .is_subtype(class_of(vm, other), P36E_AUDIO_EFFECT_DESCRIPTOR) =>
                 {
                     other
                 }
@@ -51905,7 +51904,7 @@ fn p36h_is_inet4(vm: &Engine, value: Option<&Value>) -> bool {
     match value {
         Some(Value::Obj(r)) => vm
             .cp
-            .is_subtype(&class_of(vm, *r), "Ljava/net/Inet4Address;"),
+            .is_subtype(class_of(vm, *r), "Ljava/net/Inet4Address;"),
         _ => false,
     }
 }
@@ -51914,7 +51913,7 @@ fn p36h_is_inet6(vm: &Engine, value: Option<&Value>) -> bool {
     match value {
         Some(Value::Obj(r)) => vm
             .cp
-            .is_subtype(&class_of(vm, *r), "Ljava/net/Inet6Address;"),
+            .is_subtype(class_of(vm, *r), "Ljava/net/Inet6Address;"),
         _ => false,
     }
 }
