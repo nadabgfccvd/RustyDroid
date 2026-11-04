@@ -80,6 +80,12 @@ Nesta rodada, não se altera representação. Próximos passos, em ordem:
 1. ~~Abrir o APK com leitor paginado~~: medido, sem ganho (172 MB contra 169 MB); revertido.
 0. Reduzir a chave do `resolve_cache` (~4,9 MB).
 
+**Resultado da ação 0 (medido):** chave do `resolve_cache` com `Arc<str>` de um
+interner por `Classpath` (PR #525). Pico com `rd app shot` (debug, `MALLOC_ARENA_MAX=1`,
+dois pares de execuções alternadas): base 169 216 e 165 012 KB (média 167 114); mudança
+163 156 e 162 680 KB (média 162 918). Redução média de 4,2 MB (−2,5%), menor que a
+estimativa. Captura idêntica.
+
 **Resultado da ação 1 (medido, sem ganho):** `Apk::open_paged` no caminho da CLI deu
 pico de 172 168 KB contra 169 252 KB da v5 (mesmo modo, `MALLOC_ARENA_MAX=1`, debug).
 Saída idêntica (39 082 bytes). A mudança foi revertida. A estimativa de 12 MB foi
@@ -87,7 +93,13 @@ refutada pela medição.
 2. Medir duas sessões no mesmo processo com o mesmo APK, com e sem `DexBacking`
    compartilhado. Esse número decide se o alvo de sessões é alcançável por
    compartilhamento.
-3. Descartar `CodeItem::insns` no caminho da VM (≈1 MB), se o golden continuar verde.
+
+**Resultado da ação 2 (medido, ADR 030):** `rd mcp` com 1 sessão: pico 175 744 KB; com 2
+sessões: 303 748 KB. Custo marginal da 2ª sessão ≈ 128 MB. O alvo de 6 sessões em 200 MB
+não é atingível só com compartilhamento; ver ADR 030.
+3. ~~Descartar `CodeItem::insns` no caminho da VM~~: não feito. O código bruto é a
+   cópia exigida pela Lei 2 do repositório ("nada se perde"); o ganho estimado (≈1 MB)
+   está abaixo do ruído de medição (±2,5%).
 4. Só depois avaliar layout de objetos e decodificação sob demanda, em ADR próprio.
 
 ## Consequências
