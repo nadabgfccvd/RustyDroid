@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793738274914,
+  "lastUpdate": 1793754661195,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -2987,6 +2987,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3243,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f70bc47197fe5fab1493a2c8b9527a5faed91e1",
+          "message": "perf(vm): memória compacta — Value 16 bytes, nomes internados, Insn menor (ADR 028) (#523)\n\n- Value::StrPlaceholder(Box<String>): Value de 24 para 16 bytes.\n- HeapObj::Instance usa Arc<str> para classe e nomes de campo, internados no\n  Heap (Heap::intern); free_slot reutiliza o nome do tombstone.\n- Kind::Payload(Box<Payload>) com Kind::payload(): Insn de 56 para 24 bytes,\n  entrada decodificada de 64 para 32.\n- rd-cli: caminho de execução usa Dex::parse_unverified (como o MCP).\n- RD_MEM_REPORT=1 no rd app shot: contadores do heap e do código decodificado.\n\nPrimeiro quadro do F-Droid: pico de RSS 196 096 -> 163 808 KB (-16,5%, debug),\nimagem idêntica. Medidas e limites no ADR 028 e em docs/gc.md.\n\nTestes: rd-dex lib 104 ok; rd-vm (lib + integração) 944 ok; golden VM 150/150\n(JDK 21); fdroid_oncreate_e2e 2 ok; clippy -D warnings limpo.\n\nAI usage: implementação e medições com assistência de IA; validado localmente.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-03T22:10:17-03:00",
+          "tree_id": "1ed712e4bf3528a4bb26ed522d5c166e2e0b2152",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/2f70bc47197fe5fab1493a2c8b9527a5faed91e1"
+        },
+        "date": 1793754660749,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3519,
+            "range": "± 78",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3351,
+            "range": "± 19",
             "unit": "ns/iter"
           }
         ]
