@@ -104,8 +104,8 @@ stderr). Para reduzir a fragmentação do malloc em execuções longas, defina
 `MALLOC_ARENA_MAX=1` no ambiente: a VM roda numa thread só.
 
 Composição da memória viva em malloc no mesmo quadro (amostrador `LD_PRELOAD`, fora do
-repositório; bytes pedidos, não residentes): buffers de DEX ~14 MB, instruções
-decodificadas ~11 MB, índice de classes ~8 MB, `Vec<Value>` ~6,5 MB, índices de ids
-~7 MB, demais caches e regex estáticas ~10 MB. Total ~75 MB, próximo do `[heap]` de
-77 MB. O GC não aparece como custo relevante no quadro: 2 ciclos, de 33 a 37 ms cada.
+repositório; bytes pedidos, não residentes): buffers de DEX ~20 MB, instruções
+decodificadas ~11 MB, APK inteiro ~12 MB, campos e objetos ~20 MB, `Vec<Value>` ~6 MB,
+resolve cache ~5 MB, regex ~3 MB. Total ~123 MB (com folga de capacidade). O
+GC não aparece como custo relevante no quadro: 2 ciclos, de 33 a 37 ms cada.
 Detalhes, opções e ordem dos próximos passos: ADR 029.
