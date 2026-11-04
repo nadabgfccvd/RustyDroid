@@ -1,8 +1,12 @@
 # ADR 030 — Sessões simultâneas: custo marginal medido e caminho para o alvo
 
 - **Status:** proposto; atualizado em 2026-11-04. Passo 1 da decisão (DEX/APK
-  compartilhados) implementado e medido na ADR 031 (PR #528, `bedbb98`). Passos 2 e 3
-  pendentes. A medição abaixo é a original, antes do compartilhamento · **Data:** 2026-11-04
+  compartilhados) implementado e medido na ADR 031 (PR #528, `bedbb98`). Passo 2
+  (cache de código compartilhado) implementado e medido na ADR 032 (PR #531, `a389841`):
+  custo marginal da segunda sessão −24,1% em debug (−19.408 kB). ADR 033 (layout de
+  campos por classe) é proposta, não implementada (PR #532, `65bedb6`). Passo 3 e a meta
+  de 6 sessões por 200 MB seguem pendentes; a meta não foi atingida. A medição abaixo é
+  a original, antes do compartilhamento · **Data:** 2026-11-04
 - **Escopo:** `rd mcp` com N sessões (`SessionHub`, `crates/rd-agent/src/session_hub.rs`),
   `Classpath`/`Engine` em `rd-vm`, `Dex` em `rd-dex`
 - **Relacionados:** ADR 023 (orçamento de heap por sessão), ADR 024 (sessões isoladas),

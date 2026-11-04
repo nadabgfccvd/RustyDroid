@@ -260,6 +260,8 @@ pub struct Engine {
     pub(crate) frame_labels: Vec<String>,
     /// Cooperative green threads (threads.rs)
     pub threads: crate::threads::Threads,
+    /// Monitores mantidos (`monitor-enter`/`exit`); só entradas vivas ocupam RAM.
+    pub(crate) monitors: crate::monitors::Monitors,
     /// Session permission grant set (perms.rs); None = all granted.
     pub granted_permissions: Option<HashSet<String>>,
     pub(crate) pending_permission_results: Vec<crate::perms::PendingPermissionResult>,
@@ -399,6 +401,7 @@ impl Engine {
             coverage: HashSet::new(),
             frame_labels: Vec::new(),
             threads: Default::default(),
+            monitors: Default::default(),
             granted_permissions: None,
             pending_permission_results: Vec::new(),
             window_decor: HashMap::new(),

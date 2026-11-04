@@ -33,8 +33,10 @@ homepage = "https://github.com/nadabgfccvd/RustyDroid"
 authors = ["RustyDroid contributors"]
 
 [workspace.dependencies]
-# error handling — thiserror nas libs, anyhow no binário (decisão da spec)
-thiserror = "1.0"
+# error handling — anyhow no binário (decisão da spec). thiserror foi removido:
+# nenhum crate o usava, e deny.toml (`unused = "deny"`) bloqueia dependência de
+# workspace sem uso. As libs usam tipos de erro próprios (RdError). A spec
+# (RustyDroid.md, "thiserror nas libs") ainda não reflete isso — ver PR.
 anyhow = "1.0"
 
 # serialização / dados versionados

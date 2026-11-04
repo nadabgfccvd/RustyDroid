@@ -19,6 +19,7 @@ use crate::value::Value;
 use crate::{engine::Engine, err};
 
 const NPE: &str = "Ljava/lang/NullPointerException;";
+const METHOD_TYPE: &str = "Ljava/lang/invoke/MethodType;";
 const ARITH: &str = "Ljava/lang/ArithmeticException;";
 const AIOOBE: &str = "Ljava/lang/ArrayIndexOutOfBoundsException;";
 const CCE: &str = "Ljava/lang/ClassCastException;";
@@ -444,9 +445,15 @@ pub(crate) fn exec_frame(
                     return bad_kind(insn);
                 };
                 let desc = vm.cp.type_str(dex_idx, *i as u32);
-                if !(desc.starts_with('L') || desc.starts_with('[')) {
+                // Primitivos (`int.class`, `void.class`, …) são objetos Class
+                // com o descritor de um caractere, como em `jlclass.rs`.
+                let primitive = matches!(
+                    desc.as_bytes(),
+                    [b'Z' | b'B' | b'C' | b'S' | b'I' | b'J' | b'F' | b'D' | b'V']
+                );
+                if !(primitive || desc.starts_with('L') || desc.starts_with('[')) {
                     return Err(err::not_implemented(format!(
-                        "const-class {desc} (primitivos não têm Class host no M3)"
+                        "const-class {desc} (descritor inválido)"
                     ))
                     .into());
                 }
@@ -457,14 +464,25 @@ pub(crate) fn exec_frame(
                 regs[*a as usize] = Value::Obj(r);
             }
 
-            // monitor-*: single-thread no M2 — no-op deliberado COM referência
-            // válida (monitores reais entram com threads, M3+); null → NPE
-            // como na JVM (issue #37, notadamente monitor-exit)
+            // monitor-enter/exit (issue #37): null → NPE como na JVM; exit sem
+            // enter da mesma thread → IllegalMonitorStateException. Monitores
+            // mantidos vivem em `vm.monitors` (só entradas ativas ocupam RAM).
+            // Desvio documentado em `monitors.rs`: enter contendido não bloqueia.
             0x1D | 0x1E => {
                 let Kind::Reg(a) = &insn.kind else {
                     return bad_kind(insn);
                 };
-                if regs[*a as usize].as_ref()?.is_none() {
+                if let Some(obj) = regs[*a as usize].as_ref()? {
+                    let me = step!(crate::threads::current_thread(vm));
+                    if insn.opcode == 0x1D {
+                        vm.monitors.enter(obj, me);
+                    } else if !vm.monitors.exit(obj, me) {
+                        throw_exc!(
+                            "Ljava/lang/IllegalMonitorStateException;",
+                            "monitor-exit sem monitor-enter da thread atual"
+                        );
+                    }
+                } else {
                     throw_exc!(
                         NPE,
                         format!(
@@ -959,6 +977,34 @@ pub(crate) fn exec_frame(
                     op => step!(binop(vm, op_to_base(op), x, lit)), // ushr (0xE2)
                 };
                 write_binop(regs, *a, v);
+            }
+
+            // const-method-type (0xFF, 21c): vAA = MethodType do proto BBBB.
+            // Sem java.lang.invoke no M3 o objeto guarda só o descritor
+            // (campo `descriptor`), como os objetos Class; chamar métodos de
+            // MethodType continua não suportado.
+            0xFF => {
+                let Kind::RegIndex(a, i) = &insn.kind else {
+                    return bad_kind(insn);
+                };
+                let desc = step!(
+                    crate::classpath::proto_descriptor(&vm.cp.dexes[dex_idx], *i)
+                        .map_err(VmExit::from)
+                );
+                let obj = step!(vm
+                    .heap
+                    .alloc_instance(METHOD_TYPE.to_string(), Vec::new())
+                    .map_err(crate::err::oom_throwable));
+                let name = step!(vm
+                    .heap
+                    .alloc_string(desc)
+                    .map_err(crate::err::oom_throwable));
+                step!(crate::err::put_field_result(vm.heap.put_field(
+                    obj,
+                    "descriptor",
+                    Value::Obj(name)
+                )));
+                regs[*a as usize] = Value::Obj(obj);
             }
 
             _ => {

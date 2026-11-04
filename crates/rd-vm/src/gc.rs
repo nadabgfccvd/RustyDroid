@@ -269,6 +269,7 @@ impl Engine {
             .flatten()
             .copied()
             .chain(self.heap.gc_pinned_roots())
+            .chain(self.monitors.roots())
         {
             m.push(r);
         }

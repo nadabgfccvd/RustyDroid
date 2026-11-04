@@ -85,6 +85,7 @@ pub mod m10;
 pub mod m8;
 #[cfg(feature = "advanced-components")]
 pub mod m9;
+pub(crate) mod monitors;
 #[cfg(feature = "native")]
 pub mod native;
 pub(crate) mod numerics;
