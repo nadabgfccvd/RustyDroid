@@ -102,3 +102,10 @@ descompactados (cerca de 20 MB), código decodificado (19 653 corpos, 261 327 in
 o malloc. Para diagnosticar, use `RD_MEM_REPORT=1 rd app shot ...` (imprime os contadores no
 stderr). Para reduzir a fragmentação do malloc em execuções longas, defina
 `MALLOC_ARENA_MAX=1` no ambiente: a VM roda numa thread só.
+
+Composição da memória viva em malloc no mesmo quadro (amostrador `LD_PRELOAD`, fora do
+repositório; bytes pedidos, não residentes): buffers de DEX ~20 MB, instruções
+decodificadas ~11 MB, APK inteiro ~12 MB, campos e objetos ~20 MB, `Vec<Value>` ~6 MB,
+resolve cache ~5 MB, regex ~3 MB. Total ~123 MB (com folga de capacidade). O
+GC não aparece como custo relevante no quadro: 2 ciclos, de 33 a 37 ms cada.
+Detalhes, opções e ordem dos próximos passos: ADR 029.
