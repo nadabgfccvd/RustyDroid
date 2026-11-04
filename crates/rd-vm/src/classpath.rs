@@ -39,8 +39,10 @@ type MethodRefCache = std::cell::RefCell<HashMap<(usize, u32), Arc<MethodRef>>>;
 /// field_id (dex, idx) -> (class, name, type) reference.
 type FieldRefCache = std::cell::RefCell<HashMap<(usize, u32), Arc<(String, String, String)>>>;
 /// (class, name, proto) -> virtual resolution result.
-type ResolveCache =
-    HashMap<(String, String, String), Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)>>;
+/// Chave de `resolve_cache`: nomes internados (ADR 029). Antes eram três
+/// `String`s, alocadas em toda chamada, mesmo no acerto do cache.
+type ResolveKey = (Arc<str>, Arc<str>, Arc<str>);
+type ResolveCache = HashMap<ResolveKey, Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)>>;
 
 #[derive(Debug, Default)]
 pub struct Classpath {
@@ -57,6 +59,8 @@ pub struct Classpath {
     /// (class, name, proto) → virtual resolution result (dexes are immutable
     /// for the lifetime of an Engine, so this can never go stale).
     resolve_cache: ResolveCache,
+    /// Interner dos nomes usados nas chaves de `resolve_cache` (ADR 029).
+    resolve_names: std::collections::HashSet<Arc<str>>,
     /// descriptor -> (dex, class_def position) memo for `find_class`
     /// (ADR 008 Stage 1b). NOTE: unlike subtype results (which a test
     /// deliberately mutates DEX metadata to re-check), class *identity*
@@ -80,6 +84,7 @@ impl Classpath {
             method_ref_cache: std::cell::RefCell::new(HashMap::new()),
             field_ref_cache: std::cell::RefCell::new(HashMap::new()),
             resolve_cache: HashMap::new(),
+            resolve_names: std::collections::HashSet::new(),
             find_class_cache: std::cell::RefCell::new(HashMap::new()),
         }
     }
@@ -266,13 +271,28 @@ impl Classpath {
         name: &str,
         proto: &str,
     ) -> Option<(usize, ClassDef, rd_dex::methods::EncodedMethod)> {
-        let key = (class_desc.to_string(), name.to_string(), proto.to_string());
+        let key: ResolveKey = (
+            self.intern_name(class_desc),
+            self.intern_name(name),
+            self.intern_name(proto),
+        );
         if let Some(cached) = self.resolve_cache.get(&key) {
             return cached.clone();
         }
         let out = self.resolve_method_uncached(class_desc, name, proto);
         self.resolve_cache.insert(key, out.clone());
         out
+    }
+
+    /// Devolve o `Arc<str>` único para `s` (ADR 029). Só aloca na primeira vez
+    /// que o nome aparece; nas seguintes é uma busca sem alocação.
+    fn intern_name(&mut self, s: &str) -> Arc<str> {
+        if let Some(a) = self.resolve_names.get(s) {
+            return a.clone();
+        }
+        let a: Arc<str> = Arc::from(s);
+        self.resolve_names.insert(a.clone());
+        a
     }
 
     fn resolve_method_uncached(
