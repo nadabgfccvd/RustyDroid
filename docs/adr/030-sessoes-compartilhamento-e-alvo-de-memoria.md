@@ -1,7 +1,8 @@
 # ADR 030 — Sessões simultâneas: custo marginal medido e caminho para o alvo
 
-- **Status:** proposto (medição e plano; nenhuma mudança de compartilhamento ou de
-  layout nesta ADR) · **Data:** 2026-11-04
+- **Status:** proposto; atualizado em 2026-11-04. Passo 1 da decisão (DEX/APK
+  compartilhados) implementado e medido na ADR 031 (PR #528, `bedbb98`). Passos 2 e 3
+  pendentes. A medição abaixo é a original, antes do compartilhamento · **Data:** 2026-11-04
 - **Escopo:** `rd mcp` com N sessões (`SessionHub`, `crates/rd-agent/src/session_hub.rs`),
   `Classpath`/`Engine` em `rd-vm`, `Dex` em `rd-dex`
 - **Relacionados:** ADR 023 (orçamento de heap por sessão), ADR 024 (sessões isoladas),
@@ -68,6 +69,19 @@ MCP soma cerca de 12 MB a mais por processo (hub, estado de sessão, buffers de 
 ## Decisão
 
 Nenhuma mudança de compartilhamento nesta rodada. Próximos passos, em ordem:
+
+**Estado (atualizado):**
+
+- Passo 1: feito. ADR 031, PR #528 (`bedbb98`). Custo marginal da 2ª sessão caiu de
+  127 884 KB para 80 912 KB (−36,7%); 1 sessão sem mudança; screenshots idênticas.
+  Critério (≥ 25%) atendido. A verificação de `Send`/`Sync` passou (`Dex`, `Arc<Dex>`).
+- Passo 2: pendente. Ainda não há caracterização do estado por sessão que não é DEX
+  com duas sessões. Esse é o bloqueio atual para o alvo.
+- Passo 3: pendente. A escolha entre o layout por classe e a redução do estado de
+  execução depende do passo 2.
+- Medição em release: pendente (ver seção abaixo).
+
+**Plano original (histórico):**
 
 1. ADR próprio para compartilhamento de DEX/APK entre sessões (opção 1), com a verificação
    de `Send`/`Sync` e um teste de duas sessões com o mesmo APK. Critério: custo marginal
