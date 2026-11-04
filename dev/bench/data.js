@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793810502763,
+  "lastUpdate": 1793832585034,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3383,6 +3383,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1764,
             "range": "± 33",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "133d042532c9d608fc045b0e9afccd8dd22e9adb",
+          "message": "perf(vm): fix the app-override fast path regression; cut host-call overhead (#534)\n\n* perf(vm): fix the app-override fast path regression; cut host-call overhead\n\nCorrectness fix to the previous commit (103ae3f). Its DEX-first guard only\nchecked that the method reference and the receiver were DEX classes. A DEX\nsubclass of a platform collection (e.g. ArrayDeque) took the app override\nand lost its host state, so `launch` failed with NOT_FOUND on\nLjava/util/ArrayDeque;->poll(). The guard now also requires the receiver's\nwhole superclass chain to be DEX-defined and to end at Object\n(Classpath::is_dex_only_chain, memoized like is_subtype).\n\nAlso:\n- invoke: receiver class is an Arc<str> (Heap::class_arc_of) instead of a\n  String allocated on every invoke.\n- java/lang/String charAt/length (String or CharSequence mref) go straight\n  to the String implementation. length uses len() for ASCII instead of\n  re-encoding UTF-16. RD_STR_SHADOW=1 also runs the full handler chain and\n  panics on any difference (validation switch, off by default).\n- instance_intrinsic_dispatch is split into the handler chain and\n  instance_intrinsic_core (the final match). No behaviour change.\n- android_stub_surfaces::class_of returns &str (no String per gate).\n- Classpath::code, Engine::statics/intrinsic_by_class, Heap names/remembered\n  use FxHashMap/FxHashSet instead of SipHash.\n\nMeasured on this sandbox, same box, back-to-back, fresh `rd mcp` per run.\nBaseline = working tree before the DEX-first override change.\n- launch observe=off median: 709 -> 548 ms (n=5)\n- launch observe=on  median: 1101 -> 835 ms (n=5)\n- launch CPU time (user+sys) median: 734 -> 596 ms (n=5)\n- tap_text observe=on median: 1036 -> 701 ms (mcp_bench, 3 runs)\n- key observe=on median: 907 -> 604 ms (mcp_bench, 3 runs)\n\nCI fixes (the previous push failed fmt and clippy):\n- cargo fmt --all\n- clippy: needless_borrow in interp.rs (field_ref_shared bindings) and\n  android_stub_surfaces.rs (class_of now returns &str); no behaviour change\n\nVerification:\n- cargo test -p rd-vm --lib: 193 passed\n- cargo test -p rd-agent --lib: 112 passed\n- scripts/comprix-regression.py --cycles 2: success, 17 steps, no failures\n- RD_STR_SHADOW=1 over launch and tap runs: no mismatches, no failed rows\n- 12-step observe sequence: identical to the pre-change build except the\n  runtime_health timing line\n\n* perf(vm): fix the app-override fast path regression; cut host-call overhead\n\nCorrectness fix to the previous commit (103ae3f). Its DEX-first guard only\nchecked that the method reference and the receiver were DEX classes. A DEX\nsubclass of a platform collection (e.g. ArrayDeque) took the app override\nand lost its host state, so `launch` failed with NOT_FOUND on\nLjava/util/ArrayDeque;->poll(). The guard now also requires the receiver's\nwhole superclass chain to be DEX-defined and to end at Object\n(Classpath::is_dex_only_chain, memoized like is_subtype).\n\nAlso:\n- invoke: receiver class is an Arc<str> (Heap::class_arc_of) instead of a\n  String allocated on every invoke.\n- java/lang/String charAt/length (String or CharSequence mref) go straight\n  to the String implementation. length uses len() for ASCII instead of\n  re-encoding UTF-16. RD_STR_SHADOW=1 also runs the full handler chain and\n  panics on any difference (validation switch, off by default).\n- instance_intrinsic_dispatch is split into the handler chain and\n  instance_intrinsic_core (the final match). No behaviour change.\n- android_stub_surfaces::class_of returns &str (no String per gate).\n- Classpath::code, Engine::statics/intrinsic_by_class, Heap names/remembered\n  use FxHashMap/FxHashSet instead of SipHash.\n\nMeasured on this sandbox, same box, back-to-back, fresh `rd mcp` per run.\nBaseline = working tree before the DEX-first override change.\n- launch observe=off median: 709 -> 548 ms (n=5)\n- launch observe=on  median: 1101 -> 835 ms (n=5)\n- launch CPU time (user+sys) median: 734 -> 596 ms (n=5)\n- tap_text observe=on median: 1036 -> 701 ms (mcp_bench, 3 runs)\n- key observe=on median: 907 -> 604 ms (mcp_bench, 3 runs)\n\nCI fixes (the previous push failed fmt and clippy):\n- cargo fmt --all\n- clippy: needless_borrow in interp.rs (field_ref_shared bindings) and\n  android_stub_surfaces.rs (class_of now returns &str); no behaviour change\n\nVerification:\n- cargo test -p rd-vm --lib: 193 passed\n- cargo test -p rd-agent --lib: 112 passed\n- scripts/comprix-regression.py --cycles 2: success, 17 steps, no failures\n- RD_STR_SHADOW=1 over launch and tap runs: no mismatches, no failed rows\n- 12-step observe sequence: identical to the pre-change build except the\n  runtime_health timing line\n\n---------\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T19:49:27-03:00",
+          "tree_id": "e7876ed6c1882510d9023b408917be12dbd4b013",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/133d042532c9d608fc045b0e9afccd8dd22e9adb"
+        },
+        "date": 1793832584297,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1735,
+            "range": "± 32",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1785,
+            "range": "± 104",
             "unit": "ns/iter"
           }
         ]
