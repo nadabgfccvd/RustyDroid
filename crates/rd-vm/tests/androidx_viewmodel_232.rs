@@ -22,7 +22,7 @@ fn static_int(e: &Engine, cls: &str, field: &str) -> i32 {
 }
 
 fn key(s: &str) -> Value {
-    Value::StrPlaceholder(s.to_string())
+    Value::StrPlaceholder(Box::new(s.to_string()))
 }
 
 /// Bytecode fixture:

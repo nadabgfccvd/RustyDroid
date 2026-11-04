@@ -44,7 +44,7 @@ fn invoke_instance_viewmodel_get_tag_on_host_instance_is_null() {
             r,
             "getTag",
             "(Ljava/lang/String;)Ljava/lang/Object;",
-            &[Value::StrPlaceholder("missing".into())],
+            &[Value::StrPlaceholder(Box::new("missing".into()))],
         )
         .expect("getTag via Engine::invoke_instance");
     assert_eq!(got, Value::Null);

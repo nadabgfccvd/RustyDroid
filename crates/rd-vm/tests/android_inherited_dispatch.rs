@@ -302,8 +302,8 @@ fn string_tokenizer_handles_returned_delimiters_and_enumeration() {
         "<init>",
         "(Ljava/lang/String;Ljava/lang/String;Z)V",
         &[
-            Value::StrPlaceholder("1,2-4".into()),
-            Value::StrPlaceholder(",;-".into()),
+            Value::StrPlaceholder(Box::new("1,2-4".into())),
+            Value::StrPlaceholder(Box::new(",;-".into())),
             Value::Int(1),
         ],
     )
@@ -349,8 +349,8 @@ fn string_tokenizer_handles_returned_delimiters_and_enumeration() {
         "<init>",
         "(Ljava/lang/String;Ljava/lang/String;)V",
         &[
-            Value::StrPlaceholder("a,b;c".into()),
-            Value::StrPlaceholder(",".into()),
+            Value::StrPlaceholder(Box::new("a,b;c".into())),
+            Value::StrPlaceholder(Box::new(",".into())),
         ],
     )
     .unwrap();
@@ -366,7 +366,7 @@ fn string_tokenizer_handles_returned_delimiters_and_enumeration() {
             changing,
             "nextToken",
             "(Ljava/lang/String;)Ljava/lang/String;",
-            &[Value::StrPlaceholder("|".into())],
+            &[Value::StrPlaceholder(Box::new("|".into()))],
         )
         .unwrap()
     else {
@@ -1843,7 +1843,7 @@ fn reflection_invokes_platform_static_main_looper_method() {
             "Ljava/lang/Class;",
             "forName",
             "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[Value::StrPlaceholder("android.os.Looper".into())],
+            &[Value::StrPlaceholder(Box::new("android.os.Looper".into()))],
         )
         .unwrap()
     else {
@@ -1854,7 +1854,10 @@ fn reflection_invokes_platform_static_main_looper_method() {
             looper_class,
             "getDeclaredMethod",
             "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;",
-            &[Value::StrPlaceholder("getMainLooper".into()), Value::Null],
+            &[
+                Value::StrPlaceholder(Box::new("getMainLooper".into())),
+                Value::Null,
+            ],
         )
         .unwrap()
     else {

@@ -5,7 +5,7 @@ use rd_vm::{Engine, Value, VmConfig};
 
 fn class_of(e: &Engine, r: u32) -> String {
     match e.heap.get(r).unwrap() {
-        HeapObj::Instance { class, .. } => class.clone(),
+        HeapObj::Instance { class, .. } => class.to_string(),
         HeapObj::Str(_) => "String".into(),
         HeapObj::Array { .. } => "Array".into(),
     }

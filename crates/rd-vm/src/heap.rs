@@ -6,6 +6,7 @@
 //! uma vez quando o `Engine` morre.
 
 use crate::value::Value;
+use std::sync::Arc;
 
 /// Referência de objeto (índice + 1 na arena; 0 = inválido).
 pub type ObjRef = u32;
@@ -60,10 +61,12 @@ pub enum HeapObj {
         elem_class: String,
     },
     Instance {
-        /// descritor da classe (`Ljava/lang/StringBuilder;`, `LCaso;`…)
-        class: String,
-        /// campos de instância em ordem de declaração; iget/iput resolvem por nome
-        fields: Vec<(String, Value)>,
+        /// descritor da classe (`Ljava/lang/StringBuilder;`, `LCaso;`…).
+        /// Interned in the heap (`Heap::intern`): instances share one copy.
+        class: Arc<str>,
+        /// campos de instância em ordem de declaração; iget/iput resolvem por nome.
+        /// Names are interned, so an instance costs one pointer per field, not a String.
+        fields: Vec<(Arc<str>, Value)>,
     },
 }
 
@@ -91,11 +94,15 @@ pub struct Heap {
     births: Vec<u64>,
     allocation_clock: u64,
     existing_cutoffs: Vec<(usize, u64)>,
+    /// Interned class descriptors and field names (`intern`). Names are never
+    /// removed: the set is bounded by the classes and fields the app touches.
+    names: std::collections::HashSet<Arc<str>>,
 }
 
 impl Heap {
     pub fn new(budget: usize) -> Self {
         Heap {
+            names: Default::default(),
             budget,
             used: 0,
             peak: 0,
@@ -169,7 +176,7 @@ impl Heap {
         self.gc_scopes.iter().filter_map(Option::as_ref).flatten().copied().chain(
             self.births.iter().enumerate().filter(move |(_, birth)| **birth <= cutoff)
                 .map(|(i, _)| (i + 1) as ObjRef).filter(|r|
-                    !matches!(self.get(*r), Ok(HeapObj::Instance { class, .. }) if class == crate::gc::FREED_CLASS)
+                    !matches!(self.get(*r), Ok(HeapObj::Instance { class, .. }) if &**class == crate::gc::FREED_CLASS)
                 )
         )
     }
@@ -368,13 +375,39 @@ impl Heap {
         )
     }
 
+    /// Returns the shared copy of `s`, adding it to the intern table if new.
+    pub fn intern(&mut self, s: &str) -> Arc<str> {
+        if let Some(a) = self.names.get(s) {
+            return a.clone();
+        }
+        let a: Arc<str> = Arc::from(s);
+        self.names.insert(a.clone());
+        a
+    }
+
+    /// Number of distinct interned names (classes and fields).
+    pub fn interned_names(&self) -> usize {
+        self.names.len()
+    }
+
     pub fn alloc_instance(
         &mut self,
         class: String,
         fields: Vec<(String, Value)>,
     ) -> Result<ObjRef, OomError> {
         let bytes = 32 + fields.len().saturating_mul(24);
-        self.alloc(bytes, HeapObj::Instance { class, fields })
+        let class = self.intern(&class);
+        let mut interned = Vec::with_capacity(fields.len());
+        for (name, v) in fields {
+            interned.push((self.intern(&name), v));
+        }
+        self.alloc(
+            bytes,
+            HeapObj::Instance {
+                class,
+                fields: interned,
+            },
+        )
     }
 
     /// GC sweep: drops the contents of slot `r`, leaving a tombstone instance
@@ -390,9 +423,11 @@ impl Heap {
         if r == 0 || r as usize > self.objects.len() {
             return None;
         }
+        // Interned once: sweeping a slot must not allocate a new tombstone name.
+        let freed_class = self.intern(crate::gc::FREED_CLASS);
         let slot = &mut self.objects[(r - 1) as usize];
         let bytes = match slot {
-            HeapObj::Instance { class, .. } if class == crate::gc::FREED_CLASS => return None,
+            HeapObj::Instance { class, .. } if &**class == crate::gc::FREED_CLASS => return None,
             HeapObj::Instance { fields, .. } => {
                 fields
                     .iter()
@@ -408,7 +443,7 @@ impl Heap {
                 .saturating_add(16),
         };
         *slot = HeapObj::Instance {
-            class: crate::gc::FREED_CLASS.to_string(),
+            class: freed_class,
             fields: Vec::new(),
         };
         self.free.push(r);
@@ -477,7 +512,7 @@ impl Heap {
         match self.get(r)? {
             HeapObj::Instance { fields, .. } => fields
                 .iter()
-                .find(|(n, _)| n == name)
+                .find(|(n, _)| &**n == name)
                 .map(|(_, v)| v.clone())
                 .ok_or_else(|| format!("campo {name} ausente na instância #{r}")),
             _ => Err(format!("#{r} não é instância")),
@@ -491,9 +526,14 @@ impl Heap {
         // (o push antigo não cobrava nada — leak de contabilidade). O check
         // vem antes do get_mut para não conflitar o borrow
         let is_new = match self.get(r) {
-            Ok(HeapObj::Instance { fields, .. }) => !fields.iter().any(|(n, _)| n == name),
+            Ok(HeapObj::Instance { fields, .. }) => !fields.iter().any(|(n, _)| &**n == name),
             Ok(_) => return Err(FieldWriteErr::NotInstance),
             Err(_) => return Err(FieldWriteErr::NotInstance),
+        };
+        let key = if is_new {
+            Some(self.intern(name))
+        } else {
+            None
         };
         if is_new {
             let cost = std::mem::size_of::<Value>() + name.len();
@@ -515,10 +555,11 @@ impl Heap {
         }
         match self.get_mut(r) {
             Ok(HeapObj::Instance { fields, .. }) => {
-                if let Some(slot) = fields.iter_mut().find(|(n, _)| n == name) {
+                if let Some(slot) = fields.iter_mut().find(|(n, _)| &**n == name) {
                     slot.1 = v;
                 } else {
-                    fields.push((name.to_string(), v));
+                    let key = key.unwrap_or_else(|| Arc::from(name));
+                    fields.push((key, v));
                 }
                 Ok(())
             }
@@ -536,7 +577,7 @@ pub enum FieldWriteErr {
 }
 
 /// (classe, campos) de uma instância — alias para o tipo complexo do clippy.
-type InstanceView<'h> = (&'h str, &'h [(String, Value)]);
+type InstanceView<'h> = (&'h str, &'h [(Arc<str>, Value)]);
 
 impl HeapObj {
     pub fn kind_name(&self) -> &'static str {
@@ -551,6 +592,33 @@ impl HeapObj {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regressão de memória (ADR 028): `Value` tem 16 bytes, e instâncias da mesma
+    /// classe com o mesmo campo compartilham uma única cópia do nome.
+    #[test]
+    fn instances_share_interned_class_and_field_names() {
+        assert!(std::mem::size_of::<Value>() <= 16);
+        let mut h = Heap::new(1 << 20);
+        let a = h
+            .alloc_instance("LFoo;".to_string(), vec![("x".to_string(), Value::Int(1))])
+            .unwrap();
+        let b = h
+            .alloc_instance("LFoo;".to_string(), vec![("x".to_string(), Value::Int(2))])
+            .unwrap();
+        let names = |r| match h.get(r).unwrap() {
+            HeapObj::Instance { class, fields } => (class.clone(), fields[0].0.clone()),
+            _ => panic!("instância esperada"),
+        };
+        let (ca, fa) = names(a);
+        let (cb, fb) = names(b);
+        assert!(Arc::ptr_eq(&ca, &cb), "classe deve ser compartilhada");
+        assert!(
+            Arc::ptr_eq(&fa, &fb),
+            "nome de campo deve ser compartilhado"
+        );
+        assert_eq!(h.interned_names(), 2);
+        assert_eq!(h.get_field(b, "x").unwrap(), Value::Int(2));
+    }
 
     #[test]
     fn budget_is_enforced_with_typed_oom() {

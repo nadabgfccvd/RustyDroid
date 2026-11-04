@@ -66,6 +66,12 @@ pub struct Classpath {
 }
 
 impl Classpath {
+    /// Diagnóstico de memória: (corpos decodificados em cache, instruções decodificadas no total).
+    pub fn decoded_code_stats(&self) -> (usize, usize) {
+        let insns = self.code_cache.values().map(|c| c.instructions.len()).sum();
+        (self.code_cache.len(), insns)
+    }
+
     pub fn new(dexes: Vec<Dex>) -> Self {
         Classpath {
             dexes,

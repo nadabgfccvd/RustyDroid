@@ -358,10 +358,10 @@ impl Engine {
                 Ok(HeapObj::Instance { class, fields }) => {
                     for (name, v) in fields {
                         if let Value::Obj(x) = v {
-                            if name == "referent" {
+                            if &**name == "referent" {
                                 let cp = &self.cp;
                                 let weak_ref =
-                                    *is_weak_class.entry(class.as_str()).or_insert_with(|| {
+                                    *is_weak_class.entry(&**class).or_insert_with(|| {
                                         cp.is_subtype(class, "Ljava/lang/ref/WeakReference;")
                                             || cp.is_subtype(
                                                 class,
@@ -795,9 +795,9 @@ mod tests {
                 match vm.heap.get(r).unwrap() {
                     HeapObj::Instance { class, fields } => {
                         for (name, value) in fields {
-                            if name == "referent"
+                            if &**name == "referent"
                                 && matches!(
-                                    class.as_str(),
+                                    &**class,
                                     "Ljava/lang/ref/WeakReference;"
                                         | "Ljava/lang/ref/PhantomReference;"
                                 )

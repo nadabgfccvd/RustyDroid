@@ -84,3 +84,21 @@ allocating roughly a GiB under a 4 MiB heap budget, guest-returned host
 references, weak keys and an above-watermark pinned heap that must not enter a
 collection storm. Real-APK runs and their limitations are recorded in
 [Comprix end-to-end notes](comprix-e2e.md).
+
+## Medidas de memória (2026-11-03, ADR 028)
+
+Primeiro quadro do F-Droid real (`rd app shot`, build debug, pico de RSS do processo):
+
+| versão | RSS (KB) |
+|---|---|
+| linha de base (`5751d6b`) | 196 096 |
+| `Value` de 16 bytes + nomes internados | 186 896 |
+| + `MALLOC_ARENA_MAX=1` (ambiente) | 178 812 |
+| + `Kind::Payload` boxed (instruções decodificadas menores) | 163 808 |
+
+A imagem de saída é idêntica em todas as versões. O heap contabilizado no fim do quadro
+é de cerca de 19 MB (109 639 objetos). A maior parte do RSS está fora do heap do app: DEX
+descompactados (cerca de 20 MB), código decodificado (19 653 corpos, 261 327 instruções) e
+o malloc. Para diagnosticar, use `RD_MEM_REPORT=1 rd app shot ...` (imprime os contadores no
+stderr). Para reduzir a fragmentação do malloc em execuções longas, defina
+`MALLOC_ARENA_MAX=1` no ambiente: a VM roda numa thread só.

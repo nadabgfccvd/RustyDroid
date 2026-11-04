@@ -594,11 +594,11 @@ pub(crate) fn exec_frame(
                 };
                 let payload_addr = branch_target(cur_pc, *off as i64)?;
                 let pidx = lookup(&code.instructions, payload_addr)?;
-                let Kind::Payload(Payload::ArrayData {
+                let Some(Payload::ArrayData {
                     element_width,
                     element_count,
                     data,
-                }) = &code.instructions[pidx].1.kind
+                }) = code.instructions[pidx].1.kind.payload()
                 else {
                     return Err(err::vm_error(
                         "INVALID_FORMAT",
@@ -666,8 +666,8 @@ pub(crate) fn exec_frame(
                 let key = regs[*a as usize].as_int()?;
                 let payload_addr = branch_target(cur_pc, *off as i64)?;
                 let pidx = lookup(&code.instructions, payload_addr)?;
-                pc = match &code.instructions[pidx].1.kind {
-                    Kind::Payload(Payload::PackedSwitch { first_key, targets }) => {
+                pc = match code.instructions[pidx].1.kind.payload() {
+                    Some(Payload::PackedSwitch { first_key, targets }) => {
                         let rel = key.wrapping_sub(*first_key);
                         if rel >= 0 && (rel as usize) < targets.len() {
                             branch_target(cur_pc, targets[rel as usize] as i64)?
@@ -675,7 +675,7 @@ pub(crate) fn exec_frame(
                             pc
                         }
                     }
-                    Kind::Payload(Payload::SparseSwitch { keys, targets }) => {
+                    Some(Payload::SparseSwitch { keys, targets }) => {
                         match keys.binary_search(&key) {
                             Ok(i) => branch_target(cur_pc, targets[i] as i64)?,
                             Err(_) => pc,

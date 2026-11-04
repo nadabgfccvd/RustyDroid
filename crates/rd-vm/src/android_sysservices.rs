@@ -1588,7 +1588,7 @@ fn purge_account_tokens(vm: &mut Engine, entry: ObjRef) -> Result<(), VmExit> {
             fields
                 .iter()
                 .filter(|(n, _)| n.starts_with("rd$authToken."))
-                .map(|(n, _)| n.clone())
+                .map(|(n, _)| n.to_string())
                 .collect()
         })
         .unwrap_or_default();
