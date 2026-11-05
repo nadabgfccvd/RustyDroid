@@ -157,11 +157,18 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
          (fila de tarefas vazia). Nenhum frame novo é pedido depois, mesmo com `wait`.
        - Não há `addView`/`requestLayout` que insira a `PreviewView` na árvore (o
          `AndroidViewsHandler` nunca recebe o holder). Assim a árvore continua na lista.
-       - Hipótese principal: recomposição repetida na composição do scanner (estado escrito
-         durante a composição, sem convergir), que consome o frame e termina sem apply da
-         inserção. Próximo passo: identificar qual estado é reescrito (ver `LP/D.g`, `LP/C.c`,
-         `LP/d.C`) e se o efeito depende de `ProcessCameraProvider`/`LifecycleOwner`. Só então
-         partir para o shim CameraX.
+       - Ordem medida com `RD_TRACE_METHOD=L` (trace completo da janela após o toque):
+         1. Frame 1 (8752 ms): `LP/u0.p` (recompõe a árvore atual), `c()`, `r()` e
+            `LP/t.e(LQ/a;)V` (`applyChanges`, rótulo `Compose:applyChanges`). Esse ciclo completa.
+         2. Frame 2 (8752 ms): `LP/u0.p` inicia a composição que contém o scanner;
+            `LG2/C.d` executa (~99 mil chamadas depois). Depois disso não há `c()`, `r()` nem um
+            segundo `applyChanges`. O callback é removido em `removeFrameCallback` (133 mil).
+         - Exceções: nenhuma `Throwable` lançada na janela (só `exceptionOrNull`).
+       - Hipótese principal (revisada): a composição do scanner termina sem o caminho normal de
+         retorno de `LP/u0.p`, então o Recomposer não aplica as mudanças. Por isso a
+         `PreviewView` não é inserida. Próximo passo: verificar por que `LP/u0.p` do frame 2
+         não retorna para `c()`/`r()` (ex.: exceção suprimida, `abandon` ou cancelamento da
+         corrotina), comparando com o frame 1. Só então partir para o shim CameraX.
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
