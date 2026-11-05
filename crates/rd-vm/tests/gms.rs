@@ -3121,3 +3121,273 @@ fn billing_listener_relaunching_flow_is_bounded() {
     assert!(calls <= 16, "limitados pelo fusível (calls={calls})");
     assert!(e.gms_dropped_callbacks() >= 1, "o excesso foi contado");
 }
+
+// ── Apêndice E (rodada 1): erro e ciclo de vida que faltavam ────────────
+
+#[test]
+fn storage_getbytes_size_limit_error_and_delete_lifecycle() {
+    let mut e = engine();
+    e.gms_storage_seed("docs/b.bin", vec![9, 8, 7, 6, 5, 4, 3, 2]);
+    let st = ov(cs!(
+        e,
+        FIREBASE_STORAGE,
+        "getInstance",
+        "()Lcom/google/firebase/Storage/FirebaseStorage;",
+        []
+    )
+    .unwrap());
+    let root = ov(ci!(
+        e,
+        FIREBASE_STORAGE,
+        "getReference",
+        "()Lcom/google/firebase/Storage/StorageReference;",
+        st,
+        []
+    )
+    .unwrap());
+    let name = s(&mut e, "docs/b.bin");
+    let reference = ov(ci!(
+        e,
+        STORAGE_REF,
+        "child",
+        "(Ljava/lang/String;)Lcom/google/firebase/Storage/StorageReference;",
+        root,
+        [name]
+    )
+    .unwrap());
+
+    // Limite abaixo do tamanho do blob ⇒ erro honesto (StorageException).
+    let too_small = ov(ci!(
+        e,
+        STORAGE_REF,
+        "getBytes",
+        "(J)Lcom/google/android/gms/tasks/Task;",
+        reference,
+        [Value::Long(4)]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, too_small, "isSuccessful"), 0);
+    assert_eq!(
+        e.gms_storage_bytes("docs/b.bin").map(|b| b.len()),
+        Some(8),
+        "falhar a leitura não altera o blob"
+    );
+
+    // Limite igual ao tamanho ou zero (sem limite) ⇒ sucesso.
+    let exact = ov(ci!(
+        e,
+        STORAGE_REF,
+        "getBytes",
+        "(J)Lcom/google/android/gms/tasks/Task;",
+        reference,
+        [Value::Long(8)]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, exact, "isSuccessful"), 1);
+    let unlimited = ov(ci!(
+        e,
+        STORAGE_REF,
+        "getBytes",
+        "(J)Lcom/google/android/gms/tasks/Task;",
+        reference,
+        [Value::Long(0)]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, unlimited, "isSuccessful"), 1);
+
+    // Ciclo de vida: delete ⇒ leitura falha ⇒ segundo delete falha.
+    let del = ov(ci!(
+        e,
+        STORAGE_REF,
+        "delete",
+        "()Lcom/google/android/gms/tasks/Task;",
+        reference,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, del, "isSuccessful"), 1);
+    assert_eq!(e.gms_storage_bytes("docs/b.bin"), None);
+    let after = ov(ci!(
+        e,
+        STORAGE_REF,
+        "getBytes",
+        "(J)Lcom/google/android/gms/tasks/Task;",
+        reference,
+        [Value::Long(1024)]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, after, "isSuccessful"), 0);
+    let del2 = ov(ci!(
+        e,
+        STORAGE_REF,
+        "delete",
+        "()Lcom/google/android/gms/tasks/Task;",
+        reference,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, del2, "isSuccessful"), 0);
+}
+
+#[test]
+fn safetynet_programmed_jws_and_nonce_record_track_api_key() {
+    let mut e = engine();
+    e.gms_set_attestation_jws("header.payload.signature-programado");
+    let sn = ov(cs!(
+        e,
+        SAFETYNET,
+        "getClient",
+        "(Landroid/content/Context;)Lcom/google/android/gms/safetynet/SafetyNetClient;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+
+    let key = s(&mut e, "api-key");
+    let with_key = ov(ci!(
+        e,
+        SAFETYNET_CLIENT,
+        "attest",
+        "([BLjava/lang/String;)Lcom/google/android/gms/tasks/Task;",
+        sn,
+        [Value::Null, key]
+    )
+    .unwrap());
+    let att = ov(task_result(&mut e, with_key));
+    let jws = svm!(
+        e,
+        ci!(
+            e,
+            ATTESTATION_RESPONSE,
+            "getJwsResult",
+            "()Ljava/lang/String;",
+            att,
+            []
+        )
+        .unwrap()
+    );
+    assert_eq!(jws, "header.payload.signature-programado");
+
+    let without_key = ov(ci!(
+        e,
+        SAFETYNET_CLIENT,
+        "attest",
+        "([BLjava/lang/String;)Lcom/google/android/gms/tasks/Task;",
+        sn,
+        [Value::Null, Value::Null]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, without_key, "isSuccessful"), 1);
+
+    let nonces = e.gms_integrity_nonces();
+    assert_eq!(
+        nonces,
+        vec![
+            "safetynet:0bytes:apiKeyPresent=true".to_string(),
+            "safetynet:0bytes:apiKeyPresent=false".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn google_signin_sign_out_ends_silent_session_and_sign_in_restores_it() {
+    let mut e = engine();
+    let client = ov(cs!(
+        e,
+        GOOGLE_SIGNIN,
+        "getClient",
+        "(Landroid/content/Context;Lcom/google/android/gms/auth/api/signin/GoogleSignInOptions;)Lcom/google/android/gms/auth/api/signin/GoogleSignInClient;",
+        [ctx(&mut e), Value::Null]
+    )
+    .unwrap());
+    e.gms_complete_signin(Some(("ciclo@noreply.github.com", "Ciclo")));
+    let t = ov(ci!(
+        e,
+        SIGNIN_CLIENT,
+        "silentSignIn",
+        "()Lcom/google/android/gms/tasks/Task;",
+        client,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1);
+
+    e.gms_sign_out_google();
+    assert_eq!(
+        cs!(
+            e,
+            GOOGLE_SIGNIN,
+            "getLastSignedInAccount",
+            "(Landroid/content/Context;)Lcom/google/android/gms/auth/api/signin/GoogleSignInAccount;",
+            [ctx(&mut e)]
+        )
+        .unwrap(),
+        Some(Value::Null)
+    );
+    let t2 = ov(ci!(
+        e,
+        SIGNIN_CLIENT,
+        "silentSignIn",
+        "()Lcom/google/android/gms/tasks/Task;",
+        client,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t2, "isSuccessful"), 0);
+    let exc = ov(ci!(e, TASK, "getException", "()Ljava/lang/Exception;", t2, []).unwrap());
+    assert_eq!(
+        iv(ci!(e, API_EXCEPTION, "getStatusCode", "()I", exc, []).unwrap()),
+        4
+    );
+
+    // Voltar a autenticar restaura a sessão silenciosa.
+    e.gms_complete_signin(None);
+    let t3 = ov(ci!(
+        e,
+        SIGNIN_CLIENT,
+        "silentSignIn",
+        "()Lcom/google/android/gms/tasks/Task;",
+        client,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t3, "isSuccessful"), 1);
+}
+
+#[test]
+fn location_fix_cleared_mid_session_returns_null_until_reseeded() {
+    let mut e = engine();
+    let fused = ov(cs!(
+        e,
+        LOCATION_SERVICES,
+        "getFusedLocationProviderClient",
+        "(Landroid/content/Context;)Lcom/google/android/gms/location/FusedLocationProviderClient;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+    let last = |mut e: &mut Engine| {
+        let t = ov(ci!(
+            e,
+            FUSED_CLIENT,
+            "getLastLocation",
+            "()Lcom/google/android/gms/tasks/Task;",
+            fused,
+            []
+        )
+        .unwrap());
+        task_result(e, t)
+    };
+
+    e.gms_set_location_fix(38.7, -9.1, 10.0);
+    let loc = ov(last(&mut e));
+    assert_eq!(e.heap.class_of(loc).unwrap(), "Landroid/location/Location;");
+
+    e.gms_clear_location_fix();
+    assert_eq!(last(&mut e), Some(Value::Null));
+
+    e.gms_set_location_fix(-23.55, -46.63, 8.0);
+    let again = ov(last(&mut e));
+    match e.heap.get_field(again, "mLatitudeDegrees").unwrap() {
+        Value::Double(d) => assert!((d - (-23.55)).abs() < 1e-9),
+        other => panic!("latitude: {other:?}"),
+    }
+}

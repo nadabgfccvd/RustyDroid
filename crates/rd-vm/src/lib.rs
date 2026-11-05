@@ -30,6 +30,7 @@ pub(crate) mod android_util;
 pub(crate) mod android_velocity;
 /// Apêndice D — shims host AndroidX/Jetpack (data/jetpack.toml).
 pub mod androidx;
+pub mod androidx_widgets;
 pub(crate) mod arrays;
 pub(crate) mod atomics;
 pub(crate) mod boxes;

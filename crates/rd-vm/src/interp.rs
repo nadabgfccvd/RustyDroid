@@ -2193,6 +2193,10 @@ fn call_host_shim_layer(
     if let Some(v) = crate::androidx::call_instance(vm, class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
+    // Apêndice D (S8): estado host de DrawerLayout, SwipeRefreshLayout e CardView.
+    if let Some(v) = crate::androidx_widgets::call_instance(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
     // Apêndice E: objetos seguidos pelo shim GMS/Firebase e classes
     // `Lcom/google/android/gms/`, `Lcom/google/firebase/`,
     // `Lcom/android/billingclient/` — `None` continua para o host/DEX.
