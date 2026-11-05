@@ -93,6 +93,7 @@ pub(crate) mod numerics;
 pub(crate) mod org_json;
 pub(crate) mod parcel;
 pub mod perms;
+pub mod photopicker;
 pub(crate) mod platform_base;
 pub(crate) mod prefs;
 pub(crate) mod reflect;

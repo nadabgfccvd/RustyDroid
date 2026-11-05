@@ -952,6 +952,8 @@ pub struct HostState {
     pub(crate) uuid: crate::juuid::Tables,
     /// Bytes de host de parsers XML (ADR 024, passo 3 — em `xml`).
     pub objects: HashMap<ObjRef, HostObj>,
+    /// Resultados programados do photo picker (S10).
+    pub photopicker: crate::photopicker::PickerState,
     /// `List.subList` views: view → (parent, offset, len). See
     /// `jcollections::sublist_*` (write-through semantics).
     pub(crate) sublists: HashMap<ObjRef, (ObjRef, usize, usize)>,
@@ -3798,6 +3800,33 @@ fn call_host_instance_rooted(
             // Window host criada sob demanda (setContentView(View) também a cria)
             let w = ensure_window(vm, recv)?;
             Ok(Some(Value::Obj(w)))
+        }
+        (ACTIVITY, "startActivityForResult")
+            if sig == "(Landroid/content/Intent;I)V"
+                || sig == "(Landroid/content/Intent;ILandroid/os/Bundle;)V" =>
+        {
+            // S10: só ações de photo picker; o resultado vem da fila programada.
+            let Some(Value::Obj(ir)) = args.first() else {
+                return Err(crate::err::vm_error(
+                    "INVALID_FORMAT",
+                    "startActivityForResult sem intent",
+                )
+                .into());
+            };
+            let request = match args.get(1) {
+                Some(Value::Int(n)) => *n,
+                _ => 0,
+            };
+            match crate::photopicker::intent_action(vm, *ir) {
+                Some(a) if crate::photopicker::is_picker_action(&a) => {
+                    crate::photopicker::deliver(vm, recv, request)?;
+                    Ok(Some(Value::Null))
+                }
+                other => Err(crate::err::not_implemented(format!(
+                    "startActivityForResult com ação {other:?} — só o photo picker é modelado (S10)"
+                ))
+                .into()),
+            }
         }
         (ACTIVITY, "startActivity") | (CONTEXT, "startActivity") => {
             let Some(Value::Obj(ir)) = args.first() else {

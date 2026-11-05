@@ -605,12 +605,12 @@ category = "behavior"
 coordinates = "androidx.activity:activity (PickVisualMedia)"
 prefixes = ["androidx.activity.result.contracts.ActivityResultContracts$PickVisualMedia", "androidx.activity.result.contracts.ActivityResultContracts$PickMultipleVisualMedia"]
 strategy = "host-shim"
-status = "not_implemented"
-module = "none"
-code = []
-milestone = "future"
-notes = "Contratos PickVisualMedia não devolvem URI programável pelo agente; o picker do sistema não existe em sandbox."
-evidence = ["docs/appendix-d-e.md"]
+status = "partial"
+module = "rd-vm/photopicker"
+code = ["crates/rd-vm/src/photopicker.rs", "crates/rd-vm/src/framework.rs"]
+milestone = "appendix-d"
+notes = "S11: lançamento via Activity.startActivityForResult (DEX invoke-virtual) para Intents com ação android.media.action.PICK_IMAGES, android.intent.action.GET_CONTENT ou android.intent.action.OPEN_DOCUMENT. O resultado vem de uma fila programável (PickerAnswer::Uri ou Cancel); fila vazia = cancelado (RESULT_CANCELED, sem data). Resultado entregue por onActivityResult(IILandroid/content/Intent;)V da subclasse do app, com URI em Intent.getData() (IntentMeta). Não modelado: picker do sistema (UI, seleção real de mídia, permissões de acesso à mídia), entrega assíncrona (é síncrona, no mesmo call), múltiplas URIs (PickMultipleVisualMedia não é devolvido), tipos MIME no resultado, Uri opaca (sem esquema/caminho) e ações fora da lista, que continuam NOT_IMPLEMENTED sem consumir a fila. Os testes em tests/photopicker.rs exercitam o caminho da ação do Intent; a classe ActivityResultContracts$PickVisualMedia do AndroidX não é executada como golden. Mutações: sem entrega, código errado, fila ignorada, ação não verificada, data não entregue (cada uma derruba testes)."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/photopicker.rs"]
 gap_id = "gap-jetpack-photopicker"
 key_apis = ["androidx.activity.result.contracts.ActivityResultContracts$PickVisualMedia"]
 

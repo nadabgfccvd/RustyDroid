@@ -229,3 +229,46 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
   - D — continuam `stub` (3): `androidx-constraintlayout`,
     `androidx-coordinatorlayout`, `androidx-material`. D — `not_implemented`
     (20) sem mudança.
+
+### S11 — Apêndice D: photo picker com resultado programável (2026-11-05)
+
+- **S11 (rodada 3 de D, branch `appendix-d-photopicker-20261105`)**: photo
+  picker sobe de `not_implemented` para `partial` (`androidx-photopicker`).
+  - Escolha do usuário: resultado programável. Sem provedor inventado e sem
+    sucesso fake. Por padrão, o picker cancela.
+  - Lançamento: `Activity.startActivityForResult(Intent, int)` (e a forma com
+    `Bundle`) em `crates/rd-vm/src/framework.rs`. Ações de picker
+    (`android.media.action.PICK_IMAGES`, `GET_CONTENT`, `OPEN_DOCUMENT`) passam
+    por `crates/rd-vm/src/photopicker.rs`. Outras ações continuam
+    `NOT_IMPLEMENTED` e não consomem a fila.
+  - Resultado: uma fila FIFO de `PickerAnswer` (`Uri` ou `Cancel`) em
+    `HostState.photopicker`. Fila vazia = `RESULT_CANCELED` sem data. URI
+    programada = `RESULT_OK` com a URI em `Intent.getData()`. A entrega chama
+    `onActivityResult(IILandroid/content/Intent;)V` no DEX do app.
+  - Modelo do Intent: único, o `IntentMeta` de `bundle.rs`. Não há arms
+    duplicados de Intent. Uma tentativa anterior com arms duplicados foi
+    descartada porque eles eram sombreados pelo `IntentMeta`.
+  - Testes: 7 em `crates/rd-vm/tests/photopicker.rs`, com Intents criados
+    por DEX (`new-instance` + `invoke-direct <init>(String)`) e lançamento por
+    DEX (`invoke-virtual startActivityForResult`). Cobrem: cancelamento sem
+    resposta, URI entregue com RESULT_OK e getData, FIFO com fila vazia
+    cancelando de novo, GET_CONTENT e OPEN_DOCUMENT, ação fora do picker sem
+    consumir a fila, Intent sem ação, e resultado sem tipo MIME.
+  - Mutações (cada uma derruba os testes que devem cair): sem entrega
+    (`onActivityResult` não chamado) → 5 falhas; fila ignorada (sempre
+    cancela) → 4 falhas; RESULT_OK trocado por CANCELED para URI → 2 falhas;
+    GET_CONTENT removido da lista → 1 falha; data não entregue → 4 falhas;
+    ação não verificada (qualquer ação vira picker) → 1 falha. Arquivos
+    restaurados e comparados byte a byte.
+  - Desvios documentados: entrega síncrona (no mesmo call, sem loop de
+    mensagens); uma URI só (`PickMultipleVisualMedia` não é devolvido); Uri
+    opaca (sem esquema nem caminho); sem tipo MIME no resultado.
+  - Não modelado: UI do picker do sistema, seleção real de mídia, permissão
+    de acesso à mídia, e a classe `ActivityResultContracts$PickVisualMedia`
+    do AndroidX como golden (os testes exercitam o caminho da ação do Intent).
+  - Inventário: a API pública do photo picker não foi inventariada
+    integralmente. O que não é modelado está em `notes` de `data/jetpack.toml`.
+    Por isso o status é `partial`, não `supported`.
+  - D — `partial` agora: DrawerLayout, SwipeRefreshLayout, CardView,
+    ViewPager2, photo picker. `stub` (3): ConstraintLayout, CoordinatorLayout,
+    material. `not_implemented` (19, eram 20).
