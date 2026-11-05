@@ -166,7 +166,8 @@ Decisões e limites:
 - Mover esses `<clinit>` para o launch reduziria o passo ENTER, mas é uma troca de onde o custo
   cai na medição, e não uma redução de trabalho. Não foi feito; depende de decisão sobre a
   métrica.
-- Acelerar `listOf`/`Pair`/`mapOf` com intrínsecos do stdlib do Kotlin reduziria uma fração
-  pequena (as chamadas são ~20% do total dos catálogos); exige cuidado com a semântica das listas.
+- Acelerar `listOf`/`Pair`/`mapOf` com intrínsecos do stdlib do Kotlin: no `<clinit>` do `m2/n`,
+  `listOf` e `Ls0/c;->L` são ~317 dos ~650 sites de invoke estáticos (contagem estática, não
+  execução). Exige cuidado com a semântica das listas; o ganho real não foi medido.
 - O ganho grande exige reduzir o custo por instrução do interpretador, o que segue difuso
   (ver a seção de categorias acima).
