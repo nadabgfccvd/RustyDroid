@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793845702771,
+  "lastUpdate": 1793846393308,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3815,6 +3815,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3183,
             "range": "± 11",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c2f5d46fa71bea67af566a533bd8b49b1a97b2bf",
+          "message": "test(gms): Fit zero-steps e ledger da auditoria E (rodada 2) (#546)\n\n- fit_zero_steps_yields_empty_data_set_not_fake_points: with no programmed\n  steps the history returns an empty data point list (no invented point).\n  gms suite: 40 passing.\n- docs/appendix-d-e.md S8: records the remaining E audit items that still\n  lack explicit error/lifecycle tests (firebase-analytics, cloud-firestore,\n  gms-cast listeners). They stay partial with their gap_id.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T23:39:30-03:00",
+          "tree_id": "a4f797e0aba52aed70b36aae1fcc477131f1bd03",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/c2f5d46fa71bea67af566a533bd8b49b1a97b2bf"
+        },
+        "date": 1793846392365,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2780,
+            "range": "± 65",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2776,
+            "range": "± 51",
             "unit": "ns/iter"
           }
         ]
