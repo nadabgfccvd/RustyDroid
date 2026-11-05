@@ -147,12 +147,21 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
        `ui_tree`/`observe` continuam mostrando a lista ("unchanged since last observe").
     3. Só 15 chamadas de `Lbr/` depois do toque: não há laço de Kotlin. O host registra 97
        `Activity.getPackageName()` e 108 `ViewGroup.getChildAt()`; `fuel` cresce durante a espera.
-    4. Hipótese: a composição do `AndroidView` (PreviewView) não é aplicada à árvore de views.
-       O redesenho só ocorre quando `traversal_pending` é marcado (`framework.rs`,
-       `advance_clock`), e nenhum `requestLayout`/`addView` é chamado após o toque. Próximo passo:
-       investigar a anexação de `AndroidView` no Compose (`AndroidViewHolder`/`AndroidComposeView`)
-       na camada de framework, antes do shim CameraX (`ProcessCameraProvider`, `Preview`,
-       `ImageAnalysis`, ML Kit).
+    4. Medido com `RD_TRACE_DRAW` e `RD_TRACE_METHOD` (2026-11-05, sessão seguinte):
+       - O laço de acessibilidade (`LK0/`, `getPackageName`, `getChildAt`) já existe na tela
+         de lista, antes do toque. Não é a causa.
+       - O frame do Compose é agendado pelo `AndroidUiDispatcher` (`LB0/k0`, que é
+         `FrameCallback` e `Runnable`). Após o toque, a composição do scanner (`LG2/`) roda
+         dentro de dois frames em 8752 ms, seguida de ~18.000 chamadas `LP/` (Composer/Recomposer).
+       - Ao fim desse trabalho, `run()` do dispatcher remove o callback com `removeFrameCallback`
+         (fila de tarefas vazia). Nenhum frame novo é pedido depois, mesmo com `wait`.
+       - Não há `addView`/`requestLayout` que insira a `PreviewView` na árvore (o
+         `AndroidViewsHandler` nunca recebe o holder). Assim a árvore continua na lista.
+       - Hipótese principal: recomposição repetida na composição do scanner (estado escrito
+         durante a composição, sem convergir), que consome o frame e termina sem apply da
+         inserção. Próximo passo: identificar qual estado é reescrito (ver `LP/D.g`, `LP/C.c`,
+         `LP/d.C`) e se o efeito depende de `ProcessCameraProvider`/`LifecycleOwner`. Só então
+         partir para o shim CameraX.
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
