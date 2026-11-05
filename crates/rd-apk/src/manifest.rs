@@ -843,7 +843,18 @@ fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Compo
         .iter()
         .flat_map(|f| f.actions.iter().map(String::as_str))
         .collect();
-    let extensions = extension_kinds(kind, &actions, permission_attr.as_deref());
+    let meta_data = collect_meta_data(el);
+    let mut extensions = extension_kinds(kind, &actions, permission_attr.as_deref());
+    // device-admin: a plataforma só reconhece o receiver que declara o meta-data
+    // `android.app.device_admin` (DeviceAdminInfo falha com "No
+    // android.app.device_admin meta-data" sem ele). A ação e o BIND_DEVICE_ADMIN
+    // sozinhos não bastam.
+    if !meta_data
+        .iter()
+        .any(|m| m.name.as_deref() == Some("android.app.device_admin"))
+    {
+        extensions.retain(|e| e.as_str() != "device-admin");
+    }
     // exported: declaração explícita vence; sem declaração, a regra da
     // plataforma (comportamento legado, preservado em apps targetSdk < 31) é
     // true se o componente tem QUALQUER <intent-filter> — não só MAIN/LAUNCHER
@@ -876,7 +887,7 @@ fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Compo
         direct_boot_aware: attr_bool(el, "directBootAware"),
         intent_filters: filters,
         extensions,
-        meta_data: collect_meta_data(el),
+        meta_data,
         properties: el
             .children_named("property")
             .map(|p| MetaData {
@@ -1454,6 +1465,40 @@ mod appendix_f_tests {
         let m = build(&doc, None).expect("manifest");
         let comps = &m.application.components;
         assert_eq!(comps[0].extensions, vec!["ime".to_string()]);
+        assert!(comps[1].extensions.is_empty());
+    }
+
+    #[test]
+    fn device_admin_requires_the_device_admin_meta_data() {
+        // Sem <meta-data android:name="android.app.device_admin"> o receiver não é
+        // um device admin, mesmo com a ação e BIND_DEVICE_ADMIN.
+        let with_meta = el(
+            "receiver",
+            vec![
+                a("name", ".Admin"),
+                a("permission", "android.permission.BIND_DEVICE_ADMIN"),
+            ],
+            vec![
+                filter("android.app.action.DEVICE_ADMIN_ENABLED"),
+                el(
+                    "meta-data",
+                    vec![a("name", "android.app.device_admin")],
+                    vec![],
+                ),
+            ],
+        );
+        let without_meta = el(
+            "receiver",
+            vec![
+                a("name", ".NoMeta"),
+                a("permission", "android.permission.BIND_DEVICE_ADMIN"),
+            ],
+            vec![filter("android.app.action.DEVICE_ADMIN_ENABLED")],
+        );
+        let doc = manifest_doc(vec![with_meta, without_meta], vec![]);
+        let m = build(&doc, None).expect("manifest");
+        let comps = &m.application.components;
+        assert_eq!(comps[0].extensions, vec!["device-admin".to_string()]);
         assert!(comps[1].extensions.is_empty());
     }
 
