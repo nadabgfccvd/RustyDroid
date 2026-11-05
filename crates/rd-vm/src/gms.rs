@@ -5510,10 +5510,20 @@ fn cast_nearby_integrity_instance(
                             _ => None,
                         })
                         .collect();
-                    if let Some(id) = ids.last().cloned() {
-                        vm.fw.gms.nearby_connections.push(id);
+                    // Só conecta a um endpoint já descoberto (ou programado
+                    // com gms_nearby_add_endpoint); o resto falha tipado, como
+                    // o Nearby real com ENDPOINT_UNKNOWN — nunca sucesso falso.
+                    match ids.last().cloned() {
+                        Some(id) if vm.fw.gms.nearby_endpoints.iter().any(|(i, _)| *i == id) => {
+                            vm.fw.gms.nearby_connections.push(id);
+                            Value::Obj(void_task(vm)?)
+                        }
+                        _ => Value::Obj(failed_task(
+                            vm,
+                            API_EXCEPTION,
+                            "ENDPOINT_UNKNOWN (RustyDroid shim: endpoint não descoberto)",
+                        )?),
                     }
-                    Value::Obj(void_task(vm)?)
                 }
                 "acceptConnection" | "rejectConnection" | "disconnectFromEndpoint" => {
                     Value::Obj(void_task(vm)?)

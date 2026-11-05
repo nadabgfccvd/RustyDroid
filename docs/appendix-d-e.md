@@ -121,8 +121,8 @@ mínimas documentadas no PR.
     | glide | dex-passthrough | Depende de pipeline de imagens (UI-02) |
     | picasso | dex-passthrough | Depende de pipeline de imagens (UI-02) |
 
-  - **E — testes de erro e ciclo de vida (4 novos em
-    `crates/rd-vm/tests/gms.rs`, suíte gms com 37 testes passando)**:
+  - **E — testes de erro e ciclo de vida (6 novos em
+    `crates/rd-vm/tests/gms.rs`, suíte gms com 39 testes passando)**:
     - `storage_getbytes_size_limit_error_and_delete_lifecycle`
       (firebase-storage): limite menor que o blob falha sem alterar o
       blob; limite igual ou zero tem sucesso; `delete` → leitura falha →
@@ -137,6 +137,14 @@ mínimas documentadas no PR.
     - `location_fix_cleared_mid_session_returns_null_until_reseeded`
       (gms-location): limpar o fix devolve null em `getLastLocation`;
       reprogramar restaura.
+    - `nearby_request_connection_only_reaches_discovered_endpoints`
+      (gms-nearby): **correção de comportamento**. `requestConnection`
+      concluía com sucesso para qualquer endpoint, inclusive um nunca
+      descoberto. Agora só conclui para endpoint descoberto ou programado
+      e falha com `ApiException` (ENDPOINT_UNKNOWN) para os demais. Texto
+      em `data/gms.toml` e `docs/gms.md` regenerado.
+    - `maps_marker_remove_drops_only_that_marker` (gms-maps): `remove`
+      tira só o marcador alvo, e o outro permanece.
   - **E — ML Kit**: continua `not_implemented`, sem dispatch.
   - **E — status**: os 20 serviços continuam `partial` com os mesmos
     `gap_id`; os `notes` em `data/gms.toml` já descrevem o comportamento

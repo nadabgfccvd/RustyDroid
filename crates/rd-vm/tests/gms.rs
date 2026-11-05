@@ -3391,3 +3391,120 @@ fn location_fix_cleared_mid_session_returns_null_until_reseeded() {
         other => panic!("latitude: {other:?}"),
     }
 }
+
+#[test]
+fn nearby_request_connection_only_reaches_discovered_endpoints() {
+    const CONNECTIONS_CLIENT: &str = "Lcom/google/android/gms/nearby/connection/ConnectionsClient;";
+    const REQUEST_SIG: &str = "(Ljava/lang/String;Ljava/lang/String;Lcom/google/android/gms/nearby/connection/ConnectionLifecycleCallback;)Lcom/google/android/gms/tasks/Task;";
+    let mut e = engine();
+    let client = ov(cs!(
+        e,
+        NEARBY,
+        "getConnectionsClient",
+        "(Landroid/content/Context;)Lcom/google/android/gms/nearby/connection/ConnectionsClient;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+
+    // Endpoint nunca descoberto ⇒ falha tipada (ApiException), sem conexão.
+    let name = s(&mut e, "Meu aparelho");
+    let ghost = s(&mut e, "ep-fantasma");
+    let t = ov(ci!(
+        e,
+        CONNECTIONS_CLIENT,
+        "requestConnection",
+        REQUEST_SIG,
+        client,
+        [name, ghost, Value::Null]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 0);
+    let exc = ov(ci!(e, TASK, "getException", "()Ljava/lang/Exception;", t, []).unwrap());
+    assert_eq!(e.heap.class_of(exc).unwrap(), API_EXCEPTION);
+
+    // Depois de programado/descoberto, a mesma chamada conecta.
+    e.gms_nearby_add_endpoint("ep-1", "Tablet do balcao");
+    let name2 = s(&mut e, "Meu aparelho");
+    let ep = s(&mut e, "ep-1");
+    let t2 = ov(ci!(
+        e,
+        CONNECTIONS_CLIENT,
+        "requestConnection",
+        REQUEST_SIG,
+        client,
+        [name2, ep, Value::Null]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t2, "isSuccessful"), 1);
+}
+
+fn add_titled_marker(mut e: &mut Engine, map: u32, ll: u32, title: &str) -> u32 {
+    let opts = obj(e, MARKER_OPTIONS);
+    ci!(e, MARKER_OPTIONS, "<init>", "()V", opts, []).unwrap();
+    ci!(e, MARKER_OPTIONS, "position",
+        "(Lcom/google/android/gms/maps/model/LatLng;)Lcom/google/android/gms/maps/model/MarkerOptions;",
+        opts, [Value::Obj(ll)]).unwrap();
+    let t = s(e, title);
+    ci!(
+        e,
+        MARKER_OPTIONS,
+        "title",
+        "(Ljava/lang/String;)Lcom/google/android/gms/maps/model/MarkerOptions;",
+        opts,
+        [t]
+    )
+    .unwrap();
+    ov(ci!(e, GOOGLE_MAP, "addMarker",
+        "(Lcom/google/android/gms/maps/model/MarkerOptions;)Lcom/google/android/gms/maps/model/Marker;",
+        map, [Value::Obj(opts)]).unwrap())
+}
+
+#[test]
+fn maps_marker_remove_drops_only_that_marker() {
+    let mut b = DexBuilder::new();
+    counter_observer_class(
+        &mut b,
+        "LMapCb2;",
+        "onMapReady",
+        vec!["Lcom/google/android/gms/maps/GoogleMap;"],
+    );
+    let mut e = engine_of(&b);
+    let frag = ov(cs!(
+        e,
+        SUPPORT_MAP_FRAGMENT,
+        "newInstance",
+        "()Lcom/google/android/gms/maps/SupportMapFragment;",
+        []
+    )
+    .unwrap());
+    let cb = obj(&mut e, "LMapCb2;");
+    ci!(
+        e,
+        SUPPORT_MAP_FRAGMENT,
+        "getMapAsync",
+        "(Lcom/google/android/gms/maps/OnMapReadyCallback;)V",
+        frag,
+        [Value::Obj(cb)]
+    )
+    .unwrap();
+    let map = *e.fw.gms.google_maps.keys().next().expect("mapa cunhado");
+    let ll = obj(&mut e, LATLNG);
+    ci!(
+        e,
+        LATLNG,
+        "<init>",
+        "(DD)V",
+        ll,
+        [Value::Double(-23.55), Value::Double(-46.63)]
+    )
+    .unwrap();
+
+    let a = add_titled_marker(&mut e, map, ll, "A");
+    let _b = add_titled_marker(&mut e, map, ll, "B");
+    assert_eq!(e.gms_maps_markers().len(), 2);
+
+    ci!(e, MARKER, "remove", "()V", a, []).unwrap();
+    let left = e.gms_maps_markers();
+    assert_eq!(left.len(), 1, "remove tira só o marcador alvo");
+    assert_eq!(left[0].2, "B");
+}
