@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793840857083,
+  "lastUpdate": 1793842691492,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3707,6 +3707,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3348,
             "range": "± 205",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55f4f7db06307c75836ca2ccfc8601be6b0a5b9c",
+          "message": "feat(util): Printer/StateSet (from #191) + Apêndice C public API inventory (API 26–36) (#543)\n\nPorts the parts of draft #191 that origin/main does not already have:\n\n- android.util.Printer family: LogPrinter, PrintStreamPrinter,\n  PrintWriterPrinter and StringBuilderPrinter constructors and println,\n  including the StringBuilderPrinter null-message quirk.\n- android.util.StateSet: isWildCard, stateSetMatches (one-state and\n  array overloads), trimStateSet, dump, containsAttribute, WILD_CARD and\n  NOTHING. android.drawable's state matcher now uses the AOSP-exact\n  state_set_matches.\n- ArrayMap/ArraySet from #191 were already on main (8791401), so they are\n  not re-ported. The #191 perf commit b4de826 is not ported: its jlstring\n  gate is name-only and over-inclusive, so it can skip core String handling.\n\nApêndice C inventory:\n\n- scripts/appendix_c_inventory.py parses the official platform android.jar\n  stubs for API 26–36 (API 34 from platform-34-ext7, ApiLevel=34,\n  IsBaseSdk=true) and counts public+protected classes, constructors,\n  methods and fields per registered prefix, plus rd-vm descriptor coverage.\n- Results: docs/appendix-c-inventory.md and docs/api-inventory/*.csv.\n- Inventory only: no registry status changes. android.util stays partial.\n\nRegistry: data/api-coverage.toml android-util notes/key_apis/evidence\nupdated to match the code (status unchanged). docs/api-coverage.md is\nregenerated (cargo xtask api-coverage-report). The spec table is unchanged.\n\nValidation: cargo fmt --check; full cargo test -p rd-vm (962 passed,\n0 failed); android_printers and android_state_set tests; md link check.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T22:37:48-03:00",
+          "tree_id": "15cf1403c947d8464ea3da6b370d30b7de2d89a0",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/55f4f7db06307c75836ca2ccfc8601be6b0a5b9c"
+        },
+        "date": 1793842691034,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3901,
+            "range": "± 123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3887,
+            "range": "± 38",
             "unit": "ns/iter"
           }
         ]
