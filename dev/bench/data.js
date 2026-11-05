@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793914211588,
+  "lastUpdate": 1793914234829,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4643,6 +4643,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2801,
             "range": "± 77",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7dc0455af5614768acdf122bfef0082a5e99e896",
+          "message": "docs(plan): MEDIA-03 — ordem medida do Recomposer (applyChanges ausente no frame 2) (#568)\n\n* docs(plan): MEDIA-03 — achados de frame do Compose (recomposição, não acessibilidade)\n\n* docs(plan): MEDIA-03 — ordem medida do Recomposer (applyChanges ausente no frame 2)\n\n---------\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T18:29:47-03:00",
+          "tree_id": "9e13f2b03c149f6ffe3608d5c5f6d5618ce1fe9f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/7dc0455af5614768acdf122bfef0082a5e99e896"
+        },
+        "date": 1793914234396,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2779,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2787,
+            "range": "± 41",
             "unit": "ns/iter"
           }
         ]
