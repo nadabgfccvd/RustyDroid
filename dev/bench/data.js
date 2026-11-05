@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793900319922,
+  "lastUpdate": 1793903485928,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4427,6 +4427,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1845,
             "range": "± 25",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27c233e6946dd0a290db023ea222adb90eb50995",
+          "message": "feat(vm): ST-04 base do AndroidKeyStore — KeyGenerator AES, Cipher AES/GCM, chave não exportável\n\n## O que muda\n- `crates/rd-vm/src/jkeystore.rs` (novo): provedor AndroidKeyStore, KeyGenerator AES, Cipher AES/GCM/NoPadding, GCMParameterSpec, chave não exportável.\n- Classpath: superclasses/interfaces e exceções `java.security`/`javax.crypto` que o módulo lança (`GeneralSecurityException` e derivadas, `AEADBadTagException`).\n- `framework.rs`: estado do keystore por engine (`HostState::keystore`). `intrinsics.rs`: despacho estático e de instância.\n- `Cargo.toml` / `Cargo.lock`: `aes-gcm = \"0.10\"`. Licenças das crates novas (MIT / Apache-2.0 / BSD-3-Clause) estão no `deny.toml`.\n- `docs/appendix-b-f-plan.md` §5: estado de ST-04 e MEDIA-03.\n\n## Decisões\n- Aprovado pelo usuário: crate AES-GCM real (não Keystore simulado sem criptografia).\n- Chaves e IV vêm de `/dev/urandom` do host. Não são reprodutíveis de propósito; não aparecem em log.\n- `security-crypto` continua `not_implemented`: falta MasterKey / EncryptedSharedPreferences, e nenhum APK de teste validou o caminho DEX. Por isso não há mudança de status em `data/jetpack.toml`.\n\n## Validação\n- `cargo test -p rd-vm --lib`: 198 ok (194 anteriores + 4 novos: vetor NIST SP 800-38D AES-128-GCM, round-trip e tag inválida, chave não exportável e round-trip pelos intrínsecos, tamanhos de chave).\n- `cargo test -p rd-vm --test android_stub_surfaces`: 109 ok.\n- `cargo clippy -p rd-vm --lib -- -D warnings`: ok. `cargo fmt --check -p rd-vm`: ok.\n- `scripts/check_md_links.py`: 165 links, todos resolvem.",
+          "timestamp": "2026-11-05T15:31:00-03:00",
+          "tree_id": "e03be9a334f8fbb831e007167dba4f28c8084359",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/27c233e6946dd0a290db023ea222adb90eb50995"
+        },
+        "date": 1793903485458,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3407,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3403,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
