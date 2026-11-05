@@ -125,6 +125,20 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
   `CameraCaptureSession`, `ImageReader`). Falta a camada CameraX (`ProcessCameraProvider`,
   lifecycle, casos de uso `Preview`/`ImageCapture`/`ImageAnalysis`) e o modelo de cenas da spec.
   O APK do Comprix contém CameraX (`ProcessCameraProvider`, `PreviewView`) e serve de alvo de teste.
+  - **Escolha do APK de teste (pesquisa no GitHub, 2026-11-05):** `arindamxd/camerax-android`
+    (Apache-2.0, CameraX 1.6.1, Preview/ImageCapture/ImageAnalysis; o repositório foi renomeado
+    e o antigo nome redireciona) não publica APK nas releases (1.7.0, 1.6.8, 1.6.7 sem assets) e
+    exige build com Android SDK completo e JDK 17+ (o sandbox tem JDK 11 e só `platform-tools`).
+    `carlosgub/CameraX-MLKIT_BarcodeScanning` não tem releases. Por isso o alvo continua sendo o
+    APK do Comprix v1.6.0, já disponível localmente.
+  - **Caminho de navegação até o scanner (medido):** `Pular` → `Nova lista` → chip
+    `Compra do Mês` → `Criar e adicionar itens` → `Escanear um produto` → tela "Escanear preço"
+    (modos Foto / Vídeo 30 s / Código). Sem permissão, a tela mostra "Câmera desligada" com
+    `Permitir câmera`; tocar nesse botão não abre diálogo na VM. A permissão é concedida com
+    `permissions_grant` (`android.permission.CAMERA`). Esperas de ~1–2,5 s após cada toque são
+    necessárias: sem elas, `tap_text` falha com `VIEW_NOT_FOUND`.
+  - **Bloqueio observado:** `ui_tree` não expõe texto do Compose; a navegação depende de
+    `screenshot` e `tap_text` por rótulo visível.
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
