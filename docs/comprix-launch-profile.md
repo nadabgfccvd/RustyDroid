@@ -195,23 +195,21 @@ O total (~1,44 s) é o mesmo com ou sem `observe`. O primeiro `observe` paga o f
 | `advance_clock(16)` (drena o looper) | **4,84 M** | **989–1.123 ms** |
 | `record_view` | 0,14 M | 28–34 ms |
 
-**Causa dominante: `advance_clock` drena o looper e executa o trampoline do Compose 29 vezes no mesmo
-instante virtual.** O runnable `LB0/k0` (trampoline do dispatcher de frames do Compose, roda como
-mensagem do Looper) aparece em `[fw] drain` repetido com `quando 64 <= 64`, `96 <= 96` etc. Ele se
-reagenda com `when = now`, sem avançar o vsync. Cada execução custa ~165 mil de fuel, ou seja, uma
-composição inteira. O cap `MAX_FRAMES_PER_DRAIN = 8` do `choreographer.rs` cobre só os callbacks do
-Choreographer; estes passam pelo Looper e não são limitados.
+**O que se sabe sobre o custo dentro de `advance_clock` (correção desta seção):** a leitura
+inicial de que o trampoline do Compose (`LB0/k0`) era a causa **não se sustenta**. Esse runnable
+aparece repetido com `quando 64 <= 64`, `96 <= 96` etc., mas limitar as execuções dele no mesmo
+instante virtual **não mudou o fuel** (4.837.700 sem limite; 4.838.098 com limite 1; 4.838.200 com
+limite 3). O experimento não foi commitado.
 
-Duas leituras, nenhuma implementada:
-- **Pacing:** o trampoline deveria reagendar para o próximo vsync (como no device). Alinha com o modelo
-  de tempo de `advance_clock`, mas muda a ordem e o momento dos frames de **todos** os apps que usam
-  Compose. Exige a suíte completa e revisão de telas.
-- **Cap por drenagem:** limitar as execuções do trampoline por drenagem, como já é feito para os
-  callbacks do Choreographer. Mais local, mas também altera o que está pronto quando `observe` retorna.
+O que foi medido dentro da fase `advance_clock` do primeiro frame:
+- Traversals (`layout_pass`) em 48 ms e 64 ms (`RD_TRACE_DRAW=1`), dois dentro da janela do observe.
+  Um layout completo custa ~0,78 M de fuel no primeiro frame; por isso eles são candidatos fortes,
+  mas o custo individual de cada traversal **não foi medido**.
+- Outros runnables do looper (`Lj4/h;` e `Le4/g;`, uma vez cada no grupo do primeiro frame) e o
+  trabalho que eles disparam.
 
-Por isso não foi feito sem decisão. Se o pacing for adotado, o primeiro frame cai de ~4,8 M para
-algo próximo de uma composição (~0,2 M de fuel), o que levaria o "Pular" para perto de 0,5 s.
-Essa estimativa não foi medida.
+A causa exata ainda não está isolada. Próximo passo: cronometrar cada traversal e cada runnable
+(fuel antes e depois) dentro de `advance_clock`.
 
 **Swipe na lista** (uma lista com 1 item, sonda `/tmp/swipe_probe.py`):
 
