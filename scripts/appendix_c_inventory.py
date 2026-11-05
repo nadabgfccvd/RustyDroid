@@ -338,16 +338,18 @@ def write_readme(summary_path: Path, loaded: list[int], surfaces: list[dict],
     w("")
     w("## Registered surfaces (`data/api-coverage.toml`)")
     w("")
-    head = "| surface | prefix | status | " + " | ".join(f"API {l}" for l in loaded) + " |"
+    head = "| surface | prefix | status | " + " | ".join(f"API {l}" for l in loaded) + " | API {0} classes with rd-vm descriptor |".format(loaded[-1])
     w(head)
-    w("|---|---|---|" + "---:|" * len(loaded))
+    w("|---|---|---|" + "---:|" * len(loaded) + "---:|")
     for s in surfaces:
         sid = s["id"]
         cells = []
         for level in loaded:
             cls_count, members, _ = summary[sid][level]
             cells.append(f"{cls_count} cls / {members} mem")
-        w(f"| `{sid}` | `{s['prefix']}` | {s.get('status', '')} | " + " | ".join(cells) + " |")
+        _, _, impl = summary[sid][loaded[-1]]
+        cls_total = summary[sid][loaded[-1]][0]
+        w(f"| `{sid}` | `{s['prefix']}` | {s.get('status', '')} | " + " | ".join(cells) + f" | {impl} / {cls_total} |")
     w("")
     w("Counts are `public classes / public members` at each API level. The per-surface")
     w("implementation signal (`classes_with_rd_vm_descriptor`) is in")
