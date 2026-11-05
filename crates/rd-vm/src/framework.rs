@@ -2581,7 +2581,17 @@ impl Engine {
             self.fw.clock_ms = step_to.min(target).max(now);
             #[cfg(feature = "advanced-components")]
             self.m9_expire_notifications()?;
+            let tr = self.launch_trace.is_some();
+            let (f_a, t_a) = (self.fuel_used, std::time::Instant::now());
             ran += self.drain_looper()?;
+            if tr {
+                eprintln!(
+                    "[adv] t={} drain fuel={} {:.1}ms",
+                    self.fw.clock_ms,
+                    self.fuel_used - f_a,
+                    t_a.elapsed().as_secs_f64() * 1e3
+                );
+            }
             // ViewRootImpl.performTraversals on this vsync: re-measure and
             // re-lay out the window when a view asked for it, so layout-driven
             // work (onGloballyPositioned, anchors of sheets/drawers, lazy
@@ -2596,8 +2606,17 @@ impl Engine {
                     );
                 }
                 self.fw.in_traversal = true;
+                let (f_t, t_t) = (self.fuel_used, std::time::Instant::now());
                 let r = self.layout_pass();
                 self.fw.in_traversal = false;
+                if self.launch_trace.is_some() {
+                    eprintln!(
+                        "[adv] t={} traversal fuel={} {:.1}ms",
+                        self.fw.clock_ms,
+                        self.fuel_used - f_t,
+                        t_t.elapsed().as_secs_f64() * 1e3
+                    );
+                }
                 if let Err(e) = r {
                     match e {
                         VmExit::Exception(t) => {

@@ -201,15 +201,27 @@ aparece repetido com `quando 64 <= 64`, `96 <= 96` etc., mas limitar as execuç�
 instante virtual **não mudou o fuel** (4.837.700 sem limite; 4.838.098 com limite 1; 4.838.200 com
 limite 3). O experimento não foi commitado.
 
-O que foi medido dentro da fase `advance_clock` do primeiro frame:
-- Traversals (`layout_pass`) em 48 ms e 64 ms (`RD_TRACE_DRAW=1`), dois dentro da janela do observe.
-  Um layout completo custa ~0,78 M de fuel no primeiro frame; por isso eles são candidatos fortes,
-  mas o custo individual de cada traversal **não foi medido**.
-- Outros runnables do looper (`Lj4/h;` e `Le4/g;`, uma vez cada no grupo do primeiro frame) e o
-  trabalho que eles disparam.
+Medido com `[adv]` (telemetria por tick de `advance_clock`, `RD_LAUNCH_TRACE=1`):
 
-A causa exata ainda não está isolada. Próximo passo: cronometrar cada traversal e cada runnable
-(fuel antes e depois) dentro de `advance_clock`.
+| Tick (ms virtuais) | Trabalho | Fuel | Tempo |
+|---|---|---|---|
+| 48 | drenagem | 7 mil | 3 ms |
+| 48 | traversal | 11 mil | 3 ms |
+| **64** | **drenagem** | **4,46 M** | **900 ms** |
+| 64 | traversal | 369 mil | 84 ms |
+| 96 | drenagem | 963 mil | 210 ms |
+| 96 | traversal | 356 mil | 79 ms |
+
+O custo está na **drenagem de t=64**, não no traversal. Com `RD_TRACE_METHOD=/` nessa janela há
+~372 mil chamadas de método. O código do app é uma fração mínima (~50 chamadas de
+`ConfiguracoesApp`, `Categoria`, `Nutriente`). O resto é runtime de biblioteca ofuscado:
+`LU3/i` (assinaturas de checagem de null do Kotlin, provavelmente `kotlin.jvm.internal.Intrinsics`),
+`LP/C0`, `LU/m` e `LA0/v` (não identificados com certeza). A drenagem é a retomada de um
+continuation do kotlinx.coroutines (`Lj4/h`, `DispatchedContinuation`) no looper principal.
+
+Conclusão: o primeiro frame é **composição de UI rodando interpretada**, com muitas chamadas
+pequenas, e não um gargalo único do app. Reduzi-lo exige diminuir o custo por chamada no
+interpretador ou evitar essa composição no primeiro frame. Nenhuma das duas foi feita.
 
 **Swipe na lista** (uma lista com 1 item, sonda `/tmp/swipe_probe.py`):
 
