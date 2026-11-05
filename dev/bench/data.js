@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793899979776,
+  "lastUpdate": 1793900010673,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4355,6 +4355,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2758,
             "range": "± 10",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "09060b87d31aa04b70666d262be9509e44b8fb1b",
+          "message": "docs(f): offline-device mapeado para PROVISIONING_ALLOW_OFFLINE, com ressalva (#562)\n\nDecisão do usuário (2026-11-05): usar android.app.extra.PROVISIONING_ALLOW_OFFLINE\n(API 33) como equivalente de offline-device. Registra a ressalva: é extra de\nprovisionamento, não action de componente; não entra em extension_kinds e o\nstatus segue not_implemented. Sem mudança de código.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T14:32:27-03:00",
+          "tree_id": "a0ad3758826f3b206c3e6e102fa4a68f0f026bbb",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/09060b87d31aa04b70666d262be9509e44b8fb1b"
+        },
+        "date": 1793900010176,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3235,
+            "range": "± 166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3186,
+            "range": "± 12",
             "unit": "ns/iter"
           }
         ]
