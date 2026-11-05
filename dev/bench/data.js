@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793891154160,
+  "lastUpdate": 1793893678515,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4175,6 +4175,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3795,
             "range": "± 38",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4b531a16b8c821fd08c92069dfe6f22c06c5e1ea",
+          "message": "feat(vm): telemetria de lançamento por passo (RD_LAUNCH_TRACE) (#557)\n\n* feat(vm): telemetria de lançamento por passo (RD_LAUNCH_TRACE)\n\n- Zera a telemetria a cada chamada MCP e imprime `[step <ferramenta>]` no stderr.\n- Adiciona `clinit_top`: `<clinit>` inclusivo por classe.\n- Teste unitário do reset e do relatório de `clinit`.\n\n* feat(vm): telemetria de lançamento por passo (RD_LAUNCH_TRACE)\n\n- Zera a telemetria a cada chamada MCP e imprime `[step <ferramenta>]` no stderr.\n- Adiciona `clinit_top`: `<clinit>` inclusivo por classe.\n- Teste unitário do reset e do relatório de `clinit`.\n\n---------\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T12:47:27-03:00",
+          "tree_id": "89b1806fdf7ab67a865cb7e02e0fc01b6b9c8716",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4b531a16b8c821fd08c92069dfe6f22c06c5e1ea"
+        },
+        "date": 1793893677615,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3248,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3234,
+            "range": "± 23",
             "unit": "ns/iter"
           }
         ]
