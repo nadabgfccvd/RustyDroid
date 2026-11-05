@@ -137,3 +137,36 @@ A suspeita de render congelado (screenshots com MD5 idêntico) não se confirmou
 correto (Pular → Nova lista → chip "Compra do Mês" → "Criar e adicionar itens" → campo →
 `type_text` com `replace`), a tela mostra o texto digitado ("2 kg de arroz") no campo "Adição
 rápida". Os MD5 iguais vinham de um roteiro que não passava pelo chip, então a tela não mudava.
+
+## Telemetria por passo (`RD_LAUNCH_TRACE`, 2026-11-05)
+
+`RD_LAUNCH_TRACE=1` agora imprime, a cada chamada MCP, uma linha `[step <ferramenta>]` no stderr
+com o relatório zerado no início da chamada. Antes, o relatório saía só no launch. `clinit_top`
+lista as classes com maior `<clinit>` inclusivo (inclui o trabalho aninhado).
+
+Golden com o binário novo (`/tmp/golden_stderr.txt` é gerado por uma cópia do roteiro que não
+envia o stderr para `DEVNULL`):
+
+| Passo | Intrínsecos (chamadas) | `clinit` | Observação |
+|---|---|---|---|
+| "Pular" (`tap_text`) | 725 ms / 340 mil | 1,9 ms / 144 | ~1,15 s no total; custo dominado por intrínsecos |
+| "Criar e adicionar itens" | 1,98 s / 859 mil (`tap_text`) | 3,5 ms | intrínsecos domina |
+| ENTER (`key`) | 1,37 s / 478 mil | **483 ms / 79** | `clinit` concentrado em duas classes |
+
+Causa do `clinit` no ENTER (uma vez por processo, na primeira vez que o item é processado):
+
+- `Lm2/A;` (catálogo de unidades): 240 ms inclusivo.
+- `Lm2/n;` (catálogo de hortifruti, aninhado em `m2/A`): 227 ms inclusivo.
+- Ambos são `<clinit>` com ~1.400 e ~3.900 linhas de smali, montados com `listOf`, `Pair`,
+  `mapOf` e `Lm2/n;->c/e/a` (cerca de 300 entradas). O custo é execução de bytecode no
+  interpretador (~2 M de instruções a ~250 ns), não uma operação cara isolada.
+
+Decisões e limites:
+
+- Mover esses `<clinit>` para o launch reduziria o passo ENTER, mas é uma troca de onde o custo
+  cai na medição, e não uma redução de trabalho. Não foi feito; depende de decisão sobre a
+  métrica.
+- Acelerar `listOf`/`Pair`/`mapOf` com intrínsecos do stdlib do Kotlin reduziria uma fração
+  pequena (as chamadas são ~20% do total dos catálogos); exige cuidado com a semântica das listas.
+- O ganho grande exige reduzir o custo por instrução do interpretador, o que segue difuso
+  (ver a seção de categorias acima).

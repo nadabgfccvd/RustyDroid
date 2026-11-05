@@ -1097,6 +1097,34 @@ impl AgentSession {
     /// Dispatch de uma tool (o envelope MCP chama isto). Erros de tool voltam
     /// como ToolResult::is_error com o contrato {code, cause, suggestion}.
     pub fn call_tool(&mut self, name: &str, args: &serde_json::Value) -> ToolResult {
+        // RD_LAUNCH_TRACE por passo: zera a telemetria antes da chamada e imprime
+        // o relatório depois, no stderr, rotulado pelo nome da ferramenta. O launch
+        // continua com o relatório próprio (`tool_launch`).
+        let step_trace = self
+            .running
+            .engine
+            .as_ref()
+            .is_some_and(|e| e.launch_trace_enabled());
+        if step_trace {
+            if let Some(eng) = self.running.engine.as_mut() {
+                eng.launch_trace_reset();
+            }
+        }
+        let out = self.call_tool_inner(name, args);
+        if step_trace {
+            if let Some(report) = self
+                .running
+                .engine
+                .as_ref()
+                .and_then(|e| e.launch_trace_report())
+            {
+                eprintln!("[step {name}] {report}");
+            }
+        }
+        out
+    }
+
+    fn call_tool_inner(&mut self, name: &str, args: &serde_json::Value) -> ToolResult {
         let diagnostic = matches!(name, "session_info" | "logs_tail" | "last_error");
         if diagnostic && !args.is_object() {
             return self.tool_error_result(
