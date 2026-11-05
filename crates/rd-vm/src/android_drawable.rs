@@ -110,13 +110,7 @@ fn csl_get(vm: &Engine, r: ObjRef) -> (Vec<Vec<i32>>, Vec<i32>) {
 
 /// AOSP `StateSet.stateSetMatches`.
 fn state_matches(spec: &[i32], state: &[i32]) -> bool {
-    spec.iter().all(|&s| {
-        if s >= 0 {
-            state.contains(&s)
-        } else {
-            !state.contains(&-s)
-        }
-    })
+    crate::android_util::state_set_matches(spec, state)
 }
 
 fn csl_default(states: &[Vec<i32>], colors: &[i32]) -> i32 {
