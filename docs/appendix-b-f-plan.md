@@ -103,6 +103,32 @@ Essa mudança fica para uma rodada própria da tabela de permissões.
 
 Estes apêndices não são "completos" nesta rodada. Os números abaixo dizem o tamanho real.
 
+### Estado das dependências de D (verificado em 2026-11-05)
+
+Medido no código (não na spec). Nenhum status de biblioteca mudou.
+
+- **ST-04 (dependência de `security-crypto`, host-shim):** a VM não tem provedor
+  `AndroidKeyStore`, `KeyStore`, `KeyGenerator` nem modelo de `javax.crypto.Cipher`.
+  Só existem superfícies de especificação (`KeyGenParameterSpec` e `Builder` em
+  `classpath.rs`; comentário em `android_stub_surfaces.rs` diz explicitamente
+  "no AndroidKeyStore provider/key material"). O `Cargo.lock` não tem nenhum crate
+  criptográfico (`aes`, `aes-gcm`, `sha2`, `hmac`, `ring`). Um Keystore com AES-GCM
+  real exige adicionar dependência (passa pelo `cargo-deny` do CI). Um Keystore
+  simulado só pode se rotular como não criptográfico; não pode dizer "AES".
+- **MEDIA-03 (dependência de `camerax`, host-shim):** a Camera2 virtual existe e está
+  listada como suportada em `docs/m10.md` (`CameraManager`, `CameraDevice`,
+  `CameraCaptureSession`, `ImageReader`). Falta a camada CameraX
+  (`ProcessCameraProvider`, lifecycle, casos de uso `Preview`/`ImageCapture`/
+  `ImageAnalysis`) e o modelo de cenas da spec.
+- **Validação:** não há APK de teste com `security-crypto` ou `camerax` no repositório
+  nem em `/home/user`. O `android-sdk` local tem só `platform-tools` e `licenses`
+  (sem `build-tools`), então não dá para montar um APK de teste com essas bibliotecas
+  sem trazer ferramentas novas.
+
+Decisões necessárias antes de implementar (ver §6): (a) adicionar crate criptográfico
+para ST-04 ou aceitar Keystore simulado rotulado como não criptográfico; (b) fonte
+de APK ou AAR de teste para camerax.
+
 ### Apêndice C (literal)
 - **Bloqueio fundamental:** sem `android.jar` não há inventário literal. Rodada 0:
   obter um `android.jar` de API 26–36 (repositório Maven do Google, `com.google.android:android`),
