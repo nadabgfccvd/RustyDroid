@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793897804496,
+  "lastUpdate": 1793899979776,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4319,6 +4319,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3496,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "336ae48c4de90448343402eadcb208ef726b9821",
+          "message": "docs(comprix): resultados negativos da otimização por chamada (#561)\n\nMede a hipótese de custo por chamada em call_host_instance_rooted\n(env::var(\"RD_FW_DEBUG\") a cada despacho de host) e registra o perfil atual\ndo fluxo de latência. Mediana de 3 rodadas: sem ganho dentro do ruído (±5%),\nmudança não mesclada. Perfil espalhado (maior símbolo: exec_frame 7%).\nNenhuma mudança de código neste PR.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T14:32:23-03:00",
+          "tree_id": "03fa65cc04a9f1dc52a3d8c2d75782eaab3c1012",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/336ae48c4de90448343402eadcb208ef726b9821"
+        },
+        "date": 1793899978906,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2760,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2758,
+            "range": "± 10",
             "unit": "ns/iter"
           }
         ]
