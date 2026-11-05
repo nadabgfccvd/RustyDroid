@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793846393308,
+  "lastUpdate": 1793846935631,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3851,6 +3851,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2776,
             "range": "± 51",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "11872bdb903aeb9f6bf3babaf5da3dd877daaf57",
+          "message": "test(gms): ciclo de vida Analytics/Firestore e ledger E (rodada 3) (#547)\n\n- analytics_null_user_property_value_removes_it (firebase-analytics)\n- firestore_missing_document_reads_as_absent_not_error (cloud-firestore)\n- docs/appendix-d-e.md S8: the audit now lists only gms-cast listeners as\n  without explicit error/lifecycle coverage. gms suite: 42 passing.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T23:48:36-03:00",
+          "tree_id": "6a65089110a819fcf53e080c3c90dfd4ffe20b17",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/11872bdb903aeb9f6bf3babaf5da3dd877daaf57"
+        },
+        "date": 1793846935213,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3224,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3289,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
