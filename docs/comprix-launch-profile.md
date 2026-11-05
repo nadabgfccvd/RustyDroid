@@ -86,3 +86,14 @@ corrigir com um patch pequeno. Com mais 30% de corte necessário (de 640 para 45
 5. Medir com perfil `release` numa máquina com mais de 2 GB (não é possível nesta sandbox).
 
 Nenhuma destas mudanças foi aplicada. Esta página só registra o perfil e a telemetria.
+
+## Perfil do golden completo e A/B do GC (2026-11-05)
+
+- `perf` do golden inteiro (thread da VM `rd-main`, 9.176 amostras): ainda plano.
+  Os maiores: `exec_frame` 6,7%, `exec_leaf_insn` 5,1%, `instance_intrinsic_dispatch_full` 2,6%,
+  `resolve_or_run_host_invoke` 2,3%, `malloc` 2,3%, `Classpath::is_subtype` 2,0%,
+  `call_static_intrinsic_rooted` 2,0%, `free` 1,6%, `Classpath::field_ref_shared` 1,6%,
+  `Heap::gc_host_enter` 1,5%.
+- A/B com `RD_GC=off` (2 execuções por modo): **não** é mais rápido. Criar lista ~3,2 s com GC
+  desligado contra ~2,6 s com GC ligado. O GC não é a alavanca de latência; não se deve desligá-lo.
+- Nota: o `perf` mostra a VM na thread `rd-main`, não no processo `rd`; use `--comm rd-main`.
