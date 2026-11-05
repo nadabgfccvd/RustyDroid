@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793848940492,
+  "lastUpdate": 1793876710072,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3959,6 +3959,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2841,
             "range": "± 213",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4e949ef311dd3d6ae8e598ef849c45197704fc57",
+          "message": "feat(jetpack): photo picker com resultado programavel (D S11) — not_implemented -> partial (#550)\n\n* feat(jetpack): photo picker com resultado programavel (D S11), not_implemented -> partial\n\n- framework.rs: startActivityForResult(Intent,I) e (Intent,ILandroid/os/Bundle;)\n  com um unico arm. Acoes de picker (PICK_IMAGES, GET_CONTENT, OPEN_DOCUMENT)\n  vao para photopicker.rs; outras acoes seguem NOT_IMPLEMENTED sem consumir a fila.\n- photopicker.rs: le a acao de IntentMeta (bundle.rs, modelo unico de Intent).\n  Resultado vem de uma fila FIFO programavel (PickerAnswer::Uri | Cancel) em\n  HostState.photopicker. Fila vazia = RESULT_CANCELED sem data. URI = RESULT_OK\n  com a URI em intent_meta[result].data (lida por getData). Entrega via\n  onActivityResult(IILandroid/content/Intent;)V pelo DEX do app.\n- Sem provedor inventado e sem sucesso fake: o padrao e cancelar.\n- tests/photopicker.rs: 7 testes. Intents e lancamento saem de DEX\n  (new-instance + <init>(String); invoke-virtual startActivityForResult).\n- Mutacoes (cada uma derruba testes): sem entrega -> 5 falhas; fila ignorada\n  -> 4; RESULT_OK trocado -> 2; GET_CONTENT removido -> 1; data nao entregue\n  -> 4; acao nao verificada -> 1. Arquivos restaurados e comparados byte a byte.\n- data/jetpack.toml: androidx-photopicker not_implemented -> partial, com o\n  nao modelado em notes (UI, selecao real, multiplas URIs, MIME, entrega\n  sincrona, Uri opaca, classe PickVisualMedia nao executada como golden).\n- docs: appendix-d-e.md S11; jetpack.md, compat-matrix.md, RustyDroid.md\n  regenerados (partial 23->24, not_implemented 20->19).\n\n* ci: rerun (asserção de tempo do rd-dex dex_security_332 oscilou em 74 ms no runner; sem mudança de código)\n\n---------\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T08:04:38-03:00",
+          "tree_id": "4f8a6bd6cd80cddc2ded0c65bfbe1daac54d5600",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4e949ef311dd3d6ae8e598ef849c45197704fc57"
+        },
+        "date": 1793876709372,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1834,
+            "range": "± 30",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1805,
+            "range": "± 16",
             "unit": "ns/iter"
           }
         ]
