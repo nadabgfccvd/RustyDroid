@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793834356734,
+  "lastUpdate": 1793837412453,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3527,6 +3527,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3284,
             "range": "± 7",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "50dc74d63e50c71364658f37b02d7e69438c2fb1",
+          "message": "feat(res): seleção de recursos por device-config (locale, orientação, densidade, SDK) — M4 Round 2 (#538)\n\nAntes, `resolve_string`/`resolve_value`/`resolve_array` escolhiam a entrada\nmenos específica (default primeiro) e ignoravam o dispositivo: `values-pt`,\n`values-land` e `values-hdpi` nunca eram usados. Agora:\n\n- `ResConfigInfo` lê a orientação (`ResTable_config.orientation`, offset 12).\n- `arsc::DeviceConfig` (locale, orientação, densidade, SDK) e\n  `resolve_{string,value,array}_for(res, &dev)`.\n- Ranking pela precedência do AOSP: locale (idioma, região) -> orientação ->\n  densidade (exata > mais alta mais próxima > mais baixa) -> SDK (`vN` <= SDK\n  do dispositivo). Entrada que exige algo que o dispositivo não tem é excluída.\n- Sem entrada compatível, mantém o comportamento antigo (fallback), para não\n  quebrar APKs cujo único valor é de outro locale.\n- `Engine::resource_device_config()` monta o dispositivo a partir do VM:\n  `locale_tag` do sysconfig, orientação atual, `RD_DENSITY_DPI` (padrão 280)\n  e `RD_SDK_INT`. String/valor/array passam por ele; `resolve_*` sem `_for`\n  continua com dispositivo neutro (manifest inalterado).\n\nNão inclui: qualificadores de tela (smallestWidth, screen size), `night`,\n`ldrtl`/`ldltr` e seleção de estilos (`resolve_style_attribute` segue no padrão).\nLayouts já tinham pontuação própria (`layout_entry_for_resource`) e não mudaram.\n\nTestes: 8 unitários em `arsc::device_select_tests` (locale, região errada,\norientação, densidade, SDK, precedência locale > densidade, fallback, padrão).\nGolden `rd-cli/tests/golden_screenshot` inalterado.\n\nRefs: #47 (M4 Round 2).\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T21:09:49-03:00",
+          "tree_id": "84baca834ab16226b2e8a8770edbffa3bb22d5af",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/50dc74d63e50c71364658f37b02d7e69438c2fb1"
+        },
+        "date": 1793837411638,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2787,
+            "range": "± 116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2761,
+            "range": "± 9",
             "unit": "ns/iter"
           }
         ]
