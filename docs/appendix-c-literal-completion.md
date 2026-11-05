@@ -515,6 +515,44 @@ until its whole-package blockers are closed.
   its public catalogue, including XML helpers and event/log types,
   remains incomplete.
 
+## Round 11 — `android.util` Printer and StateSet (port of #191)
+
+- Ported from the open draft #191 onto current `main`, per item. Its
+  ArrayMap/ArraySet work was already on `main` (`8791401`) and was not
+  re-ported. Its perf commit `b4de826` was not ported: the `jlstring`
+  gate is name-only and over-inclusive, so it can skip core String handling
+  that the later dispatcher serves, and it is outside Appendix C.
+- `android.util.Printer` family: `LogPrinter`, `PrintStreamPrinter`,
+  `PrintWriterPrinter` and `StringBuilderPrinter` constructors and
+  `println`, including the `StringBuilderPrinter` null-message quirk
+  (append first, then NPE without newline). `LogPrinter` routes to the
+  single host log channel, not AOSP per-buffer selection.
+- `android.util.StateSet`: `isWildCard`, `stateSetMatches` (one-state and
+  array overloads), `trimStateSet`, `dump`, `containsAttribute`,
+  `WILD_CARD` and `NOTHING`. `android.drawable`'s state matcher now calls
+  the AOSP-exact `state_set_matches`, which honours the `0` terminator.
+- Not modelled: the hidden `StateSet.get(mask)` table and `Printer`
+  behaviour beyond these four implementations.
+- Proof: `android_printers` (1) and `android_state_set` (1) integration
+  tests, plus the existing `android_array_containers` (2).
+- Status after Round 11: `android.util` remains **partial**.
+
+## Apêndice C inventory checkpoint (API 26–36)
+
+- The public SDK surface was inventoried for all eleven levels, API 26–36,
+  from the official `platform-NN` `android.jar` stubs on
+  `dl.google.com/android/repository`, by `scripts/appendix_c_inventory.py`.
+  API 34 comes from `platform-34-ext7` (`ApiLevel=34`, `IsBaseSdk=true`,
+  `ExtensionLevel=7`), because no plain `platform-34` package is published.
+  Results are in [`docs/appendix-c-inventory.md`](appendix-c-inventory.md) and
+  the CSVs beside it. Totals are public + protected members, excluding
+  synthetic and bridge methods.
+- The inventory is the list of blockers. It does **not** mark any item as
+  complete. The `rd-vm` descriptor count is a class-level signal only.
+- Per the rule above, an item the inventory counts and that is not
+  implemented and tested is an open blocker, so `android.util` and every
+  other Appendix C surface remain `partial` or lower.
+
 ## Remaining literal blockers by partial surface
 
 | Domain | Surface | Main literal blockers |
@@ -534,7 +572,7 @@ until its whole-package blockers are closed.
 | Text | `android.text.method` | Complete movement/key/transformation method catalogue and editor interaction edge cases. |
 | Text | `android.text.style` | Exact span precedence/rendering for character, paragraph, suggestion, locale and metric-affecting spans. |
 | OS/IPC | `android.os` | Remaining after Rounds 2/4/5: cross-process/kernel Binder and servicemanager, death recipients/oneway scheduling, file-descriptor Parcels, Serializable forms, exact wire layouts for every framework-owned Parcelable, process/power/vibration/strict-mode/users and all manager semantics. |
-| OS/IPC | `android.util` | Remaining public helper/value catalogue beyond the implemented SparseArray/Base64/LruCache/AtomicFile/JSON subsets (XML helpers, event log, printers, state sets, time/date helpers and deprecated classes). |
+| OS/IPC | `android.util` | Remaining public helper/value catalogue beyond the implemented SparseArray/Base64/LruCache/AtomicFile/JSON/Printer/StateSet subsets (XML helpers, event log, StateSet.get(mask), time/date helpers and deprecated classes). |
 | Database | `android.database` | ContentProvider query/insert/update/delete/call transport, bulk operations, cursor windows/extras/notifications across apps. |
 | Database | `android.database.sqlite` | See Round 1 remaining blockers above. |
 | Net | `android.net` | ConnectivityService/network agents, DNS, link properties/capabilities callbacks, VPN/tethering and traffic/accounting semantics. |

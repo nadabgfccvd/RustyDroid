@@ -25,6 +25,18 @@ const SPARSE: &[&str] = &[
 const ARRAY_MAP: &str = "Landroid/util/ArrayMap;";
 const SIMPLE_ARRAY_MAP: &str = "Landroid/util/SimpleArrayMap;";
 const ARRAY_SET: &str = "Landroid/util/ArraySet;";
+const STATE_SET: &str = "Landroid/util/StateSet;";
+const ATTR_STATE_WINDOW_FOCUSED: i32 = 0x0101_009d;
+const ATTR_STATE_PRESSED: i32 = 0x0101_00a7;
+const ATTR_STATE_SELECTED: i32 = 0x0101_00a1;
+const ATTR_STATE_FOCUSED: i32 = 0x0101_009c;
+const ATTR_STATE_ENABLED: i32 = 0x0101_009e;
+const ATTR_STATE_CHECKED: i32 = 0x0101_00a0;
+const ATTR_STATE_ACTIVATED: i32 = 0x0101_02fe;
+const LOG_PRINTER: &str = "Landroid/util/LogPrinter;";
+const PRINT_STREAM_PRINTER: &str = "Landroid/util/PrintStreamPrinter;";
+const PRINT_WRITER_PRINTER: &str = "Landroid/util/PrintWriterPrinter;";
+const STRING_BUILDER_PRINTER: &str = "Landroid/util/StringBuilderPrinter;";
 
 fn key(v: Option<&Value>) -> i64 {
     match v {
@@ -882,6 +894,312 @@ fn array_set(
     }))
 }
 
+// ── android.util.StateSet ───────────────────────────────────────────────
+// Public state-spec utilities. A state spec uses positive IDs for required
+// states, negative IDs for prohibited states, and 0 as the terminator /
+// wild-card marker exactly as in AOSP. The hidden get(mask) table (built
+// from the internal ViewDrawableStates styleable order) is not part of the
+// public catalogue modelled here.
+
+fn state_npe(message: &str) -> VmExit {
+    VmExit::Exception(Throwable::new("Ljava/lang/NullPointerException;", message))
+}
+
+fn state_int_array(vm: &Engine, value: Option<&Value>) -> Result<Option<Vec<i32>>, VmExit> {
+    let Some(Value::Obj(obj)) = value else {
+        return Ok(None);
+    };
+    let (elems, _, _) = crate::arrays::elems(vm, *obj)?;
+    Ok(Some(
+        elems
+            .iter()
+            .filter_map(|v| match v {
+                Value::Int(i) => Some(*i),
+                _ => None,
+            })
+            .collect(),
+    ))
+}
+
+fn state_require_int_array(vm: &Engine, value: Option<&Value>) -> Result<Vec<i32>, VmExit> {
+    state_int_array(vm, value)?.ok_or_else(|| state_npe("state array == null"))
+}
+
+fn state_new_int_array(vm: &mut Engine, values: &[i32]) -> Result<Value, VmExit> {
+    crate::arrays::new_array(
+        vm,
+        "[I",
+        crate::heap::ElemKind::Int,
+        values.iter().map(|v| Value::Int(*v)).collect(),
+    )
+}
+
+pub(crate) fn state_set_matches(spec: &[i32], set: &[i32]) -> bool {
+    for &raw_spec_state in spec {
+        if raw_spec_state == 0 {
+            // End of the cases to match against.
+            return true;
+        }
+        let (must_match, spec_state) = if raw_spec_state > 0 {
+            (true, raw_spec_state)
+        } else {
+            (false, raw_spec_state.wrapping_neg())
+        };
+        let mut found = false;
+        for &state in set {
+            if state == 0 {
+                // End of states to match: a required state has not been
+                // found, while a prohibited state is satisfied by absence.
+                if must_match {
+                    return false;
+                }
+                break;
+            }
+            if state == spec_state {
+                if must_match {
+                    found = true;
+                    break;
+                }
+                return false;
+            }
+        }
+        if must_match && !found {
+            return false;
+        }
+    }
+    true
+}
+
+fn state_set_matches_one(spec: &[i32], state: i32) -> bool {
+    for &spec_state in spec {
+        if spec_state == 0 {
+            return true;
+        }
+        if spec_state > 0 {
+            if state != spec_state {
+                return false;
+            }
+        } else if state == spec_state.wrapping_neg() {
+            return false;
+        }
+    }
+    true
+}
+
+fn state_set_is_wild_card(states: &[i32]) -> bool {
+    states.is_empty() || states[0] == 0
+}
+
+fn state_set_static(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let arg = |index: usize| args.get(index);
+    Ok(Some(match name {
+        "isWildCard" => {
+            let states = state_require_int_array(vm, arg(0))?;
+            Value::Int(state_set_is_wild_card(&states) as i32)
+        }
+        "stateSetMatches" => match arg(1) {
+            // The one-state overload is the only form whose second argument
+            // arrives as a primitive int.
+            Some(Value::Int(state)) => {
+                let spec = state_require_int_array(vm, arg(0))?;
+                Value::Int(state_set_matches_one(&spec, *state) as i32)
+            }
+            _ => {
+                let set = state_int_array(vm, arg(1))?;
+                match set {
+                    None => {
+                        // AOSP: a null state set matches only a null or
+                        // wild-card spec (and isWildCard(null) is not
+                        // reached when the spec itself is null).
+                        let matched = match state_int_array(vm, arg(0))? {
+                            None => true,
+                            Some(spec) => state_set_is_wild_card(&spec),
+                        };
+                        Value::Int(matched as i32)
+                    }
+                    Some(set) => {
+                        let spec = state_require_int_array(vm, arg(0))?;
+                        Value::Int(state_set_matches(&spec, &set) as i32)
+                    }
+                }
+            }
+        },
+        "trimStateSet" => {
+            let states = state_require_int_array(vm, arg(0))?;
+            let new_size = match arg(1) {
+                Some(Value::Int(i)) => *i,
+                _ => 0,
+            };
+            if usize::try_from(new_size).is_ok_and(|size| size == states.len()) {
+                // AOSP returns the same array when the size is unchanged.
+                return Ok(Some(arg(0).cloned().unwrap_or(Value::Null)));
+            }
+            if new_size < 0 {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NegativeArraySizeException;",
+                    new_size.to_string(),
+                )));
+            }
+            let new_len = new_size as usize;
+            if new_len > states.len() {
+                // The System.arraycopy in AOSP runs past the source.
+                return Err(oob(i64::from(new_size)));
+            }
+            state_new_int_array(vm, &states[..new_len])?
+        }
+        "dump" => {
+            let states = state_require_int_array(vm, arg(0))?;
+            let mut rendered = String::new();
+            for state in states {
+                rendered.push_str(match state {
+                    ATTR_STATE_WINDOW_FOCUSED => "W ",
+                    ATTR_STATE_PRESSED => "P ",
+                    ATTR_STATE_SELECTED => "S ",
+                    ATTR_STATE_FOCUSED => "F ",
+                    ATTR_STATE_ENABLED => "E ",
+                    ATTR_STATE_CHECKED => "C ",
+                    ATTR_STATE_ACTIVATED => "A ",
+                    _ => "",
+                });
+            }
+            Value::Obj(crate::intrinsics::alloc_string(vm, rendered)?)
+        }
+        "containsAttribute" => {
+            // @hide helper: a null spec list yields false, and a null spec
+            // stops the scan rather than being skipped.
+            let attr = match arg(1) {
+                Some(Value::Int(i)) => *i,
+                _ => 0,
+            };
+            let Some(Value::Obj(outer)) = arg(0) else {
+                return Ok(Some(Value::Int(0)));
+            };
+            let (specs, _, _) = crate::arrays::elems(vm, *outer)?;
+            let mut found = false;
+            for spec in &specs {
+                let Some(spec) = state_int_array(vm, Some(spec))? else {
+                    break;
+                };
+                if spec
+                    .iter()
+                    .any(|candidate| *candidate == attr || candidate.wrapping_neg() == attr)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            Value::Int(found as i32)
+        }
+        _ => return Ok(None),
+    }))
+}
+
+// ── android.util.Printer family ─────────────────────────────────────────
+// Thin delegating wrappers exactly as in AOSP. LogPrinter's native buffer
+// selection collapses onto the single host log channel used by Log.println;
+// every other observable effect (delegation, null handling, and
+// StringBuilderPrinter's conditional trailing newline) follows the Java
+// sources.
+
+fn printer_npe(message: &str) -> VmExit {
+    VmExit::Exception(Throwable::new("Ljava/lang/NullPointerException;", message))
+}
+
+fn printer(
+    vm: &mut Engine,
+    class: &str,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let arg = |index: usize| args.get(index).cloned().unwrap_or(Value::Null);
+    if name == "<init>" {
+        match class {
+            LOG_PRINTER => {
+                let priority = match arg(0) {
+                    Value::Int(i) => i,
+                    _ => 0,
+                };
+                put(vm, recv, "mPriority", Value::Int(priority))?;
+                put(vm, recv, "mTag", arg(1))?;
+                // Log.LOG_ID_MAIN == 0 for the two-arg constructor.
+                let buffer = match arg(2) {
+                    Value::Int(i) if sig == "(ILjava/lang/String;I)V" => i,
+                    _ => 0,
+                };
+                put(vm, recv, "mBuffer", Value::Int(buffer))?;
+            }
+            PRINT_STREAM_PRINTER => put(vm, recv, "mPS", arg(0))?,
+            PRINT_WRITER_PRINTER => put(vm, recv, "mPW", arg(0))?,
+            STRING_BUILDER_PRINTER => put(vm, recv, "mBuilder", arg(0))?,
+            _ => return Ok(None),
+        }
+        return Ok(Some(Value::Null));
+    }
+    if name != "println" {
+        return Ok(None);
+    }
+    let message = arg(0);
+    match class {
+        LOG_PRINTER => {
+            let priority = match get(vm, recv, "mPriority") {
+                Value::Int(i) => i,
+                _ => 0,
+            };
+            let tag = get(vm, recv, "mTag");
+            vm.invoke_static(
+                "Landroid/util/Log;",
+                "println",
+                "(ILjava/lang/String;Ljava/lang/String;)I",
+                &[Value::Int(priority), tag, message],
+            )?;
+        }
+        PRINT_STREAM_PRINTER | PRINT_WRITER_PRINTER => {
+            let field = if class == PRINT_STREAM_PRINTER {
+                "mPS"
+            } else {
+                "mPW"
+            };
+            let Value::Obj(target) = get(vm, recv, field) else {
+                return Err(printer_npe("printer target == null"));
+            };
+            vm.invoke_instance(target, "println", "(Ljava/lang/String;)V", &[message])?;
+        }
+        STRING_BUILDER_PRINTER => {
+            let Value::Obj(builder) = get(vm, recv, "mBuilder") else {
+                return Err(printer_npe("builder == null"));
+            };
+            // AOSP appends first and only then measures the message, so a
+            // null message appends the literal "null" before throwing NPE
+            // from x.length(), without the trailing newline.
+            vm.invoke_instance(
+                builder,
+                "append",
+                "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+                std::slice::from_ref(&message),
+            )?;
+            let Value::Obj(text_obj) = message else {
+                return Err(printer_npe("x == null"));
+            };
+            let needs_newline = {
+                let text = vm.heap.as_str(text_obj).unwrap_or_default();
+                !text.ends_with('\n')
+            };
+            if needs_newline {
+                vm.invoke_instance(
+                    builder,
+                    "append",
+                    "(C)Ljava/lang/StringBuilder;",
+                    &[Value::Int(10)],
+                )?;
+            }
+        }
+        _ => return Ok(None),
+    }
+    Ok(Some(Value::Null))
+}
+
 const BASE64: &str = "Landroid/util/Base64;";
 const BASE64_NO_PADDING: i32 = 1;
 const BASE64_NO_WRAP: i32 = 2;
@@ -1661,6 +1979,15 @@ pub(crate) fn host_static(
         store_rational(vm, r, i64::from(n), i64::from(d))?;
         return Ok(Some(Value::Obj(r)));
     }
+    if class == STATE_SET {
+        // The caller caches platform statics in vm.statics, preserving the
+        // identity of these shared (mutable) AOSP arrays.
+        return Ok(Some(match name {
+            "WILD_CARD" => state_new_int_array(vm, &[])?,
+            "NOTHING" => state_new_int_array(vm, &[0])?,
+            _ => return Ok(None),
+        }));
+    }
     if class != BASE64 {
         return Ok(None);
     }
@@ -2039,6 +2366,9 @@ pub(crate) fn static_intrinsic(
     if class == BASE64 {
         return base64_static(vm, name, args);
     }
+    if class == STATE_SET {
+        return state_set_static(vm, name, args);
+    }
     match (class, name) {
         ("Landroid/util/Pair;", "create") | ("Landroid/util/Range;", "create") => {
             let r = vm.heap.alloc_instance(class.to_string(), Vec::new())?;
@@ -2121,6 +2451,44 @@ pub(crate) fn instance_intrinsic(
     }
     if mref_class == ARRAY_SET || recv_class == ARRAY_SET {
         return array_set(vm, name, sig, recv, args);
+    }
+    // Printer wrappers: exact concrete class on either side of the call
+    // (invoke-interface names Printer; the receiver is the concrete class).
+    // A DEX subclass that does not override println inherits the wrapper.
+    let printer_class = if matches!(
+        mref_class,
+        LOG_PRINTER | PRINT_STREAM_PRINTER | PRINT_WRITER_PRINTER | STRING_BUILDER_PRINTER
+    ) {
+        Some(mref_class)
+    } else if matches!(
+        recv_class,
+        LOG_PRINTER | PRINT_STREAM_PRINTER | PRINT_WRITER_PRINTER | STRING_BUILDER_PRINTER
+    ) {
+        Some(recv_class)
+    } else {
+        None
+    };
+    if let Some(class) = printer_class {
+        return printer(vm, class, name, sig, recv, args);
+    }
+    if name == "println" && sig == "(Ljava/lang/String;)V" && vm.cp.find_class(recv_class).is_some()
+    {
+        for class in [
+            LOG_PRINTER,
+            PRINT_STREAM_PRINTER,
+            PRINT_WRITER_PRINTER,
+            STRING_BUILDER_PRINTER,
+        ] {
+            if vm.cp.is_subtype(recv_class, class)
+                && vm.cp.resolve_method(recv_class, name, sig).is_none()
+            {
+                return printer(vm, class, name, sig, recv, args);
+            }
+        }
+    }
+
+    if (mref_class == STATE_SET || recv_class == STATE_SET) && name == "<init>" {
+        return Ok(Some(Value::Null));
     }
     // DEX subclasses inherit ArrayMap/ArraySet's host state operations when
     // they do not declare the method themselves. Gate this expensive subtype

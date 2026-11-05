@@ -1988,6 +1988,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/util/SimpleArrayMap;" => Some(OBJECT),
         "Landroid/util/ArrayMap;" => Some(&["Landroid/util/SimpleArrayMap;", "Ljava/lang/Object;"]),
         "Landroid/util/ArraySet;" => Some(OBJECT),
+        "Landroid/util/StateSet;" => Some(OBJECT),
+        "Landroid/util/LogPrinter;"
+        | "Landroid/util/PrintStreamPrinter;"
+        | "Landroid/util/PrintWriterPrinter;"
+        | "Landroid/util/StringBuilderPrinter;" => Some(OBJECT),
         // java.util.Random (jrandom.rs)
         "Ljava/util/Random;" => Some(OBJECT),
         "Ljava/util/concurrent/ThreadLocalRandom;" => {
@@ -3042,6 +3047,10 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/lang/Iterable;",
         ]),
         // Only ConcurrentHashMap implements ConcurrentMap (#363).
+        "Landroid/util/LogPrinter;"
+        | "Landroid/util/PrintStreamPrinter;"
+        | "Landroid/util/PrintWriterPrinter;"
+        | "Landroid/util/StringBuilderPrinter;" => Some(&["Landroid/util/Printer;"]),
         "Ljava/util/WeakHashMap;" | "Ljava/util/IdentityHashMap;" | "Ljava/util/LinkedHashMap;" => {
             Some(&[
                 "Ljava/util/Map;",
