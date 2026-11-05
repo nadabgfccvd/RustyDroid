@@ -484,6 +484,8 @@ pub enum PendingFire {
     Firestore(String),
     Rtdb(String),
     Auth,
+    /// Mudança de estado da sessão Cast (novo `getCastState`).
+    Cast(i32),
 }
 
 /// Entrega de Task adiada pela guarda de reentrância (ver
@@ -2110,6 +2112,34 @@ fn fire_auth_listeners_now(vm: &mut Engine) -> Result<(), VmExit> {
     }
     Ok(())
 }
+/// Estado Cast derivado do modelo host: 4 = CONNECTED (há sessão),
+/// 2 = CONNECTING (dispositivo sem sessão; inalcançável pela API pública),
+/// 1 = NO_DEVICES_AVAILABLE. Mesma regra de `getCastState`.
+fn cast_state_of(g: &GmsState) -> i32 {
+    if g.cast_session.is_some() {
+        4
+    } else if g.cast_device_name.is_some() {
+        2
+    } else {
+        1
+    }
+}
+
+/// Entrega `onCastStateChanged(int)` a cada `CastStateListener` registrado.
+fn fire_cast_listeners_now(vm: &mut Engine, state: i32) -> Result<(), VmExit> {
+    let listeners = vm.fw.gms.cast_listeners.clone();
+    for l in listeners {
+        let _ = call_dex_any(
+            vm,
+            l,
+            "onCastStateChanged",
+            &["(I)V"],
+            vec![Value::Int(state)],
+        )?;
+    }
+    Ok(())
+}
+
 fn fb_auth_instance(
     vm: &mut Engine,
     name: &str,
@@ -2878,6 +2908,7 @@ fn fire_drain(vm: &mut Engine, first: PendingFire) -> Result<(), VmExit> {
             PendingFire::Firestore(path) => fs_fire_listeners_now(vm, path)?,
             PendingFire::Rtdb(path) => rtdb_fire_now(vm, path)?,
             PendingFire::Auth => fire_auth_listeners_now(vm)?,
+            PendingFire::Cast(state) => fire_cast_listeners_now(vm, *state)?,
         }
         let pending = std::mem::take(&mut vm.fw.gms.pending_fires);
         queue.extend(pending);
@@ -6474,18 +6505,40 @@ impl Engine {
 
     /// Liga uma sessão Cast programada (getCastState → CONNECTED).
     pub fn gms_cast_connect(&mut self, device_name: &str) {
+        let before = cast_state_of(&self.fw.gms);
         self.fw.gms.cast_device_name = Some(device_name.to_string());
         if self.fw.gms.cast_session.is_none() {
             if let Ok(r) = alloc(self, CAST_SESSION) {
                 self.fw.gms.cast_session = Some(r);
             }
         }
+        let after = cast_state_of(&self.fw.gms);
+        if after != before {
+            // Host API sem VM em curso: um erro de listener não tem a quem
+            // propagar; a entrega segue a mesma guarda dos outros listeners.
+            let _ = fire_guarded(self, PendingFire::Cast(after));
+        }
     }
 
-    /// Finaliza a sessão Cast programada.
+    /// Finaliza a sessão Cast programada e avisa os `CastStateListener`.
     pub fn gms_cast_disconnect(&mut self) {
+        let before = cast_state_of(&self.fw.gms);
         self.fw.gms.cast_device_name = None;
         self.fw.gms.cast_session = None;
+        let after = cast_state_of(&self.fw.gms);
+        if after != before {
+            let _ = fire_guarded(self, PendingFire::Cast(after));
+        }
+    }
+
+    /// Estado de descoberta do Nearby (para o host e para os testes).
+    pub fn gms_nearby_is_discovering(&self) -> bool {
+        self.fw.gms.nearby_discovering
+    }
+
+    /// Endpoints com conexão pedida e ainda ativa.
+    pub fn gms_nearby_connections(&self) -> Vec<String> {
+        self.fw.gms.nearby_connections.clone()
     }
 
     /// Adiciona um endpoint descoberto do Nearby Connections.

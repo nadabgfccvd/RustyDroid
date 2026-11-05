@@ -3631,3 +3631,180 @@ fn firestore_missing_document_reads_as_absent_not_error() {
     let snap = ov(task_result(&mut e, t));
     assert_eq!(iv(ci!(e, DOC_SNAP, "exists", "()Z", snap, []).unwrap()), 0);
 }
+
+#[test]
+fn cast_state_listener_fires_only_on_real_transitions() {
+    // Lifecycle do CastStateListener: dispara em CONNECTED/NO_DEVICES reais,
+    // não em chamadas repetidas com o mesmo estado, e para após remoção.
+    let mut b = DexBuilder::new();
+    counter_observer_class(&mut b, "LCastCb;", "onCastStateChanged", vec!["I"]);
+    let mut e = engine_of(&b);
+    let cc = ov(cs!(
+        e,
+        CAST_CONTEXT,
+        "getSharedInstance",
+        "(Landroid/content/Context;)Lcom/google/android/gms/cast/framework/CastContext;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+    let l = obj(&mut e, "LCastCb;");
+    ci!(
+        e,
+        CAST_CONTEXT,
+        "addCastStateListener",
+        "(Lcom/google/android/gms/cast/framework/CastStateListener;)V",
+        cc,
+        [Value::Obj(l)]
+    )
+    .unwrap();
+    assert_eq!(called(&e, "LCastCb;"), 0, "registrar não dispara");
+
+    e.gms_cast_connect("TV da Sala"); // NO_DEVICES(1) → CONNECTED(4)
+    assert_eq!(called(&e, "LCastCb;"), 1);
+
+    e.gms_cast_connect("TV da Sala"); // já CONNECTED: sem transição
+    assert_eq!(called(&e, "LCastCb;"), 1, "mesmo estado não notifica");
+
+    e.gms_cast_disconnect(); // CONNECTED → NO_DEVICES
+    assert_eq!(called(&e, "LCastCb;"), 2);
+
+    e.gms_cast_disconnect(); // já sem sessão: sem transição
+    assert_eq!(called(&e, "LCastCb;"), 2);
+
+    ci!(
+        e,
+        CAST_CONTEXT,
+        "removeCastStateListener",
+        "(Lcom/google/android/gms/cast/framework/CastStateListener;)V",
+        cc,
+        [Value::Obj(l)]
+    )
+    .unwrap();
+    e.gms_cast_connect("TV da Sala");
+    assert_eq!(called(&e, "LCastCb;"), 2, "listener removido não recebe");
+}
+
+#[test]
+fn rtdb_remove_event_listener_stops_callbacks() {
+    let mut b = DexBuilder::new();
+    counter_observer_class(
+        &mut b,
+        "LDbLis2;",
+        "onDataChange",
+        vec!["Lcom/google/firebase/database/DataSnapshot;"],
+    );
+    let mut e = engine_of(&b);
+    let db = ov(cs!(
+        e,
+        FIREBASE_DATABASE,
+        "getInstance",
+        "()Lcom/google/firebase/database/FirebaseDatabase;",
+        []
+    )
+    .unwrap());
+    let path = s(&mut e, "chat/ultima");
+    let reference = ov(ci!(
+        e,
+        FIREBASE_DATABASE,
+        "getReference",
+        "(Ljava/lang/String;)Lcom/google/firebase/database/DatabaseReference;",
+        db,
+        [path]
+    )
+    .unwrap());
+    let lis = obj(&mut e, "LDbLis2;");
+    ci!(
+        e,
+        DATABASE_REF,
+        "addValueEventListener",
+        "(Lcom/google/firebase/database/ValueEventListener;)V",
+        reference,
+        [Value::Obj(lis)]
+    )
+    .unwrap();
+    let after_add = called(&e, "LDbLis2;");
+    let write = |mut e: &mut Engine, v: &str| {
+        let val = s(e, v);
+        ci!(
+            e,
+            DATABASE_REF,
+            "setValue",
+            "(Ljava/lang/Object;)Lcom/google/android/gms/tasks/Task;",
+            reference,
+            [val]
+        )
+        .unwrap();
+    };
+    write(&mut e, "a");
+    assert_eq!(
+        called(&e, "LDbLis2;"),
+        after_add + 1,
+        "listener ativo recebe"
+    );
+
+    ci!(
+        e,
+        DATABASE_REF,
+        "removeEventListener",
+        "(Lcom/google/firebase/database/ValueEventListener;)V",
+        reference,
+        [Value::Obj(lis)]
+    )
+    .unwrap();
+    let after_remove = called(&e, "LDbLis2;");
+    write(&mut e, "b");
+    assert_eq!(
+        called(&e, "LDbLis2;"),
+        after_remove,
+        "listener removido não recebe mais"
+    );
+}
+
+#[test]
+fn nearby_lifecycle_discovery_and_connections() {
+    const CONNECTIONS_CLIENT: &str = "Lcom/google/android/gms/nearby/connection/ConnectionsClient;";
+    const REQUEST_SIG: &str = "(Ljava/lang/String;Ljava/lang/String;Lcom/google/android/gms/nearby/connection/ConnectionLifecycleCallback;)Lcom/google/android/gms/tasks/Task;";
+    let mut e = engine();
+    e.gms_nearby_add_endpoint("ep-1", "Tablet do balcao");
+    let client = ov(cs!(
+        e,
+        NEARBY,
+        "getConnectionsClient",
+        "(Landroid/content/Context;)Lcom/google/android/gms/nearby/connection/ConnectionsClient;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+    assert!(!e.gms_nearby_is_discovering());
+
+    let service = s(&mut e, "pt.rustydroid.demo");
+    ci!(e, CONNECTIONS_CLIENT, "startDiscovery",
+        "(Ljava/lang/String;Lcom/google/android/gms/nearby/connection/EndpointDiscoveryCallback;Lcom/google/android/gms/nearby/connection/DiscoveryOptions;)Lcom/google/android/gms/tasks/Task;",
+        client, [service, Value::Null, Value::Null]).unwrap();
+    assert!(
+        e.gms_nearby_is_discovering(),
+        "startDiscovery liga a descoberta"
+    );
+
+    ci!(e, CONNECTIONS_CLIENT, "stopDiscovery", "()V", client, []).unwrap();
+    assert!(!e.gms_nearby_is_discovering(), "stopDiscovery desliga");
+
+    let name = s(&mut e, "Meu aparelho");
+    let ep = s(&mut e, "ep-1");
+    let t = ov(ci!(
+        e,
+        CONNECTIONS_CLIENT,
+        "requestConnection",
+        REQUEST_SIG,
+        client,
+        [name, ep, Value::Null]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1);
+    assert_eq!(e.gms_nearby_connections(), vec!["ep-1".to_string()]);
+
+    ci!(e, CONNECTIONS_CLIENT, "stopAllEndpoints", "()V", client, []).unwrap();
+    assert!(
+        e.gms_nearby_connections().is_empty(),
+        "stopAllEndpoints encerra as conexões"
+    );
+}
