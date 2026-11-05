@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793907234276,
+  "lastUpdate": 1793907658998,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4571,6 +4571,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2791,
             "range": "± 101",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "12aae7e3596c76d574d44bede4271a39c797ac0b",
+          "message": "docs(plan): diagnóstico do scanner MEDIA-03 (AndroidView não anexada) (#567)\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T16:40:30-03:00",
+          "tree_id": "6729936a88a9b80f98ae9560ca44b8ac9e20d967",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/12aae7e3596c76d574d44bede4271a39c797ac0b"
+        },
+        "date": 1793907658265,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3207,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3206,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
