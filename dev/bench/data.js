@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793837438490,
+  "lastUpdate": 1793837824989,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3599,6 +3599,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3556,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a45eaf4d2608a5c0b4ab819aac76c59953a33ed9",
+          "message": "docs(roadmap): status do M4 após Round 2 (#538) e bidi (#539) (#540)\n\nMarca Round 2 e bidi como feitos e registra os três gaps que seguem abertos:\nreferência Android (sem aparelho/KVM neste ambiente), goldens de APKs reais\n(3 de 5 renderizam hoje) e F-Droid só até a primeira tela.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T21:16:28-03:00",
+          "tree_id": "e57974183d8b107e0fd5a8af5113b1a7b17c417a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a45eaf4d2608a5c0b4ab819aac76c59953a33ed9"
+        },
+        "date": 1793837824596,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3282,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3282,
+            "range": "± 10",
             "unit": "ns/iter"
           }
         ]
