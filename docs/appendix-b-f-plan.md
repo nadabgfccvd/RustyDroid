@@ -139,6 +139,20 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
     necessárias: sem elas, `tap_text` falha com `VIEW_NOT_FOUND`.
   - **Bloqueio observado:** `ui_tree` não expõe texto do Compose; a navegação depende de
     `screenshot` e `tap_text` por rótulo visível.
+  - **Diagnóstico (2026-11-05, com permissão concedida antes do launch):**
+    1. `Context.getMainExecutor()` não tinha implementação; corrigido em #566 (`HandlerExecutor`).
+       A `ClassCastException` Handler→Executor sumiu dos logs.
+    2. Após o toque em "Escanear um produto", `LG2/C.d` (scanner) executa até criar a
+       `PreviewView` e chamar `setScaleType`/`redrawPreview`. Não há `addView` depois disso, e
+       `ui_tree`/`observe` continuam mostrando a lista ("unchanged since last observe").
+    3. Só 15 chamadas de `Lbr/` depois do toque: não há laço de Kotlin. O host registra 97
+       `Activity.getPackageName()` e 108 `ViewGroup.getChildAt()`; `fuel` cresce durante a espera.
+    4. Hipótese: a composição do `AndroidView` (PreviewView) não é aplicada à árvore de views.
+       O redesenho só ocorre quando `traversal_pending` é marcado (`framework.rs`,
+       `advance_clock`), e nenhum `requestLayout`/`addView` é chamado após o toque. Próximo passo:
+       investigar a anexação de `AndroidView` no Compose (`AndroidViewHolder`/`AndroidComposeView`)
+       na camada de framework, antes do shim CameraX (`ProcessCameraProvider`, `Preview`,
+       `ImageAnalysis`, ML Kit).
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
