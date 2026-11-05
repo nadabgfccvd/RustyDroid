@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793903523620,
+  "lastUpdate": 1793903621653,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4499,6 +4499,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3559,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bdb6c10dbcbe0a24d54ad74669f66f2efaf38292",
+          "message": "docs(m10): MEDIA-03 — pesquisa de APK de teste CameraX e caminho até o scanner (#565)\n\nPesquisa de APK de teste e caminho medido até o scanner do Comprix. Só documentação.",
+          "timestamp": "2026-11-05T15:33:09-03:00",
+          "tree_id": "a63d753de8f95a349ba6956756355f9ba0ef560f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/bdb6c10dbcbe0a24d54ad74669f66f2efaf38292"
+        },
+        "date": 1793903620679,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3412,
+            "range": "± 78",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3449,
+            "range": "± 492",
             "unit": "ns/iter"
           }
         ]
