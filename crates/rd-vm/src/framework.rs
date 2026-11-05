@@ -950,6 +950,8 @@ pub struct HostState {
     pub(crate) org_json: crate::org_json::Tables,
     /// RNG de `UUID.randomUUID()` (ADR 024, passo 3).
     pub(crate) uuid: crate::juuid::Tables,
+    /// Provedor AndroidKeyStore: chaves só no host (ST-04, jkeystore.rs).
+    pub(crate) keystore: crate::jkeystore::Tables,
     /// Bytes de host de parsers XML (ADR 024, passo 3 — em `xml`).
     pub objects: HashMap<ObjRef, HostObj>,
     /// Resultados programados do photo picker (S10).

@@ -61,6 +61,7 @@ pub(crate) mod jio_chars;
 #[cfg(feature = "jit")]
 pub mod jit;
 pub(crate) mod jiterator;
+pub(crate) mod jkeystore;
 pub(crate) mod jlclass;
 pub(crate) mod jlocks;
 pub(crate) mod jlstring;

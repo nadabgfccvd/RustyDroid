@@ -103,31 +103,30 @@ Essa mudança fica para uma rodada própria da tabela de permissões.
 
 Estes apêndices não são "completos" nesta rodada. Os números abaixo dizem o tamanho real.
 
-### Estado das dependências de D (verificado em 2026-11-05)
+### Estado das dependências de D (atualizado em 2026-11-05)
 
-Medido no código (não na spec). Nenhum status de biblioteca mudou.
+Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada.
 
-- **ST-04 (dependência de `security-crypto`, host-shim):** a VM não tem provedor
-  `AndroidKeyStore`, `KeyStore`, `KeyGenerator` nem modelo de `javax.crypto.Cipher`.
-  Só existem superfícies de especificação (`KeyGenParameterSpec` e `Builder` em
-  `classpath.rs`; comentário em `android_stub_surfaces.rs` diz explicitamente
-  "no AndroidKeyStore provider/key material"). O `Cargo.lock` não tem nenhum crate
-  criptográfico (`aes`, `aes-gcm`, `sha2`, `hmac`, `ring`). Um Keystore com AES-GCM
-  real exige adicionar dependência (passa pelo `cargo-deny` do CI). Um Keystore
-  simulado só pode se rotular como não criptográfico; não pode dizer "AES".
+- **ST-04 (base de `security-crypto`, host-shim) — implementada em `crates/rd-vm/src/jkeystore.rs`:**
+  provedor `AndroidKeyStore` (`KeyStore.getInstance`, `load`, `containsAlias`, `getKey`,
+  `deleteEntry`); `KeyGenerator` AES com `KeyGenParameterSpec` (alias e tamanho 128/256);
+  `Cipher` `AES/GCM/NoPadding` (`init` nos modos cifrar/decifrar, `getIV`, `updateAAD`,
+  `update`, `doFinal`) com `aes-gcm` (cripto real, IV de 96 bits, tag de 128 bits);
+  `GCMParameterSpec`; chave `AndroidKeyStoreSecretKey` sem material exportável
+  (`getEncoded` = null). Erros tipados: `NoSuchAlgorithmException`, `KeyStoreException`,
+  `InvalidKeyException`, `AEADBadTagException`. Testes: vetor NIST SP 800-38D (AES-128-GCM),
+  round-trip pelos intrínsecos da VM, chave não exportável, falha após remoção.
+- **Ainda não implementado em ST-04:** `MasterKey`, `EncryptedSharedPreferences` e
+  `EncryptedFile` (dependem de Tink no security-crypto 1.0.0; a dependência da 1.1.0 não foi
+  verificada); `KeyGenerator` AES fora do AndroidKeyStore (falha tipada); outros modos e
+  paddings. `security-crypto` segue `not_implemented`: nenhum APK de teste validou o caminho DEX.
 - **MEDIA-03 (dependência de `camerax`, host-shim):** a Camera2 virtual existe e está
   listada como suportada em `docs/m10.md` (`CameraManager`, `CameraDevice`,
-  `CameraCaptureSession`, `ImageReader`). Falta a camada CameraX
-  (`ProcessCameraProvider`, lifecycle, casos de uso `Preview`/`ImageCapture`/
-  `ImageAnalysis`) e o modelo de cenas da spec.
-- **Validação:** não há APK de teste com `security-crypto` ou `camerax` no repositório
-  nem em `/home/user`. O `android-sdk` local tem só `platform-tools` e `licenses`
-  (sem `build-tools`), então não dá para montar um APK de teste com essas bibliotecas
-  sem trazer ferramentas novas.
-
-Decisões necessárias antes de implementar (ver §6): (a) adicionar crate criptográfico
-para ST-04 ou aceitar Keystore simulado rotulado como não criptográfico; (b) fonte
-de APK ou AAR de teste para camerax.
+  `CameraCaptureSession`, `ImageReader`). Falta a camada CameraX (`ProcessCameraProvider`,
+  lifecycle, casos de uso `Preview`/`ImageCapture`/`ImageAnalysis`) e o modelo de cenas da spec.
+  O APK do Comprix contém CameraX (`ProcessCameraProvider`, `PreviewView`) e serve de alvo de teste.
+- **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
+  o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
 ### Apêndice C (literal)
 - **Bloqueio fundamental:** sem `android.jar` não há inventário literal. Rodada 0:
