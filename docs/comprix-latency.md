@@ -48,3 +48,33 @@ MCP 345 ms com observe ligado.
   navegação para a tela de listas. O custo está no frame da lista (composição e
   registro de display list), não no gesto.
 - Estes números são base, não aprovação. Nenhuma meta foi relaxada.
+
+## Golden ponta a ponta (2026-11-05)
+
+`scripts/comprix_golden.py` roda o fluxo real do Comprix v1.6.0 (mesmo caminho de
+`scripts/comprix-regression.py`): onboarding "Pular" → "Nova lista" → chip "Compra do Mês"
+→ "Criar e adicionar itens" → campo de item → `type_text` "2 kg de arroz" (`replace`) →
+ENTER. Asserções no texto visível do app: "Adição rápida", "Arroz", "2 x kg", "1 item".
+Nada é simulado: passa pelo parser do app, Compose e Room.
+
+**Resultado: GOLDEN PASSOU em 3 de 3 execuções** (`rd` perfil `profiling`, 2 vCPU/2 GB).
+
+| passo | ms (exec. 1 / 2 / 3) | meta 345 ms |
+|---|---|---|
+| tap "Pular" | 1178,8 / 1250,6 / 1308,4 | não |
+| tap "Nova lista" | 472,3 / 466,8 / 473,5 | não |
+| wait 1500 (sheet) | 1287,9 / 1270,7 / 1394,8 | não |
+| tap chip "Compra do Mês" | 253,8 / 258,9 / 261,2 | sim |
+| tap "Criar e adicionar itens" | 2556,1 / 2659,8 / 2677,9 | não |
+| tap campo de item | 61,4 / 63,8 / 58,8 | sim |
+| type_text "2 kg de arroz" | 355,8 / 366,3 / 349,2 | não (no limite) |
+| key ENTER | 1297,2 / 1289,2 / 1328,6 | não |
+| wait 500 + observe | 156,5 / 197,5 / 155,8 | sim |
+
+Ou seja: o caminho funcional está verde, mas a latência por ferramenta **não** atinge a meta
+em 6 dos 9 passos. A maior parte é a criação da lista e o ENTER do item (~2,6 s e ~1,3 s).
+
+**Desvio no roteiro corrigido durante a validação.** A primeira versão pulava o chip de
+sugestão e falhava: o campo vem com "Compras de janeiro" preenchido e o botão não navega.
+Não é regressão do app: o caminho do regressão real usa o chip. Registrado para não
+repetir o erro.
