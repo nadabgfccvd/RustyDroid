@@ -440,6 +440,9 @@ fn call_static_intrinsic_rooted(
     if let Some(v) = crate::juuid::static_intrinsic(vm, class, name, args)? {
         return Ok(Some(v));
     }
+    if let Some(v) = crate::jkeystore::static_intrinsic(vm, class, name, args)? {
+        return Ok(Some(v));
+    }
     if let Some(v) = crate::jtext_collator::static_intrinsic(vm, class, name, sig, args)? {
         return Ok(Some(v));
     }
@@ -4621,6 +4624,9 @@ fn instance_intrinsic_dispatch_full(
     }
     // java.io.File + Context directory getters (jfile.rs)
     if let Some(v) = crate::juuid::instance_intrinsic(vm, recv_class, name, recv, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jkeystore::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
     if let Some(v) =

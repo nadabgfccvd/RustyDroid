@@ -1465,6 +1465,43 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Ljava/lang/Object;",
         ]),
         "Ljava/nio/charset/Charset;" | "Ljava/util/UUID;" => Some(OBJECT),
+        // ST-04 (jkeystore.rs): provedor AndroidKeyStore e Cipher AES/GCM.
+        "Ljava/security/KeyStore;"
+        | "Ljavax/crypto/KeyGenerator;"
+        | "Ljavax/crypto/Cipher;"
+        | "Ljavax/crypto/spec/GCMParameterSpec;"
+        | "Landroid/security/keystore/AndroidKeyStoreSecretKey;" => Some(OBJECT),
+        "Ljava/security/GeneralSecurityException;" => Some(EXC),
+        "Ljava/security/KeyStoreException;"
+        | "Ljava/security/NoSuchAlgorithmException;"
+        | "Ljava/security/NoSuchProviderException;"
+        | "Ljava/security/InvalidAlgorithmParameterException;"
+        | "Ljavax/crypto/BadPaddingException;" => Some(&[
+            "Ljava/security/GeneralSecurityException;",
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/security/InvalidKeyException;" => Some(&[
+            "Ljava/security/KeyException;",
+            "Ljava/security/GeneralSecurityException;",
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/security/KeyException;" => Some(&[
+            "Ljava/security/GeneralSecurityException;",
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljavax/crypto/AEADBadTagException;" => Some(&[
+            "Ljavax/crypto/BadPaddingException;",
+            "Ljava/security/GeneralSecurityException;",
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
         // jio_chars
         "Ljava/io/Writer;"
         | "Ljava/io/Reader;"
@@ -3297,6 +3334,12 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         | "Landroid/print/PageRange;"
         | "Landroid/print/PrinterId;"
         | "Landroid/print/PrintJobId;" => Some(&["Landroid/os/Parcelable;"]),
+        "Ljavax/crypto/spec/GCMParameterSpec;" => {
+            Some(&["Ljava/security/spec/AlgorithmParameterSpec;"])
+        }
+        "Landroid/security/keystore/AndroidKeyStoreSecretKey;" => {
+            Some(&["Ljavax/crypto/SecretKey;"])
+        }
         "Landroid/security/keystore/KeyGenParameterSpec;" => Some(&[
             "Ljava/security/spec/AlgorithmParameterSpec;",
             "Landroid/security/keystore/UserAuthArgs;",
