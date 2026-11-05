@@ -197,3 +197,35 @@ Mudanças de comportamento nesta rodada (cada uma com teste que falha sem ela):
   (já existia no código, sem teste). Mutação (remoção do `retain`) ⇒ teste falha.
 
 Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connections`.
+
+### S10 — Apêndice D: ViewPager2 (2026-11-05)
+
+- **S10 (rodada 2 de D, branch `appendix-d-viewpager2-20261105`)**: ViewPager2
+  sobe de `stub` para `partial` (`androidx-viewpager2`).
+  - Shim em `crates/rd-vm/src/androidx_widgets.rs` (`Family::Pager`), com
+    estado por instância: adapter e página atual. `setAdapter` zera a
+    página (como o AOSP); `setCurrentItem(I)` e `(IZ)` fixam a página em
+    `[0, count-1]`; sem adapter, ou com adapter vazio, a chamada é ignorada.
+  - Desvio de design: `count` vem do `getItemCount()` do DEX do adapter, pelo
+    mesmo caminho do RecyclerView (`m8::call_dex`). Adapter sem
+    `getItemCount` no DEX conta como 0 (chamada ignorada, sem panic).
+  - Testes: 6 novos em `crates/rd-vm/tests/androidx_widgets.rs` (roundtrip e
+    reset, clamp, forma com `smoothScroll`, ignorado sem adapter ou com
+    adapter vazio, adapter só do host, isolamento por instância), com
+    dispatch real por `Engine::invoke_instance`. O arquivo tem 15 testes.
+  - Mutações (cada uma derruba os testes que devem cair): sem clamp superior
+    → 2 falhas; sem reset no `setAdapter` → 1 falha; sem o caso
+    `count == 0` → 2 falhas. Arquivo restaurado e comparado byte a byte.
+  - Inventário: a API pública completa do ViewPager2 (AndroidX main) **não**
+    foi inventariada nesta rodada. O que não é modelado está listado em
+    `notes` de `data/jetpack.toml`. Por isso o status é `partial`, não
+    `supported`.
+  - Não modelado (dito em `notes`): animação, `OnPageChangeCallback`
+    (nenhum evento é entregue), fake drag, entrada de usuário, transformadores
+    de página, orientação, offscreen page limit, item decorations e
+    acessibilidade. Se o adapter encolher, a página não é reajustada.
+  - O pacote legado `androidx.viewpager` (ViewPager v1) segue `stub` (só
+    hierarquia e inflate, sem shim) e fica fora de `key_apis`.
+  - D — continuam `stub` (3): `androidx-constraintlayout`,
+    `androidx-coordinatorlayout`, `androidx-material`. D — `not_implemented`
+    (20) sem mudança.

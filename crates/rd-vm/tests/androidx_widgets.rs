@@ -4,6 +4,9 @@
 //! com sucesso, erro (NPE, método fora da lista) e a fronteira de
 //! subclasse (MaterialCardView).
 
+mod common;
+
+use common::{engine_of, op11n, op11x, DexBuilder, ACC_PUBLIC};
 use rd_vm::androidx_widgets::{self as aw, call_instance};
 use rd_vm::err::VmExit;
 use rd_vm::value::Value;
@@ -415,4 +418,170 @@ fn engine_dispatch_reaches_widget_state_end_to_end() {
         .invoke_instance(card, "getRadius", "()F", &[])
         .expect("getRadius");
     assert_eq!(float_of(Some(r)), 3.0);
+}
+
+// ── ViewPager2 (S9) ──────────────────────────────────────────────────────
+
+const ADAPTER_SIG: &str = "(Landroidx/recyclerview/widget/RecyclerView$Adapter;)V";
+const ADAPTER_GET: &str = "()Landroidx/recyclerview/widget/RecyclerView$Adapter;";
+const ADAPTER_BASE: &str = "Landroidx/recyclerview/widget/RecyclerView$Adapter;";
+
+/// Adapter do app com `getItemCount()` no DEX, retornando `n`.
+fn count_adapter_class(b: &mut DexBuilder, class: &str, n: i8) {
+    let cls = b.class(class, ADAPTER_BASE);
+    b.r#virtual(
+        cls,
+        "getItemCount",
+        "I",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(2, 1, 0, {
+            let mut u = op11n(0x12, 0, n); // const/4 v0, #n
+            u.extend(op11x(0x0f, 0)); // return v0
+            u
+        })),
+    );
+}
+
+fn pager_engine() -> Engine {
+    let mut b = DexBuilder::new();
+    count_adapter_class(&mut b, "LVpThree;", 3);
+    count_adapter_class(&mut b, "LVpEmpty;", 0);
+    engine_of(&b)
+}
+
+fn set_item(e: &mut Engine, pager: u32, item: i32) {
+    e.invoke_instance(pager, "setCurrentItem", "(I)V", &[Value::Int(item)])
+        .expect("setCurrentItem(I)");
+}
+
+fn current(e: &mut Engine, pager: u32) -> i32 {
+    int_of(Some(
+        e.invoke_instance(pager, "getCurrentItem", "()I", &[])
+            .expect("getCurrentItem"),
+    ))
+}
+
+fn set_adapter(e: &mut Engine, pager: u32, adapter: Option<u32>) {
+    let arg = adapter.map(Value::Obj).unwrap_or(Value::Null);
+    e.invoke_instance(pager, "setAdapter", ADAPTER_SIG, &[arg])
+        .expect("setAdapter");
+}
+
+#[test]
+fn pager_adapter_roundtrip_and_setadapter_resets_page() {
+    let mut e = pager_engine();
+    let pager = obj(&mut e, aw::VIEW_PAGER2);
+    let a = obj(&mut e, "LVpThree;");
+    assert_eq!(current(&mut e, pager), 0, "página padrão é 0");
+
+    set_adapter(&mut e, pager, Some(a));
+    let got = e
+        .invoke_instance(pager, "getAdapter", ADAPTER_GET, &[])
+        .expect("getAdapter");
+    assert!(
+        matches!(got, Value::Obj(r) if r == a),
+        "getAdapter devolve o adapter"
+    );
+
+    set_item(&mut e, pager, 2);
+    assert_eq!(current(&mut e, pager), 2);
+    // setAdapter zera a página, como no AOSP.
+    set_adapter(&mut e, pager, Some(a));
+    assert_eq!(current(&mut e, pager), 0, "setAdapter zera a página");
+
+    set_adapter(&mut e, pager, None);
+    let got = e
+        .invoke_instance(pager, "getAdapter", ADAPTER_GET, &[])
+        .expect("getAdapter nulo");
+    assert!(
+        matches!(got, Value::Null),
+        "setAdapter(null) remove o adapter"
+    );
+}
+
+#[test]
+fn pager_set_current_item_clamps_to_adapter_range() {
+    let mut e = pager_engine();
+    let pager = obj(&mut e, aw::VIEW_PAGER2);
+    let a = obj(&mut e, "LVpThree;");
+    set_adapter(&mut e, pager, Some(a));
+
+    set_item(&mut e, pager, 1);
+    assert_eq!(current(&mut e, pager), 1, "dentro do intervalo é aceito");
+    set_item(&mut e, pager, 7);
+    assert_eq!(current(&mut e, pager), 2, "acima de count-1 vira count-1");
+    set_item(&mut e, pager, -4);
+    assert_eq!(current(&mut e, pager), 0, "negativo vira 0");
+    set_item(&mut e, pager, 2);
+    assert_eq!(current(&mut e, pager), 2, "limite superior exato é aceito");
+}
+
+#[test]
+fn pager_set_current_item_with_smooth_flag_follows_same_clamp() {
+    // O flag `smoothScroll` é aceito; a página muda de imediato nos dois casos.
+    let mut e = pager_engine();
+    let pager = obj(&mut e, aw::VIEW_PAGER2);
+    let a = obj(&mut e, "LVpThree;");
+    set_adapter(&mut e, pager, Some(a));
+
+    e.invoke_instance(
+        pager,
+        "setCurrentItem",
+        "(IZ)V",
+        &[Value::Int(9), Value::Int(1)],
+    )
+    .expect("setCurrentItem(IZ) suave");
+    assert_eq!(current(&mut e, pager), 2);
+    e.invoke_instance(
+        pager,
+        "setCurrentItem",
+        "(IZ)V",
+        &[Value::Int(0), Value::Int(0)],
+    )
+    .expect("setCurrentItem(IZ) sem animação");
+    assert_eq!(current(&mut e, pager), 0);
+}
+
+#[test]
+fn pager_set_current_item_ignored_without_adapter_or_when_empty() {
+    let mut e = pager_engine();
+    let pager = obj(&mut e, aw::VIEW_PAGER2);
+    set_item(&mut e, pager, 2);
+    assert_eq!(current(&mut e, pager), 0, "sem adapter é ignorado");
+
+    let empty = obj(&mut e, "LVpEmpty;");
+    set_adapter(&mut e, pager, Some(empty));
+    set_item(&mut e, pager, 1);
+    assert_eq!(current(&mut e, pager), 0, "adapter vazio é ignorado");
+
+    set_adapter(&mut e, pager, None);
+    set_item(&mut e, pager, 1);
+    assert_eq!(current(&mut e, pager), 0, "adapter nulo é ignorado");
+}
+
+#[test]
+fn pager_adapter_without_dex_count_is_ignored() {
+    // Adapter só do host (sem `getItemCount` no DEX): contagem 0, sem panic.
+    let mut e = pager_engine();
+    let pager = obj(&mut e, aw::VIEW_PAGER2);
+    let host_adapter = obj(&mut e, ADAPTER_BASE);
+    set_adapter(&mut e, pager, Some(host_adapter));
+    set_item(&mut e, pager, 1);
+    assert_eq!(current(&mut e, pager), 0);
+}
+
+#[test]
+fn pager_state_is_per_instance_and_unrelated_receiver_untouched() {
+    let mut e = pager_engine();
+    let p1 = obj(&mut e, aw::VIEW_PAGER2);
+    let p2 = obj(&mut e, aw::VIEW_PAGER2);
+    let a = obj(&mut e, "LVpThree;");
+    set_adapter(&mut e, p1, Some(a));
+    set_adapter(&mut e, p2, Some(a));
+    set_item(&mut e, p1, 2);
+    assert_eq!(current(&mut e, p1), 2);
+    assert_eq!(current(&mut e, p2), 0, "outra instância não muda");
+    assert_eq!(aw::pager_current_item(&e, p1), 2);
+    assert_eq!(aw::pager_adapter_of(&e, p2), Some(a));
 }
