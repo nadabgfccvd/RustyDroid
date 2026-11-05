@@ -74,7 +74,7 @@ fn tempfile_dir() -> std::path::PathBuf {
     d
 }
 
-/// DoD M5 ponta a ponta: initialize → tools/list (50) → install → launch →
+/// DoD M5 ponta a ponta: initialize → tools/list (51) → install → launch →
 /// navegação (tap/swipe/wait/wait_for) → asserções → observação → pacote →
 /// batch → runtime_health — SÓ via tools, com sessionId/package no envelope.
 #[test]
@@ -93,7 +93,7 @@ fn mcp_stdio_full_agent_flow() {
     // catálogo
     mcp.send(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
     let r = mcp.read();
-    assert_eq!(r["result"]["tools"].as_array().map(|a| a.len()), Some(50));
+    assert_eq!(r["result"]["tools"].as_array().map(|a| a.len()), Some(51));
 
     // install → launch (envelope carrega sessionId/package — contrato M5)
     let r = mcp.call_tool(10, "install", serde_json::json!({"apk": apk_path}));
@@ -210,7 +210,7 @@ fn describe_tools_matches_server_catalog() {
     assert!(out.status.success());
     let described: serde_json::Value = serde_json::from_slice(&out.stdout).expect("catálogo JSON");
     let tools = described["tools"].as_array().expect("tools");
-    assert_eq!(tools.len(), 50, "mesmo catálogo do servidor");
+    assert_eq!(tools.len(), 51, "mesmo catálogo do servidor");
     for t in tools {
         assert!(t["name"].as_str().is_some());
         assert!(t["inputSchema"].is_object(), "schema por tool");
@@ -230,7 +230,7 @@ fn describe_tools_matches_server_catalog() {
 }
 
 /// issue #74: o README anunciava "~40 structured tools" e "MCP (rmcp)". O
-/// catálogo real tem 50 tools (ADR 023) (M9 + observe/tap_text) e o crate NÃO depende de rmcp — a stack é
+/// catálogo real tem 51 tools (ADR 023 + Apêndice B6) (M9 + observe/tap_text) e o crate NÃO depende de rmcp — a stack é
 /// JSON-RPC próprio, por decisão do ADR 001 (MSRV). Este teste trava o número
 /// publicado no README contra `rd mcp --describe-tools`.
 #[test]
@@ -333,7 +333,7 @@ fn mcp_stdio_runtime_diagnostics_capture_errors_and_invalidate_log_cursors() {
     assert_eq!(r["result"]["isError"], false);
     let v = decode(&r);
     assert_eq!(v["running"], false);
-    assert_eq!(v["tool_count"], 50);
+    assert_eq!(v["tool_count"], 51);
     let r = mcp.call_tool(3, "tap", serde_json::json!({"x":"bad","y":0}));
     assert_eq!(r["result"]["isError"], true);
     let r = mcp.call_tool(4, "last_error", serde_json::json!({}));

@@ -287,6 +287,9 @@ pub struct Engine {
     pub(crate) monitors: crate::monitors::Monitors,
     /// Session permission grant set (perms.rs); None = all granted.
     pub granted_permissions: Option<HashSet<String>>,
+    /// Permissões cuja justificativa deve ser mostrada (Apêndice B: uma negativa
+    /// do diálogo). Vazio por padrão: sem sessão, nada tem justificativa.
+    pub permission_rationale: HashSet<String>,
     pub(crate) pending_permission_results: Vec<crate::perms::PendingPermissionResult>,
     /// window → (decor, content frame) (window.rs)
     pub(crate) window_decor:
@@ -429,6 +432,7 @@ impl Engine {
             threads: Default::default(),
             monitors: Default::default(),
             granted_permissions: None,
+            permission_rationale: HashSet::new(),
             pending_permission_results: Vec::new(),
             window_decor: HashMap::new(),
             system_ui_visibility: HashMap::new(),

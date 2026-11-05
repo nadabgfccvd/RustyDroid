@@ -61,6 +61,16 @@ impl PermissionDef {
     pub fn is_b5(&self) -> bool {
         self.flags.iter().any(|f| f == "b5")
     }
+    /// Apêndice B1 `hardRestricted`: não pode ser concedida em runtime a menos
+    /// que o instalador esteja na allowlist (`PermissionEngine::allow_hard_restricted`).
+    pub fn is_hard_restricted(&self) -> bool {
+        self.flags.iter().any(|f| f == "hardRestricted")
+    }
+    /// Apêndice B1 `immutable`: o estado vem do sistema e o runtime não o altera
+    /// (grant/deny/revoke não têm efeito).
+    pub fn is_immutable(&self) -> bool {
+        self.flags.iter().any(|f| f == "immutable")
+    }
     pub fn group_name(&self) -> Option<&str> {
         self.group
             .as_deref()
@@ -209,7 +219,28 @@ pub struct PermissionEngine {
     states: BTreeMap<String, GrantState>,
     /// issue #69: nomes declarados pelo próprio manifesto (`<permission>`).
     declared: BTreeSet<String>,
+    /// targetSdk do APK: gate do auto-revoke (API 30+) e do acesso parcial a mídia (API 34+).
+    target_sdk: u32,
+    /// Negativas do diálogo runtime por permissão (Apêndice B). 1 = há justificativa
+    /// a mostrar; 2 ou mais = "don't ask again" (negada de forma permanente).
+    denials: BTreeMap<String, u32>,
+    /// Apêndice B1 `hardRestricted`: o instalador do APK está na allowlist
+    /// (`PackageInstaller.SessionParams.setWhitelistedRestrictedPermissions`).
+    /// Padrão: não — o Android nega essas permissões a apps fora da allowlist.
+    restricted_allowed: bool,
 }
+
+/// Dias sem uso após os quais o Android revoga permissões runtime de um app
+/// que mira API 30+ (unused-app auto-revoke, Apêndice B6). Limiar configurável
+/// pelo chamador; este é o valor padrão do motor.
+pub const UNUSED_APP_REVOKE_DAYS: u32 = 90;
+
+/// API em que o acesso parcial a fotos/vídeos (`READ_MEDIA_VISUAL_USER_SELECTED`)
+/// passou a existir (Apêndice B5/B6: justificativas API 34+).
+pub const PARTIAL_MEDIA_API: u32 = 34;
+
+/// targetSdk mínimo para o auto-revoke de apps sem uso.
+pub const AUTO_REVOKE_TARGET_SDK: u32 = 30;
 
 impl PermissionEngine {
     /// Estado inicial de uma permissão dado o nível/firmware.
@@ -278,7 +309,95 @@ impl PermissionEngine {
             table,
             states,
             declared,
+            target_sdk: manifest.target_sdk,
+            denials: BTreeMap::new(),
+            restricted_allowed: false,
         }
+    }
+
+    /// Negativas acumuladas do diálogo runtime desta permissão.
+    pub fn denial_count(&self, name: &str) -> u32 {
+        self.denials.get(name).copied().unwrap_or(0)
+    }
+
+    /// `shouldShowRequestPermissionRationale`: verdadeiro só após exatamente uma
+    /// negativa do diálogo. Nunca pedida ou já negada de forma permanente → falso.
+    pub fn shows_rationale(&self, name: &str) -> bool {
+        self.denial_count(name) == 1
+    }
+
+    /// Nomes com justificativa a mostrar (o que o VM responde em
+    /// `shouldShowRequestPermissionRationale`).
+    pub fn rationale_names(&self) -> Vec<String> {
+        self.states
+            .keys()
+            .filter(|n| self.shows_rationale(n))
+            .cloned()
+            .collect()
+    }
+
+    /// "Don't ask again": duas negativas (ou mais) do diálogo runtime.
+    pub fn is_permanently_denied(&self, name: &str) -> bool {
+        self.denial_count(name) >= 2
+    }
+
+    /// Unused-app auto-revoke (Apêndice B6). Apps com targetSdk < 30 ficam de fora.
+    /// Revoga as permissões runtime (dangerous) concedidas que estão sem uso há
+    /// `threshold_days` ou mais, voltando-as ao estado inicial. Devolve os nomes revogados.
+    pub fn auto_revoke_unused(&mut self, days_unused: u32, threshold_days: u32) -> Vec<String> {
+        if self.target_sdk < AUTO_REVOKE_TARGET_SDK || days_unused < threshold_days {
+            return Vec::new();
+        }
+        let granted: Vec<String> =
+            self.states
+                .iter()
+                .filter(|(name, st)| {
+                    **st == GrantState::Granted
+                        && self.table.get(name).is_some_and(|d| {
+                            d.level == ProtectionLevel::Dangerous && !d.is_immutable()
+                        })
+                })
+                .map(|(n, _)| n.clone())
+                .collect();
+        for name in &granted {
+            // `revoke` só falha para nomes ausentes; a lista vem do próprio mapa.
+            let _ = self.revoke(name);
+        }
+        granted
+    }
+
+    /// Acesso parcial a mídia (API 34+): concede `READ_MEDIA_VISUAL_USER_SELECTED`
+    /// sem conceder `READ_MEDIA_IMAGES`/`READ_MEDIA_VIDEO`. Devolve `false` se o
+    /// app não declara a permissão ou se o targetSdk é anterior à API 34.
+    pub fn grant_partial_media(&mut self) -> bool {
+        const VISUAL: &str = "READ_MEDIA_VISUAL_USER_SELECTED";
+        if self.target_sdk < PARTIAL_MEDIA_API {
+            return false;
+        }
+        // a chave do mapa é o nome do manifesto (`android.permission.X`) ou o curto
+        let Some(key) = self
+            .states
+            .keys()
+            .find(|k| k.rsplit('.').next() == Some(VISUAL))
+            .cloned()
+        else {
+            return false;
+        };
+        let Some(cur) = self.states.get_mut(&key) else {
+            return false;
+        };
+        if matches!(cur, GrantState::RuntimePending | GrantState::Denied) {
+            *cur = GrantState::Granted;
+            self.denials.remove(&key);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// targetSdk do APK instalado (gates do auto-revoke e do acesso parcial).
+    pub fn target_sdk(&self) -> u32 {
+        self.target_sdk
     }
 
     /// issue #69: permissões que o próprio APK declara via `<permission>`
@@ -320,8 +439,36 @@ impl PermissionEngine {
         &self.states
     }
 
+    /// Apêndice B1 `immutable`: a permissão não muda por grant/deny/revoke.
+    fn is_frozen(&self, name: &str) -> bool {
+        self.table.get(name).is_some_and(|d| d.is_immutable())
+    }
+
+    /// Estado atual (sem mudança) ou erro se a permissão não existe no mapa.
+    fn current_or_missing(&self, name: &str) -> RdResult<GrantState> {
+        self.states
+            .get(name)
+            .copied()
+            .ok_or_else(|| RdError::missing_entry(name))
+    }
+
+    /// Apêndice B1 `hardRestricted`: o instalador do APK está na allowlist.
+    /// Sem isso, `grant()` de permissão hard-restricted não muda o estado.
+    pub fn allow_hard_restricted(&mut self, allowed: bool) {
+        self.restricted_allowed = allowed;
+    }
+
     /// Runtime grant (diálogo) — dangerous → Granted.
     pub fn grant(&mut self, name: &str) -> RdResult<GrantState> {
+        if self.is_frozen(name) {
+            return self.current_or_missing(name);
+        }
+        let hard_blocked = self.table.get(name).is_some_and(|d| d.is_hard_restricted())
+            && !self.restricted_allowed;
+        if hard_blocked {
+            // B1 hardRestricted: sem allowlist do instalador a permissão não é concedível.
+            return self.current_or_missing(name);
+        }
         let cur = self
             .states
             .get_mut(name)
@@ -329,6 +476,8 @@ impl PermissionEngine {
         match cur {
             GrantState::RuntimePending | GrantState::SpecialPending | GrantState::Denied => {
                 *cur = GrantState::Granted;
+                // conceder limpa o histórico de negativas (Android zera o flag)
+                self.denials.remove(name);
                 Ok(GrantState::Granted)
             }
             s => Ok(*s),
@@ -337,6 +486,13 @@ impl PermissionEngine {
 
     /// Deny — pending → Denied (com "don't ask again" simulado pelo estado).
     pub fn deny(&mut self, name: &str) -> RdResult<GrantState> {
+        if self.is_frozen(name) {
+            return self.current_or_missing(name);
+        }
+        let is_runtime = self
+            .table
+            .get(name)
+            .is_some_and(|d| d.level == ProtectionLevel::Dangerous);
         let cur = self
             .states
             .get_mut(name)
@@ -344,14 +500,23 @@ impl PermissionEngine {
         match cur {
             GrantState::RuntimePending | GrantState::SpecialPending => {
                 *cur = GrantState::Denied;
-                Ok(GrantState::Denied)
             }
-            s => Ok(*s),
+            // nova negativa do diálogo sobre uma permissão já negada: conta
+            GrantState::Denied => {}
+            s => return Ok(*s),
         }
+        if is_runtime && *cur == GrantState::Denied {
+            let n = self.denials.entry(name.to_string()).or_insert(0);
+            *n = n.saturating_add(1);
+        }
+        Ok(*cur)
     }
 
     /// Revoga de volta ao estado inicial da instalação (unused-app auto-revoke usa isto).
     pub fn revoke(&mut self, name: &str) -> RdResult<GrantState> {
+        if self.is_frozen(name) {
+            return self.current_or_missing(name);
+        }
         let def = self.table.get(name).map(Self::initial_state);
         // issue #69: permissão do próprio app volta a AppDefined, não Unknown
         let init = def.unwrap_or(if self.declared.contains(name) {
@@ -960,5 +1125,174 @@ mod gating_tests {
         let m = manifest_target(34, &[("CAMERA", None, false)]);
         let e = PermissionEngine::install(&m, table);
         assert_eq!(e.granted_by("android.permission.CAMERA"), None);
+    }
+}
+
+#[cfg(test)]
+mod appendix_b_behavior_tests {
+    use super::*;
+    use rd_apk::manifest::UsesPermission;
+
+    #[test]
+    fn hard_restricted_sms_is_refused_until_installer_allowlists_it() {
+        const SMS: &str = "android.permission.READ_SMS";
+        let mut e = engine(34, &["READ_SMS", "CAMERA"]);
+        assert_eq!(e.state(SMS), Some(GrantState::RuntimePending));
+        // sem allowlist do instalador: o grant não muda o estado
+        assert_eq!(e.grant(SMS).unwrap(), GrantState::RuntimePending);
+        assert_eq!(e.state(SMS), Some(GrantState::RuntimePending));
+        // permissão comum continua concedível
+        assert_eq!(e.grant(CAM).unwrap(), GrantState::Granted);
+        // com allowlist, o grant volta a valer
+        e.allow_hard_restricted(true);
+        assert_eq!(e.grant(SMS).unwrap(), GrantState::Granted);
+    }
+
+    #[test]
+    fn immutable_permission_ignores_grant_deny_and_revoke() {
+        let toml = r#"
+schema_version = 1
+[[permission]]
+name = "FAKE_IMMUTABLE"
+level = "dangerous"
+group = "CAMERA"
+since_api = 1
+flags = ["runtime", "immutable"]
+description = "teste"
+"#;
+        let table = PermissionTable::from_toml(toml).unwrap();
+        let m = Manifest {
+            package: "com.t".into(),
+            min_sdk: 26,
+            target_sdk: 34,
+            uses_permissions: vec![UsesPermission {
+                name: "android.permission.FAKE_IMMUTABLE".into(),
+                max_sdk: None,
+                sdk23: false,
+            }],
+            ..Default::default()
+        };
+        let mut e = PermissionEngine::install(&m, table);
+        let name = "android.permission.FAKE_IMMUTABLE";
+        let before = e.state(name).unwrap();
+        assert_eq!(e.grant(name).unwrap(), before);
+        assert_eq!(e.deny(name).unwrap(), before);
+        assert_eq!(e.revoke(name).unwrap(), before);
+        assert_eq!(e.state(name), Some(before));
+        assert!(e.auto_revoke_unused(365, 90).is_empty());
+    }
+
+    fn engine(target_sdk: u32, perms: &[&str]) -> PermissionEngine {
+        let m = Manifest {
+            package: "com.t".into(),
+            min_sdk: 26,
+            target_sdk,
+            uses_permissions: perms
+                .iter()
+                .map(|p| UsesPermission {
+                    name: format!("android.permission.{p}"),
+                    max_sdk: None,
+                    sdk23: false,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        PermissionEngine::install(&m, PermissionTable::embedded().unwrap())
+    }
+
+    const CAM: &str = "android.permission.CAMERA";
+
+    #[test]
+    fn first_denial_shows_rationale_second_is_dont_ask_again() {
+        let mut e = engine(34, &["CAMERA"]);
+        assert!(!e.shows_rationale(CAM), "nunca pedida: sem justificativa");
+        e.deny(CAM).unwrap();
+        assert_eq!(e.denial_count(CAM), 1);
+        assert!(e.shows_rationale(CAM));
+        assert!(!e.is_permanently_denied(CAM));
+        // segunda negativa: \"don't ask again\"
+        e.deny(CAM).unwrap();
+        assert_eq!(e.denial_count(CAM), 2);
+        assert!(!e.shows_rationale(CAM));
+        assert!(e.is_permanently_denied(CAM));
+    }
+
+    #[test]
+    fn grant_clears_denial_history() {
+        let mut e = engine(34, &["CAMERA"]);
+        e.deny(CAM).unwrap();
+        e.deny(CAM).unwrap();
+        e.grant(CAM).unwrap();
+        assert_eq!(e.denial_count(CAM), 0);
+        assert!(!e.is_permanently_denied(CAM));
+    }
+
+    #[test]
+    fn rationale_names_lists_only_single_denials() {
+        let mut e = engine(34, &["CAMERA", "RECORD_AUDIO"]);
+        e.deny(CAM).unwrap();
+        e.deny("android.permission.RECORD_AUDIO").unwrap();
+        e.deny("android.permission.RECORD_AUDIO").unwrap();
+        // CAMERA: uma negativa → justificativa; RECORD_AUDIO: permanente → não
+        assert_eq!(e.rationale_names(), vec![CAM.to_string()]);
+    }
+
+    #[test]
+    fn non_runtime_permissions_are_not_counted() {
+        let mut e = engine(34, &["INTERNET"]);
+        // INTERNET é normal (auto-concedida): deny não muda estado nem conta
+        let st = e.deny("android.permission.INTERNET").unwrap();
+        assert_eq!(st, GrantState::AutoGranted);
+        assert_eq!(e.denial_count("android.permission.INTERNET"), 0);
+    }
+
+    #[test]
+    fn auto_revoke_only_for_target_30_plus_and_only_after_threshold() {
+        let mut old = engine(29, &["CAMERA"]);
+        old.grant(CAM).unwrap();
+        assert!(old
+            .auto_revoke_unused(400, UNUSED_APP_REVOKE_DAYS)
+            .is_empty());
+        assert_eq!(old.state(CAM), Some(GrantState::Granted));
+
+        let mut e = engine(34, &["CAMERA", "INTERNET"]);
+        e.grant(CAM).unwrap();
+        assert!(e.auto_revoke_unused(89, UNUSED_APP_REVOKE_DAYS).is_empty());
+        assert_eq!(e.state(CAM), Some(GrantState::Granted));
+        let revoked = e.auto_revoke_unused(90, UNUSED_APP_REVOKE_DAYS);
+        assert_eq!(revoked, vec![CAM.to_string()]);
+        // volta ao estado inicial de runtime; normal continua auto-concedida
+        assert_eq!(e.state(CAM), Some(GrantState::RuntimePending));
+        assert_eq!(
+            e.state("android.permission.INTERNET"),
+            Some(GrantState::AutoGranted)
+        );
+    }
+
+    #[test]
+    fn partial_media_grants_visual_selection_only_on_api_34_plus() {
+        let v = "android.permission.READ_MEDIA_VISUAL_USER_SELECTED";
+        let mut e = engine(
+            34,
+            &["READ_MEDIA_VISUAL_USER_SELECTED", "READ_MEDIA_IMAGES"],
+        );
+        assert!(e.grant_partial_media());
+        assert_eq!(e.state(v), Some(GrantState::Granted));
+        assert_eq!(
+            e.state("android.permission.READ_MEDIA_IMAGES"),
+            Some(GrantState::RuntimePending),
+            "acesso parcial não concede a leitura completa de imagens"
+        );
+
+        // since_api=34 > targetSdk 33: o registro nem existe para esse app
+        let mut old = engine(33, &["READ_MEDIA_VISUAL_USER_SELECTED"]);
+        assert!(!old.grant_partial_media());
+        assert_eq!(old.state(v), Some(GrantState::NotRequested));
+
+        let mut none = engine(34, &["CAMERA"]);
+        assert!(
+            !none.grant_partial_media(),
+            "app que não declara a permissão"
+        );
     }
 }

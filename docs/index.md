@@ -28,7 +28,7 @@ in `data/` via `cargo xtask` and checked against drift in CI:
 
 ## Runtime Subsystems & Agent Guides
 
-- **MCP Tools Catalog (50 tools):** [`mcp-tools.md`](./mcp-tools.md)
+- **MCP Tools Catalog (51 tools):** [`mcp-tools.md`](./mcp-tools.md)
 - **Screen Observation Without Screenshots (`observe` & live viewer):** [`mcp-observe.md`](./mcp-observe.md)
 - **Reliable MCP Automation & Diagnostics:** [`mcp-automation.md`](./mcp-automation.md)
 - **Scenario Test Suites (`rd test` & JUnit XML):** [`suite-format.md`](./suite-format.md)

@@ -34,6 +34,11 @@ impl Engine {
         self.granted_permissions = Some(granted.into_iter().collect());
     }
 
+    /// Conjunto de permissões com justificativa (`shouldShowRequestPermissionRationale`).
+    pub fn set_permission_rationale<I: IntoIterator<Item = String>>(&mut self, names: I) {
+        self.permission_rationale = names.into_iter().collect();
+    }
+
     pub(crate) fn permission_granted(&self, name: &str) -> bool {
         self.granted_permissions
             .as_ref()
@@ -82,7 +87,9 @@ pub(crate) fn instance_intrinsic(
         ("shouldShowRequestPermissionRationale", "(Ljava/lang/String;)Z")
             if is_context(vm, recv_class) =>
         {
-            Ok(Some(Value::Int(0)))
+            let p = perm_of(vm, args.first());
+            let show = p.is_some_and(|p| vm.permission_rationale.contains(&p));
+            Ok(Some(Value::Int(i32::from(show))))
         }
         ("requestPermissions", "([Ljava/lang/String;I)V") if is_context(vm, recv_class) => {
             let Some(arr) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {

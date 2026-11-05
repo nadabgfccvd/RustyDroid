@@ -146,7 +146,7 @@ name = "SEND_SMS"
 level = "dangerous"
 group = "SMS"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "hardRestricted"]
 description = "Send SMS messages."
 
 [[permission]]
@@ -154,7 +154,7 @@ name = "RECEIVE_SMS"
 level = "dangerous"
 group = "SMS"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "hardRestricted"]
 description = "Receive incoming SMS messages via broadcast."
 
 [[permission]]
@@ -162,7 +162,7 @@ name = "READ_SMS"
 level = "dangerous"
 group = "SMS"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "hardRestricted"]
 description = "Read SMS messages stored on the device."
 
 [[permission]]
@@ -178,7 +178,7 @@ name = "RECEIVE_MMS"
 level = "dangerous"
 group = "SMS"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "hardRestricted"]
 description = "Receive incoming MMS messages."
 
 # --- grupo STORAGE/MEDIA ---
