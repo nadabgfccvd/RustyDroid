@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793837824989,
+  "lastUpdate": 1793840004007,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3635,6 +3635,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3282,
             "range": "± 10",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1130a44f2a3bc60b9b67f5ad47a300472a87f338",
+          "message": "feat(permissions,manifest): Apêndices B e F da spec — motor de permissões + componentes (#541)\n\nApêndice B: negativas/justificativas, permissions_auto_revoke (MCP), acesso parcial a mídia, hardRestricted (SMS/MMS), immutable. Apêndice F: componentes de extensão. Catálogo MCP 50→51.",
+          "timestamp": "2026-11-04T21:53:02-03:00",
+          "tree_id": "a29895b0458dde4b945efcf1440b37b5270fa97b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/1130a44f2a3bc60b9b67f5ad47a300472a87f338"
+        },
+        "date": 1793840003041,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3784,
+            "range": "± 78",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3770,
+            "range": "± 30",
             "unit": "ns/iter"
           }
         ]
