@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793837412453,
+  "lastUpdate": 1793837438490,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3563,6 +3563,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2761,
             "range": "± 9",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d92c82a5358e5ad02aec914e1666aedba0e61307",
+          "message": "feat(render): texto bidirecional (UAX #9) no shaping do snapshot — M4 (#539)\n\n`text_in_box` shapeava a string inteira na ordem lógica com uma única direção,\nentão texto misto LTR/RTL saía na ordem errada e hebraico/árabe ficava invertido.\n\n- `unicode-bidi` 0.3 (MIT/Apache): `visual_runs` devolve os segmentos de uma\n  linha em ordem visual, com a direção de cada um (parágrafo de base automática).\n- Cada segmento é shapeado pelo rustybuzz na sua direção e posto da esquerda\n  para a direita. Texto só LTR é um único segmento, então o shaping não muda\n  (golden `trivial-app.png` inalterado).\n\nLimitações: espelhamento de parênteses/colchetes em RTL não é aplicado; o\nalinhamento de texto RTL segue à esquerda (sem `layoutDirection` no layout).\n\nTestes: `visual_runs` (LTR, só hebraico, misto em parágrafo LTR e em RTL) e\nrenderização de hebraico, árabe e misto sem pânico e com pixels escuros.\n\nRefs: ROADMAP M4 (gap \"bidi\").\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T21:09:52-03:00",
+          "tree_id": "304f8ecf1091b639367db08e5b85c951ba2708c3",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/d92c82a5358e5ad02aec914e1666aedba0e61307"
+        },
+        "date": 1793837437507,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3579,
+            "range": "± 80",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3556,
+            "range": "± 20",
             "unit": "ns/iter"
           }
         ]
