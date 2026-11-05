@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793842691492,
+  "lastUpdate": 1793843111250,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3743,6 +3743,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3887,
             "range": "± 38",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a0c94dad02531d4118f42f91eb3e1f9fc14dfc94",
+          "message": "docs(appendix-c): per-surface rd-vm class coverage in the API 26–36 inventory (#544)\n\nThe inventory summary now shows, for every registered surface, how many of its\nAPI 36 public classes have an rd-vm descriptor (class-level signal only).\nThis makes the remaining class blockers per surface visible in the ledger.\n\nNo registry status changes. Inventory and coverage are not completion claims.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T22:44:41-03:00",
+          "tree_id": "f7741179c083b3ad3487ad7afac4f4e0edc84bc8",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a0c94dad02531d4118f42f91eb3e1f9fc14dfc94"
+        },
+        "date": 1793843110508,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3679,
+            "range": "± 116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3720,
+            "range": "± 23",
             "unit": "ns/iter"
           }
         ]
