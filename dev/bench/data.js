@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793896371621,
+  "lastUpdate": 1793897204947,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4247,6 +4247,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1963,
             "range": "± 45",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f3ea9a4bfc8983799c5de508cb91376440b90b27",
+          "message": "docs(comprix): corrige a causa do primeiro frame (LB0/k0 não é o custo) (#559)\n\n- A seção \"Primeiro toque, primeiro frame e swipe\" afirmava que o trampoline do Compose era a causa dominante.\n- Experimento (não commitado): limitar execuções de LB0/k0 no mesmo instante não mudou o fuel (4,84 M).\n- Doc corrigido: custo dentro de advance_clock não isolado; candidatos são traversals (48 ms, 64 ms) e outros runnables.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T13:45:45-03:00",
+          "tree_id": "fd5ce5d4b3467511b954ec20176ab03ef63ab5a5",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f3ea9a4bfc8983799c5de508cb91376440b90b27"
+        },
+        "date": 1793897204145,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2762,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2762,
+            "range": "± 10",
             "unit": "ns/iter"
           }
         ]
