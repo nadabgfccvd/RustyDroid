@@ -1754,14 +1754,19 @@ impl Engine {
             self.gfx.frame_valid = false;
             return Ok(0);
         }
+        // Fases do frame sob RD_LAUNCH_TRACE: fuel e tempo de cada uma.
+        let phases = self.launch_trace.is_some();
+        let (f0, t0) = (self.fuel_used, std::time::Instant::now());
         self.fw.in_traversal = true;
         let laid = self.layout_roots(&dex_roots, &dialogs);
         self.fw.in_traversal = false;
         laid?;
+        let (f1, t1) = (self.fuel_used, t0.elapsed());
         // 2. let layout-triggered frame callbacks / posted work run
         let now = self.fw.clock();
         let _ = now;
         let _ = self.advance_clock(16);
+        let (f2, t2) = (self.fuel_used, t0.elapsed());
         // 3. record the frame
         let canvas = self.begin_frame_canvas(fw_, fh_)?;
         self.record_view(canvas, content, 0)?;
@@ -1770,7 +1775,21 @@ impl Engine {
             self.frame_fill(canvas, 0.0, 0.0, fw_ as f32, fh_ as f32, 0x5200_0000);
             self.record_view(canvas, *root, 0)?;
         }
+        let (f3, t3) = (self.fuel_used, t0.elapsed());
         self.end_frame();
+        if phases {
+            eprintln!(
+                "[frame-phase] layout fuel={} {:.1}ms | clock fuel={} {:.1}ms | record fuel={} {:.1}ms | roots={} dialogs={}",
+                f1 - f0,
+                t1.as_secs_f64() * 1e3,
+                f2 - f1,
+                (t2 - t1).as_secs_f64() * 1e3,
+                f3 - f2,
+                (t3 - t2).as_secs_f64() * 1e3,
+                dex_roots.len(),
+                dialogs.len()
+            );
+        }
         Ok(self.frame_op_count())
     }
 
