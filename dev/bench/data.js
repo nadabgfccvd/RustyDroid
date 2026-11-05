@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793846935631,
+  "lastUpdate": 1793848171029,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3887,6 +3887,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3289,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "77091fe59c54be37d6b95eb183f07ec864194940",
+          "message": "feat(gms): Cast state listener, RTDB removeEventListener, Nearby lifecycle; auditoria E S9 (#548)\n\n- gms-cast: onCastStateChanged(int) fires on real state transitions\n  (connect/disconnect). Previously CastStateListener was stored and never called.\n- firebase-rtdb: removeEventListener stops event delivery (test added).\n- gms-nearby: read-only getters gms_nearby_is_discovering / gms_nearby_connections;\n  lifecycle test for discovery and connections.\n- New tests: cast_state_listener_fires_only_on_real_transitions,\n  rtdb_remove_event_listener_stops_callbacks, nearby_lifecycle_discovery_and_connections.\n  Mutation checks: removing the Cast dispatch and the RTDB retain each fail their test.\n- docs/appendix-d-e.md S9: per-service inventory of all 20 partial E services\n  (success / error / lifecycle), with explicit \"no programmable error path\" cells.\n- data/gms.toml and docs/gms.md updated for gms-cast.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T00:09:00-03:00",
+          "tree_id": "0c074b26a3ca2bce52c0118b67124b6db0330c28",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/77091fe59c54be37d6b95eb183f07ec864194940"
+        },
+        "date": 1793848170403,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3555,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3557,
+            "range": "± 16",
             "unit": "ns/iter"
           }
         ]
