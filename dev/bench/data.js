@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793907658998,
+  "lastUpdate": 1793914211588,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4607,6 +4607,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3206,
             "range": "± 14",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "928de950db5e50ec7bc6470015cc664cecfa3462",
+          "message": "fix(apk): device-admin exige o meta-data android.app.device_admin (Apêndice F, F-3) (#569)\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T18:29:44-03:00",
+          "tree_id": "681f27f95a59c6dce4d640dcb236a1a766a2e863",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/928de950db5e50ec7bc6470015cc664cecfa3462"
+        },
+        "date": 1793914210523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2769,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2801,
+            "range": "± 77",
             "unit": "ns/iter"
           }
         ]
