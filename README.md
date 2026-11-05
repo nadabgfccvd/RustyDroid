@@ -39,7 +39,7 @@ RustyDroid is a **"Wine for Android"**: instead of emulating an entire Android O
 | Guest OS in RAM | 2–4 GB | **0** (no guest OS) |
 | Boot time | minutes | **seconds** (no boot at all) |
 | Runs in a plain container | rarely | ✅ designed for it |
-| AI-agent control plane | adb, screen scraping | **MCP + 51 structured tools** + subscribable screen resources + live viewer (JSON-RPC próprio — ADR 001) |
+| AI-agent control plane | adb, screen scraping | **MCP + 52 structured tools** + subscribable screen resources + live viewer (JSON-RPC próprio — ADR 001) |
 | Perf baseline | modern desktop | **Motorola Moto E5 (2 GB RAM)** floor |
 
 ### 👀 Agents see the screen without screenshots
@@ -75,7 +75,7 @@ See [ADR 007](docs/adr/007-cranelift-leaf-jit.md).
 ## C/C++/Rust APKs and full MCP execution (opt-in)
 
 `cargo build -p rd-cli --features native-engines` enables three real, bounded
-source-language-selected native adapters. Source-built Android APKs, all 51 MCP
+source-language-selected native adapters. Source-built Android APKs, all 52 MCP
 tools, x86_64/ARM64/ARMv7 matrices, and limitations are documented in
 [Real native-language execution](docs/native-languages.md). These are genuine
 project-owned Android demonstration APKs with native cores and Java UI glue,
@@ -166,7 +166,7 @@ rustydroid/
 │   ├── rd-engine-*/   # language bridges (flutter/rn/mono/wasm…) feature-gated (M11)
 │   ├── rd-framework/  # versioned framework data/engines: fd-permissions ✅, fd-devices ✅, fd-behavior ✅, fd-api-coverage ✅, fd-jetpack ✅, fd-gms ✅
 │   ├── rd-render/     # headless / window / web renderers + UI dump     (M4)
-│   ├── rd-agent/      # MCP (JSON-RPC próprio, ADR 001) + suite executor `rd test` (M6) + coverage · 51 tools · screen model, resources, live viewer
+│   ├── rd-agent/      # MCP (JSON-RPC próprio, ADR 001) + suite executor `rd test` (M6) + coverage · 52 tools · screen model, resources, live viewer
 │   └── rd-cli/        # the `rd` binary: inspect / perm / device / behavior / api-coverage / jetpack / gms / engine / dex / vm / app / mcp / test / perf
 ├── data/              # permissions (175), devices (6), behavior-switches (25), engines (28), api-coverage (17 domains, 106 surfaces), jetpack (46 libraries), gms (21 services)
 ├── golden-apks/       # open-source APK test suite (download script, no binaries)

@@ -2,6 +2,7 @@
 # Fonte canônica: Apêndice B da spec RustyDroid.md v2.1 (dados versionados).
 # Motor de permissões consome ESTE schema exato: name/level/group/since_api/flags/description.
 # Níveis: normal | dangerous | signature | signatureOrSystem | internal.
+# Chave `role = "<ROLE>"` (B6): permissão concedida enquanto o app é holder do role.
 # Flags válidas: runtime, development, systemApp, appop, instant, revokeWhenRequested,
 #                role, softRestriction, hardRestricted, immutable, special.
 schema_version = 1
@@ -147,6 +148,7 @@ level = "dangerous"
 group = "SMS"
 since_api = 1
 flags = ["runtime", "hardRestricted"]
+role = "SMS"
 description = "Send SMS messages."
 
 [[permission]]
@@ -155,6 +157,7 @@ level = "dangerous"
 group = "SMS"
 since_api = 1
 flags = ["runtime", "hardRestricted"]
+role = "SMS"
 description = "Receive incoming SMS messages via broadcast."
 
 [[permission]]
@@ -163,6 +166,7 @@ level = "dangerous"
 group = "SMS"
 since_api = 1
 flags = ["runtime", "hardRestricted"]
+role = "SMS"
 description = "Read SMS messages stored on the device."
 
 [[permission]]
@@ -171,6 +175,7 @@ level = "dangerous"
 group = "SMS"
 since_api = 1
 flags = ["runtime"]
+role = "SMS"
 description = "Receive incoming WAP push messages."
 
 [[permission]]
@@ -179,6 +184,7 @@ level = "dangerous"
 group = "SMS"
 since_api = 1
 flags = ["runtime", "hardRestricted"]
+role = "SMS"
 description = "Receive incoming MMS messages."
 
 # --- grupo STORAGE/MEDIA ---

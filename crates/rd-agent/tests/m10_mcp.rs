@@ -22,12 +22,12 @@ fn write_temp_apk(tag: &str, bytes: Vec<u8>) -> String {
 }
 
 #[test]
-fn m10_catalog_preserves_51_tools_and_exposes_all_18_actions() {
+fn m10_catalog_preserves_52_tools_and_exposes_all_18_actions() {
     let defs = tool_defs();
     assert_eq!(
         defs.len(),
-        51,
-        "MCP tool count contract is locked at 51 (ADR 023 added 3 session tools; Apêndice B6 added permissions_auto_revoke)"
+        52,
+        "MCP tool count contract is locked at 52 (ADR 023 added 3 session tools; Apêndice B6 added permissions_auto_revoke and permissions_role)"
     );
 
     let dp = defs
@@ -57,7 +57,7 @@ fn m10_catalog_preserves_51_tools_and_exposes_all_18_actions() {
         "orientation",
         "clipboard",
         // Apêndice E programável (S8): acções do shim GMS no mesmo
-        // multiplex — o contrato M10 (as 18 acima, 51 tools) não muda.
+        // multiplex — o contrato M10 (as 18 acima, 52 tools) não muda.
         "gms",
         "gms_state",
     ];

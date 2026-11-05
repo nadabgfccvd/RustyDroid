@@ -1,0 +1,125 @@
+# Apêndices B–F — plano de implementação e estado verificado
+
+Este documento é o plano executável dos Apêndices B, C, D, E e F de `RustyDroid.md`.
+A spec é um rascunho: a fonte de verdade do estado é o código, os registros em
+`data/` e os testes. Cada afirmação de "feito" aponta para um teste ou arquivo.
+Nada aqui promove um status em `data/*.toml`; isso só acontece no PR que muda o código.
+
+Estado de referência: `origin/main` após o PR #541 (`1130a44`), mais o PR desta rodada.
+
+## 1. Critério de conclusão por apêndice
+
+| Apêndice | Fonte executável | Critério de "completo" (o que precisa ser verdade) |
+|---|---|---|
+| **B** Permissões | `data/permissions.toml`, `rd-framework::fd_permissions`, `rd-vm::perms`, `rd-agent::mcp` | Toda permissão da tabela tem estado correto por nível/flag/alvo; toda flag listada na B1 tem efeito verificado por teste **ou** está registrada como bloqueio com fonte; fluxos runtime, negativas, justificativas, auto-revoke e roles têm chamador e teste. |
+| **C** Superfície `android.*` | `data/api-coverage.toml`, `docs/appendix-c-literal-completion.md` | "Literal": cada classe/método/campo público de API 26–36 de cada prefixo registrado está implementado e testado **ou** listado como bloqueio. Qualquer item não auditado conta como bloqueio. |
+| **D** AndroidX/Jetpack | `data/jetpack.toml`, `docs/appendix-d-e.md` | Cada biblioteca da tabela tem estratégia (`dex-passthrough`, `host-shim`, `host-native`) e status honesto; `supported` só para o subconjunto documentado com teste. |
+| **E** GMS/Firebase | `data/gms.toml`, `docs/appendix-d-e.md` | Modo `no-gms-honest` validado; cada serviço tem shim programável com teste; nenhum serviço finge backend real. |
+| **F** Componentes & manifest | `rd-apk::manifest` | Os 4 componentes e as extensões da tabela F são modelados; cada elemento de manifest listado tem parse e comportamento; cada extensão tem action string **verificado**. |
+
+## 2. Linha de base verificada (contagens do código, não da spec)
+
+Os números do texto da spec estão defasados. Valores medidos neste commit:
+
+| Registro | Total | Estado |
+|---|---|---|
+| `api-coverage.toml` (C) | 106 superfícies, 17 domínios | 4 supported · 102 partial · 0 stub · 0 not_implemented |
+| `jetpack.toml` (D) | 46 bibliotecas, 6 categorias | 19 partial · 7 stub · 20 not_implemented |
+| `gms.toml` (E) | 21 serviços, 3 categorias | 20 partial · 1 not_implemented (ML Kit, extra) |
+| `permissions.toml` (B) | 195 permissões, 13 roles | 5 com `hardRestricted`; 5 com `role = "SMS"` (após este PR) |
+| Catálogo MCP | 52 tools | inclui `permissions_auto_revoke` e `permissions_role` (Apêndice B6) |
+
+Não é possível contar o inventário literal de C: o sandbox não tem `android.jar`
+(`find / -name android.jar` vazio). Sem o SDK, o total de classes públicas de API 26–36
+não é mensurável aqui. Isso é um bloqueio de C, não uma estimativa.
+
+## 3. Apêndice B — estado
+
+### Implementado (com teste)
+
+| Item da spec (B1–B6) | Implementação | Teste |
+|---|---|---|
+| Níveis normal/dangerous/signature/internal | `initial_state` | `install_classifies_by_level` |
+| Flag `runtime` (diálogo) | `RuntimePending`, `grant`/`deny` | `grant_deny_revoke_lifecycle` |
+| Flag `special` / `appop` | `SpecialPending` | `table_matches_documented_counts` |
+| Flag `development` / `systemApp` (BATTERY_STATS) | `DeniedSystem` fora da whitelist b5 | `battery_stats_is_denied_system_outside_b5_whitelist` |
+| B5 whitelist de signature | `is_b5` | `signature_entries_are_partitioned_by_b5_whitelist` |
+| Gating por targetSdk / maxSdk / since_api | `NotRequested` | `max_sdk_version_gates_not_requested`, `since_api_gates_not_requested` |
+| Negativas, justificativa, "não perguntar de novo" | `denials`, `shows_rationale`, `is_permanently_denied` | `first_denial_shows_rationale_second_is_dont_ask_again` |
+| Justificativa no VM e no MCP | `rationale_names` → `permission_rationale` | `rationale_names_lists_only_single_denials` (unitário); ver lacuna abaixo |
+| Auto-revoke por app sem uso (B6) | `auto_revoke_unused` + tool `permissions_auto_revoke` | `auto_revoke_only_for_target_30_plus_and_only_after_threshold`; `permissions_auto_revoke_follows_target_sdk_and_threshold` (MCP) |
+| Acesso parcial a mídia API 34+ | `grant_partial_media` | `partial_media_grants_visual_selection_only_on_api_34_plus` |
+| Flag `hardRestricted` (SMS/MMS) | `grant` recusado sem allowlist ou role | `hard_restricted_sms_is_refused_until_installer_allowlists_it` |
+| Flag `immutable` | `is_frozen` em grant/deny/revoke/auto-revoke | `immutable_permission_ignores_grant_deny_and_revoke` |
+| Roles (B6) — `role` | `set_role`, `roles_held`, `permissions_role` (MCP) | `role_holder_gets_role_permissions_and_loses_them_on_exit`; `role_holding_satisfies_hard_restriction_without_allowlist`; `role_grant_takes_precedence_over_an_earlier_denial`; `unknown_role_is_rejected`; `permissions_role_grants_sms_permissions_while_held` |
+
+### Bloqueios (sem fonte verificada; não implementados)
+
+| Flag | Evidência encontrada | Por que não implementar agora |
+|---|---|---|
+| `instant` | `PROTECTION_FLAG_INSTANT` existe na API oficial (`PermissionInfo`) | Exige modelo de app instantâneo, que o runtime não tem. Hoje o dado não marca nenhuma permissão. |
+| `revokeWhenRequested` | `FLAG_PERMISSION_REVOKE_WHEN_REQUESTED` existe no AOSP (`PackageManagerShellCommand`, `PermissionManagerService`) | A flag existe, mas não encontrei documentação oficial de **quando** a revogação ocorre. Implementar seria chute. |
+| `softRestriction` | Só `ACCESS_BACKGROUND_LOCATION` a usa; `FLAG_SOFT_RESTRICTED` existe na API | Metadado sem efeito verificado no runtime; a restrição do Android é aplicada pelo sistema. Precisa de fonte sobre o efeito antes de modelar. |
+
+A flag `role` foi implementada: a documentação AOSP de roles diz que o role concede as
+permissões declaradas em `<permissions>` ao holder. A ligação SMS → permissões de
+SMS vem da política do Play (grupo SMS exige default SMS handler). A regra "holder do
+role dispensa `hardRestricted`" é uma **decisão de modelagem** deste projeto, não um
+fato da documentação do Android; está marcada no código.
+
+### Lacuna conhecida de teste
+
+A resposta de `shouldShowRequestPermissionRationale` no VM não tem teste de ponta.
+Tentativa com `m10::call_instance` em receptor `Context` retornou `None` (a intrínseca
+não casou o receptor). Não foi removida a lógica: segue coberta pelo motor
+(`rationale_names`) e pelo caminho MCP de launch/grant. Próximo passo: achar o despacho
+correto de `perms.rs` e testar a intrínseca diretamente.
+
+## 4. Apêndice F — estado
+
+| Item | Estado |
+|---|---|
+| Componentes activity, activity-alias, service, receiver, provider | Modelados (`ComponentKind`); testes em `appendix_f_tests` |
+| Extensões: appwidget-provider, accessibility-service, notification-listener, voice-interaction, print-service, autofill-service, host-apdu, call-redirection, carrier-config, permission-group, permission-tree | Regras de extensão e `build_component` |
+| Extensões: device-admin, wallpaper, dream, ime, media-browser, credentials | Já existiam antes deste trabalho (não re-auditadas nesta rodada) |
+| **offline-device** | **Bloqueio.** Nenhuma action string verificada encontrada (busca oficial e genérica sem resultado). Não mapear sem fonte. |
+| Elementos de manifest (uses-permission, permission, uses-feature, queries, instrumentation, etc.) | Parse existente; não re-auditado item a item nesta rodada. |
+
+## 5. Apêndices C, D e E — plano por rodadas
+
+Estes apêndices não são "completos" nesta rodada. Os números abaixo dizem o tamanho real.
+
+### Apêndice C (literal)
+- **Bloqueio fundamental:** sem `android.jar` não há inventário literal. Rodada 0:
+  obter um `android.jar` de API 26–36 (repositório Maven do Google, `com.google.android:android`),
+  gerar a lista de classes/métodos públicos por prefixo registrado e gravar o total em
+  `docs/appendix-c-inventory.md`. Nenhuma superfície muda de status antes disso.
+- Rodadas seguintes: por domínio, implementar ou marcar bloqueio por item, na ordem do
+  maior número de superfícies `partial` (ver tabela da spec, domínios App/lifecycle e View/UI).
+
+### Apêndice D (AndroidX)
+- 20 bibliotecas `not_implemented`. Prioridade pelo critério da spec ("Room via ST-02,
+  work via SYS-04, navigation via UI-04, ..."): sem estratégia definida para as 20. Rodada 1:
+  escolher estratégia por biblioteca (`dex-passthrough` quando o DEX da lib já roda na VM;
+  `host-shim` quando precisa de interceptação) e registrar como `planned` no `notes`,
+  sem flipar para `supported`.
+- 7 `stub`: promover só com teste de comportamento real.
+
+### Apêndice E (GMS/Firebase)
+- 20 serviços `partial`; ML Kit `not_implemented` (é extra, fora da tabela da spec).
+  Rodada 1: decidir se ML Kit entra na spec (usuário). Demais serviços: critério de
+  shim programável com teste de sucesso, erro e ciclo de vida.
+
+## 6. Decisões que dependem do usuário
+
+1. **offline-device (F):** fornecer a action string ou o elemento de manifest exato, ou aceitar o bloqueio.
+2. **revokeWhenRequested, instant, softRestriction (B):** fornecer a fonte de semântica, ou aceitar como bloqueio documentado.
+3. **Apêndice C literal:** aceitar que o inventário depende de `android.jar` (obtenção pela rede do sandbox) ou fornecer o arquivo.
+4. **Escopo de D e E:** quais das 20 bibliotecas D `not_implemented` e do serviço ML Kit entram nesta spec.
+
+## 7. Validação deste plano
+
+- `cargo test -p rd-framework`, `-p rd-agent`, `-p rd-cli`, `-p rd-vm`, `-p rd-apk`: verdes no PR.
+- `cargo fmt --all -- --check` e `cargo clippy --all-targets` nos crates tocados.
+- `rd mcp --gen-docs docs/mcp-tools.md` regenerado; teste `generated_docs_match_catalog` verde.
+- Matriz nativa (`scripts/native-languages-mcp.py`) exige 52 tools com chamada positiva; roda no CI com NDK.
