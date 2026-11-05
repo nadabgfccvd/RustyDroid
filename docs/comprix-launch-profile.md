@@ -171,3 +171,58 @@ Decisões e limites:
   execução). Exige cuidado com a semântica das listas; o ganho real não foi medido.
 - O ganho grande exige reduzir o custo por instrução do interpretador, o que segue difuso
   (ver a seção de categorias acima).
+
+## Primeiro toque, primeiro frame e swipe (2026-11-05)
+
+Medido com `RD_LAUNCH_TRACE=1` (um relatório por chamada e uma linha `[frame-phase]` por frame).
+
+**`observe` não adiciona custo: revela o frame.** Sonda em duas partes (`install → launch → tap "Pular"`
+sem `observe`, depois `observe` sozinho):
+
+| Chamada | Tempo | Observação |
+|---|---|---|
+| `tap_text "Pular"` sem `observe` | 328 ms | fuel 2,72 M |
+| `observe` (primeiro, tela nova) | 1.110 ms | fuel 5,24 M |
+| `observe` sem mudança | 0,2 ms | nada a redesenhar |
+
+O total (~1,44 s) é o mesmo com ou sem `observe`. O primeiro `observe` paga o frame que ficou pendente.
+
+**Decomposição do primeiro frame** (`[frame-phase]`):
+
+| Fase de `draw_frame` | Fuel | Tempo |
+|---|---|---|
+| `layout_roots` | 0,78 M | 167–198 ms |
+| `advance_clock(16)` (drena o looper) | **4,84 M** | **989–1.123 ms** |
+| `record_view` | 0,14 M | 28–34 ms |
+
+**Causa dominante: `advance_clock` drena o looper e executa o trampoline do Compose 29 vezes no mesmo
+instante virtual.** O runnable `LB0/k0` (trampoline do dispatcher de frames do Compose, roda como
+mensagem do Looper) aparece em `[fw] drain` repetido com `quando 64 <= 64`, `96 <= 96` etc. Ele se
+reagenda com `when = now`, sem avançar o vsync. Cada execução custa ~165 mil de fuel, ou seja, uma
+composição inteira. O cap `MAX_FRAMES_PER_DRAIN = 8` do `choreographer.rs` cobre só os callbacks do
+Choreographer; estes passam pelo Looper e não são limitados.
+
+Duas leituras, nenhuma implementada:
+- **Pacing:** o trampoline deveria reagendar para o próximo vsync (como no device). Alinha com o modelo
+  de tempo de `advance_clock`, mas muda a ordem e o momento dos frames de **todos** os apps que usam
+  Compose. Exige a suíte completa e revisão de telas.
+- **Cap por drenagem:** limitar as execuções do trampoline por drenagem, como já é feito para os
+  callbacks do Choreographer. Mais local, mas também altera o que está pronto quando `observe` retorna.
+
+Por isso não foi feito sem decisão. Se o pacing for adotado, o primeiro frame cai de ~4,8 M para
+algo próximo de uma composição (~0,2 M de fuel), o que levaria o "Pular" para perto de 0,5 s.
+Essa estimativa não foi medida.
+
+**Swipe na lista** (uma lista com 1 item, sonda `/tmp/swipe_probe.py`):
+
+| Gesto | Sem `observe` | Com `observe` |
+|---|---|---|
+| vertical (1000→400) | 295 ms | 525 ms |
+| horizontal (900 → 60) | 68 ms | 220 ms |
+
+Não reproduz os ~1,5 s relatados. A hipótese é que o número relatado veio de uma lista com mais itens,
+ou de um frame pendente. Não investigado além disso.
+
+**Ambiente:** a segunda tentativa de build do `rd_vm` foi morta pelo OOM do kernel (`rustc` com
+~1,47 GB de RSS em 2 GB de RAM). Um swapfile de 3 GB resolveu. Não é mudança de código; relevante
+para reproduzir medições.
