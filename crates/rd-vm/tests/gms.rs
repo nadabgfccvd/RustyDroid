@@ -3543,3 +3543,91 @@ fn fit_zero_steps_yields_empty_data_set_not_fake_points() {
         other => panic!("points: {other:?}"),
     }
 }
+
+#[test]
+fn analytics_null_user_property_value_removes_it() {
+    let mut e = engine();
+    let analytics = ov(cs!(
+        e,
+        FIREBASE_ANALYTICS,
+        "getInstance",
+        "(Landroid/content/Context;)Lcom/google/firebase/analytics/FirebaseAnalytics;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+    let sig = "(Ljava/lang/String;Ljava/lang/String;)V";
+    let k = s(&mut e, "plano");
+    let v = s(&mut e, "pro");
+    ci!(
+        e,
+        FIREBASE_ANALYTICS,
+        "setUserProperty",
+        sig,
+        analytics,
+        [k, v]
+    )
+    .unwrap();
+    assert_eq!(
+        e.gms_analytics_user_props(),
+        vec![("plano".to_string(), "pro".to_string())]
+    );
+    // Valor null = remover a propriedade (ciclo de vida, não só gravação).
+    let k2 = s(&mut e, "plano");
+    ci!(
+        e,
+        FIREBASE_ANALYTICS,
+        "setUserProperty",
+        sig,
+        analytics,
+        [k2, Value::Null]
+    )
+    .unwrap();
+    assert!(e.gms_analytics_user_props().is_empty());
+}
+
+#[test]
+fn firestore_missing_document_reads_as_absent_not_error() {
+    // Documento inexistente: a leitura conclui com sucesso e exists() == false
+    // (como o Firestore real), sem inventar dados.
+    let mut e = engine();
+    let fs = ov(cs!(
+        e,
+        FIRESTORE,
+        "getInstance",
+        "()Lcom/google/firebase/Firestore/FirebaseFirestore;",
+        []
+    )
+    .unwrap());
+    let coll_name = s(&mut e, "users");
+    let coll = ov(ci!(
+        e,
+        FIRESTORE,
+        "collection",
+        "(Ljava/lang/String;)Lcom/google/firebase/Firestore/CollectionReference;",
+        fs,
+        [coll_name]
+    )
+    .unwrap());
+    let doc_id = s(&mut e, "fantasma");
+    let doc = ov(ci!(
+        e,
+        COLLECTION_REF,
+        "document",
+        "(Ljava/lang/String;)Lcom/google/firebase/Firestore/DocumentReference;",
+        coll,
+        [doc_id]
+    )
+    .unwrap());
+    let t = ov(ci!(
+        e,
+        DOC_REF,
+        "get",
+        "()Lcom/google/android/gms/tasks/Task;",
+        doc,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1);
+    let snap = ov(task_result(&mut e, t));
+    assert_eq!(iv(ci!(e, DOC_SNAP, "exists", "()Z", snap, []).unwrap()), 0);
+}

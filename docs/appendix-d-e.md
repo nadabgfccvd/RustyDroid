@@ -121,8 +121,8 @@ mínimas documentadas no PR.
     | glide | dex-passthrough | Depende de pipeline de imagens (UI-02) |
     | picasso | dex-passthrough | Depende de pipeline de imagens (UI-02) |
 
-  - **E — testes de erro e ciclo de vida (7 novos em
-    `crates/rd-vm/tests/gms.rs`, suíte gms com 40 testes passando)**:
+  - **E — testes de erro e ciclo de vida (9 novos em
+    `crates/rd-vm/tests/gms.rs`, suíte gms com 42 testes passando)**:
     - `storage_getbytes_size_limit_error_and_delete_lifecycle`
       (firebase-storage): limite menor que o blob falha sem alterar o
       blob; limite igual ou zero tem sucesso; `delete` → leitura falha →
@@ -148,12 +148,16 @@ mínimas documentadas no PR.
     - `fit_zero_steps_yields_empty_data_set_not_fake_points` (gms-fit-health):
       sem passos programados, o histórico devolve lista vazia, sem ponto
       inventado.
-  - **E — auditoria ainda aberta**: ainda sem teste explícito de erro ou
-    ciclo de vida: `firebase-analytics` (eventos e propriedades),
-    `cloud-firestore` (documento ausente em `get`) e `gms-cast`
-    (listeners de estado: o shim guarda o listener, mas não há estado
-    observável pelo teste). Esses itens continuam `partial` com os mesmos
-    `gap_id`.
+    - `analytics_null_user_property_value_removes_it` (firebase-analytics):
+      valor null em `setUserProperty` remove a propriedade.
+    - `firestore_missing_document_reads_as_absent_not_error`
+      (firebase-firestore): `get` de documento inexistente conclui com
+      sucesso e `exists() == false`, sem dados inventados.
+  - **E — auditoria ainda aberta**: `gms-cast` sem teste de listener de
+    estado (o shim guarda o listener, mas o teste não tem estado observável
+    para ele). Continua `partial` com o mesmo `gap_id`. Os demais serviços
+    de `partial` já têm teste de sucesso e de erro ou ciclo de vida
+    registrados acima ou em rodadas anteriores (`tests/gms.rs`).
   - **E — ML Kit**: continua `not_implemented`, sem dispatch.
   - **E — status**: os 20 serviços continuam `partial` com os mesmos
     `gap_id`; os `notes` em `data/gms.toml` já descrevem o comportamento
