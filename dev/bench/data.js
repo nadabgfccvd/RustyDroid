@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793843111250,
+  "lastUpdate": 1793845702771,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3779,6 +3779,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3720,
             "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7557e0bc8b8f34a766648259a350e9e03696a5e2",
+          "message": "feat(appendix-d-e): rodada 1 — DrawerLayout/SwipeRefreshLayout/CardView shims e testes de erro/ciclo E (#545)\n\n* feat(appendix-d-e): round 1 — DrawerLayout/SwipeRefreshLayout/CardView shims and E error/lifecycle tests\n\nAppendix D:\n- Host shim crates/rd-vm/src/androidx_widgets.rs (hooked in\n  call_host_shim_layer and native.rs):\n  - DrawerLayout View overloads: openDrawer, closeDrawer, isDrawerOpen,\n    isDrawerVisible (state per drawer; null view -> NPE).\n  - SwipeRefreshLayout: setRefreshing, isRefreshing, setOnRefreshListener.\n  - CardView (and MaterialCardView): radius, elevation, max elevation,\n    content padding, compat padding, preventCornerOverlap.\n- data/jetpack.toml: androidx-drawerlayout, androidx-swiperefreshlayout,\n  androidx-cardview stub -> partial (gap_id kept). Un-modelled parts are\n  listed in notes.\n- regenerated docs/jetpack.md and the UI row of the RustyDroid.md spec\n  table (partial 6 · stub 4).\n- 9 tests in crates/rd-vm/tests/androidx_widgets.rs.\n\nAppendix E:\n- 4 new error/lifecycle tests in crates/rd-vm/tests/gms.rs: storage\n  getBytes size limit and delete lifecycle, SafetyNet programmed JWS and\n  nonce record, Google sign-out/sign-in cycle, location fix clear/reseed.\n- No status changes in data/gms.toml.\n\nLedger: docs/appendix-d-e.md S8 (per-item inventory and not_implemented\ndisposition table).\n\n* fix(gms): Nearby requestConnection fails for undiscovered endpoints; E error/lifecycle tests\n\n- Nearby requestConnection used to complete successfully for any endpoint\n  id, including one that was never discovered. It now completes only for a\n  discovered or programmed endpoint (gms_nearby_add_endpoint) and fails with\n  ApiException (ENDPOINT_UNKNOWN) otherwise. data/gms.toml notes updated and\n  docs/gms.md regenerated.\n- New tests in crates/rd-vm/tests/gms.rs (suite now 39 passing):\n  nearby_request_connection_only_reaches_discovered_endpoints,\n  maps_marker_remove_drops_only_that_marker.\n- Regenerated docs/compat-matrix.md (Jetpack counts changed in round 1;\n  the CI scoreboard diff was out of sync).\n- docs/appendix-d-e.md S8 ledger updated.\n\n---------\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T23:27:39-03:00",
+          "tree_id": "5c18ffa4126df4d015ad8d6467b04773f53e0b5e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/7557e0bc8b8f34a766648259a350e9e03696a5e2"
+        },
+        "date": 1793845702160,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3200,
+            "range": "± 90",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3183,
+            "range": "± 11",
             "unit": "ns/iter"
           }
         ]
