@@ -81,3 +81,71 @@ mínimas documentadas no PR.
   testados descritos em `data/gms.toml`); ML Kit permanece
   `not_implemented` e sem dispatch — o teste
   `unknown_gms_surface_returns_none` fixa essa fronteira.
+- **S8 (rodada 1 de D/E, branch `appendix-d-e-round1-20261105`)**: inventário
+  por item, sem subir status sem teste.
+  - **D — stub → partial (3)**: `androidx-drawerlayout`,
+    `androidx-swiperefreshlayout`, `androidx-cardview`. Shim host em
+    `crates/rd-vm/src/androidx_widgets.rs` (ligado em `call_host_shim_layer`
+    e em `native.rs`), 9 testes em `crates/rd-vm/tests/androidx_widgets.rs`.
+    Não modelados (dito em `notes`): animação, validação de
+    `layout_gravity`, sobrecargas com gravidade `int` (caem no DEX),
+    `DrawerListener`, gestos de arrasto, `onRefresh` (o host não dispara),
+    sombra/cor de fundo do CardView.
+  - **D — continuam stub (4)**: `androidx-viewpager2`,
+    `androidx-constraintlayout`, `androidx-coordinatorlayout`,
+    `androidx-material`. Sem shim; nenhum status sobe nesta rodada.
+  - **D — not_implemented (20)**: a estratégia de cada item já está
+    registrada em `data/jetpack.toml`. Próximo passo planejado (sem
+    mudança de status até haver teste):
+
+    | Biblioteca | Estratégia | Próximo passo / bloqueio |
+    |---|---|---|
+    | activity | dex-passthrough | Ciclo onCreate→onResume via DEX sobre `android.app` |
+    | annotation | dex-passthrough | Só metadado de compilação; decisão de status pendente |
+    | paging | dex-passthrough | `PagingSource.load` depende de coroutines |
+    | palette | dex-passthrough | `Palette.from(Bitmap)` depende de decode de bitmap (UI-02) |
+    | compose | host-native | UI-05 experimental/longo prazo; segue `not_implemented` |
+    | emoji2 | dex-passthrough | Fora do escopo desta rodada (fontes de emoji) |
+    | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
+    | camerax | host-shim | Depende de MEDIA-03 (câmera virtual) |
+    | security-crypto | host-shim | Depende de AndroidKeyStore (ST-04) |
+    | credentials | host-shim | Depende de provedor fake de credencial (decisão de produto) |
+    | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
+    | hilt-dagger | dex-passthrough | Exige app com DEX gerado pelo Hilt |
+    | kotlinx-coroutines | dex-passthrough | Depende de `Dispatchers.Main` no modelo de threads |
+    | rxjava | dex-passthrough | Depende de bridge de `Schedulers` |
+    | retrofit | dex-passthrough | Depende de `java.lang.reflect.Proxy` |
+    | moshi | dex-passthrough | DEX puro; sem ação host prevista |
+    | gson | dex-passthrough | DEX puro dependente de reflexão |
+    | coil | dex-passthrough | Depende de pipeline de imagens (UI-02) |
+    | glide | dex-passthrough | Depende de pipeline de imagens (UI-02) |
+    | picasso | dex-passthrough | Depende de pipeline de imagens (UI-02) |
+
+  - **E — testes de erro e ciclo de vida (6 novos em
+    `crates/rd-vm/tests/gms.rs`, suíte gms com 39 testes passando)**:
+    - `storage_getbytes_size_limit_error_and_delete_lifecycle`
+      (firebase-storage): limite menor que o blob falha sem alterar o
+      blob; limite igual ou zero tem sucesso; `delete` → leitura falha →
+      segundo `delete` falha.
+    - `safetynet_programmed_jws_and_nonce_record_track_api_key`
+      (gms-integrity): `gms_set_attestation_jws` é devolvido por
+      `getJwsResult`; o registro de nonce distingue `apiKeyPresent`.
+    - `google_signin_sign_out_ends_silent_session_and_sign_in_restores_it`
+      (gms-auth): `gms_sign_out_google` faz `silentSignIn` falhar com
+      código 4 e `getLastSignedInAccount` voltar a null; reautenticar
+      restaura a sessão.
+    - `location_fix_cleared_mid_session_returns_null_until_reseeded`
+      (gms-location): limpar o fix devolve null em `getLastLocation`;
+      reprogramar restaura.
+    - `nearby_request_connection_only_reaches_discovered_endpoints`
+      (gms-nearby): **correção de comportamento**. `requestConnection`
+      concluía com sucesso para qualquer endpoint, inclusive um nunca
+      descoberto. Agora só conclui para endpoint descoberto ou programado
+      e falha com `ApiException` (ENDPOINT_UNKNOWN) para os demais. Texto
+      em `data/gms.toml` e `docs/gms.md` regenerado.
+    - `maps_marker_remove_drops_only_that_marker` (gms-maps): `remove`
+      tira só o marcador alvo, e o outro permanece.
+  - **E — ML Kit**: continua `not_implemented`, sem dispatch.
+  - **E — status**: os 20 serviços continuam `partial` com os mesmos
+    `gap_id`; os `notes` em `data/gms.toml` já descrevem o comportamento
+    coberto, então o registro não muda nesta rodada.

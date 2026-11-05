@@ -2080,6 +2080,11 @@ fn jni_invoke_instance(
     if let Some(v) = crate::androidx::call_instance(vm, effective_mref, name, sig, recv, args)? {
         return Ok(v);
     }
+    if let Some(v) =
+        crate::androidx_widgets::call_instance(vm, effective_mref, name, sig, recv, args)?
+    {
+        return Ok(v);
+    }
     if let Some(v) = crate::gms::call_instance(vm, effective_mref, name, sig, recv, args)? {
         return Ok(v);
     }

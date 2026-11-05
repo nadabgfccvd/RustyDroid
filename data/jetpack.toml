@@ -412,14 +412,14 @@ category = "ui"
 coordinates = "androidx.drawerlayout:drawerlayout"
 prefixes = ["androidx.drawerlayout"]
 strategy = "host-shim"
-status = "stub"
-module = "rd-vm/classpath+inflate"
-code = ["crates/rd-vm/src/classpath.rs", "crates/rd-vm/src/inflate.rs"]
+status = "partial"
+module = "rd-vm/androidx-widgets"
+code = ["crates/rd-vm/src/androidx_widgets.rs", "crates/rd-vm/src/interp.rs", "crates/rd-vm/src/native.rs", "crates/rd-vm/src/classpath.rs", "crates/rd-vm/src/inflate.rs"]
 milestone = "appendix-d"
-notes = "S7: DrawerLayout infla como ViewGroup host e os filhos recebem DrawerLayout$LayoutParams mesmo sem o DEX da lib. Gestos de abertura/fecho da gaveta e DrawerListener não são modelados."
-evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/androidx_hierarchy.rs"]
+notes = "S7: DrawerLayout infla como ViewGroup host e os filhos recebem DrawerLayout$LayoutParams mesmo sem o DEX da lib. S8: openDrawer(View)/closeDrawer(View)/isDrawerOpen(View)/isDrawerVisible(View) mantêm estado por gaveta (testes em androidx_widgets). Não modelado: animação (o estado muda de imediato), validação de layout_gravity que o AOSP faz (não-gavetas são aceitas), sobrecargas (int) de gravidade (caem no DEX), DrawerListener e gestos de arrasto."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/androidx_hierarchy.rs", "crates/rd-vm/tests/androidx_widgets.rs"]
 gap_id = "gap-jetpack-drawerlayout"
-key_apis = ["androidx.drawerlayout.widget.DrawerLayout.openDrawer"]
+key_apis = ["androidx.drawerlayout.widget.DrawerLayout.openDrawer", "androidx.drawerlayout.widget.DrawerLayout.closeDrawer", "androidx.drawerlayout.widget.DrawerLayout.isDrawerOpen"]
 
 [[library]]
 id = "androidx-swiperefreshlayout"
@@ -428,14 +428,14 @@ category = "ui"
 coordinates = "androidx.swiperefreshlayout:swiperefreshlayout"
 prefixes = ["androidx.swiperefreshlayout"]
 strategy = "host-shim"
-status = "stub"
-module = "rd-vm/classpath+inflate"
-code = ["crates/rd-vm/src/classpath.rs", "crates/rd-vm/src/inflate.rs"]
+status = "partial"
+module = "rd-vm/androidx-widgets"
+code = ["crates/rd-vm/src/androidx_widgets.rs", "crates/rd-vm/src/interp.rs", "crates/rd-vm/src/native.rs", "crates/rd-vm/src/classpath.rs", "crates/rd-vm/src/inflate.rs"]
 milestone = "appendix-d"
-notes = "S7: SwipeRefreshLayout infla como ViewGroup host mesmo sem o DEX da lib. O gesto pull-to-refresh, o indicador e OnRefreshListener não são modelados."
-evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/androidx_hierarchy.rs"]
+notes = "S7: SwipeRefreshLayout infla como ViewGroup host mesmo sem o DEX da lib. S8: setRefreshing(boolean)/isRefreshing() mantêm o estado de atualização e setOnRefreshListener guarda o listener (null o remove; testes em androidx_widgets). Não modelado: o gesto pull-to-refresh (onRefresh não é disparado pelo host), o indicador visual e a animação."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/androidx_hierarchy.rs", "crates/rd-vm/tests/androidx_widgets.rs"]
 gap_id = "gap-jetpack-swiperefreshlayout"
-key_apis = ["androidx.swiperefreshlayout.widget.SwipeRefreshLayout.setRefreshing"]
+key_apis = ["androidx.swiperefreshlayout.widget.SwipeRefreshLayout.setRefreshing", "androidx.swiperefreshlayout.widget.SwipeRefreshLayout.isRefreshing", "androidx.swiperefreshlayout.widget.SwipeRefreshLayout.setOnRefreshListener"]
 
 [[library]]
 id = "androidx-cardview"
@@ -444,14 +444,14 @@ category = "ui"
 coordinates = "androidx.cardview:cardview"
 prefixes = ["androidx.cardview"]
 strategy = "host-shim"
-status = "stub"
-module = "rd-vm/classpath+inflate"
-code = ["crates/rd-vm/src/classpath.rs", "crates/rd-vm/src/inflate.rs"]
+status = "partial"
+module = "rd-vm/androidx-widgets"
+code = ["crates/rd-vm/src/androidx_widgets.rs", "crates/rd-vm/src/interp.rs", "crates/rd-vm/src/native.rs", "crates/rd-vm/src/classpath.rs", "crates/rd-vm/src/inflate.rs"]
 milestone = "appendix-d"
-notes = "S7: CardView infla como FrameLayout host (a sua superclasse real) mesmo sem o DEX da lib. Raio/sombra/elevação do cartão não são modelados no render headless."
-evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/androidx_hierarchy.rs"]
+notes = "S7: CardView infla como FrameLayout host (a sua superclasse real) mesmo sem o DEX da lib. S8: setRadius/getRadius, setCardElevation/getCardElevation, setMaxCardElevation/getMaxCardElevation, setContentPadding e getContentPadding{Left,Top,Right,Bottom}, setUseCompatPadding/getUseCompatPadding e setPreventCornerOverlap/getPreventCornerOverlap guardam estado com os defaults do AOSP (testes em androidx_widgets). Não modelado: sombra, desenho do cartão, cor de fundo (setCardBackgroundColor cai no DEX), atributos XML cardCornerRadius/cardElevation e o render headless."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/androidx_hierarchy.rs", "crates/rd-vm/tests/androidx_widgets.rs"]
 gap_id = "gap-jetpack-cardview"
-key_apis = ["androidx.cardview.widget.CardView.setRadius"]
+key_apis = ["androidx.cardview.widget.CardView.setRadius", "androidx.cardview.widget.CardView.getRadius", "androidx.cardview.widget.CardView.setCardElevation", "androidx.cardview.widget.CardView.setContentPadding", "androidx.cardview.widget.CardView.setUseCompatPadding"]
 
 [[library]]
 id = "androidx-fragment"
