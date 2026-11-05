@@ -15,7 +15,7 @@
 //! 1 LSB; os goldens são travados no CI Linux.
 
 use crate::shot::{Framebuffer, Rgb};
-use rustybuzz::{Face, UnicodeBuffer};
+use rustybuzz::{Direction, Face, UnicodeBuffer};
 use std::sync::OnceLock;
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
 
@@ -104,43 +104,52 @@ impl Canvas {
         let baseline = box_top + ascent;
         let pen_x0 = x.saturating_add(TEXT_PAD_X) as f32;
 
-        let mut buf = UnicodeBuffer::new();
-        buf.push_str(s);
-        buf.guess_segment_properties();
-        let shaped = rustybuzz::shape(face, &[], buf);
-
         let mut paint = Paint::default();
         paint.set_color_rgba8(c.0, c.1, c.2, 255);
         paint.anti_alias = true;
 
+        // UAX #9: cada segmento visual é shapeado na sua direção e os segmentos
+        // são postos da esquerda para a direita na ordem visual. Texto só LTR
+        // vira um único segmento, então o shaping dele não muda.
         let mut pen_x = pen_x0;
-        for (info, pos) in shaped
-            .glyph_infos()
-            .iter()
-            .zip(shaped.glyph_positions().iter())
-        {
-            let gx = pen_x + pos.x_offset as f32 * scale;
-            let gy = baseline - pos.y_offset as f32 * scale;
-            let mut outline = GlyphPath {
-                pb: PathBuilder::new(),
-                ox: gx,
-                oy: gy,
-                s: scale,
-                any: false,
-            };
-            let _ = face.outline_glyph(ttf_parser_glyph(info.glyph_id as u16), &mut outline);
-            if outline.any {
-                if let Some(path) = outline.pb.finish() {
-                    self.pix.fill_path(
-                        &path,
-                        &paint,
-                        FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+        for (range, rtl) in visual_runs(s) {
+            let mut buf = UnicodeBuffer::new();
+            buf.push_str(&s[range]);
+            buf.guess_segment_properties();
+            buf.set_direction(if rtl {
+                Direction::RightToLeft
+            } else {
+                Direction::LeftToRight
+            });
+            let shaped = rustybuzz::shape(face, &[], buf);
+            for (info, pos) in shaped
+                .glyph_infos()
+                .iter()
+                .zip(shaped.glyph_positions().iter())
+            {
+                let gx = pen_x + pos.x_offset as f32 * scale;
+                let gy = baseline - pos.y_offset as f32 * scale;
+                let mut outline = GlyphPath {
+                    pb: PathBuilder::new(),
+                    ox: gx,
+                    oy: gy,
+                    s: scale,
+                    any: false,
+                };
+                let _ = face.outline_glyph(ttf_parser_glyph(info.glyph_id as u16), &mut outline);
+                if outline.any {
+                    if let Some(path) = outline.pb.finish() {
+                        self.pix.fill_path(
+                            &path,
+                            &paint,
+                            FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        );
+                    }
                 }
+                pen_x += pos.x_advance as f32 * scale;
             }
-            pen_x += pos.x_advance as f32 * scale;
         }
     }
 
@@ -156,6 +165,25 @@ impl Canvas {
         }
         Framebuffer { w, h, px }
     }
+}
+
+/// Segmentos de uma linha em ordem visual (esquerda → direita), UAX #9:
+/// `(intervalo de bytes em s, é RTL)`. Parágrafo de base automática (primeiro
+/// caractere forte), como o `TextView` com `textDirection` padrão.
+pub(crate) fn visual_runs(s: &str) -> Vec<(std::ops::Range<usize>, bool)> {
+    if s.is_empty() {
+        return Vec::new();
+    }
+    let info = unicode_bidi::BidiInfo::new(s, None);
+    let mut out = Vec::new();
+    for para in &info.paragraphs {
+        let (levels, runs) = info.visual_runs(para, para.range.clone());
+        for run in runs {
+            let rtl = levels.get(run.start).is_some_and(|l| l.is_rtl());
+            out.push((run, rtl));
+        }
+    }
+    out
 }
 
 fn ttf_parser_glyph(id: u16) -> rustybuzz::ttf_parser::GlyphId {
@@ -250,5 +278,66 @@ mod tests {
     fn zero_or_huge_canvas_is_rejected_not_panicking() {
         assert!(Canvas::new((0, 0, 0), 0, 10).is_none());
         assert!(Canvas::new((0, 0, 0), usize::MAX, 10).is_none());
+    }
+}
+
+#[cfg(test)]
+mod bidi_tests {
+    use super::*;
+
+    #[test]
+    fn ltr_text_is_a_single_ltr_run() {
+        assert_eq!(visual_runs("hello world"), vec![(0..11, false)]);
+        assert!(visual_runs("").is_empty());
+    }
+
+    #[test]
+    fn hebrew_only_is_one_rtl_run() {
+        let s = "שלום";
+        assert_eq!(visual_runs(s), vec![(0..s.len(), true)]);
+    }
+
+    #[test]
+    fn mixed_ltr_paragraph_keeps_latin_left_and_hebrew_right() {
+        // parágrafo LTR (primeiro forte é 'a'): "abc " à esquerda, "שלום" à direita
+        let s = "abc שלום";
+        let runs = visual_runs(s);
+        assert_eq!(runs.len(), 2, "{runs:?}");
+        assert_eq!(runs[0].0.start, 0);
+        assert!(!runs[0].1);
+        assert_eq!(&s[runs[1].0.clone()], "שלום");
+        assert!(runs[1].1);
+    }
+
+    #[test]
+    fn mixed_rtl_paragraph_puts_latin_run_on_the_left() {
+        // parágrafo RTL (primeiro forte é hebraico): "abc" aparece à esquerda
+        let s = "שלום abc";
+        let runs = visual_runs(s);
+        let first = &s[runs[0].0.clone()];
+        assert!(!runs[0].1, "{runs:?}");
+        assert_eq!(first.trim(), "abc");
+        let last = runs.last().unwrap();
+        assert!(last.1);
+        assert_eq!(s[last.0.clone()].trim(), "שלום");
+    }
+
+    fn dark_pixels(text: &str) -> usize {
+        let mut c = Canvas::new((255, 255, 255), 320, 60).unwrap();
+        c.text_in_box(0, 0, 60, text, (0, 0, 0));
+        c.into_framebuffer()
+            .px
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .filter(|p| p[0] < 128)
+            .count()
+    }
+
+    #[test]
+    fn rtl_and_mixed_text_paint_pixels_without_panicking() {
+        assert!(dark_pixels("שלום") > 100);
+        assert!(dark_pixels("مرحبا بالعالم") > 100);
+        assert!(dark_pixels("Pedido 42 → שלום") > 100);
     }
 }
