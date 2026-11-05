@@ -82,7 +82,7 @@ correto de `perms.rs` e testar a intrínseca diretamente.
 | Componentes activity, activity-alias, service, receiver, provider | Modelados (`ComponentKind`); testes em `appendix_f_tests` |
 | Extensões: appwidget-provider, accessibility-service, notification-listener, voice-interaction, print-service, autofill-service, host-apdu, call-redirection, carrier-config, permission-group, permission-tree | Regras de extensão e `build_component` |
 | Extensões: device-admin, wallpaper, dream, ime, media-browser, credentials | Já existiam antes deste trabalho (não re-auditadas nesta rodada) |
-| **offline-device** | **Bloqueio.** Nenhuma action string verificada encontrada (busca oficial e genérica sem resultado). Não mapear sem fonte. |
+| **offline-device** | **Mapeado por decisão do usuário (2026-11-05), com ressalva.** Equivalente adotado: `android.app.extra.PROVISIONING_ALLOW_OFFLINE` (API 33, `DevicePolicyManager`), extra de `ACTION_PROVISION_MANAGED_DEVICE`. Ressalva: é extra de intent de provisionamento, não action de componente nem device feature, e nenhum manifest de app o declara. Por isso **não entra** na tabela `extension_kinds` (`crates/rd-apk/src/manifest.rs`), que só casa action de componente; a VM não implementa fluxo de provisionamento, então o status segue `not_implemented`. A página de offline-first (`developer.android.com/topic/architecture/data-layer/offline-first`) é de arquitetura e não define action nem elemento de manifest; a busca no `cs.android.com` não foi concluída nesta rodada. |
 | Elementos de manifest (uses-permission, permission, uses-feature, queries, instrumentation, etc.) | Parse existente; não re-auditado item a item nesta rodada. |
 
 Auditoria de extensões (rodada F-2, 2026-11-05), contra a documentação oficial do Android:
@@ -126,7 +126,7 @@ Estes apêndices não são "completos" nesta rodada. Os números abaixo dizem o 
 
 ## 6. Decisões que dependem do usuário
 
-1. **offline-device (F):** fornecer a action string ou o elemento de manifest exato, ou aceitar o bloqueio.
+1. **offline-device (F): resolvido pelo usuário em 2026-11-05** — mapeado para `PROVISIONING_ALLOW_OFFLINE` com a ressalva da §4. Se houver uma action de device feature oficial, substituir a linha da §4.
 2. **revokeWhenRequested, instant, softRestriction (B):** fornecer a fonte de semântica, ou aceitar como bloqueio documentado.
 3. **Apêndice C literal:** aceitar que o inventário depende de `android.jar` (obtenção pela rede do sandbox) ou fornecer o arquivo.
 4. **Escopo de D e E:** quais das 20 bibliotecas D `not_implemented` e do serviço ML Kit entram nesta spec.
