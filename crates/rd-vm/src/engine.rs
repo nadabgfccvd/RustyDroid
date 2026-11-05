@@ -1333,12 +1333,13 @@ impl Engine {
         &self,
         resid: u32,
     ) -> Result<rd_apk::arsc::ResolvedValue, VmExit> {
+        let dev = self.resource_device_config();
         let apk = self.resources()?;
         let arsc = apk
             .arsc
             .as_ref()
             .ok_or_else(|| crate::err::vm_error("RESOURCES_MISSING", "APK sem resources.arsc"))?;
-        arsc.resolve_value(resid).ok_or_else(|| {
+        arsc.resolve_value_for(resid, &dev).ok_or_else(|| {
             crate::err::with_suggestion(
                 crate::err::vm_error(
                     "RESOURCE_NOT_FOUND",

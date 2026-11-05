@@ -302,6 +302,26 @@ fn apply_sysconfig_to_vm(vm: &mut Engine, notify_activity: bool) -> Result<(), V
     Ok(())
 }
 
+impl Engine {
+    /// Configuração do dispositivo virtual que escolhe a variante de recurso
+    /// (valores/strings/arrays): locale do sysconfig, orientação atual,
+    /// densidade (`RD_DENSITY_DPI`, padrão 280) e `Build.VERSION.SDK_INT`.
+    pub fn resource_device_config(&self) -> rd_apk::arsc::DeviceConfig {
+        let st = &self.fw.vdev.sysconfig;
+        let (lang, country) = parse_locale_tag(&st.locale_tag);
+        let dpi = (crate::view_layout::density() * 160.0).round();
+        rd_apk::arsc::DeviceConfig {
+            language: (!lang.is_empty()).then_some(lang),
+            country: (!country.is_empty()).then_some(country),
+            orientation: u8::try_from(st.orientation)
+                .ok()
+                .filter(|o| matches!(o, 1 | 2)),
+            density: (dpi.is_finite() && dpi > 0.0).then_some(dpi.min(65_000.0) as u16),
+            sdk: u16::try_from(crate::android_build::sdk_int()).ok(),
+        }
+    }
+}
+
 fn parse_locale_tag(tag: &str) -> (String, String) {
     let mut parts = tag.split(['-', '_']);
     let lang = parts.next().unwrap_or("en").to_string();

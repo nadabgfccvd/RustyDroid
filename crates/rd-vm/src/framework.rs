@@ -1170,13 +1170,14 @@ impl Engine {
     /// String de recurso com fallback para o nome qualificado (mesmo padrão do
     /// manifest.resolve_label: valor do arsc → "@type/key" como último recurso).
     pub fn resolve_string(&self, resid: u32) -> Result<String, VmExit> {
+        let dev = self.resource_device_config();
         let apk = self.resources()?;
         let arsc = apk
             .arsc
             .as_ref()
             .ok_or_else(|| crate::err::vm_error("RESOURCES_MISSING", "APK sem resources.arsc"))?;
         Ok(arsc
-            .resolve_string(resid)
+            .resolve_string_for(resid, &dev)
             .or_else(|| arsc.resolve_name(resid))
             .ok_or_else(|| {
                 crate::err::with_suggestion(
