@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793876710072,
+  "lastUpdate": 1793881404956,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3995,6 +3995,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1805,
             "range": "± 16",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "17a5db8146797268c1b044c9e75b06fca9c8ee69",
+          "message": "fix(manifest): corrige regras de extensão do Apêndice F (host-apdu, credentials, appwidget-provider) (#552)\n\n- host-apdu: a action era o nome da classe; a oficial (SERVICE_INTERFACE) é\n  android.nfc.cardemulation.action.HOST_APDU_SERVICE.\n- credentials: exige BIND_CREDENTIAL_PROVIDER_SERVICE (API 34, signature).\n- appwidget-provider: BIND_APPWIDGET é concedida ao host; o provider não a declara.\n  A regra exigia, então providers comuns não eram reconhecidos como extensão.\n- Testes novos por correção, com caso negativo. Mutações das três regras derrubam\n  os testes certos; arquivo restaurado e comparado byte a byte.\n- docs/appendix-b-f-plan.md: registro da auditoria.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T09:23:01-03:00",
+          "tree_id": "f93d4a9be36c238f176fc65a5f48df499b7d17f9",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/17a5db8146797268c1b044c9e75b06fca9c8ee69"
+        },
+        "date": 1793881404002,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3403,
+            "range": "± 83",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3400,
+            "range": "± 39",
             "unit": "ns/iter"
           }
         ]
