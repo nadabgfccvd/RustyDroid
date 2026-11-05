@@ -4,7 +4,7 @@
 
 Servidor `rustydroid-agent` v0.9.0 · protocolo `2024-11-05` · transporte stdio (JSON-RPC 2.0, uma mensagem por linha).
 
-Total: **51 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` — o MESMO registro respondido em `tools/list` e impresso por `rd mcp --describe-tools`.
+Total: **52 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` — o MESMO registro respondido em `tools/list` e impresso por `rd mcp --describe-tools`.
 
 ## Controles de segurança
 
@@ -175,6 +175,12 @@ Concede uma permissão (runtime/special) na sessão.
 Revoga uma permissão na sessão.
 
 - Parâmetros: `permission` · obrigatórios: `permission`
+
+### `permissions_role`
+
+Torna o app holder de um role do Android (ex.: SMS, Apêndice B6) ou tira o role. Enquanto é holder, as permissões ligadas ao role ficam concedidas; ao sair, voltam ao estado inicial.
+
+- Parâmetros: `held, role` · obrigatórios: `role`
 
 ### `permissions_auto_revoke`
 

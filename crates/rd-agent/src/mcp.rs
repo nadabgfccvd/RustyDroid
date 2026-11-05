@@ -956,6 +956,17 @@ pub fn tool_defs() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "permissions_role",
+            description: "Torna o app holder de um role do Android (ex.: SMS, Apêndice B6) ou tira o role. Enquanto é holder, as permissões ligadas ao role ficam concedidas; ao sair, voltam ao estado inicial.",
+            schema: obj(
+                serde_json::json!({
+                    "role": { "type": "string", "description": "nome do role, ex.: SMS" },
+                    "held": { "type": "boolean", "description": "true = torna holder (padrão), false = tira" }
+                }),
+                &["role"],
+            ),
+        },
+        ToolDef {
             name: "permissions_auto_revoke",
             description: "Revoga permissões runtime sem uso (Apêndice B6). Exige targetSdk ≥ 30 e dias sem uso ≥ limiar (padrão 90).",
             schema: obj(
@@ -1293,6 +1304,10 @@ impl AgentSession {
                 false,
             ),
             "permissions_audit" => self.tool_permissions_audit(),
+            "permissions_role" => self.tool_permissions_role(
+                args.get("role").and_then(|v| v.as_str()).unwrap_or(""),
+                args.get("held").and_then(|v| v.as_bool()).unwrap_or(true),
+            ),
             "permissions_auto_revoke" => self.tool_permissions_auto_revoke(
                 args.get("days_unused")
                     .and_then(|v| v.as_u64())
@@ -2487,6 +2502,29 @@ impl AgentSession {
                 e.set_permission_rationale(rationale);
             }
         }
+    }
+
+    /// Apêndice B6: holder de role (SMS etc.). Permissões ligadas ao role
+    /// seguem o estado do role; a sessão em execução é sincronizada.
+    fn tool_permissions_role(&mut self, role: &str, held: bool) -> Result<ToolResult, RdError> {
+        let changed = {
+            let perms = &mut self
+                .find_installed_mut(self.active.clone().unwrap_or_default().as_str())
+                .ok_or_else(|| agent_error("NO_APP", "instale um APK primeiro", None))?
+                .perms;
+            perms.set_role(role, held).map_err(rd_to_rd)?
+        };
+        if !changed.is_empty() {
+            if let Some(p) = self.active.clone() {
+                self.mark_snapshot_dirty(&p);
+            }
+            self.sync_running_permissions();
+        }
+        Ok(ToolResult::json(&serde_json::json!({
+            "role": role,
+            "held": held,
+            "changed": changed,
+        })))
     }
 
     /// Apêndice B6: revogação por app sem uso. O agente informa há quantos
@@ -4106,7 +4144,7 @@ mod tests {
         );
         assert_eq!(
             tool_defs().len(),
-            51,
+            52,
             "preserve the existing MCP tool contract"
         );
         let _ = std::fs::remove_file(apk_path);
@@ -4455,8 +4493,8 @@ mod tests {
         let tools = r["result"]["tools"].as_array().expect("tools");
         assert_eq!(
             tools.len(),
-            51,
-            "catálogo completo: M5 + AG-09 + M9 + round 6 observe/tap_text + ADR 023 session_open/session_list/session_close (51 tools: + permissions_auto_revoke, Apêndice B6)"
+            52,
+            "catálogo completo: M5 + AG-09 + M9 + round 6 observe/tap_text + ADR 023 session_open/session_list/session_close + Apêndice B6 (permissions_auto_revoke, permissions_role)"
         );
         for t in tools {
             assert!(t["name"].as_str().is_some());
@@ -4559,7 +4597,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(
             arr[0]["result"]["tools"].as_array().expect("tools").len(),
-            51
+            52
         );
         assert_eq!(arr[1]["result"]["serverInfo"]["name"], SERVER_NAME);
     }
@@ -5874,7 +5912,7 @@ mod tests {
         let defs = tool_defs();
         assert_eq!(
             defs.len(),
-            51,
+            52,
             "ADR 023: 47 + session_open/session_list/session_close + permissions_auto_revoke (Apêndice B6)"
         );
         for t in &defs {
@@ -6176,6 +6214,66 @@ mod tests {
     /// é concedida — `permissions_list` reporta `denied-system` e
     /// `permissions_grant` não muda o estado (BATTERY_STATS: o Android real
     /// não a entrega a apps de terceiros; a sessão não pode concedê-la).
+    #[test]
+    fn permissions_role_grants_sms_permissions_while_held() {
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (arsc, layout, dex) = fixture_parts();
+        let sms = "android.permission.READ_SMS";
+        let manifest = rd_testsupport::apkfix::build_manifest_axml_sdk_perms(
+            "com.test.mcp",
+            "com.test.mcp.Main",
+            26,
+            34,
+            &[sms],
+        );
+        let apk_path = fixture_apk_write(fixture_apk_zip(manifest, arsc, layout, dex));
+        let mut s = AgentSession::new();
+        install_ok(&mut s, &apk_path);
+        let state_of = |s: &mut AgentSession| -> String {
+            let (v, err) = call(s, "permissions_list", serde_json::json!({}));
+            assert!(!err, "{v}");
+            v["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["permission"] == sms)
+                .expect("READ_SMS listada")["state"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(state_of(&mut s), "runtime-pending");
+
+        let (v, err) = call(
+            &mut s,
+            "permissions_role",
+            serde_json::json!({"role": "SMS"}),
+        );
+        assert!(!err, "{v}");
+        assert_eq!(v["held"], true, "{v}");
+        assert!(
+            v["changed"].as_array().unwrap().iter().any(|n| n == sms),
+            "{v}"
+        );
+        assert_eq!(state_of(&mut s), "granted");
+
+        let (v, err) = call(
+            &mut s,
+            "permissions_role",
+            serde_json::json!({"role": "SMS", "held": false}),
+        );
+        assert!(!err, "{v}");
+        assert_eq!(state_of(&mut s), "runtime-pending");
+
+        // role desconhecido: erro tipado, nada muda
+        let (_v, err) = call(
+            &mut s,
+            "permissions_role",
+            serde_json::json!({"role": "NOPE"}),
+        );
+        assert!(err);
+    }
+
     #[test]
     fn permissions_auto_revoke_follows_target_sdk_and_threshold() {
         let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());

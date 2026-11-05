@@ -42,6 +42,10 @@ pub struct PermissionDef {
     pub flags: Vec<String>,
     #[serde(default)]
     pub description: String,
+    /// Apêndice B6 `role`: a permissão é concedida enquanto o app é holder do
+    /// role indicado (ex.: `SMS`). Ver `PermissionEngine::set_role`.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 fn default_since() -> u16 {
@@ -228,6 +232,10 @@ pub struct PermissionEngine {
     /// (`PackageInstaller.SessionParams.setWhitelistedRestrictedPermissions`).
     /// Padrão: não — o Android nega essas permissões a apps fora da allowlist.
     restricted_allowed: bool,
+    /// Apêndice B6: roles cujo app é holder nesta sessão.
+    roles_held: BTreeSet<String>,
+    /// Permissões cuja concessão veio de um role (revertidas quando o role sai).
+    role_granted: BTreeSet<String>,
 }
 
 /// Dias sem uso após os quais o Android revoga permissões runtime de um app
@@ -312,6 +320,8 @@ impl PermissionEngine {
             target_sdk: manifest.target_sdk,
             denials: BTreeMap::new(),
             restricted_allowed: false,
+            roles_held: BTreeSet::new(),
+            role_granted: BTreeSet::new(),
         }
     }
 
@@ -444,6 +454,69 @@ impl PermissionEngine {
         self.table.get(name).is_some_and(|d| d.is_immutable())
     }
 
+    /// Apêndice B6: o app é holder do role que concede esta permissão.
+    fn role_covers(&self, def: &PermissionDef) -> bool {
+        def.role
+            .as_deref()
+            .is_some_and(|r| self.roles_held.contains(r))
+    }
+
+    /// Roles de que o app é holder nesta sessão.
+    pub fn roles_held(&self) -> &BTreeSet<String> {
+        &self.roles_held
+    }
+
+    /// Apêndice B6: torna o app holder (`held=true`) ou tira o role (`held=false`).
+    /// Ao virar holder, as permissões declaradas com `role = <nome>` passam a
+    /// `Granted`; ao sair, as que vieram do role voltam ao estado inicial.
+    /// Devolve os nomes de permissão alterados. Role desconhecido é erro.
+    pub fn set_role(&mut self, role: &str, held: bool) -> RdResult<Vec<String>> {
+        if !self.table.role.iter().any(|r| r.name == role) {
+            return Err(RdError::missing_entry(role));
+        }
+        let mut changed = Vec::new();
+        if held {
+            self.roles_held.insert(role.to_string());
+            let names: Vec<String> = self
+                .states
+                .keys()
+                .filter(|k| {
+                    self.table
+                        .get(k)
+                        .is_some_and(|d| d.role.as_deref() == Some(role))
+                })
+                .cloned()
+                .collect();
+            for name in names {
+                let cur = self.states.get_mut(&name).expect("chave listada");
+                if !matches!(cur, GrantState::Granted | GrantState::AutoGranted) {
+                    *cur = GrantState::Granted;
+                    self.denials.remove(&name);
+                    self.role_granted.insert(name.clone());
+                    changed.push(name);
+                }
+            }
+        } else {
+            self.roles_held.remove(role);
+            let leaving: Vec<String> = self
+                .role_granted
+                .iter()
+                .filter(|n| {
+                    self.table
+                        .get(n)
+                        .is_some_and(|d| d.role.as_deref() == Some(role))
+                })
+                .cloned()
+                .collect();
+            for name in leaving {
+                self.role_granted.remove(&name);
+                let _ = self.revoke(&name);
+                changed.push(name);
+            }
+        }
+        Ok(changed)
+    }
+
     /// Estado atual (sem mudança) ou erro se a permissão não existe no mapa.
     fn current_or_missing(&self, name: &str) -> RdResult<GrantState> {
         self.states
@@ -463,7 +536,10 @@ impl PermissionEngine {
         if self.is_frozen(name) {
             return self.current_or_missing(name);
         }
-        let hard_blocked = self.table.get(name).is_some_and(|d| d.is_hard_restricted())
+        let hard_blocked = self
+            .table
+            .get(name)
+            .is_some_and(|d| d.is_hard_restricted() && !self.role_covers(d))
             && !self.restricted_allowed;
         if hard_blocked {
             // B1 hardRestricted: sem allowlist do instalador a permissão não é concedível.
@@ -1180,6 +1256,54 @@ description = "teste"
         assert_eq!(e.revoke(name).unwrap(), before);
         assert_eq!(e.state(name), Some(before));
         assert!(e.auto_revoke_unused(365, 90).is_empty());
+    }
+
+    #[test]
+    fn role_holder_gets_role_permissions_and_loses_them_on_exit() {
+        const SMS: &str = "android.permission.READ_SMS";
+        let mut e = engine(34, &["READ_SMS", "CAMERA"]);
+        assert_eq!(e.state(SMS), Some(GrantState::RuntimePending));
+        let changed = e.set_role("SMS", true).unwrap();
+        assert_eq!(changed, vec![SMS.to_string()]);
+        assert_eq!(e.state(SMS), Some(GrantState::Granted));
+        assert!(e.roles_held().contains("SMS"));
+        // a permissão não-role continua fora do role
+        assert_eq!(e.state(CAM), Some(GrantState::RuntimePending));
+        // sair do role reverte a concessão que veio dele
+        let changed = e.set_role("SMS", false).unwrap();
+        assert_eq!(changed, vec![SMS.to_string()]);
+        assert_eq!(e.state(SMS), Some(GrantState::RuntimePending));
+        assert!(e.roles_held().is_empty());
+    }
+
+    #[test]
+    fn role_holding_satisfies_hard_restriction_without_allowlist() {
+        const SMS: &str = "android.permission.SEND_SMS";
+        let mut e = engine(34, &["SEND_SMS"]);
+        e.set_role("SMS", true).unwrap();
+        // sem allowlist, mas com role: grant é aceito (no-op porque já concedida)
+        assert_eq!(e.grant(SMS).unwrap(), GrantState::Granted);
+        e.set_role("SMS", false).unwrap();
+        assert_eq!(e.grant(SMS).unwrap(), GrantState::RuntimePending);
+    }
+
+    #[test]
+    fn role_grant_takes_precedence_over_an_earlier_denial() {
+        // negativa do usuário só vale enquanto o role não é assumido; ao assumir,
+        // o role concede (B6) — documentado: o role tem precedência sobre a negativa.
+        const SMS: &str = "android.permission.READ_SMS";
+        let mut e = engine(34, &["READ_SMS"]);
+        assert_eq!(e.deny(SMS).unwrap(), GrantState::Denied);
+        e.set_role("SMS", true).unwrap();
+        assert_eq!(e.state(SMS), Some(GrantState::Granted));
+        assert_eq!(e.denial_count(SMS), 0);
+    }
+
+    #[test]
+    fn unknown_role_is_rejected() {
+        let mut e = engine(34, &["READ_SMS"]);
+        assert!(e.set_role("NOT_A_ROLE", true).is_err());
+        assert!(e.roles_held().is_empty());
     }
 
     fn engine(target_sdk: u32, perms: &[&str]) -> PermissionEngine {
