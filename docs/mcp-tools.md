@@ -4,7 +4,7 @@
 
 Servidor `rustydroid-agent` v0.9.0 · protocolo `2024-11-05` · transporte stdio (JSON-RPC 2.0, uma mensagem por linha).
 
-Total: **50 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` — o MESMO registro respondido em `tools/list` e impresso por `rd mcp --describe-tools`.
+Total: **51 tools**. Este catálogo é gerado de `rd_agent::mcp::tool_defs()` — o MESMO registro respondido em `tools/list` e impresso por `rd mcp --describe-tools`.
 
 ## Controles de segurança
 
@@ -175,6 +175,12 @@ Concede uma permissão (runtime/special) na sessão.
 Revoga uma permissão na sessão.
 
 - Parâmetros: `permission` · obrigatórios: `permission`
+
+### `permissions_auto_revoke`
+
+Revoga permissões runtime sem uso (Apêndice B6). Exige targetSdk ≥ 30 e dias sem uso ≥ limiar (padrão 90).
+
+- Parâmetros: `days_unused, threshold_days` · obrigatórios: `days_unused`
 
 ### `permissions_audit`
 

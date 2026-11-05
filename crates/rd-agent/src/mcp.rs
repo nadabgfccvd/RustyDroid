@@ -956,6 +956,17 @@ pub fn tool_defs() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "permissions_auto_revoke",
+            description: "Revoga permissões runtime sem uso (Apêndice B6). Exige targetSdk ≥ 30 e dias sem uso ≥ limiar (padrão 90).",
+            schema: obj(
+                serde_json::json!({
+                    "days_unused": { "type": "integer", "description": "dias desde o último uso do app" },
+                    "threshold_days": { "type": "integer", "description": "limiar em dias (padrão 90)" }
+                }),
+                &["days_unused"],
+            ),
+        },
+        ToolDef {
             name: "permissions_audit",
             description: "Auditoria estática do manifest (exported sem guarda, debuggable, cleartext, permissões desconhecidas).",
             schema: obj(serde_json::json!({}), &[]),
@@ -1282,6 +1293,15 @@ impl AgentSession {
                 false,
             ),
             "permissions_audit" => self.tool_permissions_audit(),
+            "permissions_auto_revoke" => self.tool_permissions_auto_revoke(
+                args.get("days_unused")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
+                args.get("threshold_days")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .unwrap_or(rd_framework::fd_permissions::UNUSED_APP_REVOKE_DAYS),
+            ),
             "device_profile" => self.tool_device_profile(&args),
             "behavior_switches" => self.tool_behavior_switches(),
             "runtime_health" => {
@@ -1647,6 +1667,11 @@ impl AgentSession {
         // perms.rs: checkSelfPermission/requestPermissions see the
         // session's real grant state
         eng.set_granted_permissions(granted);
+        let rationale = self
+            .find_installed(package_out)
+            .map(|a| a.perms.rationale_names())
+            .unwrap_or_default();
+        eng.set_permission_rationale(rationale);
         let t_launch = std::time::Instant::now();
         let r = eng.launch_app(desc, package_out, Vec::new());
         phase("launch_app_cold", t_launch);
@@ -2421,6 +2446,24 @@ impl AgentSession {
         if let Some(p) = self.active.clone() {
             self.mark_snapshot_dirty(&p);
         }
+        self.sync_running_permissions();
+        #[cfg(feature = "advanced-components")]
+        if permission == "android.permission.POST_NOTIFICATIONS"
+            && self.running.engine_package == self.active
+        {
+            if let Some(e) = self.running.engine.as_mut() {
+                e.m9_set_notification_permission(st.is_granted());
+            }
+        }
+        Ok(ToolResult::json(&serde_json::json!({
+            "permission": permission,
+            "state": grant_state_str(st),
+        })))
+    }
+
+    /// Mantém o conjunto de concessões (e as justificativas) do engine em
+    /// execução em sincronia com o estado de permissões do app ativo.
+    fn sync_running_permissions(&mut self) {
         // keep the running engine's grant set in sync (perms.rs)
         if self.running.engine_package == self.active {
             let granted: Option<Vec<String>> = self.active.as_ref().and_then(|p| {
@@ -2433,21 +2476,48 @@ impl AgentSession {
                         .collect()
                 })
             });
+            let rationale: Vec<String> = self
+                .active
+                .as_ref()
+                .and_then(|p| self.installed.iter().find(|a| &a.package == p))
+                .map(|a| a.perms.rationale_names())
+                .unwrap_or_default();
             if let (Some(e), Some(g)) = (self.running.engine.as_mut(), granted) {
                 e.set_granted_permissions(g);
+                e.set_permission_rationale(rationale);
             }
         }
-        #[cfg(feature = "advanced-components")]
-        if permission == "android.permission.POST_NOTIFICATIONS"
-            && self.running.engine_package == self.active
-        {
-            if let Some(e) = self.running.engine.as_mut() {
-                e.m9_set_notification_permission(st.is_granted());
+    }
+
+    /// Apêndice B6: revogação por app sem uso. O agente informa há quantos
+    /// dias o app não é usado (o sandbox não tem estatísticas de uso reais).
+    fn tool_permissions_auto_revoke(
+        &mut self,
+        days_unused: u32,
+        threshold_days: u32,
+    ) -> Result<ToolResult, RdError> {
+        let (revoked, target_sdk) = {
+            let perms = &mut self
+                .find_installed_mut(self.active.clone().unwrap_or_default().as_str())
+                .ok_or_else(|| agent_error("NO_APP", "instale um APK primeiro", None))?
+                .perms;
+            let target = perms.target_sdk();
+            (
+                perms.auto_revoke_unused(days_unused, threshold_days),
+                target,
+            )
+        };
+        if !revoked.is_empty() {
+            if let Some(p) = self.active.clone() {
+                self.mark_snapshot_dirty(&p);
             }
+            self.sync_running_permissions();
         }
         Ok(ToolResult::json(&serde_json::json!({
-            "permission": permission,
-            "state": grant_state_str(st),
+            "revoked": revoked,
+            "days_unused": days_unused,
+            "threshold_days": threshold_days,
+            "target_sdk": target_sdk,
         })))
     }
 
@@ -4036,7 +4106,7 @@ mod tests {
         );
         assert_eq!(
             tool_defs().len(),
-            50,
+            51,
             "preserve the existing MCP tool contract"
         );
         let _ = std::fs::remove_file(apk_path);
@@ -4385,8 +4455,8 @@ mod tests {
         let tools = r["result"]["tools"].as_array().expect("tools");
         assert_eq!(
             tools.len(),
-            50,
-            "catálogo completo: M5 + AG-09 + M9 + round 6 observe/tap_text + ADR 023 session_open/session_list/session_close (50 tools)"
+            51,
+            "catálogo completo: M5 + AG-09 + M9 + round 6 observe/tap_text + ADR 023 session_open/session_list/session_close (51 tools: + permissions_auto_revoke, Apêndice B6)"
         );
         for t in tools {
             assert!(t["name"].as_str().is_some());
@@ -4489,7 +4559,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(
             arr[0]["result"]["tools"].as_array().expect("tools").len(),
-            50
+            51
         );
         assert_eq!(arr[1]["result"]["serverInfo"]["name"], SERVER_NAME);
     }
@@ -5804,8 +5874,8 @@ mod tests {
         let defs = tool_defs();
         assert_eq!(
             defs.len(),
-            50,
-            "ADR 023: 47 + session_open/session_list/session_close"
+            51,
+            "ADR 023: 47 + session_open/session_list/session_close + permissions_auto_revoke (Apêndice B6)"
         );
         for t in &defs {
             // schema: objeto com properties/required consistentes
@@ -6106,6 +6176,99 @@ mod tests {
     /// é concedida — `permissions_list` reporta `denied-system` e
     /// `permissions_grant` não muda o estado (BATTERY_STATS: o Android real
     /// não a entrega a apps de terceiros; a sessão não pode concedê-la).
+    #[test]
+    fn permissions_auto_revoke_follows_target_sdk_and_threshold() {
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (arsc, layout, dex) = fixture_parts();
+        let cam = "android.permission.CAMERA";
+        let state_of = |s: &mut AgentSession| -> String {
+            let (v, err) = call(s, "permissions_list", serde_json::json!({}));
+            assert!(!err, "{v}");
+            v["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["permission"] == cam)
+                .expect("CAMERA listada")["state"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        // targetSdk 30: 100 dias sem uso (limiar padrão 90) → revoga CAMERA
+        let manifest = rd_testsupport::apkfix::build_manifest_axml_sdk_perms(
+            "com.test.mcp",
+            "com.test.mcp.Main",
+            26,
+            30,
+            &[cam],
+        );
+        let apk_path = fixture_apk_write(fixture_apk_zip(
+            manifest,
+            arsc.clone(),
+            layout.clone(),
+            dex.clone(),
+        ));
+        let mut s = AgentSession::new();
+        install_ok(&mut s, &apk_path);
+        let (_, err) = call(
+            &mut s,
+            "permissions_grant",
+            serde_json::json!({"permission": cam}),
+        );
+        assert!(!err);
+        assert_eq!(state_of(&mut s), "granted");
+
+        // 10 dias < 90 → nada
+        let (v, err) = call(
+            &mut s,
+            "permissions_auto_revoke",
+            serde_json::json!({"days_unused": 10}),
+        );
+        assert!(!err, "{v}");
+        assert_eq!(v["revoked"].as_array().unwrap().len(), 0, "{v}");
+        assert_eq!(state_of(&mut s), "granted");
+
+        // 100 dias ≥ 90 → revoga e volta a runtime-pending
+        let (v, err) = call(
+            &mut s,
+            "permissions_auto_revoke",
+            serde_json::json!({"days_unused": 100}),
+        );
+        assert!(!err, "{v}");
+        assert_eq!(v["target_sdk"], 30, "{v}");
+        assert!(
+            v["revoked"].as_array().unwrap().iter().any(|n| n == cam),
+            "{v}"
+        );
+        assert_eq!(state_of(&mut s), "runtime-pending");
+
+        // targetSdk 26 (< 30): auto-revoke não se aplica nem com 400 dias
+        let manifest = rd_testsupport::apkfix::build_manifest_axml_sdk_perms(
+            "com.test.mcp",
+            "com.test.mcp.Main",
+            26,
+            26,
+            &[cam],
+        );
+        let apk_path = fixture_apk_write(fixture_apk_zip(manifest, arsc, layout, dex));
+        install_ok(&mut s, &apk_path);
+        let (_, err) = call(
+            &mut s,
+            "permissions_grant",
+            serde_json::json!({"permission": cam}),
+        );
+        assert!(!err);
+        let (v, err) = call(
+            &mut s,
+            "permissions_auto_revoke",
+            serde_json::json!({"days_unused": 400}),
+        );
+        assert!(!err, "{v}");
+        assert_eq!(v["revoked"].as_array().unwrap().len(), 0, "{v}");
+        assert_eq!(state_of(&mut s), "granted");
+    }
+
     #[test]
     fn permissions_denied_system_for_signature_outside_b5() {
         let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());

@@ -119,6 +119,24 @@ impl IntentData {
     }
 }
 
+/// `<permission-group>`: agrupa permissões declaradas pelo app (Apêndice F).
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct PermissionGroupDecl {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// `<permission-tree>`: árvore de nomes de permissão sob um prefixo (Apêndice F).
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+pub struct PermissionTreeDecl {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IntentFilter {
     pub actions: Vec<String>,
@@ -182,6 +200,10 @@ pub struct Component {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub direct_boot_aware: Option<bool>,
     pub intent_filters: Vec<IntentFilter>,
+    /// Extensões de sistema que este componente implementa (Apêndice F), derivadas
+    /// da ação do intent-filter + permissão `BIND_*` (ver [`extension_kinds`]).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub extensions: Vec<String>,
     pub meta_data: Vec<MetaData>,
     /// `<property>` (API 31+).
     pub properties: Vec<MetaData>,
@@ -295,6 +317,12 @@ pub struct Manifest {
     pub uses_permissions: Vec<UsesPermission>,
     /// `<permission>` declarados pelo próprio app.
     pub declared_permissions: Vec<DeclaredPermission>,
+    /// `<permission-group>` declarados pelo próprio app (Apêndice F).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub permission_groups: Vec<PermissionGroupDecl>,
+    /// `<permission-tree>` declarados pelo próprio app (Apêndice F).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub permission_trees: Vec<PermissionTreeDecl>,
     pub uses_features: Vec<UsesFeature>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub supports_screens: Vec<String>,
@@ -456,6 +484,25 @@ pub fn build(doc: &AxmlDocument, arsc: Option<&Arsc>) -> RdResult<Manifest> {
                 group: attr_str(perm, "permissionGroup"),
                 label: attr_str(perm, "label"),
                 description: attr_str(perm, "description"),
+            });
+        }
+    }
+
+    for grp in root.children_named("permission-group") {
+        if let Some(name) = attr_str(grp, "name") {
+            m.permission_groups.push(PermissionGroupDecl {
+                name,
+                label: attr_str(grp, "label"),
+                description: attr_str(grp, "description"),
+            });
+        }
+    }
+
+    for tree in root.children_named("permission-tree") {
+        if let Some(name) = attr_str(tree, "name") {
+            m.permission_trees.push(PermissionTreeDecl {
+                name,
+                label: attr_str(tree, "label"),
             });
         }
     }
@@ -653,6 +700,136 @@ fn build_application(app: &XmlElement, package: &str, arsc: Option<&Arsc>) -> Ap
     a
 }
 
+/// Tabela de extensões do Apêndice F: `(tipo do elemento, ação do intent-filter,
+/// permissão BIND_* exigida ou None, nome da extensão)`.
+///
+/// Um componente é extensão quando tem a ação e, se a regra exige permissão,
+/// declara exatamente essa permissão: o Android só faz bind de serviço de
+/// sistema que declara o `BIND_*` correspondente. Sem a permissão, o componente
+/// é um serviço comum com um filtro e não entra aqui.
+const EXTENSION_RULES: &[(ComponentKind, &str, Option<&str>, &str)] = &[
+    (
+        ComponentKind::Service,
+        "android.service.wallpaper.WallpaperService",
+        Some("android.permission.BIND_WALLPAPER"),
+        "wallpaper",
+    ),
+    (
+        ComponentKind::Service,
+        "android.service.dreams.DreamService",
+        Some("android.permission.BIND_DREAM_SERVICE"),
+        "dream",
+    ),
+    (
+        ComponentKind::Service,
+        "android.view.InputMethod",
+        Some("android.permission.BIND_INPUT_METHOD"),
+        "ime",
+    ),
+    (
+        ComponentKind::Service,
+        "android.accessibilityservice.AccessibilityService",
+        Some("android.permission.BIND_ACCESSIBILITY_SERVICE"),
+        "accessibility-service",
+    ),
+    (
+        ComponentKind::Service,
+        "android.service.notification.NotificationListenerService",
+        Some("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"),
+        "notification-listener",
+    ),
+    (
+        ComponentKind::Receiver,
+        "android.app.action.DEVICE_ADMIN_ENABLED",
+        Some("android.permission.BIND_DEVICE_ADMIN"),
+        "device-admin",
+    ),
+    (
+        ComponentKind::Service,
+        "android.service.voice.VoiceInteractionService",
+        Some("android.permission.BIND_VOICE_INTERACTION"),
+        "voice-interaction",
+    ),
+    (
+        ComponentKind::Service,
+        "android.printservice.PrintService",
+        Some("android.permission.BIND_PRINT_SERVICE"),
+        "print-service",
+    ),
+    (
+        ComponentKind::Service,
+        "android.service.autofill.AutofillService",
+        Some("android.permission.BIND_AUTOFILL_SERVICE"),
+        "autofill-service",
+    ),
+    (
+        ComponentKind::Service,
+        "android.nfc.cardemulation.HostApduService",
+        Some("android.permission.BIND_NFC_SERVICE"),
+        "host-apdu",
+    ),
+    (
+        ComponentKind::Service,
+        "android.telecom.CallRedirectionService",
+        Some("android.permission.BIND_CALL_REDIRECTION_SERVICE"),
+        "call-redirection",
+    ),
+    (
+        ComponentKind::Service,
+        "android.telecom.CallScreeningService",
+        Some("android.permission.BIND_SCREENING_SERVICE"),
+        "call-screening",
+    ),
+    (
+        ComponentKind::Service,
+        "android.service.carrier.CarrierService",
+        Some("android.permission.BIND_CARRIER_SERVICES"),
+        "carrier-config",
+    ),
+    (
+        ComponentKind::Service,
+        "android.media.browse.MediaBrowserService",
+        None,
+        "media-browser",
+    ),
+    (
+        ComponentKind::Service,
+        "android.service.credentials.CredentialProviderService",
+        None,
+        "credentials",
+    ),
+    (
+        ComponentKind::Receiver,
+        "android.appwidget.action.APPWIDGET_UPDATE",
+        Some("android.permission.BIND_APPWIDGET"),
+        "appwidget-provider",
+    ),
+];
+
+/// Extensões de sistema implementadas por um componente (Apêndice F). Função
+/// pura sobre o tipo do elemento, as ações dos intent-filters e a permissão
+/// declarada; ver [`EXTENSION_RULES`].
+pub fn extension_kinds(
+    kind: ComponentKind,
+    actions: &[&str],
+    permission: Option<&str>,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (rule_kind, action, bind, name) in EXTENSION_RULES {
+        if *rule_kind != kind || !actions.contains(action) {
+            continue;
+        }
+        let perm_ok = match bind {
+            None => true,
+            Some(req) => permission == Some(*req),
+        };
+        if perm_ok && !out.iter().any(|e| e == name) {
+            out.push((*name).to_string());
+        }
+    }
+    out
+}
+
 fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Component {
     let name_raw = attr_str(el, "name").unwrap_or_default();
     let filters: Vec<IntentFilter> = el
@@ -661,6 +838,12 @@ fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Compo
         .map(|(i, f)| build_intent_filter(f, i))
         .collect();
     let is_launcher = filters.iter().any(IntentFilter::is_launcher);
+    let permission_attr = attr_str(el, "permission");
+    let actions: Vec<&str> = filters
+        .iter()
+        .flat_map(|f| f.actions.iter().map(String::as_str))
+        .collect();
+    let extensions = extension_kinds(kind, &actions, permission_attr.as_deref());
     // exported: declaração explícita vence; sem declaração, a regra da
     // plataforma (comportamento legado, preservado em apps targetSdk < 31) é
     // true se o componente tem QUALQUER <intent-filter> — não só MAIN/LAUNCHER
@@ -679,7 +862,7 @@ fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Compo
         name_raw,
         exported: exported_declared,
         enabled: attr_bool(el, "enabled"),
-        permission: attr_str(el, "permission"),
+        permission: permission_attr,
         process: attr_str(el, "process"),
         target_activity: attr_str(el, "targetActivity").map(|t| resolve_class(package, &t)),
         authorities: attr_str(el, "authorities"),
@@ -692,6 +875,7 @@ fn build_component(el: &XmlElement, kind: ComponentKind, package: &str) -> Compo
         theme: attr_str(el, "theme"),
         direct_boot_aware: attr_bool(el, "directBootAware"),
         intent_filters: filters,
+        extensions,
         meta_data: collect_meta_data(el),
         properties: el
             .children_named("property")
@@ -1106,5 +1290,163 @@ mod tests {
         };
         let v = decode_gles_version(&feat).expect("attr present");
         assert_ne!(v, format!("{}.{}", 0x7f0a_0001u32 >> 16, 0x0001));
+    }
+}
+
+#[cfg(test)]
+mod appendix_f_tests {
+    use super::*;
+    use crate::axml::{AttrValue, AxmlDocument, NS_ANDROID};
+
+    fn a(name: &str, value: &str) -> XmlAttribute {
+        XmlAttribute {
+            ns: Some(NS_ANDROID.to_string()),
+            name: name.to_string(),
+            raw: None,
+            value: AttrValue::String(value.to_string()),
+            res_id: None,
+        }
+    }
+
+    fn el(name: &str, attrs: Vec<XmlAttribute>, children: Vec<XmlElement>) -> XmlElement {
+        XmlElement {
+            name: name.to_string(),
+            attrs,
+            children,
+            text: None,
+        }
+    }
+
+    fn filter(action: &str) -> XmlElement {
+        el(
+            "intent-filter",
+            vec![],
+            vec![el("action", vec![a("name", action)], vec![])],
+        )
+    }
+
+    fn manifest_doc(app_children: Vec<XmlElement>, top: Vec<XmlElement>) -> AxmlDocument {
+        let mut children = top;
+        children.push(el("application", vec![a("name", "")], app_children));
+        AxmlDocument {
+            root: el(
+                "manifest",
+                vec![XmlAttribute {
+                    ns: None,
+                    name: "package".into(),
+                    raw: None,
+                    value: AttrValue::String("com.example.ext".into()),
+                    res_id: None,
+                }],
+                children,
+            ),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn extension_needs_the_matching_bind_permission() {
+        let bind = Some("android.permission.BIND_INPUT_METHOD");
+        let acts = ["android.view.InputMethod"];
+        assert_eq!(
+            extension_kinds(ComponentKind::Service, &acts, bind),
+            vec!["ime".to_string()]
+        );
+        // sem a permissão BIND_* o sistema não faz bind: não é extensão
+        assert!(extension_kinds(ComponentKind::Service, &acts, None).is_empty());
+        assert!(extension_kinds(
+            ComponentKind::Service,
+            &acts,
+            Some("android.permission.BIND_WALLPAPER")
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn extension_kind_must_match_the_element_type() {
+        // device-admin é receiver; a mesma ação num service não conta
+        let acts = ["android.app.action.DEVICE_ADMIN_ENABLED"];
+        let bind = Some("android.permission.BIND_DEVICE_ADMIN");
+        assert_eq!(
+            extension_kinds(ComponentKind::Receiver, &acts, bind),
+            vec!["device-admin".to_string()]
+        );
+        assert!(extension_kinds(ComponentKind::Service, &acts, bind).is_empty());
+        assert!(extension_kinds(ComponentKind::Activity, &acts, bind).is_empty());
+    }
+
+    #[test]
+    fn rules_without_bind_permission_match_on_action_only() {
+        let acts = ["android.media.browse.MediaBrowserService"];
+        assert_eq!(
+            extension_kinds(ComponentKind::Service, &acts, None),
+            vec!["media-browser".to_string()]
+        );
+    }
+
+    #[test]
+    fn appwidget_provider_is_a_receiver_extension() {
+        let acts = ["android.appwidget.action.APPWIDGET_UPDATE"];
+        assert_eq!(
+            extension_kinds(
+                ComponentKind::Receiver,
+                &acts,
+                Some("android.permission.BIND_APPWIDGET")
+            ),
+            vec!["appwidget-provider".to_string()]
+        );
+    }
+
+    #[test]
+    fn build_marks_components_with_their_extension_kind() {
+        let svc = el(
+            "service",
+            vec![
+                a("name", ".Keyboard"),
+                a("permission", "android.permission.BIND_INPUT_METHOD"),
+            ],
+            vec![filter("android.view.InputMethod")],
+        );
+        let plain = el(
+            "service",
+            vec![a("name", ".Worker")],
+            vec![filter("com.example.DO_WORK")],
+        );
+        let doc = manifest_doc(vec![svc, plain], vec![]);
+        let m = build(&doc, None).expect("manifest");
+        let comps = &m.application.components;
+        assert_eq!(comps[0].extensions, vec!["ime".to_string()]);
+        assert!(comps[1].extensions.is_empty());
+    }
+
+    #[test]
+    fn permission_groups_and_trees_are_parsed() {
+        let group = el(
+            "permission-group",
+            vec![a("name", "com.example.GROUP"), a("label", "Grupo")],
+            vec![],
+        );
+        let tree = el(
+            "permission-tree",
+            vec![a("name", "com.example.tree")],
+            vec![],
+        );
+        let doc = manifest_doc(vec![], vec![group, tree]);
+        let m = build(&doc, None).expect("manifest");
+        assert_eq!(
+            m.permission_groups,
+            vec![PermissionGroupDecl {
+                name: "com.example.GROUP".into(),
+                label: Some("Grupo".into()),
+                description: None,
+            }]
+        );
+        assert_eq!(
+            m.permission_trees,
+            vec![PermissionTreeDecl {
+                name: "com.example.tree".into(),
+                label: None,
+            }]
+        );
     }
 }
