@@ -173,6 +173,26 @@ certos); configs específicas (land/locale/density) selecionáveis.
 
 ## ⚠️ M4 parcial (2026-10) — rd-render
 
+> **Estado em 2026-11-05 (fim da rodada end-to-end):** continuam abertos
+> **três** gaps, e M4 segue ⚠️ parcial:
+>
+> 1. **Referência Android (≥5 APKs):** não há aparelho nem emulador neste
+>    ambiente. A VM não expõe extensões de virtualização (`vmx`/`svm`), então
+>    não existe `/dev/kvm` e o emulador x86 não sobe; `modprobe` não existe.
+>    Precisa de referências (screenshots + `uiautomator dump`) de um aparelho
+>    real ou de um host com KVM.
+> 2. **Goldens de regressão de APKs reais:** hoje renderizam 3 (trivial-app
+>    fixture; Comprix 1.6.0 — onboarding; F-Droid — só a tela
+>    "Fetching app repositories…"). NewPipe e Markor param em `res/hq.xml`
+>    (drawable de vetor, NOT_IMPLEMENTED). Os IDs de Calculadora/Clock do
+>    Simple Mobile (`com.simplemobiletools.*`) e `org.billthefarmer.clock`
+>    retornaram 404 no F-Droid e não entraram.
+> 3. **F-Droid sobe só até a primeira tela.** O sync de repositórios
+>    (okhttp `ConnectionSpec`) e o Room (driver SQLite do host, precisa de ADR)
+>    seguem como bloqueios.
+>
+> Feito nesta rodada: Round 2 (#538) e bidi (#539).
+
 > **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). Continua sem bidi/RTL e sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
 
 
@@ -228,8 +248,15 @@ certos); configs específicas (land/locale/density) selecionáveis.
 4. ✅ Testes e2e contra fixture real: ids/bounds/clickable/text na árvore;
    pixels do PNG (TextView branco / Button cinza / borda / fundo); PNG
    determinístico (mesmo input → mesmos bytes); dump escape XML.
-   Round 2 do M4: seleção de configs por device-config (land/locale) no
-   resolve (o parse das 2 configs já chega no modelo — issue #47).
+   Round 2 do M4 (issue #47) — ✅ **feito (#538, 2026-11-05)**: seleção de
+   recursos por device-config (locale → orientação → densidade → SDK) em
+   `rd-apk::arsc` (`DeviceConfig`, `resolve_*_for`), com o dispositivo do VM
+   (`Engine::resource_device_config`). Fora dele: qualificadores de tela
+   (smallestWidth), `night`, `ldrtl`.
+
+   Bidi — ✅ **feito (#539, 2026-11-05)**: `text_in_box` shapeia por segmento
+   visual UAX #9 (`unicode-bidi`). Espelhamento de parênteses em RTL e
+   alinhamento RTL de layout ficam fora.
 
 ## ✅ M6 concluído — executor de testes (2026-10)
 
