@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793840004007,
+  "lastUpdate": 1793840857083,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3671,6 +3671,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3770,
             "range": "± 30",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e66e12a33815b485c98ee60e6340622341c57f59",
+          "message": "feat(permissions): Apêndice B6 roles + plano verificado dos Apêndices B–F (#542)\n\n- Permissões com `role = \"<ROLE>\"` (data/permissions.toml) ficam concedidas enquanto o app é holder do role; ao sair, voltam ao estado inicial.\n- Engine: set_role / roles_held. Role desconhecido é erro tipado.\n- hardRestricted: role do holder dispensa a allowlist do instalador (decisão de modelagem, marcada no código).\n- MCP: nova tool permissions_role (catálogo 51 -> 52). Docs, README, xtask, matriz nativa e testes atualizados.\n- docs/appendix-b-f-plan.md: plano verificado, contagens reais (C 106, D 46, E 21), critério de conclusão por apêndice e bloqueios com fonte (instant, revokeWhenRequested, softRestriction, offline-device, inventário C sem android.jar).\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-04T22:07:15-03:00",
+          "tree_id": "a41dece1776829343737449c96911951388caebc",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e66e12a33815b485c98ee60e6340622341c57f59"
+        },
+        "date": 1793840856675,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3426,
+            "range": "± 823",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3348,
+            "range": "± 205",
             "unit": "ns/iter"
           }
         ]
