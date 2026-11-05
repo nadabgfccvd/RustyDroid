@@ -237,6 +237,9 @@ pub(crate) struct LaunchTrace {
     /// curso: na saída de cada um, o contador volta para `início + inclusivo`,
     /// então o pai subtrai só os filhos diretos (não os netos).
     intr_done_ns: std::cell::Cell<u64>,
+    /// Inclusivo de `<clinit>` por classe inicializada: (inclusivo_ns, inicializações).
+    /// Inclui o trabalho aninhado (outros `<clinit>` e guest chamado a partir dele).
+    clinit_by_class: std::cell::RefCell<rustc_hash::FxHashMap<String, (u64, u64)>>,
 }
 
 /// Marca de início de uma medição: instante e contador de filhos intrínsecos
@@ -576,18 +579,32 @@ impl Engine {
     }
 
     #[inline]
-    fn trace_clinit(&self, t0: TraceT0) {
+    fn trace_clinit(&self, t0: TraceT0, class: &str) {
         if let (Some(tr), Some((t0, _))) = (&self.launch_trace, t0) {
-            LaunchTrace::add(
-                &tr.clinit_ns,
-                &tr.clinit_calls,
-                t0.elapsed().as_nanos() as u64,
-            );
+            let ns = t0.elapsed().as_nanos() as u64;
+            LaunchTrace::add(&tr.clinit_ns, &tr.clinit_calls, ns);
+            let mut by = tr.clinit_by_class.borrow_mut();
+            let e = by.entry(class.to_string()).or_insert((0, 0));
+            e.0 = e.0.saturating_add(ns);
+            e.1 = e.1.saturating_add(1);
         }
     }
 
     /// M7: linha única de decomposição do launch (`None` sem a flag).
     /// Formato estável o bastante para grep em scripts de medição.
+    /// `true` quando `RD_LAUNCH_TRACE` está ativo para este engine.
+    pub fn launch_trace_enabled(&self) -> bool {
+        self.launch_trace.is_some()
+    }
+
+    /// Zera a telemetria de lançamento. Usado por passo (uma chamada MCP),
+    /// para que o relatório de cada passo mostre só o trabalho daquele passo.
+    pub fn launch_trace_reset(&mut self) {
+        if let Some(tr) = self.launch_trace.as_mut() {
+            *tr = LaunchTrace::default();
+        }
+    }
+
     pub fn launch_trace_report(&self) -> Option<String> {
         let tr = self.launch_trace.as_ref()?;
         let ms = |ns: u64| ns as f64 / 1.0e6;
@@ -606,8 +623,20 @@ impl Engine {
                 format!("{k}=excl {:.1}ms/incl {:.1}ms/{n}", ms(*excl), ms(*incl))
             })
             .collect();
+        let mut clinit_top: Vec<(String, (u64, u64))> = tr
+            .clinit_by_class
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        clinit_top.sort_by_key(|t| std::cmp::Reverse(t.1 .0));
+        let clinit_top: Vec<String> = clinit_top
+            .iter()
+            .take(8)
+            .map(|(k, (incl, n))| format!("{k}=incl {:.1}ms/{n}", ms(*incl)))
+            .collect();
         Some(format!(
-            "[launch-trace] fuel={} resolve={:.1}ms/{} intrinsic={:.1}ms/{} clinit={:.1}ms/{} string={:.1}ms/{} top=[{}]",
+            "[launch-trace] fuel={} resolve={:.1}ms/{} intrinsic={:.1}ms/{} clinit={:.1}ms/{} clinit_top=[{}] string={:.1}ms/{} top=[{}]",
             self.fuel_used,
             ms(tr.resolve_ns.get()),
             tr.resolve_calls.get(),
@@ -615,6 +644,7 @@ impl Engine {
             tr.intrinsic_calls.get(),
             ms(tr.clinit_ns.get()),
             tr.clinit_calls.get(),
+            clinit_top.join(" "),
             ms(tr.string_ns.get()),
             tr.string_calls.get(),
             top.join(" "),
@@ -1142,7 +1172,7 @@ impl Engine {
         self.clinit_running.insert(class.to_string());
         let t0 = self.trace_start();
         let result = self.initialize_class(class);
-        self.trace_clinit(t0);
+        self.trace_clinit(t0, class);
         self.clinit_running.remove(class);
         match result {
             Ok(()) => {
@@ -1764,5 +1794,28 @@ mod native_stack_budget_tests {
             );
         }
         assert!(budget >= 256 * 1024, "orçamento {budget} B abaixo do piso");
+    }
+}
+
+#[cfg(test)]
+mod launch_trace_tests {
+    use super::*;
+
+    #[test]
+    fn step_reset_zeroes_counters_and_report_lists_clinit_by_class() {
+        let mut vm = Engine::new(Vec::new(), VmConfig::default());
+        assert!(!vm.launch_trace_enabled());
+        vm.launch_trace = Some(LaunchTrace::default());
+        assert!(vm.launch_trace_enabled());
+
+        vm.trace_clinit(Some((std::time::Instant::now(), 0)), "Lx/A;");
+        let before = vm.launch_trace_report().unwrap();
+        assert!(!before.contains("clinit=0.0ms/0"), "{before}");
+        assert!(before.contains("Lx/A;=incl"), "{before}");
+
+        vm.launch_trace_reset();
+        let after = vm.launch_trace_report().unwrap();
+        assert!(after.contains("clinit=0.0ms/0"), "{after}");
+        assert!(after.contains("clinit_top=[]"), "{after}");
     }
 }
