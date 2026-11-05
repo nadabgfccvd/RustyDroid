@@ -764,7 +764,7 @@ const EXTENSION_RULES: &[(ComponentKind, &str, Option<&str>, &str)] = &[
     ),
     (
         ComponentKind::Service,
-        "android.nfc.cardemulation.HostApduService",
+        "android.nfc.cardemulation.action.HOST_APDU_SERVICE",
         Some("android.permission.BIND_NFC_SERVICE"),
         "host-apdu",
     ),
@@ -795,13 +795,13 @@ const EXTENSION_RULES: &[(ComponentKind, &str, Option<&str>, &str)] = &[
     (
         ComponentKind::Service,
         "android.service.credentials.CredentialProviderService",
-        None,
+        Some("android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE"),
         "credentials",
     ),
     (
         ComponentKind::Receiver,
         "android.appwidget.action.APPWIDGET_UPDATE",
-        Some("android.permission.BIND_APPWIDGET"),
+        None,
         "appwidget-provider",
     ),
 ];
@@ -1385,8 +1385,14 @@ mod appendix_f_tests {
     }
 
     #[test]
-    fn appwidget_provider_is_a_receiver_extension() {
+    fn appwidget_provider_needs_no_bind_permission() {
+        // BIND_APPWIDGET é concedido ao host (launcher) pelo usuário; o provider
+        // é um receiver comum com APPWIDGET_UPDATE e não declara BIND_* próprio.
         let acts = ["android.appwidget.action.APPWIDGET_UPDATE"];
+        assert_eq!(
+            extension_kinds(ComponentKind::Receiver, &acts, None),
+            vec!["appwidget-provider".to_string()]
+        );
         assert_eq!(
             extension_kinds(
                 ComponentKind::Receiver,
@@ -1395,6 +1401,38 @@ mod appendix_f_tests {
             ),
             vec!["appwidget-provider".to_string()]
         );
+    }
+
+    #[test]
+    fn credentials_need_bind_credential_provider_service() {
+        let acts = ["android.service.credentials.CredentialProviderService"];
+        let bind = Some("android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE");
+        assert_eq!(
+            extension_kinds(ComponentKind::Service, &acts, bind),
+            vec!["credentials".to_string()]
+        );
+        // sem o BIND_* o sistema não faz bind: serviço comum
+        assert!(extension_kinds(ComponentKind::Service, &acts, None).is_empty());
+    }
+
+    #[test]
+    fn host_apdu_uses_the_official_interface_action() {
+        let bind = Some("android.permission.BIND_NFC_SERVICE");
+        assert_eq!(
+            extension_kinds(
+                ComponentKind::Service,
+                &["android.nfc.cardemulation.action.HOST_APDU_SERVICE"],
+                bind
+            ),
+            vec!["host-apdu".to_string()]
+        );
+        // a string antiga (nome de classe) não é a action de SERVICE_INTERFACE
+        assert!(extension_kinds(
+            ComponentKind::Service,
+            &["android.nfc.cardemulation.HostApduService"],
+            bind
+        )
+        .is_empty());
     }
 
     #[test]

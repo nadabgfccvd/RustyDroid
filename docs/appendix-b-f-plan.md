@@ -85,6 +85,20 @@ correto de `perms.rs` e testar a intrínseca diretamente.
 | **offline-device** | **Bloqueio.** Nenhuma action string verificada encontrada (busca oficial e genérica sem resultado). Não mapear sem fonte. |
 | Elementos de manifest (uses-permission, permission, uses-feature, queries, instrumentation, etc.) | Parse existente; não re-auditado item a item nesta rodada. |
 
+Auditoria de extensões (rodada F-2, 2026-11-05), contra a documentação oficial do Android:
+
+| Extensão | Achado | Correção |
+|---|---|---|
+| host-apdu | A action era o nome da classe; a oficial é `android.nfc.cardemulation.action.HOST_APDU_SERVICE` (`SERVICE_INTERFACE`) | Action trocada; teste com a action antiga como negativo |
+| credentials | Exige `BIND_CREDENTIAL_PROVIDER_SERVICE` (API 34, signature); a regra não exigia | Regra exige a permissão; teste com e sem ela |
+| appwidget-provider | `BIND_APPWIDGET` é concedida ao host (launcher); o provider não declara essa permissão. A regra exigia, então providers comuns não contavam | Regra sem permissão exigida; teste sem permissão |
+| call-redirection, carrier-config, host-apdu (`BIND_NFC_SERVICE`) | Action e permissão confirmadas | Sem mudança |
+
+Mutações das três correções: cada uma derruba o teste correspondente; arquivo restaurado e comparado byte a byte.
+A permissão `BIND_CREDENTIAL_PROVIDER_SERVICE` não entrou em `data/permissions.toml`: a regra de extensão não lê essa tabela, e
+adicioná-la muda a contagem de 175 que `table_matches_documented_counts` fixa junto com README e ROADMAP.
+Essa mudança fica para uma rodada própria da tabela de permissões.
+
 ## 5. Apêndices C, D e E — plano por rodadas
 
 Estes apêndices não são "completos" nesta rodada. Os números abaixo dizem o tamanho real.
