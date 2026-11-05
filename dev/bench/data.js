@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793886646810,
+  "lastUpdate": 1793891154160,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4139,6 +4139,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3270,
             "range": "± 22",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ddca0ad59818576c91233f9310ea3cc627a1bef",
+          "message": "docs(comprix): perfil do golden por categoria e correção de malloc (#556)\n\n- Agrupa o perf do golden (rd-main, -F 1500) por categoria; malloc/free fica em ~4%, não 14,6%.\n- Registra que o custo é difuso (sem gargalo único) e que a suspeita de render congelado não se confirmou.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T12:03:00-03:00",
+          "tree_id": "049d51f718bc7fa02c776b7c5946668e35f8e526",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5ddca0ad59818576c91233f9310ea3cc627a1bef"
+        },
+        "date": 1793891153013,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3806,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3795,
+            "range": "± 38",
             "unit": "ns/iter"
           }
         ]
