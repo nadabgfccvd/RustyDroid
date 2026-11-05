@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793848171029,
+  "lastUpdate": 1793848940492,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -3923,6 +3923,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3557,
             "range": "± 16",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a1321544fb596fd3377d45f20131dba3810b5e95",
+          "message": "feat(jetpack): ViewPager2 host shim (adapter, clamp de setCurrentItem); stub -> partial (D S10) (#549)\n\n- androidx_widgets.rs: Family::Pager for ViewPager2 with per-instance state\n  (adapter, current item). setAdapter resets the page to 0; setCurrentItem(I)\n  and (IZ) clamp to [0, count-1] with count from the adapter's DEX\n  getItemCount() (m8::call_dex); no adapter or an empty adapter is ignored.\n- Tests (tests/androidx_widgets.rs, 15 total): roundtrip and reset, clamp,\n  (IZ) form, ignored without adapter or when empty, host-only adapter,\n  per-instance isolation. Real dispatch via Engine::invoke_instance.\n- Mutation checks: no upper clamp -> 2 failures; no reset in setAdapter ->\n  1 failure; no count==0 guard -> 2 failures.\n- data/jetpack.toml: androidx-viewpager2 stub -> partial, with the unmodelled\n  surface in notes. Legacy androidx.viewpager stays stub (not in key_apis).\n- docs: jetpack.md, compat-matrix.md, RustyDroid.md UI row regenerated;\n  appendix-d-e.md S10 ledger.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T00:21:57-03:00",
+          "tree_id": "c8ad02161eebbe97e6e2b22b541edbc33e8a5010",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a1321544fb596fd3377d45f20131dba3810b5e95"
+        },
+        "date": 1793848939687,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2806,
+            "range": "± 83",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2841,
+            "range": "± 213",
             "unit": "ns/iter"
           }
         ]
