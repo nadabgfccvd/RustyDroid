@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793914234829,
+  "lastUpdate": 1793914628608,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4679,6 +4679,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2787,
             "range": "± 41",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "47e0e26cda7d2ccfe9a63a7688495a98db0b22dc",
+          "message": "docs(plan): MEDIA-03 — cancelamentos de corrotina após o frame 2 (#570)\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T18:36:38-03:00",
+          "tree_id": "0a4feb266a577e98e44892ef1b2d2e955f9d4ba3",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/47e0e26cda7d2ccfe9a63a7688495a98db0b22dc"
+        },
+        "date": 1793914627528,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3504,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3506,
+            "range": "± 22",
             "unit": "ns/iter"
           }
         ]
