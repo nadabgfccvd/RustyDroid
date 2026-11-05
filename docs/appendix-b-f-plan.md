@@ -172,6 +172,10 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
             `LG2/C.d` executa (~99 mil chamadas depois). Depois disso não há `c()`, `r()` nem um
             segundo `applyChanges`. O callback é removido em `removeFrameCallback` (133 mil).
          - Exceções: nenhuma `Throwable` lançada na janela (só `exceptionOrNull`).
+         - Depois do frame 2, a corrotina do scanner recebe cancelamentos (`Le4/k0.f(CancellationException)`,
+           6 ocorrências após o `removeFrame`, a primeira em ~139 mil chamadas). Não há cancelamento
+           entre os frames 1 e 2. Próximo passo: descobrir qual job é cancelado (lançado em `Ls0/c.V`/`K1/l`)
+           e por quem; é provável que o Recomposer seja cancelado antes do apply.
        - Hipótese principal (revisada): a composição do scanner termina sem o caminho normal de
          retorno de `LP/u0.p`, então o Recomposer não aplica as mudanças. Por isso a
          `PreviewView` não é inserida. Próximo passo: verificar por que `LP/u0.p` do frame 2
