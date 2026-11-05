@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793885854000,
+  "lastUpdate": 1793886646810,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4103,6 +4103,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1996,
             "range": "± 228",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "526fa98fcd9d0a9fd4c23dae597930ad10a48efa",
+          "message": "test(comprix): golden ponta a ponta do Comprix v1.6.0 via rd mcp + latência por passo (#555)\n\n- scripts/comprix_golden.py: onboarding -> Nova lista (chip) -> item \"2 kg de arroz\" + ENTER,\n  com asserções no texto visível do app. Passou 3/3 com rd perfil profiling.\n- docs/comprix-latency.md: latência por passo do golden. Criar lista (~2,6 s) e ENTER (~1,3 s)\n  estão fora da meta de 345 ms; nada foi relaxado.\n- docs/comprix-launch-profile.md: perfil do golden (perf, thread rd-main) e A/B do GC\n  (RD_GC=off não é mais rápido; não é a alavanca).\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T10:50:26-03:00",
+          "tree_id": "37b732337cbd77dd8b240bbc0423afc70796429e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/526fa98fcd9d0a9fd4c23dae597930ad10a48efa"
+        },
+        "date": 1793886646149,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3274,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3270,
+            "range": "± 22",
             "unit": "ns/iter"
           }
         ]
