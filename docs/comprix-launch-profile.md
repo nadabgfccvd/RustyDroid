@@ -97,3 +97,43 @@ Nenhuma destas mudanças foi aplicada. Esta página só registra o perfil e a te
 - A/B com `RD_GC=off` (2 execuções por modo): **não** é mais rápido. Criar lista ~3,2 s com GC
   desligado contra ~2,6 s com GC ligado. O GC não é a alavanca de latência; não se deve desligá-lo.
 - Nota: o `perf` mostra a VM na thread `rd-main`, não no processo `rd`; use `--comm rd-main`.
+
+## Perfil do golden por categoria (2026-11-05, `perf record -F 1500 -g`)
+
+Binário `target/profiling/rd` (`codegen-units=256`, LTO off). Golden passou (GOLDEN PASSOU).
+Amostragem: `perf report --comm rd-main --no-children`, 787 símbolos, 98,7% do tempo.
+Agrupamento aproximado por nome de símbolo (não por módulo; é uma leitura, não um inventário):
+
+| Grupo | % |
+|---|---|
+| Laço do interpretador (`exec_frame`, `exec_leaf_insn`, `exec_frame_regs`) | 17,3 |
+| Outros símbolos `rd_*` (inclui `engine::call`, `heap`, `dex`) | 17,0 |
+| Símbolos sem nome (`0x…` em bibliotecas sem símbolo) | 11,5 |
+| Intrínsecos e stubs de host (`instance_intrinsic_dispatch_full`, `call_static_intrinsic_rooted`, `android_stub_surfaces`) | 12,5 |
+| Heap e GC (`gc_due_slow`, `gc_host_enter`, `class_of`, `get_field`) | 11,3 |
+| Classpath (`is_subtype`, `field_ref_shared`, `method_ref`) | 7,7 |
+| Hashing (`FxBuildHasher`, `RandomState`) | 5,0 |
+| `malloc` / `free` / `cfree` (símbolos de libc) | ~4 |
+| Demais | 1,8 |
+
+Correção à leitura anterior: o grupo "malloc/free" de 14,6% estava inflado, porque também
+contava funções Rust monomorfizadas com `alloc` no nome. O `malloc` da libc, sozinho, fica em torno de 4%.
+
+Observações de código (cada uma ~1%, sem alavanca única):
+- `Heap::gc_due` cai em `gc_due_slow` por instrução sempre que `gc_frames` está vazio, porque o
+  caminho rápido exige `!gc_frames.is_empty()`.
+- `Heap::gc_host_enter` roda por chamada de host e empilha um `Vec` e um corte em `existing_cutoffs`.
+
+Conclusão: o custo é difuso. Não há um gargalo que, sozinho, leve as ferramentas MCP de ~1,2 s
+para perto de 345 ms. Atacar isso exige mudanças estruturais no interpretador ou no despacho de
+intrínsecos, e não ajustes pontuais.
+
+Não reutilizar a gravação `perf` de `/tmp/perf_g2.data` anterior: a primeira tentativa desta janela
+falhou porque `perf` não estava instalado após o restore (`apt-get install linux-perf` resolveu).
+
+## Renderização da sheet "Compra do Mês" (verificação)
+
+A suspeita de render congelado (screenshots com MD5 idêntico) não se confirmou. Com o fluxo
+correto (Pular → Nova lista → chip "Compra do Mês" → "Criar e adicionar itens" → campo →
+`type_text` com `replace`), a tela mostra o texto digitado ("2 kg de arroz") no campo "Adição
+rápida". Os MD5 iguais vinham de um roteiro que não passava pelo chip, então a tela não mudava.
