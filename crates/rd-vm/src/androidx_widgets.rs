@@ -19,6 +19,14 @@
 //!   consultar o listener com `swipe_refresh_listener` e chamá-lo.
 //! - `CardView` guarda raio, elevação, padding e flags, com os defaults do
 //!   AOSP. Sombra, cor de fundo e desenho não são modelados.
+//! - `ViewPager2` (S9) guarda adapter e página atual. `setAdapter` zera a
+//!   página (como o AOSP); `setCurrentItem` é ignorado sem adapter ou com
+//!   adapter vazio e fixa a página em `[0, count-1]`, com `count` vindo do
+//!   `getItemCount()` do DEX do adapter. Não modelado: animação (o flag
+//!   `smoothScroll` é aceito e ignorado: a página muda de imediato nos dois
+//!   casos), `OnPageChangeCallback` (nenhum evento é entregue), fake drag,
+//!   entrada de usuário, transformadores de página e acessibilidade. Se o
+//!   adapter encolher, a página não é reajustada.
 
 use crate::engine::Engine;
 use crate::err::{Throwable, VmExit};
@@ -28,6 +36,12 @@ use crate::value::Value;
 pub const DRAWER_LAYOUT: &str = "Landroidx/drawerlayout/widget/DrawerLayout;";
 pub const SWIPE_REFRESH: &str = "Landroidx/swiperefreshlayout/widget/SwipeRefreshLayout;";
 pub const CARD_VIEW: &str = "Landroidx/cardview/widget/CardView;";
+pub const VIEW_PAGER2: &str = "Landroidx/viewpager2/widget/ViewPager2;";
+
+const PAGER_ADAPTER: &str = "rd_pager_adapter";
+const PAGER_CURRENT: &str = "rd_pager_current";
+const PAGER_ADAPTER_SIG: &str = "(Landroidx/recyclerview/widget/RecyclerView$Adapter;)V";
+const PAGER_ADAPTER_GET: &str = "()Landroidx/recyclerview/widget/RecyclerView$Adapter;";
 
 const DRAWER_OPEN: &str = "rd_drawer_open";
 const REFRESHING: &str = "rd_refreshing";
@@ -47,6 +61,7 @@ enum Family {
     Drawer,
     Swipe,
     Card,
+    Pager,
 }
 
 fn npe(message: &str) -> VmExit {
@@ -62,6 +77,7 @@ fn family_of(vm: &Engine, mref_class: &str, recv_class: &str) -> Option<Family> 
             "Landroidx/swiperefreshlayout/",
         ),
         (CARD_VIEW, Family::Card, "Landroidx/cardview/"),
+        (VIEW_PAGER2, Family::Pager, "Landroidx/viewpager2/"),
         // MaterialCardView estende CardView no classpath builtin.
         (
             CARD_VIEW,
@@ -127,6 +143,7 @@ pub fn call_instance(
         Family::Drawer => drawer(vm, name, sig, args),
         Family::Swipe => swipe(vm, name, sig, recv, args),
         Family::Card => card(vm, name, sig, recv, args),
+        Family::Pager => pager(vm, name, sig, recv, args),
     }
 }
 
@@ -254,6 +271,76 @@ fn card(
         _ => return Ok(None),
     };
     Ok(Some(out))
+}
+
+fn pager(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    match (name, sig) {
+        ("setAdapter", PAGER_ADAPTER_SIG) => {
+            let adapter = match args.first() {
+                Some(Value::Obj(r)) => Value::Obj(*r),
+                _ => Value::Null,
+            };
+            put(vm, recv, PAGER_ADAPTER, adapter)?;
+            put(vm, recv, PAGER_CURRENT, Value::Int(0))?;
+            Ok(Some(Value::Null))
+        }
+        ("getAdapter", PAGER_ADAPTER_GET) => Ok(Some(match pager_adapter(vm, recv) {
+            Some(r) => Value::Obj(r),
+            None => Value::Null,
+        })),
+        ("getCurrentItem", "()I") => Ok(Some(Value::Int(get_int(vm, recv, PAGER_CURRENT, 0)))),
+        // `smoothScroll` é aceito e ignorado (ver cabeçalho).
+        ("setCurrentItem", "(I)V") | ("setCurrentItem", "(IZ)V") => {
+            set_pager_item(vm, recv, int_arg(args, 0))?;
+            Ok(Some(Value::Null))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn pager_adapter(vm: &Engine, pager: ObjRef) -> Option<ObjRef> {
+    match vm.heap.get_field(pager, PAGER_ADAPTER) {
+        Ok(Value::Obj(r)) => Some(r),
+        _ => None,
+    }
+}
+
+/// Fixa a página no modelo AOSP: sem adapter, ou com adapter vazio, é
+/// ignorado; caso contrário a página é limitada a `[0, count-1]`.
+fn set_pager_item(vm: &mut Engine, pager: ObjRef, item: i32) -> Result<(), VmExit> {
+    let Some(adapter) = pager_adapter(vm, pager) else {
+        return Ok(());
+    };
+    // Sem `getItemCount` no DEX do adapter, a contagem é 0 e a chamada é ignorada.
+    let count = match crate::m8::call_dex(vm, adapter, "getItemCount", "()I", Vec::new())? {
+        Some(Value::Int(n)) => n.max(0),
+        _ => 0,
+    };
+    if count == 0 {
+        return Ok(());
+    }
+    put(
+        vm,
+        pager,
+        PAGER_CURRENT,
+        Value::Int(item.max(0).min(count - 1)),
+    )
+}
+
+/// Acessor para o harness: página atual do `ViewPager2`.
+pub fn pager_current_item(vm: &Engine, pager: ObjRef) -> i32 {
+    get_int(vm, pager, PAGER_CURRENT, 0)
+}
+
+/// Acessor para o harness: adapter do `ViewPager2`, se houver.
+pub fn pager_adapter_of(vm: &Engine, pager: ObjRef) -> Option<ObjRef> {
+    pager_adapter(vm, pager)
 }
 
 /// Acessor para o harness: a gaveta está aberta (estado `openDrawer`/`closeDrawer`)?
