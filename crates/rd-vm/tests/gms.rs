@@ -3508,3 +3508,38 @@ fn maps_marker_remove_drops_only_that_marker() {
     assert_eq!(left.len(), 1, "remove tira só o marcador alvo");
     assert_eq!(left[0].2, "B");
 }
+
+#[test]
+fn fit_zero_steps_yields_empty_data_set_not_fake_points() {
+    // Sem passos programados (0) o histórico não inventa um ponto de dados:
+    // a lista de pontos vem vazia, para o app tratar "sem dados" honestamente.
+    let mut e = engine();
+    e.gms_fit_set_steps(0);
+    let history = ov(cs!(e, FITNESS, "getHistoryClient",
+        "(Landroid/content/Context;Lcom/google/android/gms/auth/api/signin/GoogleSignInAccount;)Lcom/google/android/gms/fitness/HistoryClient;",
+        [ctx(&mut e), Value::Null]).unwrap());
+    let t = ov(ci!(
+        e,
+        "Lcom/google/android/gms/fitness/HistoryClient;",
+        "readDailyTotal",
+        "(Lcom/google/android/gms/fitness/data/DataType;)Lcom/google/android/gms/tasks/Task;",
+        history,
+        [Value::Null]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1);
+    let data_set = ov(task_result(&mut e, t));
+    let points = ov(ci!(
+        e,
+        DATA_SET,
+        "getDataPoints",
+        "()Ljava/util/List;",
+        data_set,
+        []
+    )
+    .unwrap());
+    match e.fw.objects.get(&points).cloned() {
+        Some(HostObj::List { elems }) => assert!(elems.is_empty(), "sem passos ⇒ sem pontos"),
+        other => panic!("points: {other:?}"),
+    }
+}

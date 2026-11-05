@@ -121,8 +121,8 @@ mínimas documentadas no PR.
     | glide | dex-passthrough | Depende de pipeline de imagens (UI-02) |
     | picasso | dex-passthrough | Depende de pipeline de imagens (UI-02) |
 
-  - **E — testes de erro e ciclo de vida (6 novos em
-    `crates/rd-vm/tests/gms.rs`, suíte gms com 39 testes passando)**:
+  - **E — testes de erro e ciclo de vida (7 novos em
+    `crates/rd-vm/tests/gms.rs`, suíte gms com 40 testes passando)**:
     - `storage_getbytes_size_limit_error_and_delete_lifecycle`
       (firebase-storage): limite menor que o blob falha sem alterar o
       blob; limite igual ou zero tem sucesso; `delete` → leitura falha →
@@ -145,6 +145,15 @@ mínimas documentadas no PR.
       em `data/gms.toml` e `docs/gms.md` regenerado.
     - `maps_marker_remove_drops_only_that_marker` (gms-maps): `remove`
       tira só o marcador alvo, e o outro permanece.
+    - `fit_zero_steps_yields_empty_data_set_not_fake_points` (gms-fit-health):
+      sem passos programados, o histórico devolve lista vazia, sem ponto
+      inventado.
+  - **E — auditoria ainda aberta**: ainda sem teste explícito de erro ou
+    ciclo de vida: `firebase-analytics` (eventos e propriedades),
+    `cloud-firestore` (documento ausente em `get`) e `gms-cast`
+    (listeners de estado: o shim guarda o listener, mas não há estado
+    observável pelo teste). Esses itens continuam `partial` com os mesmos
+    `gap_id`.
   - **E — ML Kit**: continua `not_implemented`, sem dispatch.
   - **E — status**: os 20 serviços continuam `partial` com os mesmos
     `gap_id`; os `notes` em `data/gms.toml` já descrevem o comportamento
