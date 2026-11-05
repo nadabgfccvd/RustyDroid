@@ -230,8 +230,18 @@ pub(crate) struct LaunchTrace {
     string_calls: std::cell::Cell<u64>,
     /// v2: tempo de intrinsic por classe declarante (descritor) — o
     /// balde agregado sozinho não diz QUAIS stubs custam ~5,7 µs.
-    intrinsic_by_class: std::cell::RefCell<rustc_hash::FxHashMap<String, (u64, u64)>>,
+    /// v3: tempo exclusivo (sem filhos intrínsecos) por classe, além do
+    /// inclusivo: (inclusivo_ns, exclusivo_ns, chamadas).
+    intrinsic_by_class: std::cell::RefCell<rustc_hash::FxHashMap<String, (u64, u64, u64)>>,
+    /// Inclusivo acumulado dos intrínsecos filhos diretos do intrínseco em
+    /// curso: na saída de cada um, o contador volta para `início + inclusivo`,
+    /// então o pai subtrai só os filhos diretos (não os netos).
+    intr_done_ns: std::cell::Cell<u64>,
 }
+
+/// Marca de início de uma medição: instante e contador de filhos intrínsecos
+/// no momento do início.
+pub(crate) type TraceT0 = Option<(std::time::Instant, u64)>;
 
 impl LaunchTrace {
     #[inline]
@@ -514,15 +524,15 @@ impl Engine {
 
     /// M7 (`RD_LAUNCH_TRACE`): marco inicial de uma categoria cronometrada.
     #[inline]
-    pub(crate) fn trace_start(&self) -> Option<std::time::Instant> {
+    pub(crate) fn trace_start(&self) -> TraceT0 {
         self.launch_trace
             .as_ref()
-            .map(|_| std::time::Instant::now())
+            .map(|tr| (std::time::Instant::now(), tr.intr_done_ns.get()))
     }
 
     #[inline]
-    pub(crate) fn trace_resolve(&self, t0: Option<std::time::Instant>) {
-        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+    pub(crate) fn trace_resolve(&self, t0: TraceT0) {
+        if let (Some(tr), Some((t0, _))) = (&self.launch_trace, t0) {
             LaunchTrace::add(
                 &tr.resolve_ns,
                 &tr.resolve_calls,
@@ -532,26 +542,31 @@ impl Engine {
     }
 
     #[inline]
-    pub(crate) fn trace_intrinsic(&self, t0: Option<std::time::Instant>, class: &str) {
-        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+    pub(crate) fn trace_intrinsic(&self, t0: TraceT0, class: &str) {
+        if let (Some(tr), Some((t0, done_at_start))) = (&self.launch_trace, t0) {
             let ns = t0.elapsed().as_nanos() as u64;
+            // filhos diretos já concluídos durante esta chamada
+            let child = tr.intr_done_ns.get().saturating_sub(done_at_start);
+            let excl = ns.saturating_sub(child);
+            tr.intr_done_ns.set(done_at_start.saturating_add(ns));
             LaunchTrace::add(&tr.intrinsic_ns, &tr.intrinsic_calls, ns);
             let mut by = tr.intrinsic_by_class.borrow_mut();
             match by.get_mut(class) {
                 Some(e) => {
                     e.0 = e.0.saturating_add(ns);
-                    e.1 = e.1.saturating_add(1);
+                    e.1 = e.1.saturating_add(excl);
+                    e.2 = e.2.saturating_add(1);
                 }
                 None => {
-                    by.insert(class.to_string(), (ns, 1));
+                    by.insert(class.to_string(), (ns, excl, 1));
                 }
             }
         }
     }
 
     #[inline]
-    pub(crate) fn trace_string(&self, t0: Option<std::time::Instant>) {
-        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+    pub(crate) fn trace_string(&self, t0: TraceT0) {
+        if let (Some(tr), Some((t0, _))) = (&self.launch_trace, t0) {
             LaunchTrace::add(
                 &tr.string_ns,
                 &tr.string_calls,
@@ -561,8 +576,8 @@ impl Engine {
     }
 
     #[inline]
-    fn trace_clinit(&self, t0: Option<std::time::Instant>) {
-        if let (Some(tr), Some(t0)) = (&self.launch_trace, t0) {
+    fn trace_clinit(&self, t0: TraceT0) {
+        if let (Some(tr), Some((t0, _))) = (&self.launch_trace, t0) {
             LaunchTrace::add(
                 &tr.clinit_ns,
                 &tr.clinit_calls,
@@ -576,17 +591,20 @@ impl Engine {
     pub fn launch_trace_report(&self) -> Option<String> {
         let tr = self.launch_trace.as_ref()?;
         let ms = |ns: u64| ns as f64 / 1.0e6;
-        let mut top: Vec<(String, (u64, u64))> = tr
+        let mut top: Vec<(String, (u64, u64, u64))> = tr
             .intrinsic_by_class
             .borrow()
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect();
-        top.sort_by_key(|t| std::cmp::Reverse(t.1 .0));
+        // ordenado pelo exclusivo: o inclusivo soma o trabalho aninhado
+        top.sort_by_key(|t| std::cmp::Reverse(t.1 .1));
         let top: Vec<String> = top
             .iter()
-            .take(10)
-            .map(|(k, (ns, n))| format!("{k}={:.1}ms/{n}", ms(*ns)))
+            .take(12)
+            .map(|(k, (incl, excl, n))| {
+                format!("{k}=excl {:.1}ms/incl {:.1}ms/{n}", ms(*excl), ms(*incl))
+            })
             .collect();
         Some(format!(
             "[launch-trace] fuel={} resolve={:.1}ms/{} intrinsic={:.1}ms/{} clinit={:.1}ms/{} string={:.1}ms/{} top=[{}]",
