@@ -1849,6 +1849,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         ]),
         "Landroid/os/Bundle;" => Some(OBJECT),
         "Landroid/os/Handler;" => Some(OBJECT),
+        "Landroid/os/HandlerExecutor;" => Some(OBJECT),
         "Landroid/os/Looper;" => Some(OBJECT),
         "Landroid/view/Window;" => Some(OBJECT),
         "Landroid/view/ViewGroup$LayoutParams;" => Some(VIEWGROUP_LAYOUT_PARAMS),
@@ -3204,6 +3205,7 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/util/concurrent/Executor;",
         ]),
         "Ljava/util/concurrent/ExecutorService;" => Some(&["Ljava/util/concurrent/Executor;"]),
+        "Landroid/os/HandlerExecutor;" => Some(&["Ljava/util/concurrent/Executor;"]),
         "Ljava/util/ServiceLoader;" => Some(&["Ljava/lang/Iterable;"]),
         "Ljava/math/BigDecimal;" | "Ljava/math/BigInteger;" => {
             Some(&["Ljava/lang/Comparable;", "Ljava/io/Serializable;"])

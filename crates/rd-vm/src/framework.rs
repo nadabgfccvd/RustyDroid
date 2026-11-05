@@ -56,6 +56,8 @@ pub const BUTTON: &str = "Landroid/widget/Button;";
 pub const LINEARLAYOUT: &str = "Landroid/widget/LinearLayout;";
 pub const FRAMELAYOUT: &str = "Landroid/widget/FrameLayout;";
 pub const HANDLER: &str = "Landroid/os/Handler;";
+/// Executor do `Context.getMainExecutor()`: implementa `java/util/concurrent/Executor`.
+pub const HANDLER_EXECUTOR: &str = "Landroid/os/HandlerExecutor;";
 pub const LOOPER: &str = "Landroid/os/Looper;";
 /// M8: relógio host (relógio virtual determinístico — ver `call_host_static`).
 pub const SYSTEM_CLOCK: &str = "Landroid/os/SystemClock;";
@@ -3392,6 +3394,28 @@ fn call_host_instance_rooted(
     };
 
     match (mref_class, name) {
+        // ── Context.getMainExecutor(): Executor do Looper principal, modelado
+        // como um Handler do main looper (o `execute` abaixo enfileira nele).
+        (_, "getMainExecutor")
+            if sig == "()Ljava/util/concurrent/Executor;"
+                && vm.cp.is_subtype(&recv_class, CONTEXT) =>
+        {
+            let looper = vm.main_looper_obj()?;
+            let h = vm
+                .heap
+                .alloc_instance(HANDLER_EXECUTOR.to_string(), Vec::new())?;
+            vm.fw.objects.insert(h, HostObj::Handler { looper });
+            Ok(Some(Value::Obj(h)))
+        }
+        // ── Executor.execute(Runnable) sobre o executor principal: enfileira o
+        // runnable no main looper, como `Handler.post`.
+        (HANDLER_EXECUTOR, "execute") if sig == "(Ljava/lang/Runnable;)V" => {
+            let Some(Value::Obj(r)) = args.first() else {
+                return Err(crate::err::vm_error("INVALID_FORMAT", "execute sem runnable").into());
+            };
+            enqueue(vm, recv, *r, vm.fw.clock_ms)?;
+            Ok(Some(Value::Null))
+        }
         // ── M8: Looper.getThread — thread "main" sintética (VM single-threaded).
         // Métodos de Ljava/lang/Thread; despacham via intrinsics (não Landroid/).
         (LOOPER, "getThread") => Ok(Some(Value::Obj(vm.main_thread_obj()?))),
