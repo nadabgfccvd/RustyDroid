@@ -99,6 +99,14 @@ A permissão `BIND_CREDENTIAL_PROVIDER_SERVICE` não entrou em `data/permissions
 adicioná-la muda a contagem de 175 que `table_matches_documented_counts` fixa junto com README e ROADMAP.
 Essa mudança fica para uma rodada própria da tabela de permissões.
 
+Auditoria de extensões (rodada F-3, 2026-11-05), para as regras que já existiam:
+
+| Extensão | Achado | Correção |
+|---|---|---|
+| device-admin | A documentação oficial exige, além da ação `android.app.action.DEVICE_ADMIN_ENABLED` e de `BIND_DEVICE_ADMIN`, o `<meta-data android:name="android.app.device_admin">`. A plataforma falha com "No android.app.device_admin meta-data" sem ele (`DeviceAdminInfo`). A regra não exigia o meta-data | `build_component` só mantém `device-admin` com o meta-data; teste com e sem ele |
+| wallpaper, ime | Ação e `BIND_WALLPAPER` / `BIND_INPUT_METHOD` confirmadas | Sem mudança |
+| dream, media-browser, voice-interaction, print-service, autofill-service, call-screening, carrier-config | Ação e permissão conferidas com a tabela de regras; não reconfirmadas uma a uma na documentação nesta rodada | Sem mudança; pendente de checagem contra a documentação |
+
 ## 5. Apêndices C, D e E — plano por rodadas
 
 Estes apêndices não são "completos" nesta rodada. Os números abaixo dizem o tamanho real.
