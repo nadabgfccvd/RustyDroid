@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793900010673,
+  "lastUpdate": 1793900319922,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4391,6 +4391,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3186,
             "range": "± 12",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "392c6636750f91d8a9504edc5de82499b260c9c1",
+          "message": "docs(d): estado verificado das dependências ST-04 e MEDIA-03 (#563)\n\nMede o que existe no código antes de implementar security-crypto (ST-04) e\ncamerax (MEDIA-03), como pedido pelo usuário. Sem mudança de status de biblioteca.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T14:38:18-03:00",
+          "tree_id": "a45e698602b67b082cf9bcd003a7bced2cd96ed8",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/392c6636750f91d8a9504edc5de82499b260c9c1"
+        },
+        "date": 1793900319197,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1862,
+            "range": "± 62",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1845,
+            "range": "± 25",
             "unit": "ns/iter"
           }
         ]
