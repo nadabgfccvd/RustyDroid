@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793885540370,
+  "lastUpdate": 1793885854000,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4067,6 +4067,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1809,
             "range": "± 33",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1835829ac486e3a918fccc801b81fc822b1f9ca7",
+          "message": "perf(rd-vm): telemetria de launch com tempo exclusivo por intrínseco (RD_LAUNCH_TRACE v3) (#554)\n\n- LaunchTrace: além do inclusivo, o exclusivo por classe declarante (sem os intrínsecos filhos diretos).\n- Contador de filhos concluídos: na saída de cada intrínseco, o contador volta para início + inclusivo.\n- Sem mudança de comportamento: só telemetria opt-in (RD_LAUNCH_TRACE). Gate: 1556 passando, 0 falhando.\n- docs/comprix-launch-profile.md: perfil do lançamento (telemetria + perf). Achado: perfil plano;\n  metade do intrínseco está em Executor (runnables postados). Sem otimização nesta PR.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T10:37:14-03:00",
+          "tree_id": "a6d8a03d4b95588aeb8f6400c862391c241bc846",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/1835829ac486e3a918fccc801b81fc822b1f9ca7"
+        },
+        "date": 1793885853347,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1885,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1996,
+            "range": "± 228",
             "unit": "ns/iter"
           }
         ]
