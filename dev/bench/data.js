@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793903621653,
+  "lastUpdate": 1793907234276,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4535,6 +4535,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3449,
             "range": "± 492",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ef74c55e5e49bbd5d474a881b5b7358d6c8f1e9d",
+          "message": "feat(vm): Context.getMainExecutor() — Executor do main looper (MEDIA-03, progresso parcial) (#566)\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T16:32:57-03:00",
+          "tree_id": "b22d017baef047cb6dc7c4653ce57c1e3c5785ce",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/ef74c55e5e49bbd5d474a881b5b7358d6c8f1e9d"
+        },
+        "date": 1793907233421,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2770,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2791,
+            "range": "± 101",
             "unit": "ns/iter"
           }
         ]
