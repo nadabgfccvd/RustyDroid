@@ -272,3 +272,32 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
   - D — `partial` agora: DrawerLayout, SwipeRefreshLayout, CardView,
     ViewPager2, photo picker. `stub` (3): ConstraintLayout, CoordinatorLayout,
     material. `not_implemented` (19, eram 20).
+
+### S12 — Apêndice D: RxJava 3 como dex-passthrough (2026-11-05)
+
+- **S12 (rodada 4 de D, branch `appendix-d-rxjava-20261105`)**: RxJava sobe de
+  `not_implemented` para `partial` (`rxjava`, `dex-passthrough`). O bytecode
+  real da biblioteca executa na VM, sem shim host.
+  - Fixture: DEX de `io.reactivex.rxjava3:rxjava` 3.1.10 e `reactive-streams` 1.0.4,
+    reduzido por R8 8.7.18 com regras keep. Tem 23 KB e está em
+    `crates/rd-vm/tests/fixtures/rxjava3/`. A regeneração reproduz o SHA-256
+    `4023c229…` (`scripts/gen-rxjava3-fixture.sh`). Proveniência e licenças no README.
+  - Exceção de política: `.dex` é bloqueante no RD Sentinel. A exceção datada, com
+    escopo de um único arquivo e validade até 2027-02-05, está em
+    `docs/adr/036-excecao-fixture-dex-rxjava.md`. Ela depende de um mantenedor aplicar
+    `sentinel:policy-approved`. Não foi aplicada por mim.
+  - Testes: 5 em `crates/rd-vm/tests/jetpack_rxjava.rs`. Cobrem `just` + `subscribe`
+    → disposed; `never` → não disposed; `dispose()` → disposed; `empty` → disposed;
+    e sem o DEX da biblioteca no Engine a chamada falha.
+  - Gap de plataforma encontrado pelo teste: `AtomicInteger.lazySet` e
+    `AtomicReference.lazySet` não existiam na VM. Os dois viram alias de `set`
+    (`crates/rd-vm/src/intrinsics.rs`). Na VM single-threaded essa é a semântica.
+  - Mutações (cada uma derruba os testes certos; arquivo restaurado e comparado
+    byte a byte): sem `lazySet` em AtomicInteger → 1 falha; sem `lazySet` em
+    AtomicReference → 2 falhas; `set`/`lazySet` de AtomicReference não grava → 2 falhas.
+  - Não modelado: Schedulers e threads, Flowable e backpressure, operadores além de
+    just/empty/never, blocking*, onError/RxJavaPlugins, CompositeDisposable, Subjects.
+    Por isso o status é `partial`, não `supported`.
+  - D — `partial` agora: DrawerLayout, SwipeRefreshLayout, CardView, ViewPager2,
+    photo picker, RxJava (6). `stub` (3): ConstraintLayout, CoordinatorLayout,
+    material. `not_implemented` (18).

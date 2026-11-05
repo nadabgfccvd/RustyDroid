@@ -654,14 +654,14 @@ category = "di-async"
 coordinates = "io.reactivex.rxjava3:rxjava"
 prefixes = ["io.reactivex"]
 strategy = "dex-passthrough"
-status = "not_implemented"
-module = "none"
-code = []
-milestone = "future"
-notes = "RxJava é DEX puro; Schedulers (io/main) não têm bridge host — execução depende do modelo de threads genérico."
-evidence = ["docs/appendix-d-e.md"]
+status = "partial"
+module = "rd-vm/dex-passthrough"
+milestone = "appendix-d"
+code = ["crates/rd-vm/src/intrinsics.rs"]
+notes = "S12: o DEX real do RxJava 3.1.10 (reduzido por R8, ver crates/rd-vm/tests/fixtures/rxjava3/README.md) executa na VM sem shim host. Testado: Observable.just/empty/never + subscribe() + Disposable.isDisposed/dispose, com o resultado vindo do bytecode da biblioteca (sem o DEX, a chamada falha). Gap de plataforma fechado no mesmo PR: AtomicInteger.lazySet e AtomicReference.lazySet (intrínsecos, mesma semântica de set na VM single-threaded). Não modelado nem testado: Schedulers (io/computation/main, threads), Flowable e backpressure, operadores além de just/empty/never (map, flatMap etc.), blocking* (CountDownLatch), onError/RxJavaPlugins, CompositeDisposable, Subjects e interop com reactive-streams. A biblioteca inteira não é suportada: o DEX de teste é um subconjunto. Exceção de binário: docs/adr/036-excecao-fixture-dex-rxjava.md."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/tests/jetpack_rxjava.rs", "crates/rd-vm/tests/fixtures/rxjava3/README.md", "docs/adr/036-excecao-fixture-dex-rxjava.md"]
 gap_id = "gap-jetpack-rxjava"
-key_apis = ["io.reactivex.Observable", "io.reactivex.rxjava3.core.Observable"]
+key_apis = ["io.reactivex.rxjava3.core.Observable.just", "io.reactivex.rxjava3.core.Observable.never", "io.reactivex.rxjava3.core.Observable.empty", "io.reactivex.rxjava3.core.Observable.subscribe"]
 
 # ===================== 3rd-party =====================
 [[library]]

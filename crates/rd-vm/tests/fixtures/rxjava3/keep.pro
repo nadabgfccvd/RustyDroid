@@ -1,0 +1,6 @@
+-keep public class io.reactivex.rxjava3.core.Observable { public static *** just(...); public static *** never(); public static *** empty(); public *** subscribe(); public *** map(...); }
+-keep public class io.reactivex.rxjava3.disposables.Disposable { *; }
+-keep public class io.reactivex.rxjava3.disposables.Disposables { public static *** empty(); }
+-dontobfuscate
+-dontoptimize
+-ignorewarnings

@@ -2,7 +2,7 @@
 
 <!-- GERADO por `cargo xtask jetpack-report` a partir de `data/jetpack.toml` — não editar à mão. -->
 
-Fonte: `RustyDroid.md Appendix D`. Janela: API 26–36. Bibliotecas registradas: **46** em **6** categorias (supported 0, partial 24, stub 3, not_implemented 19).
+Fonte: `RustyDroid.md Appendix D`. Janela: API 26–36. Bibliotecas registradas: **46** em **6** categorias (supported 0, partial 25, stub 3, not_implemented 18).
 
 **Semântica honesta:** `supported` é modelo host com estado para o subconjunto documentado em `notes`/`key_apis`, nunca a biblioteca inteira. `partial` executa um subconjunto real (DEX sobre a plataforma host e/ou shim com estado); `stub` é só reconhecimento; `not_implemented` não tem modelo. Estratégias: `dex-passthrough` (o DEX da biblioteca executa na VM), `host-shim` (host intercepta métodos listados; resto cai no DEX), `host-native` (só host). Presença da biblioteca num APK não é cobertura de execução — para execução use MCP `get_coverage`. Firebase fica no Apêndice E ([gms.md](gms.md)).
 
@@ -14,7 +14,7 @@ Fonte: `RustyDroid.md Appendix D`. Janela: API 26–36. Bibliotecas registradas:
 | Architecture | lifecycle-runtime, lifecycle-livedata, lifecycle-viewmodel, lifecycle-savedstate, room, paging 3, work, navigation, datastore, collection, palette | partial 9 · not_implemented 2 | `none`, `rd-vm/androidx`, `rd-vm/m8` |
 | UI | compose, recyclerview, viewpager2, constraintlayout, coordinatorlayout, drawerlayout, swiperefreshlayout, cardview, fragment, browser (custom tabs), emoji2, material (extra além da tabela da spec) | partial 7 · stub 3 · not_implemented 2 | `none`, `rd-vm/androidx`, `rd-vm/androidx-widgets`, `rd-vm/classpath+inflate`, `rd-vm/m8` |
 | Behavior | media3/ExoPlayer, cameraX, biometric, security-crypto, credential-manager, photo-picker (privacy) | partial 2 · not_implemented 4 | `none`, `rd-vm/androidx`, `rd-vm/photopicker` |
-| DI/async | hilt/dagger, kotlinx-coroutines/flow, rxjava bridge | not_implemented 3 | `none` |
+| DI/async | hilt/dagger, kotlinx-coroutines/flow, rxjava bridge | partial 1 · not_implemented 2 | `none`, `rd-vm/dex-passthrough` |
 | 3rd-party comuns | okhttp, retrofit, moshi, gson, coil, glide, picasso, guava ListenableFuture (extra — base de work/camera) | partial 2 · not_implemented 6 | `none`, `rd-vm/androidx`, `rd-vm/m8` |
 
 ## Bibliotecas
@@ -58,7 +58,7 @@ Fonte: `RustyDroid.md Appendix D`. Janela: API 26–36. Bibliotecas registradas:
 | security-crypto | `androidx.security:security-crypto` | `androidx.security` | host-shim | not_implemented | `none` | future | gap-jetpack-security-crypto | ST-04: EncryptedSharedPreferences/MasterKey sem shim; depende de AndroidKeyStore (Apêndice C, gap próprio). |
 | hilt/dagger | `com.google.dagger:hilt-android` | `dagger`, `androidx.hilt` | dex-passthrough | not_implemented | `none` | future | gap-jetpack-hilt-dagger | Componentes Dagger/Hilt gerados são DEX do app e executam como código comum; 'reflection-free init' não tem suporte host dedicado nem validação própria. |
 | kotlinx-coroutines/flow | `org.jetbrains.kotlinx:kotlinx-coroutines-android` | `kotlinx.coroutines` | dex-passthrough | not_implemented | `none` | future | gap-jetpack-coroutines | Coroutines/Flow executam como DEX sobre o modelo de threads da VM; Dispatchers.Main/looper e scheduling determinístico não têm mapeamento host dedicado neste registro. |
-| rxjava bridge | `io.reactivex.rxjava3:rxjava` | `io.reactivex` | dex-passthrough | not_implemented | `none` | future | gap-jetpack-rxjava | RxJava é DEX puro; Schedulers (io/main) não têm bridge host — execução depende do modelo de threads genérico. |
+| rxjava bridge | `io.reactivex.rxjava3:rxjava` | `io.reactivex` | dex-passthrough | partial | `rd-vm/dex-passthrough` | appendix-d | gap-jetpack-rxjava | S12: o DEX real do RxJava 3.1.10 (reduzido por R8, ver crates/rd-vm/tests/fixtures/rxjava3/README.md) executa na VM sem shim host. Testado: Observable.just/empty/never + subscribe() + Disposable.isDisposed/dispose, com o resultado vindo do bytecode da biblioteca (sem o DEX, a chamada falha). Gap de plataforma fechado no mesmo PR: AtomicInteger.lazySet e AtomicReference.lazySet (intrínsecos, mesma semântica de set na VM single-threaded). Não modelado nem testado: Schedulers (io/computation/main, threads), Flowable e backpressure, operadores além de just/empty/never (map, flatMap etc.), blocking* (CountDownLatch), onError/RxJavaPlugins, CompositeDisposable, Subjects e interop com reactive-streams. A biblioteca inteira não é suportada: o DEX de teste é um subconjunto. Exceção de binário: docs/adr/036-excecao-fixture-dex-rxjava.md. |
 | coil | `io.coil-kt:coil / io.coil-kt.coil3:coil` | `coil`, `coil3` | dex-passthrough | not_implemented | `none` | future | gap-jetpack-coil | UI-02: Coil depende de decode de imagens + rede/cache; sem pipeline de imagens host ligado. |
 | glide | `com.github.bumptech.glide:glide` | `com.bumptech.glide` | dex-passthrough | not_implemented | `none` | future | gap-jetpack-glide | UI-02: Glide.with(...).load(...) sem pipeline host; alvos ImageView não recebem bitmaps do host. |
 | gson | `com.google.code.gson:gson` | `com.google.gson` | dex-passthrough | not_implemented | `none` | future | gap-jetpack-gson | Gson é DEX puro dependente de reflexão; classificado aqui (não é GMS). Sem modelo host. |

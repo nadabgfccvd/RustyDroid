@@ -5239,7 +5239,8 @@ fn instance_intrinsic_core(
         (ATOMIC_REF, "get", "()Ljava/lang/Object;") => Ok(Some(
             vm.heap.get_field(recv, "value").unwrap_or(Value::Null),
         )),
-        (ATOMIC_REF, "set", "(Ljava/lang/Object;)V") => {
+        // lazySet: ordenação só de publicação; na VM single-threaded é igual a set.
+        (ATOMIC_REF, "set" | "lazySet", "(Ljava/lang/Object;)V") => {
             crate::err::put_field_result(vm.heap.put_field(recv, "value", args[0].clone()))?;
             Ok(Some(Value::Null))
         }
@@ -5285,7 +5286,7 @@ fn instance_intrinsic_core(
         (ATOMIC_INT, "get", "()I") | (ATOMIC_INT, "intValue", "()I") => {
             Ok(Some(Value::Int(atomic_int_cur(vm, recv))))
         }
-        (ATOMIC_INT, "set", "(I)V") => {
+        (ATOMIC_INT, "set" | "lazySet", "(I)V") => {
             let v = arg_i32(&args[0]);
             crate::err::put_field_result(vm.heap.put_field(recv, "value", Value::Int(v)))?;
             Ok(Some(Value::Null))
