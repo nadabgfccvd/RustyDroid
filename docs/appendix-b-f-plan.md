@@ -155,12 +155,28 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
        `ui_tree`/`observe` continuam mostrando a lista ("unchanged since last observe").
     3. Só 15 chamadas de `Lbr/` depois do toque: não há laço de Kotlin. O host registra 97
        `Activity.getPackageName()` e 108 `ViewGroup.getChildAt()`; `fuel` cresce durante a espera.
-    4. Hipótese: a composição do `AndroidView` (PreviewView) não é aplicada à árvore de views.
-       O redesenho só ocorre quando `traversal_pending` é marcado (`framework.rs`,
-       `advance_clock`), e nenhum `requestLayout`/`addView` é chamado após o toque. Próximo passo:
-       investigar a anexação de `AndroidView` no Compose (`AndroidViewHolder`/`AndroidComposeView`)
-       na camada de framework, antes do shim CameraX (`ProcessCameraProvider`, `Preview`,
-       `ImageAnalysis`, ML Kit).
+    4. Medido com `RD_TRACE_DRAW` e `RD_TRACE_METHOD` (2026-11-05, sessão seguinte):
+       - O laço de acessibilidade (`LK0/`, `getPackageName`, `getChildAt`) já existe na tela
+         de lista, antes do toque. Não é a causa.
+       - O frame do Compose é agendado pelo `AndroidUiDispatcher` (`LB0/k0`, que é
+         `FrameCallback` e `Runnable`). Após o toque, a composição do scanner (`LG2/`) roda
+         dentro de dois frames em 8752 ms, seguida de ~18.000 chamadas `LP/` (Composer/Recomposer).
+       - Ao fim desse trabalho, `run()` do dispatcher remove o callback com `removeFrameCallback`
+         (fila de tarefas vazia). Nenhum frame novo é pedido depois, mesmo com `wait`.
+       - Não há `addView`/`requestLayout` que insira a `PreviewView` na árvore (o
+         `AndroidViewsHandler` nunca recebe o holder). Assim a árvore continua na lista.
+       - Ordem medida com `RD_TRACE_METHOD=L` (trace completo da janela após o toque):
+         1. Frame 1 (8752 ms): `LP/u0.p` (recompõe a árvore atual), `c()`, `r()` e
+            `LP/t.e(LQ/a;)V` (`applyChanges`, rótulo `Compose:applyChanges`). Esse ciclo completa.
+         2. Frame 2 (8752 ms): `LP/u0.p` inicia a composição que contém o scanner;
+            `LG2/C.d` executa (~99 mil chamadas depois). Depois disso não há `c()`, `r()` nem um
+            segundo `applyChanges`. O callback é removido em `removeFrameCallback` (133 mil).
+         - Exceções: nenhuma `Throwable` lançada na janela (só `exceptionOrNull`).
+       - Hipótese principal (revisada): a composição do scanner termina sem o caminho normal de
+         retorno de `LP/u0.p`, então o Recomposer não aplica as mudanças. Por isso a
+         `PreviewView` não é inserida. Próximo passo: verificar por que `LP/u0.p` do frame 2
+         não retorna para `c()`/`r()` (ex.: exceção suprimida, `abandon` ou cancelamento da
+         corrotina), comparando com o frame 1. Só então partir para o shim CameraX.
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
