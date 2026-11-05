@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793881404956,
+  "lastUpdate": 1793885540370,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4031,6 +4031,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3400,
             "range": "± 39",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b1585cb828827a2d1c6e0219c8eaeae5d38a87cd",
+          "message": "docs(perf): medição de latência MCP do Comprix v1.6.0 (base) + script reproduzível (#553)\n\n- scripts/comprix_latency.py: fluxo de onboarding do Comprix via rd mcp, cronometrado por chamada.\n- docs/comprix-latency.md: base medida (3 execuções, perfil profiling, 2 vCPU/2 GB).\n  Não atinge: lançamento 642 ms (meta 450), launch observe on 1002 ms, toque inicial\n  1268 ms, swipe 1514 ms (meta 345 por ferramenta).\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T10:31:50-03:00",
+          "tree_id": "0e27c39e1a33594a86a3e0096e89a9295809c0ee",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/b1585cb828827a2d1c6e0219c8eaeae5d38a87cd"
+        },
+        "date": 1793885539523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1816,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1809,
+            "range": "± 33",
             "unit": "ns/iter"
           }
         ]
