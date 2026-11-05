@@ -236,3 +236,33 @@ ou de um frame pendente. Não investigado além disso.
 **Ambiente:** a segunda tentativa de build do `rd_vm` foi morta pelo OOM do kernel (`rustc` com
 ~1,47 GB de RSS em 2 GB de RAM). Um swapfile de 3 GB resolveu. Não é mudança de código; relevante
 para reproduzir medições.
+
+## Otimização por chamada: resultados negativos (2026-11-05, rodada de 17:00 UTC)
+
+Medição com `scripts/comprix_latency.py --runs 3` (mediana), mesmo APK v1.6.0,
+binário `profiling` (`codegen-units=256`, `lto=off`):
+
+| chamada | base (`8e7b053`) | `RD_FW_DEBUG` lido uma vez | meta |
+|---|---:|---:|---:|
+| launch (observe off) | 509,7 ms | 519,7 ms | 450 ms |
+| launch (observe on) | 767,8 ms | 773,0 ms | 345 ms |
+| tap "Pular" | 1035,0 ms | 1046,8 ms | 345 ms |
+| tap "Nova lista" | 467,9 ms | 496,2 ms | 345 ms |
+| swipe | 1292,2 ms | 1255,5 ms | 345 ms |
+
+- **Hipótese refutada:** `call_host_instance_rooted` fazia `env::var("RD_FW_DEBUG")`
+  a cada despacho de host (um por intrínseco de instância). Trocar por um
+  `OnceLock` não reduziu o tempo dentro da faixa de ruído (±5%). Mudança não
+  mesclada; o custo de `env::var` com poucas variáveis é baixo.
+- **Perfil de CPU atual** (`perf record -F 999 -g`, um run do golden de
+  latência, filtrado por `--comm rd-main`): o custo é espalhado. Maiores
+  símbolos de tempo próprio: `exec_frame` 7,0%; `exec_leaf_insn` 5,7%;
+  `instance_intrinsic_dispatch_full` 2,2%; `resolve_or_run_host_invoke` 2,1%;
+  `malloc` 2,1%; `Engine::call` 1,9%; `Classpath::is_subtype` 1,9%; `cfree` 1,9%;
+  hashing de `String` (hashbrown) 1,7%. Nenhum item acima de 7%.
+- **Conclusão:** a diferença para as metas (lançamento ~510 → 450 ms;
+  ferramentas ~470–1290 → 345 ms) é de 1,1× a 3,7×. Não se fecha com trocas
+  locais de 1–2%. Caminhos com algum ganho possível exigem mudança de desenho
+  (menos chamadas do runtime de UI interpretado, menos alocação por invocação,
+  ou cache de resolução de invoke por índice em vez de `String`), e cada um
+  precisa de A/B com 3 rodadas antes de merge.
