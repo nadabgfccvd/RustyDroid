@@ -401,7 +401,8 @@ fn load_layout_document(
     // Compiled APKs may rename resource ZIP paths (e.g. `res/Ab.xml`) while
     // resources.arsc retains the actual path. Synthetic/legacy fixtures still
     // use the canonical-name fallback.
-    let entry = layout_entry_for_resource(apk, arsc, layout_resid, key)?;
+    let dev = vm.resource_device_config();
+    let entry = layout_entry_for_resource(apk, arsc, &dev, layout_resid, key)?;
     let bytes = apk
         .container()
         .read(&entry)
@@ -418,6 +419,7 @@ fn load_layout_document(
 fn layout_entry_for_resource(
     apk: &rd_apk::Apk,
     arsc: &rd_apk::arsc::Arsc,
+    dev: &rd_apk::arsc::DeviceConfig,
     resid: u32,
     key: &str,
 ) -> Result<String, VmExit> {
@@ -428,7 +430,7 @@ fn layout_entry_for_resource(
             break; // malformed resource alias cycle; use the legacy lookup below
         }
         seen.push(current);
-        match arsc.resolve_value(current) {
+        match arsc.resolve_value_for(current, dev) {
             Some(ResolvedValue::Str(path))
                 if path.starts_with("res/")
                     && path.ends_with(".xml")

@@ -59,11 +59,85 @@ fn u32_at(d: &[u8], off: usize) -> RdResult<u32> {
 pub struct ResConfigInfo {
     pub language: Option<String>,
     pub country: Option<String>,
+    /// `ResTable_config.orientation`: 1 = portrait, 2 = landscape; `None` = any.
+    pub orientation: Option<u8>,
     pub density: Option<u16>,
     pub api_level: Option<u16>,
 }
 
+/// Configuração do dispositivo que escolhe a variante de recurso (M4 Round 2:
+/// locale, orientação, densidade, SDK — issue #47).
+///
+/// `Default` = dispositivo sem locale, orientação, densidade nem SDK
+/// conhecidos: só entradas genéricas casam sem ambiguidade. Essa é a
+/// configuração neutra usada pelos métodos `resolve_*` sem `_for`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeviceConfig {
+    /// ISO 639 language, e.g. `en`.
+    pub language: Option<String>,
+    /// ISO 3166 region, e.g. `US`.
+    pub country: Option<String>,
+    /// 1 = portrait, 2 = landscape.
+    pub orientation: Option<u8>,
+    /// Densidade em dpi (`160` = mdpi). `None` é tratado como 160, como o AOSP.
+    pub density: Option<u16>,
+    /// `Build.VERSION.SDK_INT`.
+    pub sdk: Option<u16>,
+}
+
+/// Densidade padrão do AOSP (mdpi), usada para entradas sem qualificador de densidade.
+const DENSITY_DEFAULT: u16 = 160;
+
+/// Pontuação de encaixe de uma entrada com o dispositivo. Comparada em ordem
+/// lexicográfica (maior = melhor), seguindo a precedência de qualificadores do
+/// AOSP: locale → orientação → densidade → versão.
+type DeviceRank = (u8, u8, u8, i32, u16);
+
 impl ResConfigInfo {
+    /// `None` = a entrada exige algo que o dispositivo não tem (ex.: `values-pt`
+    /// num dispositivo `en`). `Some` = encaixe; entradas mais específicas e
+    /// mais próximas da densidade do dispositivo pontuam mais alto.
+    fn device_rank(&self, dev: &DeviceConfig) -> Option<DeviceRank> {
+        let language = match (&self.language, &dev.language) {
+            (None, _) => 0,
+            (Some(e), Some(d)) if e.eq_ignore_ascii_case(d) => 2,
+            _ => return None,
+        };
+        let country = match (&self.country, &dev.country) {
+            (None, _) => 0,
+            // região sem idioma não é um qualificador válido
+            (Some(_), _) if self.language.is_none() => return None,
+            (Some(e), Some(d)) if e.eq_ignore_ascii_case(d) => 2,
+            _ => return None,
+        };
+        let orientation = match (self.orientation, dev.orientation) {
+            (None, _) => 0,
+            (Some(e), Some(d)) if e == d => 2,
+            _ => return None,
+        };
+        // nodpi (0xFFFF) / anydpi (0xFFFE) não escalam: tratados como genéricos.
+        let entry_dpi = match self.density {
+            Some(d) if d != 0 && d < 0xFFFE => d,
+            _ => DENSITY_DEFAULT,
+        };
+        let dev_dpi = dev.density.filter(|&d| d != 0).unwrap_or(DENSITY_DEFAULT);
+        let density: i32 = if entry_dpi == dev_dpi {
+            1_000_000
+        } else if entry_dpi > dev_dpi {
+            // downscale a partir de densidade maior: prefere a mais próxima
+            500_000 - i32::from(entry_dpi - dev_dpi)
+        } else {
+            // upscale a partir de densidade menor: pior, mas mais próxima ganha
+            -i32::from(dev_dpi - entry_dpi)
+        };
+        let sdk = match (self.api_level, dev.sdk) {
+            (None, _) | (_, None) => 0,
+            (Some(e), Some(d)) if e <= d => e,
+            _ => return None,
+        };
+        Some((language, country, orientation, density, sdk))
+    }
+
     pub fn is_default(&self) -> bool {
         self.language.is_none() && self.density.is_none_or(|d| d == 0 || d == 160)
     }
@@ -135,6 +209,26 @@ pub struct ResEntry {
     pub bag: Option<Vec<ResMapEntry>>,
     /// Índice no key string pool (para `resolve_name`).
     pub key_idx: u32,
+}
+
+/// Escolhe a entrada de um recurso para o dispositivo. Entre as compatíveis,
+/// vence a de maior `DeviceRank` (primeira em empate). Se nenhuma é compatível,
+/// cai no comportamento histórico (entrada menos específica, padrão antes),
+/// para não quebrar APKs cujo único valor é uma variante de outro locale.
+fn best_entry_for<'a>(entries: &'a [ResEntry], dev: &DeviceConfig) -> Option<&'a ResEntry> {
+    let mut best: Option<(&ResEntry, DeviceRank)> = None;
+    for e in entries {
+        if let Some(rank) = e.config.device_rank(dev) {
+            if best.as_ref().is_none_or(|(_, b)| rank > *b) {
+                best = Some((e, rank));
+            }
+        }
+    }
+    best.map(|(e, _)| e).or_else(|| {
+        entries
+            .iter()
+            .min_by_key(|e| (e.config.specificity(), !e.config.is_default()))
+    })
 }
 
 /// Referência leve a um chunk `ResTable_type` (ADR 014): offsets ABSOLUTOS no
@@ -502,21 +596,29 @@ impl Arsc {
     /// Resolve o resource id para string, seguindo cadeias de referência
     /// (ex.: `@string/app_name` → alias → texto). Limite de 8 saltos contra ciclos.
     pub fn resolve_string(&self, res_id: u32) -> Option<String> {
-        self.resolve_string_depth(res_id, 0)
+        self.resolve_string_for(res_id, &DeviceConfig::default())
     }
 
-    fn resolve_string_depth(&self, res_id: u32, depth: usize) -> Option<String> {
+    /// Como `resolve_string`, escolhendo a variante pela configuração do dispositivo.
+    pub fn resolve_string_for(&self, res_id: u32, dev: &DeviceConfig) -> Option<String> {
+        self.resolve_string_depth(res_id, dev, 0)
+    }
+
+    fn resolve_string_depth(
+        &self,
+        res_id: u32,
+        dev: &DeviceConfig,
+        depth: usize,
+    ) -> Option<String> {
         if depth > 8 {
             return None;
         }
         let pkg = self.package_for(res_id)?;
         let entries = pkg.entries_for(res_id)?;
-        let best = entries
-            .iter()
-            .min_by_key(|e| (e.config.specificity(), !e.config.is_default()))?;
+        let best = best_entry_for(&entries, dev)?;
         match best.data_type {
             3 => best.string.clone(),
-            1 => self.resolve_string_depth(best.data, depth + 1), // REFERENCE
+            1 => self.resolve_string_depth(best.data, dev, depth + 1), // REFERENCE
             _ => None,
         }
     }
@@ -531,11 +633,14 @@ impl Arsc {
     /// desconhecido ou tipo não representável (bag/complex — o caller falha
     /// tipado; nunca default silencioso).
     pub fn resolve_value(&self, res_id: u32) -> Option<ResolvedValue> {
+        self.resolve_value_for(res_id, &DeviceConfig::default())
+    }
+
+    /// Como `resolve_value`, escolhendo a variante pela configuração do dispositivo.
+    pub fn resolve_value_for(&self, res_id: u32, dev: &DeviceConfig) -> Option<ResolvedValue> {
         let pkg = self.package_for(res_id)?;
         let entries = pkg.entries_for(res_id)?;
-        let best = entries
-            .iter()
-            .min_by_key(|e| (e.config.specificity(), !e.config.is_default()))?;
+        let best = best_entry_for(&entries, dev)?;
         match best.data_type {
             0x03 => best.string.clone().map(ResolvedValue::Str),
             0x01 => Some(ResolvedValue::Reference(best.data)),
@@ -563,22 +668,30 @@ impl Arsc {
     /// array vazio. Cadeia de `parent` é seguida (aapt2 permite array que
     /// herda de array), com guarda de profundidade e de ciclo.
     pub fn resolve_array(&self, res_id: u32) -> Option<Vec<ResArrayItem>> {
-        self.resolve_array_inner(res_id, 0)
+        self.resolve_array_for(res_id, &DeviceConfig::default())
     }
 
-    fn resolve_array_inner(&self, res_id: u32, depth: usize) -> Option<Vec<ResArrayItem>> {
+    /// Como `resolve_array`, escolhendo a variante pela configuração do dispositivo.
+    pub fn resolve_array_for(&self, res_id: u32, dev: &DeviceConfig) -> Option<Vec<ResArrayItem>> {
+        self.resolve_array_inner(res_id, dev, 0)
+    }
+
+    fn resolve_array_inner(
+        &self,
+        res_id: u32,
+        dev: &DeviceConfig,
+        depth: usize,
+    ) -> Option<Vec<ResArrayItem>> {
         if depth >= 8 {
             return None;
         }
         let pkg = self.package_for(res_id)?;
         let entries = pkg.entries_for(res_id)?;
-        let best = entries
-            .iter()
-            .min_by_key(|e| (e.config.specificity(), !e.config.is_default()))?;
+        let best = best_entry_for(&entries, dev)?;
         let mut out: Vec<(u32, ResArrayItem)> = Vec::new();
         if let Some(parent) = best.parent {
             if parent != res_id {
-                if let Some(inherited) = self.resolve_array_inner(parent, depth + 1) {
+                if let Some(inherited) = self.resolve_array_inner(parent, dev, depth + 1) {
                     for (i, item) in inherited.into_iter().enumerate() {
                         out.push((i as u32, item));
                     }
@@ -981,6 +1094,10 @@ fn parse_config(data: &[u8], cfg_base: usize, cfg_max: usize) -> RdResult<ResCon
     if readable >= 12 {
         cfg.language = lang(8);
         cfg.country = lang(10);
+    }
+    if readable >= 13 {
+        // orientation:u8 @12 (0 = ANY)
+        cfg.orientation = data.get(cfg_base + 12).copied().filter(|&o| o != 0);
     }
     if readable >= 16 {
         let d = u16_at(data, cfg_base + 14)?;
@@ -1545,5 +1662,196 @@ mod array_index_tests {
         assert_eq!(array_item_index(0x0101_0000), None); // android:attr
         assert_eq!(array_item_index(0x7F01_0002), None); // app attr
         assert_eq!(array_item_index(0x7F0B_0001), None); // app style item
+    }
+}
+
+#[cfg(test)]
+mod device_select_tests {
+    use super::*;
+
+    fn cfg() -> ResConfigInfo {
+        ResConfigInfo::default()
+    }
+
+    fn lang(l: &str, c: Option<&str>) -> ResConfigInfo {
+        ResConfigInfo {
+            language: Some(l.into()),
+            country: c.map(Into::into),
+            ..cfg()
+        }
+    }
+
+    fn entry(config: ResConfigInfo, text: &str) -> ResEntry {
+        ResEntry {
+            config,
+            data_type: 3,
+            data: 0,
+            string: Some(text.into()),
+            complex: false,
+            parent: None,
+            bag: None,
+            key_idx: 0,
+        }
+    }
+
+    fn dev(
+        l: Option<&str>,
+        c: Option<&str>,
+        orient: Option<u8>,
+        dpi: Option<u16>,
+        sdk: Option<u16>,
+    ) -> DeviceConfig {
+        DeviceConfig {
+            language: l.map(Into::into),
+            country: c.map(Into::into),
+            orientation: orient,
+            density: dpi,
+            sdk,
+        }
+    }
+
+    fn pick(entries: &[ResEntry], d: &DeviceConfig) -> String {
+        best_entry_for(entries, d)
+            .and_then(|e| e.string.clone())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn locale_region_beats_language_beats_default() {
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(lang("pt", Some("BR")), "pt-BR"),
+            entry(lang("en", None), "en"),
+            entry(lang("en", Some("US")), "en-US"),
+        ];
+        assert_eq!(
+            pick(&es, &dev(Some("en"), Some("US"), None, None, None)),
+            "en-US"
+        );
+        assert_eq!(pick(&es, &dev(Some("en"), None, None, None, None)), "en");
+        assert_eq!(
+            pick(&es, &dev(Some("pt"), Some("BR"), None, None, None)),
+            "pt-BR"
+        );
+        // dispositivo sem locale conhecido: só o genérico casa
+        assert_eq!(pick(&es, &DeviceConfig::default()), "default");
+    }
+
+    #[test]
+    fn wrong_region_or_language_is_excluded_not_preferred() {
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(lang("en", Some("GB")), "en-GB"),
+        ];
+        // en-GB não casa com en-US: vence o default
+        assert_eq!(
+            pick(&es, &dev(Some("en"), Some("US"), None, None, None)),
+            "default"
+        );
+        let fr = vec![entry(cfg(), "default"), entry(lang("fr", None), "fr")];
+        assert_eq!(
+            pick(&fr, &dev(Some("en"), None, None, None, None)),
+            "default"
+        );
+    }
+
+    #[test]
+    fn orientation_selects_landscape_only_when_landscape() {
+        let land = ResConfigInfo {
+            orientation: Some(2),
+            ..cfg()
+        };
+        let es = vec![entry(cfg(), "port-default"), entry(land, "land")];
+        assert_eq!(pick(&es, &dev(None, None, Some(2), None, None)), "land");
+        assert_eq!(
+            pick(&es, &dev(None, None, Some(1), None, None)),
+            "port-default"
+        );
+        assert_eq!(pick(&es, &DeviceConfig::default()), "port-default");
+    }
+
+    #[test]
+    fn density_prefers_exact_then_downscale_then_closest_upscale() {
+        let d = |dpi: u16| ResConfigInfo {
+            density: Some(dpi),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "mdpi-default"),
+            entry(d(240), "hdpi"),
+            entry(d(320), "xhdpi"),
+        ];
+        // 280 dpi: xhdpi (downscale, mais próximo) > hdpi (upscale) e default
+        assert_eq!(pick(&es, &dev(None, None, None, Some(280), None)), "xhdpi");
+        // 160 dpi (default do AOSP): genérico (=160) vence hdpi
+        assert_eq!(
+            pick(&es, &dev(None, None, None, Some(160), None)),
+            "mdpi-default"
+        );
+        // 240 dpi exato
+        assert_eq!(pick(&es, &dev(None, None, None, Some(240), None)), "hdpi");
+        // nodpi nunca escala: vale como genérico
+        let nodpi = ResConfigInfo {
+            density: Some(0xFFFF),
+            ..cfg()
+        };
+        let es2 = vec![entry(d(240), "hdpi"), entry(nodpi, "nodpi")];
+        assert_eq!(pick(&es2, &dev(None, None, None, Some(160), None)), "nodpi");
+    }
+
+    #[test]
+    fn sdk_qualifier_is_excluded_above_device_level() {
+        let v31 = ResConfigInfo {
+            api_level: Some(31),
+            ..cfg()
+        };
+        let v26 = ResConfigInfo {
+            api_level: Some(26),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(v26, "v26"),
+            entry(v31, "v31"),
+        ];
+        assert_eq!(pick(&es, &dev(None, None, None, None, Some(34))), "v31");
+        assert_eq!(pick(&es, &dev(None, None, None, None, Some(28))), "v26");
+        assert_eq!(pick(&es, &dev(None, None, None, None, Some(21))), "default");
+    }
+
+    #[test]
+    fn language_outranks_orientation_and_density() {
+        // locale vem antes de orientação/densidade na precedência AOSP
+        let pt_port = ResConfigInfo {
+            language: Some("pt".into()),
+            density: Some(160),
+            ..cfg()
+        };
+        let en_land = ResConfigInfo {
+            orientation: Some(2),
+            density: Some(320),
+            ..cfg()
+        };
+        let es = vec![entry(en_land, "en-land-xhdpi"), entry(pt_port, "pt-mdpi")];
+        assert_eq!(
+            pick(&es, &dev(Some("pt"), None, Some(2), Some(320), None)),
+            "pt-mdpi"
+        );
+    }
+
+    #[test]
+    fn no_compatible_entry_falls_back_to_legacy_pick() {
+        // APK só com values-fr e dispositivo en-US: continua resolvendo (fallback)
+        let fr = vec![entry(lang("fr", None), "fr-only")];
+        assert_eq!(
+            pick(&fr, &dev(Some("en"), Some("US"), None, None, None)),
+            "fr-only"
+        );
+    }
+
+    #[test]
+    fn default_device_matches_pre_round2_default_first_rule() {
+        let es = vec![entry(lang("en", None), "en"), entry(cfg(), "default")];
+        assert_eq!(pick(&es, &DeviceConfig::default()), "default");
     }
 }

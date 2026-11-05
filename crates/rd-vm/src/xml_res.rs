@@ -570,12 +570,13 @@ fn array_values(vm: &mut Engine, value: &AttrValue) -> Result<Option<Value>, VmE
     let AttrValue::Reference(id) = value else {
         return Ok(None);
     };
+    let dev = vm.resource_device_config();
     let Some(items) = vm
         .fw
         .resources
         .as_ref()
         .and_then(|a| a.arsc.as_ref())
-        .and_then(|arsc| arsc.resolve_array(*id))
+        .and_then(|arsc| arsc.resolve_array_for(*id, &dev))
     else {
         return Ok(None);
     };

@@ -461,12 +461,13 @@ fn dimension_px(vm: &Engine, v: &ResolvedValue, id: i32) -> Result<f32, VmExit> 
 }
 
 fn string_res(vm: &Engine, id: i32) -> Result<String, VmExit> {
+    let dev = vm.resource_device_config();
     match vm
         .fw
         .resources
         .as_ref()
         .and_then(|a| a.arsc.as_ref())
-        .and_then(|a| a.resolve_string(id as u32))
+        .and_then(|a| a.resolve_string_for(id as u32, &dev))
     {
         Some(t) => Ok(t),
         None => Err(not_found(id)),
