@@ -2001,10 +2001,12 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/lang/Double;" => Some(&["Ljava/lang/Number;", "Ljava/lang/Object;"]),
         "Ljava/lang/Boolean;" | "Ljava/lang/Character;" => Some(OBJECT),
         "Ljava/util/concurrent/AbstractExecutorService;" => Some(OBJECT),
-        "Ljava/util/concurrent/ForkJoinPool;" => Some(&[
-            "Ljava/util/concurrent/AbstractExecutorService;",
-            "Ljava/lang/Object;",
-        ]),
+        "Ljava/util/concurrent/ForkJoinPool;" | "Ljava/util/concurrent/ThreadPoolExecutor;" => {
+            Some(&[
+                "Ljava/util/concurrent/AbstractExecutorService;",
+                "Ljava/lang/Object;",
+            ])
+        }
         "Landroid/text/method/BaseMovementMethod;" => Some(OBJECT),
         "Landroid/text/method/LinkMovementMethod;" => Some(&[
             "Landroid/text/method/BaseMovementMethod;",
@@ -3206,7 +3208,8 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         | "Ljava/util/concurrent/atomic/AtomicLong;"
         | "Ljava/util/concurrent/atomic/AtomicBoolean;" => Some(&["Ljava/io/Serializable;"]),
         "Ljava/util/concurrent/AbstractExecutorService;"
-        | "Ljava/util/concurrent/ForkJoinPool;" => Some(&[
+        | "Ljava/util/concurrent/ForkJoinPool;"
+        | "Ljava/util/concurrent/ThreadPoolExecutor;" => Some(&[
             "Ljava/util/concurrent/ExecutorService;",
             "Ljava/util/concurrent/Executor;",
         ]),
