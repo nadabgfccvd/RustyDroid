@@ -250,15 +250,23 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
       - `metaData` de componente sempre `null`: CameraX sem `CameraXConfig.Provider`
         (`e063841`). Confirmado por trace e por `rd dex disasm`: `ComprixApp` não implementa a interface.
       - `ThreadPoolExecutor` sem modelo (`fe73736`, executor inline; setters aceitos, getters não modelados).
-   7. **Estado após a correção 6 (build `rd-cli` de 2026-11-06, `build_rd9.log`):** o erro de
-      configuração do CameraX sumiu. O Scanner renderiza (`OBS "Foto" @ 139,167`, `SHOT True`).
-      `last_error` atual: `NOT_FOUND` em `android.os.HandlerThread.<init>(String, int)V`.
-      `PreviewView` ainda não é validado (`find_views` não rodado após o último build).
-   8. **Próximo bloqueio (não feito):** `HandlerThread` precisa de um Looper e de uma fila por
-      thread. Hoje `handler_msg.rs` tem uma única fila (a do Looper principal), e
-      `threads.rs` só agenda threads verdes. Isso é mudança de modelo de Looper/Handler que
-      afeta todo app com Handler, então pede PR própria. Depois disso o CameraX ainda precisa
-      de `Camera2`/`ImageReader` para chegar à captura.
+      - `HandlerThread` sem modelo: `NOT_FOUND` no construtor (`8a0b296`). Uma Looper por thread, com a
+        mesma fila da principal (`handler_thread.rs`). Corpo da thread = drenagem (desvio documentado).
+      - `java.util.logging.Logger.getLogger`: o `AbstractFuture` do Guava empacotado no APK chama isso no
+        inicializador estático; `NOT_IMPLEMENTED` virava `ExceptionInInitializerError` fatal (`63637b3`).
+        Modelo do subconjunto de String, conforme `AndroidHandler` da AOSP.
+   7. **Estado após a correção 6 (build `rd-cli` de 2026-11-06, `build_rd11.log`):**
+      - `last_error` = `null` (antes: `JAVA_EXCEPTION`, depois `NOT_FOUND`). Nenhum erro fatal na VM.
+      - Scanner renderiza: "Escanear preço", botões Foto/Vídeo/Código, "Tirar foto" (`scanner_sg_fix.png`).
+      - `find_views` com `class=PreviewView`: 1 match (`androidx.camera.view.PreviewView`, 720x1016 em y=230).
+        Critério de "PreviewView > 0" cumprido.
+   8. **Ainda não cumprido:** o preview sai preto. O CameraX repete "Retry init" com
+      `NullPointerException` (logs de 2026-11-06). Não há câmera ligada ao CameraX: falta o caminho
+      de `Camera2` (`CameraManager`, `CameraDevice`, `ImageReader`) e um dispositivo de câmera no VM.
+      Esse é um modelo de hardware, e a escolha de um feed virtual (ou de câmera vazia) é decisão do
+      usuário, por isso não foi implementado agora. Próximo passo: identificar a origem do NPE do
+      "Retry init" com o trace de `CameraX`/`Camera2` antes de escolher o modelo.
+
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
