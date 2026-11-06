@@ -1220,6 +1220,12 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // false e o `invoke-direct <init>(String)` morre com NOT_FOUND em vez
         // de materializar a exceção do app. AOSP: estende RuntimeException.
         "Landroid/view/InflateException;" => Some(RUNTIME),
+        // `Resources.NotFoundException` (AOSP: `extends RuntimeException`) is what
+        // `android_res::not_found` throws for an unknown resource id. Without its
+        // entry the hierarchy is unknown, `checkcast Throwable` fails with
+        // `ClassCastException`, and a coroutine fatal error kills the app
+        // (Comprix, tab Scanner, 2026-11-06).
+        "Landroid/content/res/Resources$NotFoundException;" => Some(RUNTIME),
         "Ljava/lang/ClassNotFoundException;"
         | "Ljava/lang/InstantiationException;"
         | "Ljava/lang/NoSuchMethodException;"
