@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793995984295,
+  "lastUpdate": 1793997013148,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5003,6 +5003,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3356,
             "range": "± 28",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e91e831421522791418ce29618474b6acdf647a1",
+          "message": "fix(vm): preview da câmera do Scanner validado sem last_error (MEDIA-03) (#579)\n\n* fix(vm): pipeline de preview da SurfaceView do CameraX (MEDIA-03, parcial)\n\n- SurfaceView modelado (subclasse de View) com SurfaceHolder e Surface próprios;\n  addCallback entrega surfaceCreated/surfaceChanged; setFixedSize define o tamanho\n  de buffer entregue (CameraX pede a resolução do SurfaceRequest).\n- Frames da câmera viram luminância (256 px de largura, proporção do sensor) e\n  são pintados na ordem de desenho: logo após o fundo opaco do PreviewView e antes\n  dos overlays (texto, moldura).\n- OutputConfiguration aceita (Surface) e (int, Surface); setters de configuração\n  com padrão do framework são no-ops; SessionConfiguration.getOutputConfigurations\n  e setSessionParameters; createCaptureSessionByOutputConfigurations mapeia superfícies.\n- Preview sem ImageReader recebe padrão YUV do tamanho do sensor.\n\nLimites: sem recorte/rotação/escala de hardware; JPEG não decodificado; ainda há\numa IllegalStateException de corrotina no Scanner (ver PR).\n\n* fix(vm): Scanner do Comprix — preview da câmera validado sem last_error (MEDIA-03)\n\nCausa raiz e correções para o fluxo Scanner → preview (CameraX/Camera2 virtual):\n\n- ContentProvider: construtor no-op e getContext() de instância (providers\n  do manifest instanciados via allowlist SDK_INIT_PROVIDERS, incl. MlKitInitProvider).\n- Properties (PROPERTIES, load/getProperty/setProperty), getResourceAsStream,\n  OutputStream.close/flush, RunningAppProcessInfo.<init>, URL de rede\n  (sem acesso: IOException \"VM sem rede\") e getProtocol.\n- HandlerThread com Looper registrado por (Looper, Thread).\n- ThreadLocal por green thread (como na JDK; antes era global e quebrava o\n  ThreadLocalEventLoop do kotlinx.coroutines) — mudança de semântica aprovada.\n- Executors.defaultThreadFactory() real; executores inline honram a\n  ThreadFactory (execute/submit criam o Thread pela fábrica), necessário ao\n  MlKitThreadPool — mudança de semântica aprovada.\n- Camera2: CaptureResult.getRequest() devolve o request que gerou o resultado.\n- BadParcelableException estende RuntimeException (hierarquia).\n- ML Kit barcode: BarcodeScannerImpl.process(InputImage) devolve Task\n  concluído com lista vazia (módulo dinâmico do GMS não roda no VM) —\n  decisão do usuário (host_stub).\n- Lint: aliases de tipo PreviewDraw/PreviewRect; while-let; sem vec! desnecessário.\n\nValidação: validate_frame (Scanner, dev62): last_error vazio, sem Retry init,\nsem exceção fatal de coroutine, PreviewView com frames (screenshot não preto).\nclippy --workspace --all-targets -D warnings: OK; cargo test -p rd-vm: OK.\n\n---------\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-06T17:29:46-03:00",
+          "tree_id": "9d57b5a72d5b77212dd94cbc0be26feb6493102b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e91e831421522791418ce29618474b6acdf647a1"
+        },
+        "date": 1793997012309,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1736,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1728,
+            "range": "± 42",
             "unit": "ns/iter"
           }
         ]
