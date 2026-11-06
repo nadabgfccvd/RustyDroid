@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793925401390,
+  "lastUpdate": 1793974898490,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4859,6 +4859,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2757,
             "range": "± 8",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "02a2ad9b3a33d56d31ccc0c34093803bcb330408",
+          "message": "fix(vm): tela Scanner do Comprix (CameraX) — causa raiz MEDIA-03 (#575)\n\n* fix(vm): modela android.view.ScaleGestureDetector (PreviewView/CameraX)\n\nPreviewView.<init> cria ScaleGestureDetector(Context, OnScaleGestureListener);\na classe não tinha dono no host e a construção voltava NOT_FOUND, abortando o\nframe do Recomposer antes do applyChanges (Comprix, aba Scanner).\n\n- <init>(Context, listener[, Handler]) guarda o listener, sem efeito colateral\n- onTouchEvent(MotionEvent) -> true (AOSP consome eventos que processa)\n- isInProgress() -> false (pipeline virtual é de um ponteiro)\n- quick scale, stylus e getters de escala seguem NOT_FOUND tipado\n\nTestes: crates/rd-vm/tests/android_scale_gesture.rs (o teste do construtor\nfalha sem o gancho, com a mesma mensagem NOT_FOUND do app).\n\n* fix(vm): Resources.NotFoundException é RuntimeException na hierarquia\n\nandroid_res::not_found lança Resources$NotFoundException para id desconhecido,\nmas a classe não tinha entrada na hierarquia: checkcast Throwable dava\nClassCastException e a machinery de corrotinas matava o processo.\n\nAdiciona a superclasse RuntimeException (AOSP). Teste:\ncrates/rd-vm/tests/android_res_not_found.rs (falha sem a entrada, com a mesma\nmensagem do app).\n\n* docs(changelog): ScaleGestureDetector e hierarquia de Resources.NotFoundException\n\n* fix(vm): cores de framework android.R.color resolvem com os valores AOSP\n\nPreviewView (CameraX) pede android.R.color.black (0x0106000c); o VM só resolvia\nrecursos do resources.arsc do APK e lançava NotFoundException (Comprix, aba\nScanner). Tabela pequena com os três valores documentados (black, white,\ndarker_gray). Outros ids de framework continuam NotFoundException.\n\nTestes: unitários em android_res::framework_color_tests.\n\n* fix(vm): PackageManager devolve metaData do manifest em ComponentInfo/ApplicationInfo\n\nAntes, metaData era sempre null. CameraX localiza o CameraXConfig.Provider\npadrão pelo meta-data do MetadataHolderService (getServiceInfo().metaData);\nsem ele, ProcessCameraProvider falha com 'No default CameraXConfig.Provider\nspecified in meta-data' (Comprix, aba Scanner).\n\nSemântica AOSP: null sem <meta-data>; Bundle com uma entrada por nome.\nandroid:value como string; android:resource como int. Entradas sem valor são\ndescartadas.\n\nTestes: unitários em android_pm::meta_data_tests.\n\n* feat(vm): java.util.concurrent.ThreadPoolExecutor como executor inline\n\nCameraX cria new ThreadPoolExecutor(...) diretamente; a classe não tinha\nmodelo (NOT_FOUND). A VM é single-threaded: a instância é o mesmo executor\ninline das fábricas de Executors. Os quatro construtores do JDK e os setters\nde configuração são aceitos sem aplicar parâmetros; os getters não são\nmodelados (NOT_FOUND tipado, sem valor inventado).\n\nTestes: crates/rd-vm/tests/android_thread_pool_executor.rs.\n\n* docs(changelog): cores de framework, metaData do PackageManager e ThreadPoolExecutor\n\n* docs(plan): MEDIA-03 — causa raiz validada e próximo bloqueio (HandlerThread)\n\nSubstitui a hipótese do Recomposer pela cadeia validada (ScaleGestureDetector,\nResources$NotFoundException, android.R.color, metaData, ThreadPoolExecutor),\ncom o estado do Scanner no build de 2026-11-06 e o próximo bloqueio.\n\n* docs(plan): Apêndice C — fonte do android.jar verificada (Maven do Google sem API 26+)\n\n* docs(plan): Apêndice B — segunda rodada de fonte (revokeWhenRequested, instant, softRestriction)\n\nFontes lidas: PermissionManagerServiceImpl.java inteiro e PackageManager.java\n(googlesource, branch main). Registra o comportamento de revogação, instant e\nconcessão de soft restricted, e os pré-requisitos do VM (ciclo de update, estado\nde app instantâneo, política de soft restriction). Duas decisões novas em §6.\n\n* feat(vm): android.os.HandlerThread com Looper próprio\n\nCameraX cria um HandlerThread para a câmera (NOT_FOUND no construtor). O\nmodelo ganha uma Looper por thread, com a mesma fila que a principal:\nstart() cria a Looper; new Handler(looper) enfileira nela; a drenagem\nroda as filas devidas em ordem de deadline virtual, como a principal.\n\nquit() descarta as mensagens; quitSafely() mantém as já devidas.\ngetLooper() devolve null após quit. O corpo da thread é a drenagem (sem\nLooper.loop() como thread verde): uma só consumidora determinística; o\ndesvio está documentado em handler_thread.rs.\n\nTestes: crates/rd-vm/tests/android_handler_thread.rs (5). Controle\nnegativo: sem a classe, os 5 falham com NOT_FOUND em <init>(String).\n\n* feat(vm): java.util.logging.Logger (subconjunto de String) e encaminhamento ao Log\n\nO AbstractFuture do Guava empacotado no APK chama Logger.getLogger(getName())\nno inicializador estático (base do ListenableFuture do CameraX). A chamada era\nNOT_IMPLEMENTED e virava ExceptionInInitializerError.\n\nModelo conforme AOSP (AndroidHandler): um logger por nome; tag = loggerNameToTag\n(até 23 caracteres); SEVERE/WARNING/INFO viram Log.println com ERROR/WARN/INFO;\nabaixo de INFO o root logger descarta. getName e os métodos severe, warning,\ninfo, config, fine, finer e finest (String). Level, setLevel, isLoggable,\nhandlers e log(Level,...) seguem NOT_FOUND tipado.\n\nTestes: crates/rd-vm/tests/java_util_logging.rs (3), unitários em\njava_util_logging.rs (4). Controle negativo: sem o encaixe, NOT_IMPLEMENTED\ncom a mensagem do app.\n\n* docs(plan): MEDIA-03 — estado após HandlerThread e java.util.logging; PreviewView na árvore, preview ainda preto\n\n* style: cargo fmt em java_util_logging.rs (CI: Rust stable, cargo fmt --check)\n\n* docs(jetpack): nota do cameraX na fonte data/jetpack.toml (CI: docs/jetpack.md gerado)\n\nO teste jetpack_report_and_appendix_table_match_the_versioned_registry\nfalhava porque docs/jetpack.md (gerado) tinha uma nota editada à mão que\nnão existia em data/jetpack.toml. A nota agora está na fonte; o gerado\nfoi regenerado com cargo xtask jetpack-report e é idêntico ao commitado.\n\n---------\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-06T11:21:18-03:00",
+          "tree_id": "5818488ed55275a60f31e3e1d029f1235625a138",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/02a2ad9b3a33d56d31ccc0c34093803bcb330408"
+        },
+        "date": 1793974897668,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1900,
+            "range": "± 107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1864,
+            "range": "± 56",
             "unit": "ns/iter"
           }
         ]
