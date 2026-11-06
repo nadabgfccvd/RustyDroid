@@ -24,8 +24,8 @@ Os números do texto da spec estão defasados. Valores medidos neste commit:
 | Registro | Total | Estado |
 |---|---|---|
 | `api-coverage.toml` (C) | 106 superfícies, 17 domínios | 4 supported · 102 partial · 0 stub · 0 not_implemented |
-| `jetpack.toml` (D) | 46 bibliotecas, 6 categorias | 19 partial · 7 stub · 20 not_implemented |
-| `gms.toml` (E) | 21 serviços, 3 categorias | 20 partial · 1 not_implemented (ML Kit, extra) |
+| `jetpack.toml` (D) | 46 bibliotecas, 6 categorias | 25 partial · 3 stub · 18 not_implemented (medido em 2026-11-06) |
+| `gms.toml` (E) | 21 serviços, 3 categorias | 20 partial · 1 not_implemented (ML Kit, fora de escopo por decisão do usuário) |
 | `permissions.toml` (B) | 195 permissões, 13 roles | 5 com `hardRestricted`; 5 com `role = "SMS"` (após este PR) |
 | Catálogo MCP | 52 tools | inclui `permissions_auto_revoke` e `permissions_role` (Apêndice B6) |
 
@@ -208,24 +208,35 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
   maior número de superfícies `partial` (ver tabela da spec, domínios App/lifecycle e View/UI).
 
 ### Apêndice D (AndroidX)
-- 20 bibliotecas `not_implemented`. Prioridade pelo critério da spec ("Room via ST-02,
-  work via SYS-04, navigation via UI-04, ..."): sem estratégia definida para as 20. Rodada 1:
-  escolher estratégia por biblioteca (`dex-passthrough` quando o DEX da lib já roda na VM;
-  `host-shim` quando precisa de interceptação) e registrar como `planned` no `notes`,
-  sem flipar para `supported`.
-- 7 `stub`: promover só com teste de comportamento real.
+- Estado medido em 2026-11-06 (`data/jetpack.toml`, 46 bibliotecas): 25 `partial`, 3 `stub`,
+  18 `not_implemented`. Os números anteriores (19/7/20) eram de antes das rodadas S9–S12 de
+  `docs/appendix-d-e.md`.
+- Escopo decidido pelo usuário: Room (via ST-02) e as bibliotecas de maior prioridade pelo
+  critério da spec. ML Kit fica fora.
+- Prioridade da spec ("Room via ST-02, work via SYS-04, navigation via UI-04"): as três já estão
+  `partial` com `host-shim`. Lacunas que restam:
+  - Room: DAOs gerados por annotation processing, migrations e `InvalidationTracker` não são
+    modelados (`docs/jetpack.md`, linha room).
+  - work e navigation: ver o campo `notes` de cada entrada em `data/jetpack.toml`.
+- Entre as 18 `not_implemented`, o ST-04 (AES-GCM no AndroidKeyStore, PR #564) não muda o
+  status de `security-crypto`: `EncryptedSharedPreferences` e `MasterKey` dependem de Tink, e
+  nenhum APK de teste validou o caminho DEX. Continua `not_implemented`.
+- Próximo passo: escolher, entre as 18, a primeira biblioteca com estratégia pronta e teste de
+  comportamento real. Não promover nenhuma sem teste.
+- 3 `stub` (ConstraintLayout, CoordinatorLayout, material): promover só com teste de comportamento real.
 
 ### Apêndice E (GMS/Firebase)
-- 20 serviços `partial`; ML Kit `not_implemented` (é extra, fora da tabela da spec).
-  Rodada 1: decidir se ML Kit entra na spec (usuário). Demais serviços: critério de
-  shim programável com teste de sucesso, erro e ciclo de vida.
+- 20 serviços `partial`. ML Kit `not_implemented` (extra, fora da tabela da spec) fica fora de
+  escopo por decisão do usuário (2026-11-05).
+- Demais serviços: critério de shim programável com teste de sucesso, erro e ciclo de vida.
 
 ## 6. Decisões que dependem do usuário
 
 1. **offline-device (F): resolvido pelo usuário em 2026-11-05** — mapeado para `PROVISIONING_ALLOW_OFFLINE` com a ressalva da §4. Se houver uma action de device feature oficial, substituir a linha da §4.
 2. **revokeWhenRequested, instant, softRestriction (B):** resolvido pelo usuário (autonomia para pesquisar e implementar com base em fonte oficial). Resultado da pesquisa na §3.
+2a. **softRestriction (B), forma fraca:** a fonte oficial diz que a forma fraca "depende da permissão", sem listar qual é. Antes de modelar, o usuário precisa dizer, para cada permissão soft restricted usada pelo registro, qual é a forma fraca (ou aceitar que fique como bloqueio). Mudança afeta todos os apps que pedem essas permissões.
 3. **Apêndice C literal:** resolvido em 2026-11-06 — o `android.jar` foi obtido pela rede do sandbox (ver §5, Apêndice C).
-4. **Escopo de D e E:** quais das 20 bibliotecas D `not_implemented` e do serviço ML Kit entram nesta spec.
+4. **Escopo de D e E: resolvido pelo usuário (2026-11-05)** — Room (via ST-02) e prioridade da spec; ML Kit fora (ver §5).
 
 ## 7. Validação deste plano
 
