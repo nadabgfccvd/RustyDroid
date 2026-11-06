@@ -5494,12 +5494,16 @@ fn instance_intrinsic_core(
         // `Thread.currentThread()` para a thread de worker, e
         // `PreviewView.getSurfaceProvider()` (checkMainThread) lançaria
         // IllegalStateException no listener do CameraX.
+        // Override DEX vence (dispatch virtual da JVM): um executor do APK que
+        // declara `execute` (ex.: CameraX `HandlerScheduledExecutorService`, que
+        // posta no Handler do main looper) não pode rodar inline aqui.
         (c, name, sig)
             if c != crate::framework::HANDLER_EXECUTOR
                 && (vm.cp.is_subtype(c, EXECUTOR_SVC)
                     || vm.cp.is_subtype(mref_class, EXECUTOR_SVC)
                     || mref_class == EXECUTOR)
-                && exec_supported(name, sig) =>
+                && exec_supported(name, sig)
+                && vm.cp.resolve_method(c, name, sig).is_none() =>
         {
             // Task de Executor roda inline, mas fora do main thread (Room/WorkManager
             // checam isso): conta a profundidade para `currentThread`/`myLooper`.
@@ -5508,7 +5512,10 @@ fn instance_intrinsic_core(
             vm.fw.inline_task_depth -= 1;
             r
         }
-        (c, name, sig) if (c == FUTURE || mref_class == FUTURE) && future_supported(name, sig) => {
+        // Só futures criados pelo host (classe exata `FUTURE`, com `future_result`).
+        // Um `Future` em bytecode (ex.: `AbstractFuture` do Guava, usado pelo CameraX)
+        // tem `get()` próprio; responder aqui com `future_result` devolvia null.
+        (c, name, sig) if c == FUTURE && future_supported(name, sig) => {
             future_intrinsic(vm, recv, name)
         }
 
@@ -6148,9 +6155,11 @@ fn ps_fd(vm: &Engine, recv: crate::heap::ObjRef) -> Result<i32, VmExit> {
 }
 
 /// toString default da JVM: `Classe@hash` (hex da identidade).
-fn default_to_string(class_desc: &str, r: crate::heap::ObjRef) -> String {
+pub(crate) fn default_to_string(class_desc: &str, r: crate::heap::ObjRef) -> String {
+    // Só o `L` inicial do descritor: `trim_start_matches` apagaria `LLogger;`.
     let name = class_desc
-        .trim_start_matches('L')
+        .strip_prefix('L')
+        .unwrap_or(class_desc)
         .trim_end_matches(';')
         .replace('/', ".");
     format!("{name}@{r:x}")

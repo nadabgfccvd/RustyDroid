@@ -1869,6 +1869,24 @@ fn resolve_or_run_host_invoke(
         )));
     }
 
+    // Mesma regra para `invoke-super Object.toString/hashCode`: Guava
+    // AbstractFuture.toString() chama `super.toString()` sobre `this`, que
+    // declara toString. Sem isto a busca reentra no próprio override e falha
+    // com NOT_FOUND `Ljava/lang/Object;->toString()`.
+    if is_super && mref.class == "Ljava/lang/Object;" {
+        match (mref.name.as_str(), mref.proto.as_str()) {
+            ("toString", "()Ljava/lang/String;") => {
+                let text = intrinsics::default_to_string(&recv_class, recv);
+                let s = intrinsics::alloc_string(vm, text)?;
+                return Ok(InvokeTarget::Value(Value::Obj(s)));
+            }
+            ("hashCode", "()I") => {
+                return Ok(InvokeTarget::Value(Value::Int(recv as i32)));
+            }
+            _ => {}
+        }
+    }
+
     // Override concreto declarado no DEX da APP: quando a método-referência e o
     // receptor são classes do DEX da app, o override concreto vence os shims
     // host, como manda a dispatch virtual do JVM (#315 item 3). Antes, toda
