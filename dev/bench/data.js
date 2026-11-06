@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793980914893,
+  "lastUpdate": 1793995984295,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4967,6 +4967,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3193,
             "range": "± 45",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ec9cb7c75237904764b97fd4a08328fefde5edb1",
+          "message": "fix(vm): threads e Future do pipeline de câmera do Scanner (MEDIA-03) (#578)\n\nCausas encontradas com o trace do Comprix após #577:\n\n- Future.get() em bytecode (Guava AbstractFuture) era respondido pelo\n  intrínseco de Future com future_result (null). Guarda por classe exata\n  FUTURE: futures do APK executam o próprio get().\n- TimeUnit sem hierarquia (Enum/Object): Object.toString() sobre o enum\n  não resolvia. Adicionada em builtin_hierarchy.\n- invoke-super Object.toString()/hashCode() a partir de um override DEX\n  (super.toString() do AbstractFuture) reentrava no próprio override e\n  falhava com NOT_FOUND. Agora usa a identidade padrão, como equals.\n- default_to_string tirava todos os 'L' iniciais do descritor\n  (LLogger; virava ogger). Agora remove só o prefixo.\n- Executor intrínseco rodava inline executores com execute() declarado\n  no DEX (HandlerScheduledExecutorService do CameraX, que posta no main\n  looper). Override DEX agora vence, como na JVM.\n- Mensagens do main looper drenadas dentro de uma task inline de worker\n  rodavam com Thread.currentThread() de worker. LiveData.observeForever\n  do CameraX falhava com \"background thread\". Main looper roda com a\n  profundidade inline zerada.\n\nTestes: unitário de TimeUnit (classpath.rs) e\ntests/invoke_super_object_tostring.rs. rd-vm: 1035 passam, clippy -D warnings ok.\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-06T17:12:36-03:00",
+          "tree_id": "62933f631cc1e14862b8d3ed6b02c774438e80f9",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/ec9cb7c75237904764b97fd4a08328fefde5edb1"
+        },
+        "date": 1793995983798,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3362,
+            "range": "± 70",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3356,
+            "range": "± 28",
             "unit": "ns/iter"
           }
         ]
