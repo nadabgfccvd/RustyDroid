@@ -195,11 +195,32 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
            6 ocorrências após o `removeFrame`, a primeira em ~139 mil chamadas). Não há cancelamento
            entre os frames 1 e 2. Próximo passo: descobrir qual job é cancelado (lançado em `Ls0/c.V`/`K1/l`)
            e por quem; é provável que o Recomposer seja cancelado antes do apply.
-       - Hipótese principal (revisada): a composição do scanner termina sem o caminho normal de
+       - Hipótese principal (SUPERADA pela causa raiz 6 abaixo): a composição do scanner termina sem o caminho normal de
          retorno de `LP/u0.p`, então o Recomposer não aplica as mudanças. Por isso a
          `PreviewView` não é inserida. Próximo passo: verificar por que `LP/u0.p` do frame 2
          não retorna para `c()`/`r()` (ex.: exceção suprimida, `abandon` ou cancelamento da
          corrotina), comparando com o frame 1. Só então partir para o shim CameraX.
+   6. **Causa raiz (2026-11-06, substitui a hipótese do Recomposer acima):** a composição do
+      scanner não abortava por causa do Recomposer. Cada bloqueio era uma classe ou
+      configuração ausente, que lançava exceção e cancelava a corrotina. Em ordem:
+      - `android.view.ScaleGestureDetector`: `NOT_FOUND` no `<init>` (`f918dc0`). Modelo com
+        ponteiro único; pinch e multi-toque ficam como limite documentado.
+      - `Resources$NotFoundException` sem hierarquia: virava `ClassCastException` fatal
+        (`6523e18`, `=> RUNTIME`).
+      - `android.R.color.black` (`0x0106000c`): `NotFoundException` do `PreviewView`
+        (`0efea59`, tabela `FRAMEWORK_COLORS`, valores de developer.android.com/reference/android/R.color).
+      - `metaData` de componente sempre `null`: CameraX sem `CameraXConfig.Provider`
+        (`e063841`). Confirmado por trace e por `rd dex disasm`: `ComprixApp` não implementa a interface.
+      - `ThreadPoolExecutor` sem modelo (`fe73736`, executor inline; setters aceitos, getters não modelados).
+   7. **Estado após a correção 6 (build `rd-cli` de 2026-11-06, `build_rd9.log`):** o erro de
+      configuração do CameraX sumiu. O Scanner renderiza (`OBS "Foto" @ 139,167`, `SHOT True`).
+      `last_error` atual: `NOT_FOUND` em `android.os.HandlerThread.<init>(String, int)V`.
+      `PreviewView` ainda não é validado (`find_views` não rodado após o último build).
+   8. **Próximo bloqueio (não feito):** `HandlerThread` precisa de um Looper e de uma fila por
+      thread. Hoje `handler_msg.rs` tem uma única fila (a do Looper principal), e
+      `threads.rs` só agenda threads verdes. Isso é mudança de modelo de Looper/Handler que
+      afeta todo app com Handler, então pede PR própria. Depois disso o CameraX ainda precisa
+      de `Camera2`/`ImageReader` para chegar à captura.
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
