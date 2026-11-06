@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793924779888,
+  "lastUpdate": 1793924838837,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4787,6 +4787,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3238,
             "range": "± 29",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1d6bdbf5d8dee920664672de9ba35d81faa14cee",
+          "message": "docs(plan): D/E — contagens medidas, escopo decidido e lacunas do Room (#573)\n\nAs contagens de D e E no plano estavam defasadas (eram de antes de S9–S12).\nMedido em data/jetpack.toml e data/gms.toml: D = 25 partial, 3 stub, 18\nnot_implemented; E = 20 partial, 1 not_implemented (ML Kit).\n\nEscopo decidido pelo usuário: Room via ST-02 e prioridade da spec; ML Kit fora.\nRoom, work e navigation já estão partial (host-shim). A lacuna do Room\n(DAO por annotation processing, migrations, InvalidationTracker) fica registrada.\n\nNenhum status em data/*.toml muda.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T21:26:09-03:00",
+          "tree_id": "a478d5d73355b9145535388117a8c6db3177a44c",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/1d6bdbf5d8dee920664672de9ba35d81faa14cee"
+        },
+        "date": 1793924837990,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1869,
+            "range": "± 125",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1889,
+            "range": "± 252",
             "unit": "ns/iter"
           }
         ]
