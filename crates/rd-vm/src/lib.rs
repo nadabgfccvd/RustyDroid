@@ -52,6 +52,7 @@ pub mod inflate;
 pub mod interp;
 pub mod intrinsics;
 pub(crate) mod jannotations;
+pub(crate) mod java_util_logging;
 pub(crate) mod jbigdecimal;
 pub(crate) mod jbitset;
 pub(crate) mod jbreakiter;

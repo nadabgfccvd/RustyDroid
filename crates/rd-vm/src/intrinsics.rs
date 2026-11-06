@@ -322,6 +322,11 @@ fn call_static_intrinsic_rooted(
             return Ok(Some(value));
         }
     }
+    if class == crate::java_util_logging::LOGGER {
+        if let Some(value) = crate::java_util_logging::static_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
     if class == ENUM_SET {
         if let Some(value) = enum_set_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -4392,6 +4397,13 @@ fn instance_intrinsic_dispatch_full(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if mref_class == crate::java_util_logging::LOGGER {
+        if let Some(value) =
+            crate::java_util_logging::instance_intrinsic(vm, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+    }
     if mref_class == crate::webkit_cookies::COOKIE_MANAGER {
         if let Some(value) = crate::webkit_cookies::instance_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
