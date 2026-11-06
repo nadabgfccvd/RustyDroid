@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793924838837,
+  "lastUpdate": 1793925401390,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4823,6 +4823,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1889,
             "range": "± 252",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27f6daa60b03e5b56ad2786152d9f3d748985c95",
+          "message": "docs(plan): MEDIA-03 — reprodução com a rota correta e nota sobre a aba Scanner (#574)\n\nA aba Scanner da barra inferior redireciona para Listas no build atual e não é a\nrota do diagnóstico. A rota medida (Pular → Nova lista → Compra do Mês → Criar e\nadicionar itens → Escanear um produto) reproduz o sintoma: LG2/C.d executa uma vez,\no observe não muda e não há PreviewView na árvore. Sem alteração de código.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T21:35:43-03:00",
+          "tree_id": "fd3d41c50dd19e77709bf3a4617a38cc25d443d1",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/27f6daa60b03e5b56ad2786152d9f3d748985c95"
+        },
+        "date": 1793925400324,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2761,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2757,
+            "range": "± 8",
             "unit": "ns/iter"
           }
         ]
