@@ -44,12 +44,7 @@ fn get_name_returns_the_name_it_was_created_with() {
     let mut e = engine();
     let l = logger(&mut e, "a1.h");
     let Value::Obj(r) = e
-        .invoke_instance(
-            obj_of(&l),
-            "getName",
-            "()Ljava/lang/String;",
-            &[],
-        )
+        .invoke_instance(obj_of(&l), "getName", "()Ljava/lang/String;", &[])
         .expect("getName")
     else {
         panic!("getName returned no string");
