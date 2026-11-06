@@ -151,6 +151,19 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
     `Permitir câmera`; tocar nesse botão não abre diálogo na VM. A permissão é concedida com
     `permissions_grant` (`android.permission.CAMERA`). Esperas de ~1–2,5 s após cada toque são
     necessárias: sem elas, `tap_text` falha com `VIEW_NOT_FOUND`.
+  - **Reprodução em 2026-11-06 (build de `origin/main` 47e0e26, trace `RD_TRACE_METHOD=L`):**
+    - A aba **Scanner** da barra inferior não é a rota diagnóstica: o toque (por rótulo ou por
+      coordenada 360,1367) é aceito, mas a tela volta para "Minhas listas" (após Ajustes, o toque
+      em Scanner também cai em Listas). Não investigar essa aba como se fosse o scanner de MEDIA-03.
+    - Rota reproduzida: `Pular` → `Nova lista` → `Compra do Mês` → `Criar e adicionar itens` →
+      `Escanear um produto`. O trace mostra `LG2/C.d` executado uma vez (como no diagnóstico
+      acima); o `observe` fica em `frame v5` sem mudança e `find_views` por `PreviewView` retorna 0.
+      O toque em "Escanear um produto" é aceito (`listener_acionado`), mas a tela não avança.
+    - Harness recriado (não está mais em `/tmp`): `/home/user/appc/camx/lib.py` (classe `S`) e
+      `route.py` e `route_obs.py` (scripts da rota acima) em `/home/user/appc/camx/`.
+      Fora do repositório; reexecutar a partir deles se a pasta existir.
+    - Próximo passo (não feito): identificar o job cancelado (`Ls0/c.V`/`K1/l`) e a origem do
+      `Throwable` do frame 2, comparando o trace desta rota com `LP/u0.p`.
   - **Bloqueio observado:** `ui_tree` não expõe texto do Compose; a navegação depende de
     `screenshot` e `tap_text` por rótulo visível.
   - **Diagnóstico (2026-11-05, com permissão concedida antes do launch):**
