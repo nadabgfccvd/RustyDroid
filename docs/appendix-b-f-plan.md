@@ -248,7 +248,8 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
       - `android.R.color.black` (`0x0106000c`): `NotFoundException` do `PreviewView`
         (`0efea59`, tabela `FRAMEWORK_COLORS`, valores de developer.android.com/reference/android/R.color).
       - `metaData` de componente sempre `null`: CameraX sem `CameraXConfig.Provider`
-        (`e063841`). Confirmado por trace e por `rd dex disasm`: `ComprixApp` não implementa a interface.
+        (`e063841`, aprovado pelo usuário em 2026-11-06 e mesclado na PR #575). Confirmado por trace e por
+        `rd dex disasm`: `ComprixApp` não implementa a interface.
       - `ThreadPoolExecutor` sem modelo (`fe73736`, executor inline; setters aceitos, getters não modelados).
       - `HandlerThread` sem modelo: `NOT_FOUND` no construtor (`8a0b296`). Uma Looper por thread, com a
         mesma fila da principal (`handler_thread.rs`). Corpo da thread = drenagem (desvio documentado).
@@ -264,8 +265,14 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
       `NullPointerException` (logs de 2026-11-06). Não há câmera ligada ao CameraX: falta o caminho
       de `Camera2` (`CameraManager`, `CameraDevice`, `ImageReader`) e um dispositivo de câmera no VM.
       Esse é um modelo de hardware, e a escolha de um feed virtual (ou de câmera vazia) é decisão do
-      usuário, por isso não foi implementado agora. Próximo passo: identificar a origem do NPE do
-      "Retry init" com o trace de `CameraX`/`Camera2` antes de escolher o modelo.
+      usuário. **Decisão (2026-11-06): opção (a), Camera2 com câmera virtual**, que muda o comportamento
+      de todos os apps com câmera. Ainda não implementado. Próximo passo: identificar a origem do NPE do
+      "Retry init" com o trace de `CameraX`/`Camera2`, e só então implementar.
+   9. **Limite de ambiente (2026-11-06):** a sandbox tem ~2 GB de RAM e sem swap. O `rustc` do `rd-vm`
+      estoura a memória (OOM) mesmo com `CARGO_BUILD_JOBS=1`, por causa do `src/android_stub_surfaces.rs`
+      (2,1 MB, código escrito à mão). Por isso não foi possível compilar `rd-cli` nem rodar o Scanner
+      local. Validação passa a ser pelo CI, e a compilação local, só com `cargo check` ou
+      `xtask`. O restante do MEDIA-03 (câmera) depende desse ambiente ou de um binário de CI.
 
 - **Decisões do usuário (2026-11-05):** ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
@@ -327,6 +334,8 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
 2c. **instant (B): estado de app instantâneo.** Hoje `isInstantApp` é sempre `false`. Modelar o estado
    muda essa resposta para qualquer app hospedado. Pergunta: aprovar o modelo de app instantâneo, ou
    manter `instant` como bloqueio?
+2d. **MEDIA-03 (câmera): decisão de escopo tomada em 2026-11-06** — Camera2 com câmera virtual (opção a),
+   que altera todos os apps com câmera. Implementação pendente (ver §5, item 8).
 3. **Apêndice C literal:** resolvido em 2026-11-06 — o `android.jar` foi obtido pela rede do sandbox (ver §5, Apêndice C).
 4. **Escopo de D e E: resolvido pelo usuário (2026-11-05)** — Room (via ST-02) e prioridade da spec; ML Kit fora (ver §5).
 
