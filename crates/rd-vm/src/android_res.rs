@@ -426,7 +426,32 @@ fn not_found(id: i32) -> VmExit {
     )
 }
 
+/// Framework colors (`android.R.color.*`, package `0x01`). The APK's
+/// `resources.arsc` never contains them, and an unknown id is a
+/// `NotFoundException`. Values are the AOSP constants (developer.android.com,
+/// `R.color`): `black` = `0xff000000`, `white` = `0xffffffff`, `darker_gray` =
+/// `0xffaaaaaa`. Only these three are served, because only these were
+/// verified against the docs; other framework ids stay `NotFoundException`.
+///
+/// `0x0106000c` is requested by `PreviewView` on the CameraX path (Comprix,
+/// Scanner tab, 2026-11-06).
+const FRAMEWORK_COLORS: &[(u32, u32)] = &[
+    (0x0106_0000, 0xffaa_aaaa), // android.R.color.darker_gray
+    (0x0106_000b, 0xffff_ffff), // android.R.color.white
+    (0x0106_000c, 0xff00_0000), // android.R.color.black
+];
+
+fn framework_color(id: u32) -> Option<ResolvedValue> {
+    FRAMEWORK_COLORS
+        .iter()
+        .find(|(rid, _)| *rid == id)
+        .map(|(_, argb)| ResolvedValue::Integer(*argb as i32))
+}
+
 fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
+    if let Some(v) = framework_color(id as u32) {
+        return Ok(v);
+    }
     let mut cur = id as u32;
     for _ in 0..8 {
         match vm.resolve_resource_value(cur) {
@@ -1378,5 +1403,37 @@ mod tests {
         assert_eq!(parse_tag("en"), ("en".into(), String::new()));
         assert_eq!(parse_tag("zh-Hant-TW"), ("zh".into(), "TW".into()));
         assert_eq!(parse_tag("es-419"), ("es".into(), "419".into()));
+    }
+}
+
+#[cfg(test)]
+mod framework_color_tests {
+    use super::*;
+
+    /// The AOSP constants from developer.android.com `R.color`.
+    #[test]
+    fn framework_colors_match_the_documented_argb_values() {
+        assert_eq!(
+            framework_color(0x0106_000c),
+            Some(ResolvedValue::Integer(0xff00_0000u32 as i32)),
+            "android.R.color.black"
+        );
+        assert_eq!(
+            framework_color(0x0106_000b),
+            Some(ResolvedValue::Integer(0xffff_ffffu32 as i32)),
+            "android.R.color.white"
+        );
+        assert_eq!(
+            framework_color(0x0106_0000),
+            Some(ResolvedValue::Integer(0xffaa_aaaau32 as i32)),
+            "android.R.color.darker_gray"
+        );
+    }
+
+    /// Framework ids outside the verified table are not invented.
+    #[test]
+    fn unverified_framework_ids_are_not_served() {
+        assert_eq!(framework_color(0x0106_0001), None);
+        assert_eq!(framework_color(0x7f01_0000), None);
     }
 }
