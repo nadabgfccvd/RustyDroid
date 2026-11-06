@@ -46,6 +46,7 @@ pub mod gc;
 pub mod gms;
 pub mod graphics;
 pub(crate) mod handler_msg;
+pub(crate) mod handler_thread;
 pub mod heap;
 pub mod inflate;
 pub mod interp;

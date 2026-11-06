@@ -2013,6 +2013,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Ljava/lang/Object;",
         ]),
         "Ljava/lang/Thread;" => Some(OBJECT),
+        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
         "Ljava/lang/ThreadLocal;" => Some(OBJECT),
         "Ljava/lang/InheritableThreadLocal;" => {
             Some(&["Ljava/lang/ThreadLocal;", "Ljava/lang/Object;"])
