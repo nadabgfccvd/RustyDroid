@@ -72,6 +72,52 @@ impl Canvas {
             .fill_rect(rect, &paint, Transform::identity(), None);
     }
 
+    /// Luminância `src_w x src_h` (linha a linha) desenhada no retângulo
+    /// `(x, y, w, h)` por vizinho mais próximo, recortada ao canvas. Opaca:
+    /// o pixel recebe o cinza nos três canais.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_gray_scaled(
+        &mut self,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        src_w: usize,
+        src_h: usize,
+        gray: &[u8],
+    ) {
+        if w <= 0 || h <= 0 || src_w == 0 || src_h == 0 {
+            return;
+        }
+        if src_w.checked_mul(src_h).is_none_or(|n| gray.len() < n) {
+            return;
+        }
+        let (cw, ch) = (self.pix.width() as i32, self.pix.height() as i32);
+        let x0 = x.max(0);
+        let y0 = y.max(0);
+        let x1 = x.saturating_add(w).min(cw);
+        let y1 = y.saturating_add(h).min(ch);
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        let stride = self.pix.width() as usize;
+        let data = self.pix.data_mut();
+        let (sw, sh) = (src_w as i64, src_h as i64);
+        for py in y0..y1 {
+            let sy = ((i64::from(py) - i64::from(y)) * sh / i64::from(h)).clamp(0, sh - 1) as usize;
+            for px in x0..x1 {
+                let sx =
+                    ((i64::from(px) - i64::from(x)) * sw / i64::from(w)).clamp(0, sw - 1) as usize;
+                let v = gray[sy * src_w + sx];
+                let idx = (py as usize * stride + px as usize) * 4;
+                data[idx] = v;
+                data[idx + 1] = v;
+                data[idx + 2] = v;
+                data[idx + 3] = 255;
+            }
+        }
+    }
+
     /// Contorno de 1 px (mesma geometria do `Framebuffer::rect_border`).
     pub fn rect_border(&mut self, x: i32, y: i32, w: i32, h: i32, c: Rgb) {
         if w <= 0 || h <= 0 {

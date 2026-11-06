@@ -999,6 +999,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/view/View;",
         "Ljava/lang/Object;",
     ];
+    const SURFACEVIEW: &[&str] = &[
+        "Landroid/view/SurfaceView;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
     const IMAGEVIEW: &[&str] = &[
         "Landroid/widget/ImageView;",
         "Landroid/view/View;",
@@ -1867,6 +1872,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/view/ViewGroup;" => Some(VIEWGROUP),
         "Landroid/widget/TextView;" => Some(TEXTVIEW),
         "Landroid/widget/ImageView;" => Some(IMAGEVIEW),
+        "Landroid/view/SurfaceView;" => Some(SURFACEVIEW),
         "Landroid/widget/ImageButton;" => Some(IMAGEBUTTON),
         "Landroid/widget/ProgressBar;" => Some(PROGRESSBAR),
         "Landroid/widget/CompoundButton;" => Some(COMPOUND_BUTTON),

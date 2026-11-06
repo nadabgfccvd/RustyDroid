@@ -10,6 +10,7 @@ fn selector_node(text: &str) -> UiNode {
         clickable: false,
         focusable: false,
         truncated: false,
+        preview: None,
         children: Vec::new(),
     }
 }

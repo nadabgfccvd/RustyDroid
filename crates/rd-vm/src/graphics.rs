@@ -36,6 +36,7 @@
 
 use crate::engine::Engine;
 use crate::err::{Throwable, VmExit};
+use crate::framework::{HostObj, Vis};
 use crate::heap::{ElemKind, ObjRef};
 use crate::value::Value;
 use std::collections::HashMap;
@@ -4336,15 +4337,89 @@ impl Engine {
     }
 
     /// Paints the last recorded window display list onto `px` (RGB, w×h).
+    ///
+    /// SurfaceViews de preview (`m10::preview`) entram na ordem de desenho:
+    /// o quadro é pintado logo após o último fundo opaco do nível superior que
+    /// cobre a view (o `PreviewView` pinta preto por baixo do `SurfaceView`) e
+    /// antes dos overlays que vêm depois na lista (texto, moldura). Sem fundo
+    /// opaco que cubra a view, o quadro vai por cima de toda a lista.
     pub fn rasterize_frame(&self, px: &mut [u8], w: usize, h: usize) {
+        let ops = self.gfx.frame.clone();
+        let full = [0.0, 0.0, w as f32, h as f32];
+        // (índice do fundo que cobre — `None` = por cima de tudo —, retângulo, quadro)
+        let mut draws: Vec<(
+            Option<usize>,
+            (i32, i32, i32, i32),
+            &crate::m10::preview::PreviewPixels,
+        )> = Vec::new();
+        for (&view, st) in &self.fw.vdev.preview.views {
+            let Some(pix) = st.frame.as_ref() else {
+                continue;
+            };
+            let Some(HostObj::View {
+                x,
+                y,
+                w: vw,
+                h: vh,
+                vis,
+                ..
+            }) = self.fw.get(view)
+            else {
+                continue;
+            };
+            if *vis != Vis::Visible || *vw <= 0 || *vh <= 0 {
+                continue;
+            }
+            let rect = (*x, *y, *vw, *vh);
+            let (rx0, ry0) = (rect.0 as f32, rect.1 as f32);
+            let (rx1, ry1) = (rx0 + rect.2 as f32, ry0 + rect.3 as f32);
+            let cover = ops.iter().enumerate().rev().find_map(|(i, op)| {
+                let OpK::Rect(l, t, r_, b) = op.k else {
+                    return None;
+                };
+                if op.p.argb >> 24 != 0xff || op.p.style != 0 || op.p.clear || op.p.tint.is_some() {
+                    return None;
+                }
+                let m = mul(&ID, &op.m);
+                let pts = xform(&m, &vec![(l, t), (r_, t), (r_, b), (l, b)]);
+                let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+                for (px_, py_) in pts {
+                    x0 = x0.min(px_);
+                    y0 = y0.min(py_);
+                    x1 = x1.max(px_);
+                    y1 = y1.max(py_);
+                }
+                (x0 <= rx0 && y0 <= ry0 && x1 >= rx1 && y1 >= ry1).then_some(i)
+            });
+            draws.push((cover, rect, pix));
+        }
+        draws.sort_by_key(|d| d.0.unwrap_or(usize::MAX));
         let mut r = Raster {
             px,
             w,
             h,
             tint: None,
         };
-        let ops = self.gfx.frame.clone();
-        self.raster_ops(&mut r, &ops, &ID, [0.0, 0.0, w as f32, h as f32], 1.0, 0);
+        let mut start = 0usize;
+        let mut top: Vec<((i32, i32, i32, i32), &crate::m10::preview::PreviewPixels)> = Vec::new();
+        for (cover, rect, pix) in draws {
+            match cover {
+                Some(cut) => {
+                    if cut >= start {
+                        self.raster_ops(&mut r, &ops[start..=cut], &ID, full, 1.0, 0);
+                        start = cut + 1;
+                    }
+                    blit_preview(r.px, w, h, rect, pix);
+                }
+                None => top.push((rect, pix)),
+            }
+        }
+        if start < ops.len() {
+            self.raster_ops(&mut r, &ops[start..], &ID, full, 1.0, 0);
+        }
+        for (rect, pix) in top {
+            blit_preview(r.px, w, h, rect, pix);
+        }
     }
 
     /// Draw-op count of the window display list (diagnostics / runtime_health).
@@ -4667,5 +4742,37 @@ mod tests {
             (30..50).any(|x| (25..40).any(|y| at(x, y) < 128)),
             "text drew ink"
         );
+    }
+}
+
+/// Quadro de preview (luminância) no retângulo `rect` de um buffer RGB `w x h`,
+/// por vizinho mais próximo e recortado ao buffer.
+fn blit_preview(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    rect: (i32, i32, i32, i32),
+    pix: &crate::m10::preview::PreviewPixels,
+) {
+    let (x, y, rw, rh) = rect;
+    if rw <= 0 || rh <= 0 || pix.w == 0 || pix.h == 0 || pix.gray.len() < pix.w * pix.h {
+        return;
+    }
+    let x0 = i64::from(x).max(0);
+    let y0 = i64::from(y).max(0);
+    let x1 = (i64::from(x) + i64::from(rw)).min(w as i64);
+    let y1 = (i64::from(y) + i64::from(rh)).min(h as i64);
+    for py in y0..y1 {
+        let sy = ((py - i64::from(y)) * pix.h as i64 / i64::from(rh)).clamp(0, pix.h as i64 - 1)
+            as usize;
+        for pxl in x0..x1 {
+            let sx = ((pxl - i64::from(x)) * pix.w as i64 / i64::from(rw))
+                .clamp(0, pix.w as i64 - 1) as usize;
+            let v = pix.gray[sy * pix.w + sx];
+            let i = (py as usize * w + pxl as usize) * 3;
+            px[i] = v;
+            px[i + 1] = v;
+            px[i + 2] = v;
+        }
     }
 }

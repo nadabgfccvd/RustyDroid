@@ -194,6 +194,21 @@ pub(crate) fn new_byte_buffer_from_bytes(vm: &mut Engine, data: &[u8]) -> Result
     )
 }
 
+/// Luminância de teste do preview: gradiente horizontal deslocado a cada `seq`
+/// (o stream aparece vivo sem depender de frame injetado).
+fn preview_pattern(width: i32, height: i32, seq: i32) -> Vec<u8> {
+    let w = width.clamp(1, 4096) as usize;
+    let h = height.clamp(1, 4096) as usize;
+    let shift = seq.rem_euclid(256) as usize;
+    let mut out = Vec::with_capacity(w * h);
+    for _y in 0..h {
+        for x in 0..w {
+            out.push(((x * 255 / w) + shift) as u8);
+        }
+    }
+    out
+}
+
 fn synthetic_frame_bytes(
     camera_id: &str,
     width: i32,
@@ -239,7 +254,10 @@ pub(crate) fn enqueue_frame_to_surface(
     bytes: &[u8],
 ) -> Result<bool, VmExit> {
     let Some(reader_ref) = vm.fw.vdev.surface_to_reader.get(&surface).copied() else {
-        return Ok(false);
+        // Surface de `SurfaceView` (preview do CameraX), não de ImageReader.
+        return Ok(super::preview::enqueue_preview_frame(
+            vm, surface, width, height, format, bytes,
+        ));
     };
     let Some(reader_meta) = vm.fw.vdev.image_readers.get(&reader_ref).cloned() else {
         return Ok(false);
@@ -819,12 +837,22 @@ pub(super) fn instance_call(
                             cb = Some(c);
                         }
                     } else {
+                        // `createCaptureSession(List<Surface>)` ou
+                        // `createCaptureSessionByOutputConfigurations(List<OutputConfiguration>)`:
+                        // em ambos, cada item resolve para uma `Surface`.
                         if let Some(crate::framework::HostObj::List { elems }) =
                             vm.fw.objects.get(&first).cloned()
                         {
                             for e in elems {
-                                if let Value::Obj(surf) = e {
-                                    surfaces.push(surf);
+                                let Value::Obj(item) = e else { continue };
+                                if vm.heap.class_of(item).ok() == Some(OUTPUT_CONFIG) {
+                                    if let Some(Value::Obj(surf)) =
+                                        get_field(vm, item, "rd_surface")
+                                    {
+                                        surfaces.push(surf);
+                                    }
+                                } else {
+                                    surfaces.push(item);
                                 }
                             }
                         }
@@ -884,13 +912,28 @@ pub(super) fn instance_call(
         },
         OUTPUT_CONFIG => match name {
             "<init>" => {
-                let s = args.first().cloned().unwrap_or(Value::Null);
+                // `OutputConfiguration(Surface)` ou `(int surfaceGroupId, Surface)`:
+                // a superfície é o argumento objeto.
+                let s = args
+                    .iter()
+                    .find(|v| matches!(v, Value::Obj(_)))
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 put_field(vm, recv, "rd_surface", s)?;
                 Ok(Some(Value::Null))
             }
             "getSurface" => Ok(Some(
                 get_field(vm, recv, "rd_surface").unwrap_or(Value::Null),
             )),
+            // Câmera virtual: sem câmera física, sem compartilhamento de superfície,
+            // com o padrão do framework (faixa SDR, sem espelho, timestamp do sensor).
+            // `addSurface` (compartilhamento) segue NOT_FOUND.
+            "setPhysicalCameraId"
+            | "setDynamicRangeProfile"
+            | "setStreamUseCase"
+            | "setMirrorMode"
+            | "setTimestampBase"
+            | "enableSurfaceSharing" => Ok(Some(Value::Null)),
             _ => Ok(None),
         },
         SESSION_CONFIG => match name {
@@ -902,6 +945,15 @@ pub(super) fn instance_call(
                 put_field(vm, recv, "rd_callback", cb)?;
                 Ok(Some(Value::Null))
             }
+            // Parâmetros de sessão: guardados; o VM não aplica parâmetros extras.
+            "setSessionParameters" => {
+                let req = args.first().cloned().unwrap_or(Value::Null);
+                put_field(vm, recv, "rd_session_params", req)?;
+                Ok(Some(Value::Null))
+            }
+            "getOutputConfigurations" => Ok(Some(
+                get_field(vm, recv, "rd_outputs").unwrap_or(Value::Null),
+            )),
             _ => Ok(None),
         },
         CAPTURE_REQUEST_BUILDER => match name {
@@ -1035,8 +1087,13 @@ pub(super) fn instance_call(
                         .get(&surf)
                         .and_then(|r| vm.fw.vdev.image_readers.get(r))
                         .map(|ir| (ir.width, ir.height, ir.format));
+                    let is_preview = !vm.fw.vdev.surface_to_reader.contains_key(&surf)
+                        && vm.fw.vdev.preview.surface_to_view.contains_key(&surf);
                     let (w, h, fmt, data) = if let Some(spec) = &injected {
                         (spec.width, spec.height, spec.format, spec.bytes.clone())
+                    } else if is_preview {
+                        let (pw, ph) = cam_dims;
+                        (pw, ph, 35, preview_pattern(pw, ph, seq))
                     } else {
                         let (rw, rh, rfmt) = reader_fmt.unwrap_or((cam_dims.0, cam_dims.1, 256));
                         (

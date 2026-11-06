@@ -246,6 +246,7 @@ mod tests {
             clickable: false,
             focusable: false,
             truncated: false,
+            preview: None,
             children: Vec::new(),
         }
     }

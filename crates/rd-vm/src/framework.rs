@@ -5589,6 +5589,9 @@ pub struct UiNode {
     /// issue #62: subárvore cortada pelo cap de profundidade — o dump emite
     /// marcador para o agente NÃO ler a árvore como completa.
     pub truncated: bool,
+    /// Último frame de uma `SurfaceView` de preview (câmera virtual), em tons
+    /// de cinza. `None` para as demais views.
+    pub preview: Option<crate::m10::preview::PreviewPixels>,
     pub children: Vec<UiNode>,
 }
 
@@ -5772,6 +5775,7 @@ impl Engine {
             .map(|c| self.build_ui_node(*c, depth + 1))
             .collect();
         let focusable = cfg!(feature = "advanced-components") && class.ends_with("EditText");
+        let preview = self.fw.vdev.preview.frame_of(v).cloned();
         UiNode {
             class,
             resource_id,
@@ -5782,6 +5786,7 @@ impl Engine {
             clickable,
             focusable,
             truncated,
+            preview,
             children,
         }
     }
