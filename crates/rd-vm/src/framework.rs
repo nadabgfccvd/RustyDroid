@@ -2659,6 +2659,19 @@ impl Engine {
         }
     }
 
+    /// Executa uma mensagem já removida da fila (Message ou Runnable).
+    fn run_looper_message(&mut self, msg: QueuedMsg) -> Result<(), VmExit> {
+        if msg.is_message {
+            return crate::handler_msg::dispatch_message(self, msg.handler, msg.runnable);
+        }
+        let rclass = self.heap.class_of(msg.runnable)?.to_string();
+        let Some((d, def, m)) = self.cp.resolve_method(&rclass, "run", "()V") else {
+            return Err(crate::classpath::unresolved_method(&rclass, "run", "()V").into());
+        };
+        self.call(d, def, &m, vec![Value::Obj(msg.runnable)])?;
+        Ok(())
+    }
+
     /// Executa mensagens com `when_ms <= clock` — SEMPRE a de deadline mais
     /// cedo primeiro (issue #50; tie-break estável: empate → inserção mais
     /// antiga). Antes: primeira vencida por inserção — postDelayed(A,1000)
@@ -2711,16 +2724,17 @@ impl Engine {
                     now
                 );
             }
-            if msg.is_message {
-                crate::handler_msg::dispatch_message(self, msg.handler, msg.runnable)?;
-                ran += 1;
-                continue;
+            // Mensagem do main looper roda na main thread, mesmo quando o drain
+            // é disparado de dentro de uma task inline de Executor (worker):
+            // CameraX posta `LiveData.observeForever` no main looper, e o
+            // `assertMainThread` do LiveData exige `Thread.currentThread()` main.
+            let saved_depth = self.fw.inline_task_depth;
+            if owner == looper {
+                self.fw.inline_task_depth = 0;
             }
-            let rclass = self.heap.class_of(msg.runnable)?.to_string();
-            let Some((d, def, m)) = self.cp.resolve_method(&rclass, "run", "()V") else {
-                return Err(crate::classpath::unresolved_method(&rclass, "run", "()V").into());
-            };
-            self.call(d, def, &m, vec![Value::Obj(msg.runnable)])?;
+            let outcome = self.run_looper_message(msg);
+            self.fw.inline_task_depth = saved_depth;
+            outcome?;
             ran += 1;
         }
         // Loopers encerradas com quitSafely saem da lista quando esvaziam.

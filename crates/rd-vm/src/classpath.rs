@@ -2031,6 +2031,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Ljava/util/concurrent/atomic/AtomicBoolean;" => Some(OBJECT),
         "Ljava/util/concurrent/atomic/AtomicReferenceFieldUpdater;" => Some(OBJECT),
         "Ljava/lang/Enum;" => Some(OBJECT),
+        // Enum do JDK usado em timeouts (Future.get(long, TimeUnit)): sem isto,
+        // `Object.toString()` sobre TimeUnit não resolve (is_subtype → Enum falso).
+        "Ljava/util/concurrent/TimeUnit;" => Some(&["Ljava/lang/Enum;", "Ljava/lang/Object;"]),
         "Landroid/util/JsonReader;" | "Landroid/util/JsonWriter;" => Some(OBJECT),
         "Landroid/util/JsonToken;" => Some(&["Ljava/lang/Enum;", "Ljava/lang/Object;"]),
         "Landroid/util/SimpleArrayMap;" => Some(OBJECT),
@@ -3638,6 +3641,16 @@ fn is_shadowed_platform_stub(descriptor: &str, access_flags: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn time_unit_is_an_enum_for_object_to_string() {
+        // Regressão Scanner (MEDIA-03): AbstractFuture.get(long, TimeUnit) chama
+        // Object.toString() sobre o TimeUnit; sem a hierarquia do enum o método
+        // não resolvia (NOT_FOUND Ljava/lang/Object;->toString()).
+        let cp = Classpath::default();
+        assert!(cp.is_subtype("Ljava/util/concurrent/TimeUnit;", "Ljava/lang/Enum;"));
+        assert!(cp.is_subtype("Ljava/util/concurrent/TimeUnit;", "Ljava/lang/Object;"));
+    }
+
     #[test]
     fn shared_prefs_impl_is_a_shared_prefs() {
         // Regressão F-Droid (`rd app shot`): checkcast SharedPreferences sobre
