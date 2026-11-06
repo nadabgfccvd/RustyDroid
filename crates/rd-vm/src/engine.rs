@@ -1293,6 +1293,9 @@ impl Engine {
         if let Some(v) = crate::android_res::host_static(self, owner, field)? {
             return Ok(Some(v));
         }
+        if let Some(v) = crate::java_util_logging::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
         if let Some(v) = crate::jnormalizer::host_static(self, owner, field)? {
             return Ok(Some(v));
         }

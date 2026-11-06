@@ -44,6 +44,7 @@ const FORK_JOIN_POOL: &str = "Ljava/util/concurrent/ForkJoinPool;";
 /// single-threaded, so pool size, keep-alive, queue, factory and rejection
 /// handler are accepted and not applied (documented in `compat_gaps`).
 const THREAD_POOL_EXECUTOR: &str = "Ljava/util/concurrent/ThreadPoolExecutor;";
+const ABSTRACT_EXECUTOR_SERVICE: &str = "Ljava/util/concurrent/AbstractExecutorService;";
 const FUTURE: &str = "Ljava/util/concurrent/Future;";
 /// M8: 24º gap do launch real (`ServiceLoader.load`). Sem leitura de
 /// `META-INF/services` no APK, o loader é deliberadamente vazio; isso mantém
@@ -1212,6 +1213,9 @@ fn enum_set_intrinsic(
     sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if name == "copyOf" && sig == "(Ljava/util/Collection;)Ljava/util/EnumSet;" {
+        return enum_set_copy_of(vm, args);
+    }
     let arity = match (name, sig) {
         ("of", "(Ljava/lang/Enum;)Ljava/util/EnumSet;") => 1,
         ("of", "(Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;") => 2,
@@ -1256,6 +1260,54 @@ fn enum_set_intrinsic(
     vm.fw
         .objects
         .insert(set, crate::framework::HostObj::List { elems });
+    Ok(Some(Value::Obj(set)))
+}
+
+/// `EnumSet.copyOf(Collection)` (usado por `ExceptionInInitializerError` no `<clinit>` do
+/// CameraX): cópia dos elementos sem duplicatas. Como no JDK, uma coleção que não é `EnumSet`
+/// e está vazia lança `IllegalArgumentException`, e `null` lança `NullPointerException`. Só
+/// coleções host (`HostObj::List`) são modeladas; outras caem no `NOT_FOUND` tipado.
+fn enum_set_copy_of(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let src = match args.first() {
+        Some(Value::Obj(r)) => *r,
+        Some(Value::Null) | Some(Value::Int(0)) | None => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet.copyOf collection null",
+            )));
+        }
+        _ => return Ok(None),
+    };
+    let (elems, src_is_enum_set) = match vm.fw.objects.get(&src) {
+        Some(crate::framework::HostObj::List { elems }) => {
+            let is_enum_set = vm
+                .heap
+                .class_of(src)
+                .map(|c| c == ENUM_SET)
+                .unwrap_or(false);
+            (elems.clone(), is_enum_set)
+        }
+        _ => return Ok(None),
+    };
+    if elems.is_empty() && !src_is_enum_set {
+        return Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/IllegalArgumentException;",
+            "Collection is empty",
+        )));
+    }
+    let mut uniq: Vec<Value> = Vec::with_capacity(elems.len());
+    for e in elems {
+        if !uniq.contains(&e) {
+            uniq.push(e);
+        }
+    }
+    let set = vm
+        .heap
+        .alloc_instance(ENUM_SET.to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    vm.fw
+        .objects
+        .insert(set, crate::framework::HostObj::List { elems: uniq });
     Ok(Some(Value::Obj(set)))
 }
 
@@ -4404,6 +4456,13 @@ fn instance_intrinsic_dispatch_full(
             return Ok(Some(value));
         }
     }
+    if mref_class == crate::java_util_logging::LEVEL {
+        if let Some(value) =
+            crate::java_util_logging::level_instance_intrinsic(vm, name, sig, recv)?
+        {
+            return Ok(Some(value));
+        }
+    }
     if mref_class == crate::webkit_cookies::COOKIE_MANAGER {
         if let Some(value) = crate::webkit_cookies::instance_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -4934,6 +4993,13 @@ fn instance_intrinsic_core(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    // Construtor da superclasse abstrata (sem estado próprio), chamado por `super()` de
+    // subclasses do app, como o `HandlerScheduledExecutorService` do CameraX. Casa pela
+    // classe declarante (`mref_class`), não pelo receiver. Os métodos não sobrescritos
+    // (ex.: `submit`) seguem sem modelo e falham tipados (NOT_FOUND).
+    if mref_class == ABSTRACT_EXECUTOR_SERVICE && name == "<init>" && sig == "()V" {
+        return Ok(Some(Value::Null));
+    }
     let recv_class = if mref_class == ATOMIC_INT || mref_class == ATOMIC_REF {
         mref_class
     } else {
@@ -5423,10 +5489,16 @@ fn instance_intrinsic_core(
         // (determinístico; tamanho do pool irrelevante). Exceções propagam
         // imediatamente (em Java seriam capturadas no Future) — desvio
         // documentado em compat_gaps.
+        // `HandlerExecutor` (Context.getMainExecutor) não roda inline: enfileira no
+        // main looper (braço em `framework.rs`). Rodar inline aqui trocaria
+        // `Thread.currentThread()` para a thread de worker, e
+        // `PreviewView.getSurfaceProvider()` (checkMainThread) lançaria
+        // IllegalStateException no listener do CameraX.
         (c, name, sig)
-            if (vm.cp.is_subtype(c, EXECUTOR_SVC)
-                || vm.cp.is_subtype(mref_class, EXECUTOR_SVC)
-                || mref_class == EXECUTOR)
+            if c != crate::framework::HANDLER_EXECUTOR
+                && (vm.cp.is_subtype(c, EXECUTOR_SVC)
+                    || vm.cp.is_subtype(mref_class, EXECUTOR_SVC)
+                    || mref_class == EXECUTOR)
                 && exec_supported(name, sig) =>
         {
             // Task de Executor roda inline, mas fora do main thread (Room/WorkManager
