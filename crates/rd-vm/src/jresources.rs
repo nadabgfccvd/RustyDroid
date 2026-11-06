@@ -34,6 +34,42 @@ pub(crate) fn instance_intrinsic(
     }
 
     match (recv_class, mref_class, name, sig) {
+        // `new URL(String)`: URL de rede não tem acesso no VM. A URL é
+        // guardada como texto (toString/getProtocol); abrir falha com IOException.
+        (URL, URL, "<init>", "(Ljava/lang/String;)V") => {
+            let spec = match args.first() {
+                Some(Value::Obj(s)) => vm.heap.as_str(*s)?.to_string(),
+                _ => return Err(exception("Ljava/net/MalformedURLException;", "URL nula")),
+            };
+            if network_scheme(&spec).is_none() {
+                return Err(exception(
+                    "Ljava/net/MalformedURLException;",
+                    &format!("no protocol: {spec}"),
+                ));
+            }
+            let spec_obj = crate::intrinsics::alloc_string(vm, spec)?;
+            crate::err::put_field_result(vm.heap.put_field(
+                recv,
+                "rd_url_spec",
+                Value::Obj(spec_obj),
+            ))?;
+            Ok(Some(Value::Null))
+        }
+        (URL, URL, "openConnection" | "openStream", _) if network_spec(vm, recv).is_some() => {
+            let spec = network_spec(vm, recv).unwrap_or_default();
+            Err(exception(
+                "Ljava/io/IOException;",
+                &format!("VM sem rede: {spec}"),
+            ))
+        }
+        (URL, URL, "getProtocol", "()Ljava/lang/String;") if network_spec(vm, recv).is_some() => {
+            let scheme = network_spec(vm, recv)
+                .and_then(|s| network_scheme(&s))
+                .unwrap_or_default();
+            Ok(Some(Value::Obj(crate::intrinsics::alloc_string(
+                vm, scheme,
+            )?)))
+        }
         (URL, URL, "openConnection", "()Ljava/net/URLConnection;") => {
             let connection = vm
                 .heap
@@ -188,6 +224,30 @@ fn read_resource(vm: &Engine, path: &str) -> Result<Option<Vec<u8>>, VmExit> {
             &format!("reading APK resource {path}: {}", e.cause),
         )
     })
+}
+
+/// Esquema de uma URL de rede (`http`, `https`, …); `None` se não há `://`.
+fn network_scheme(spec: &str) -> Option<String> {
+    let (scheme, _) = spec.split_once("://")?;
+    let ok = !scheme.is_empty()
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
+    ok.then(|| scheme.to_ascii_lowercase())
+}
+
+/// Texto da URL quando ela é de rede (criada por `new URL`), não de APK.
+fn network_spec(vm: &Engine, url: ObjRef) -> Option<String> {
+    if matches!(
+        vm.heap.get_field(url, "rd_resource_name"),
+        Ok(Value::Obj(_))
+    ) {
+        return None;
+    }
+    match vm.heap.get_field(url, "rd_url_spec") {
+        Ok(Value::Obj(r)) => vm.heap.as_str(r).ok().map(str::to_string),
+        _ => None,
+    }
 }
 
 fn resource_bytes(vm: &Engine, url: ObjRef) -> Result<Vec<u8>, VmExit> {

@@ -1113,10 +1113,15 @@ pub(super) fn instance_call(
                     obj_arg(args, 1)
                 };
                 if let Some(cb) = cap_cb {
+                    // CaptureResult.getRequest() devolve o request que gerou o
+                    // resultado (CameraX lê getRequest().getTag() sem checar nulo).
                     let total_res = alloc_with(
                         vm,
                         TOTAL_CAPTURE_RESULT,
-                        vec![("rd_seq".into(), Value::Int(seq))],
+                        vec![
+                            ("rd_seq".into(), Value::Int(seq)),
+                            ("rd_request".into(), Value::Obj(req)),
+                        ],
                     )?;
                     let _ = call_dex(
                         vm,

@@ -993,6 +993,13 @@ pub struct HostState {
     pub(crate) handler_loopers: Vec<ObjRef>,
     /// Loopers encerradas com `quitSafely` que ainda têm mensagens devidas.
     pub(crate) quitting_loopers: Vec<ObjRef>,
+    /// Looper cuja fila está sendo drenada agora (HandlerThread); `None` na
+    /// main thread. `Looper.myLooper()` e `Thread.currentThread()` seguem
+    /// este valor durante a mensagem, como no Android real.
+    pub(crate) current_looper: Option<ObjRef>,
+    /// Par (Looper, Thread) de cada HandlerThread iniciada: `Looper.getThread()`.
+    /// Loopers ausentes daqui pertencem à thread "main".
+    pub(crate) looper_threads: Vec<(ObjRef, ObjRef)>,
     /// M8: thread "main" sintética (VM single-threaded — ver `THREAD`)
     pub(crate) main_thread: Option<ObjRef>,
     /// Thread sintética de trabalho: `Thread.currentThread()` enquanto uma task
@@ -1146,6 +1153,15 @@ pub struct KeyReport {
 /// Teclas suportadas pelo modelo v1 (honesto: o resto é NOT_IMPLEMENTED
 /// com sugestão apontando esta lista).
 pub const SUPPORTED_KEYS: &[&str] = &["BACK", "ENTER", "DEL"];
+
+/// Providers do manifest que o bootstrap do processo instancia (Android:
+/// `ContentProvider.onCreate` antes de `Application.onCreate`). Allowlist
+/// explícita: o VM ainda não modela `ContentProvider` real nem o
+/// `attachInfo`; só estes SDKs têm a inicialização mínima validada.
+pub(crate) const SDK_INIT_PROVIDERS: &[&str] = &[
+    // ML Kit: `MlKitContext` precisa ser inicializado antes de `fromMediaImage`.
+    "com.google.mlkit.common.internal.MlKitInitProvider",
+];
 
 impl Engine {
     /// M3.2: injeta o APK aberto como fonte de Resources (layouts AXML +
@@ -1517,6 +1533,37 @@ impl Engine {
         self.new_dex_instance(desc)
     }
 
+    /// Instancia e chama `onCreate()Z` dos providers do manifest que estão em
+    /// `SDK_INIT_PROVIDERS`. Providers fora da allowlist são ignorados (não
+    /// existe modelo de `ContentProvider` real no VM).
+    pub(crate) fn install_sdk_providers(&mut self) -> Result<(), VmExit> {
+        let names: Vec<String> = match self.resources() {
+            Ok(apk) => apk
+                .manifest
+                .application
+                .components
+                .iter()
+                .filter(|c| matches!(c.kind, rd_apk::manifest::ComponentKind::Provider))
+                .map(|c| c.class_name.clone())
+                .collect(),
+            Err(_) => return Ok(()),
+        };
+        for name in names {
+            if !SDK_INIT_PROVIDERS.contains(&name.as_str()) {
+                continue;
+            }
+            let desc = format!("L{};", name.replace('.', "/"));
+            if self.cp.find_class(&desc).is_none() {
+                continue;
+            }
+            let provider = self.new_dex_instance(&desc)?;
+            if let Some((d, def, m)) = self.cp.resolve_method(&desc, "onCreate", "()Z") {
+                self.call(d, def, &m, vec![Value::Obj(provider)])?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn new_dex_instance(&mut self, desc: &str) -> Result<ObjRef, VmExit> {
         if self.cp.find_class(desc).is_none() {
             return Err(VmExit::Exception(crate::err::Throwable::new(
@@ -1799,6 +1846,9 @@ impl Engine {
                 if let Some((d, def, m)) = self.cp.resolve_method(&app_cls, "<init>", "()V") {
                     self.call(d, def, &m, vec![Value::Obj(ar)])?;
                 }
+                // Android: providers do manifest são criados ANTES de
+                // Application.onCreate (installContentProviders).
+                self.install_sdk_providers()?;
                 // Android: Application.onCreate ANTES do onCreate da
                 // activity (só o que o DEX declara; framework já cobre
                 // APPLICATION.onCreate como no-op do runtime).
@@ -2729,11 +2779,20 @@ impl Engine {
             // CameraX posta `LiveData.observeForever` no main looper, e o
             // `assertMainThread` do LiveData exige `Thread.currentThread()` main.
             let saved_depth = self.fw.inline_task_depth;
+            let saved_looper = self.fw.current_looper;
+            // A mensagem roda na thread dona da fila: nem a green thread que
+            // disparou o drain nem uma task inline participam dela.
+            let saved_green = self.threads.current.take();
             if owner == looper {
                 self.fw.inline_task_depth = 0;
+                self.fw.current_looper = None;
+            } else {
+                self.fw.current_looper = Some(owner);
             }
             let outcome = self.run_looper_message(msg);
             self.fw.inline_task_depth = saved_depth;
+            self.fw.current_looper = saved_looper;
+            self.threads.current = saved_green;
             outcome?;
             ran += 1;
         }
@@ -3139,6 +3198,20 @@ fn call_host_static_rooted(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match (class, name) {
+        // ActivityManager.getMyMemoryState(info): preenche `importance` com
+        // IMPORTANCE_FOREGROUND (100) — o app roda em primeiro plano no VM.
+        ("Landroid/app/ActivityManager;", "getMyMemoryState")
+            if _sig == "(Landroid/app/ActivityManager$RunningAppProcessInfo;)V" =>
+        {
+            if let Some(Value::Obj(info)) = args.first() {
+                crate::err::put_field_result(vm.heap.put_field(
+                    *info,
+                    "importance",
+                    Value::Int(100),
+                ))?;
+            }
+            Ok(Some(Value::Null))
+        }
         // Application.getProcessName() é ESTÁTICO (API 28+). O processo principal
         // sem `android:process` tem o nome do pacote.
         (APPLICATION, "getProcessName") => {
@@ -3207,11 +3280,19 @@ fn call_host_static_rooted(
         }
         (LOOPER, "getMainLooper") => Ok(Some(Value::Obj(vm.main_looper_obj()?))),
         // Fora do main thread (task de Executor inline) não há Looper preparado.
-        (LOOPER, "myLooper") => Ok(Some(if vm.fw.inline_task_depth > 0 {
-            Value::Null
-        } else {
-            Value::Obj(vm.main_looper_obj()?)
-        })),
+        // Thread Java (green) ou task inline sem Looper preparado → null, como
+        // no Android: `Dispatchers.Main.immediate` depende disso para despachar.
+        (LOOPER, "myLooper") => {
+            let on_other_thread = matches!(
+                vm.threads.current,
+                Some(t) if Some(t) != vm.fw.main_thread
+            );
+            Ok(Some(match vm.fw.current_looper {
+                Some(l) => Value::Obj(l),
+                None if on_other_thread || vm.fw.inline_task_depth > 0 => Value::Null,
+                None => Value::Obj(vm.main_looper_obj()?),
+            }))
+        }
         (LOOPER, "loop") => {
             vm.drain_looper()?;
             Ok(Some(Value::Null))
@@ -3447,6 +3528,13 @@ fn call_host_instance_rooted(
     };
 
     match (mref_class, name) {
+        // ContentProvider.getContext(): no processo do app, o contexto do
+        // provider é a Application (não há attachInfo separado no VM).
+        ("Landroid/content/ContentProvider;", "getContext")
+            if sig == "()Landroid/content/Context;" =>
+        {
+            Ok(Some(vm.fw.application.map_or(Value::Null, Value::Obj)))
+        }
         // ── Context.getMainExecutor(): Executor do Looper principal, modelado
         // como um Handler do main looper (o `execute` abaixo enfileira nele).
         (_, "getMainExecutor")
@@ -3471,7 +3559,18 @@ fn call_host_instance_rooted(
         }
         // ── M8: Looper.getThread — thread "main" sintética (VM single-threaded).
         // Métodos de Ljava/lang/Thread; despacham via intrinsics (não Landroid/).
-        (LOOPER, "getThread") => Ok(Some(Value::Obj(vm.main_thread_obj()?))),
+        (LOOPER, "getThread") => {
+            let owner = vm
+                .fw
+                .looper_threads
+                .iter()
+                .find(|(l, _)| *l == recv)
+                .map(|(_, t)| *t);
+            Ok(Some(Value::Obj(match owner {
+                Some(t) => t,
+                None => vm.main_thread_obj()?,
+            })))
+        }
         // ── Activity/Context ────────────────────────────────────────────────
         (ACTIVITY, "<init>") | (APPLICATION, "<init>") | (CONTEXT, "<init>") => {
             Ok(Some(Value::Null))

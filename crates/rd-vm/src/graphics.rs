@@ -4076,6 +4076,15 @@ fn mod_alpha(argb: u32, a: f32) -> u32 {
     (argb & 0x00FF_FFFF) | (na << 24)
 }
 
+/// Quadro de SurfaceView a desenhar: (fundo que cobre, retângulo, pixels).
+type PreviewDraw<'a> = (
+    Option<usize>,
+    (i32, i32, i32, i32),
+    &'a crate::m10::preview::PreviewPixels,
+);
+/// Retângulo já recortado de um quadro de SurfaceView.
+type PreviewRect<'a> = ((i32, i32, i32, i32), &'a crate::m10::preview::PreviewPixels);
+
 impl Engine {
     /// Rasterizes a display list onto an RGB framebuffer.
     pub(crate) fn raster_ops(
@@ -4347,11 +4356,7 @@ impl Engine {
         let ops = self.gfx.frame.clone();
         let full = [0.0, 0.0, w as f32, h as f32];
         // (índice do fundo que cobre — `None` = por cima de tudo —, retângulo, quadro)
-        let mut draws: Vec<(
-            Option<usize>,
-            (i32, i32, i32, i32),
-            &crate::m10::preview::PreviewPixels,
-        )> = Vec::new();
+        let mut draws: Vec<PreviewDraw> = Vec::new();
         for (&view, st) in &self.fw.vdev.preview.views {
             let Some(pix) = st.frame.as_ref() else {
                 continue;
@@ -4381,7 +4386,7 @@ impl Engine {
                     return None;
                 }
                 let m = mul(&ID, &op.m);
-                let pts = xform(&m, &vec![(l, t), (r_, t), (r_, b), (l, b)]);
+                let pts = xform(&m, &[(l, t), (r_, t), (r_, b), (l, b)]);
                 let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
                 for (px_, py_) in pts {
                     x0 = x0.min(px_);
@@ -4401,7 +4406,7 @@ impl Engine {
             tint: None,
         };
         let mut start = 0usize;
-        let mut top: Vec<((i32, i32, i32, i32), &crate::m10::preview::PreviewPixels)> = Vec::new();
+        let mut top: Vec<PreviewRect> = Vec::new();
         for (cover, rect, pix) in draws {
             match cover {
                 Some(cut) => {
