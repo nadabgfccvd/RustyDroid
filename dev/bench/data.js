@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793924274447,
+  "lastUpdate": 1793924779888,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4751,6 +4751,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3358,
             "range": "± 31",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a1c0b49047f2d14963f323ea91d4748d621d5dfd",
+          "message": "docs(appendix-b): pesquisa de revokeWhenRequested, instant e softRestriction com fonte (#572)\n\nPesquisa em fonte oficial (developer.android.com e AOSP). As três flags ganham\nfonte para o que são, mas nenhuma tem fonte completa para o efeito no runtime.\nPor isso continuam como bloqueio, agora com citação:\n\n- instant: PermissionInfo.PROTECTION_FLAG_INSTANT (API 27). Efeito exige modelo de\n  app instantâneo, que o runtime não tem.\n- revokeWhenRequested: FLAG_PERMISSION_REVOKE_WHEN_REQUESTED existe (AOSP); a doc\n  pública não diz quando a revogação ocorre. Próximo passo: ler o trecho de\n  PermissionManagerServiceImpl.java.\n- softRestriction: javadoc de FLAG_SOFT_RESTRICTED diz que a forma fraca \"depende\n  da permissão\". Sem a lista, modelar seria inventar; pergunta ao usuário pendente.\n\nNenhum código muda. Nenhum status em data/permissions.toml muda.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T21:26:01-03:00",
+          "tree_id": "dcc6b05fb05301936efca7d1a3cbb03163c4529f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a1c0b49047f2d14963f323ea91d4748d621d5dfd"
+        },
+        "date": 1793924779452,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3258,
+            "range": "± 85",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3238,
+            "range": "± 29",
             "unit": "ns/iter"
           }
         ]
