@@ -10,6 +10,7 @@ pub mod camera;
 pub mod connectivity;
 pub mod location;
 pub mod media;
+pub mod preview;
 pub mod sensors;
 pub mod sysconfig;
 
@@ -43,6 +44,8 @@ pub struct State {
     pub camera_sessions: BTreeMap<ObjRef, CameraSessionState>,
     pub image_readers: BTreeMap<ObjRef, ImageReaderState>,
     pub surface_to_reader: BTreeMap<ObjRef, ObjRef>,
+    /// `SurfaceView` de preview (CameraX `PreviewView`) e seus frames.
+    pub preview: preview::PreviewState,
     pub injected_camera_frames: BTreeMap<String, CameraFrameSpec>,
     pub biometrics: BiometricState,
     pub audio: AudioState,
@@ -84,6 +87,7 @@ impl Default for State {
             camera_sessions: BTreeMap::new(),
             image_readers: BTreeMap::new(),
             surface_to_reader: BTreeMap::new(),
+            preview: preview::PreviewState::default(),
             injected_camera_frames: BTreeMap::new(),
             biometrics: BiometricState::default(),
             audio: AudioState::default(),
@@ -177,6 +181,7 @@ impl State {
         out.extend(self.camera_sessions.keys().copied());
         out.extend(self.image_readers.keys().copied());
         out.extend(self.surface_to_reader.keys().copied());
+        self.preview.gc_keys(out);
         out.extend(self.audio_records.keys().copied());
         out.extend(self.audio_tracks.keys().copied());
         out.extend(self.media_players.keys().copied());
@@ -186,6 +191,7 @@ impl State {
     }
 
     pub(crate) fn gc_trace_entry(&self, r: ObjRef, out: &mut Vec<ObjRef>) {
+        self.preview.gc_trace_entry(r, out);
         if let Some(&cb) = self.camera_callbacks.get(&r) {
             out.push(cb);
         }
@@ -240,6 +246,7 @@ impl State {
         self.camera_sessions.retain(|r, _| alive(r));
         self.image_readers.retain(|r, _| alive(r));
         self.surface_to_reader.retain(|s, r| alive(s) && alive(r));
+        self.preview.gc_purge(alive);
         self.audio_records.retain(|r, _| alive(r));
         self.audio_tracks.retain(|r, _| alive(r));
         self.media_players.retain(|r, _| alive(r));
@@ -732,6 +739,9 @@ fn call_instance_rooted(
         return Ok(Some(v));
     }
     if let Some(v) = camera::instance_call(vm, class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = preview::instance_call(vm, class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
     if let Some(v) = biometrics::instance_call(vm, class, name, sig, recv, args)? {

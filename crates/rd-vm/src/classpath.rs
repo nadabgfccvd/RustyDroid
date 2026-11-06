@@ -999,6 +999,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/view/View;",
         "Ljava/lang/Object;",
     ];
+    const SURFACEVIEW: &[&str] = &[
+        "Landroid/view/SurfaceView;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
     const IMAGEVIEW: &[&str] = &[
         "Landroid/widget/ImageView;",
         "Landroid/view/View;",
@@ -1264,6 +1269,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Ljava/lang/NumberFormatException;" => Some(RUNTIME),
         "Ljava/lang/ArrayStoreException;" => Some(RUNTIME),
         "Ljava/lang/RuntimeException;" => Some(EXC),
+        // android.os.BadParcelableException extends RuntimeException (Parcel
+        // under-run/format errors); sem isto `check-cast Throwable` falha.
+        "Landroid/os/BadParcelableException;" => Some(RUNTIME),
         // android.database exceptions (thrown by the SQLite backend; Room's
         // @Upsert catches SQLiteConstraintException to fall back to UPDATE)
         "Landroid/database/SQLException;" => Some(RUNTIME),
@@ -1362,6 +1370,14 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Landroid/content/Context;",
             "Ljava/lang/Object;",
         ]),
+        // ContentProvider: base dos providers do manifest (instanciados pelo
+        // bootstrap do processo, ver `install_sdk_providers`).
+        "Landroid/content/ContentProvider;" => Some(&["Ljava/lang/Object;"]),
+        // Hashtable/Properties: dicionário host (ver intrinsics `PROPERTIES`).
+        "Ljava/util/Hashtable;" => Some(&["Ljava/lang/Object;"]),
+        "Ljava/util/Properties;" => Some(&["Ljava/util/Hashtable;", "Ljava/lang/Object;"]),
+        // Preenchido por `ActivityManager.getMyMemoryState` (ver framework).
+        "Landroid/app/ActivityManager$RunningAppProcessInfo;" => Some(&["Ljava/lang/Object;"]),
         "Landroid/app/Application;" | "Landroid/app/Service;" => Some(&[
             "Landroid/content/ContextWrapper;",
             "Landroid/content/Context;",
@@ -1867,6 +1883,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/view/ViewGroup;" => Some(VIEWGROUP),
         "Landroid/widget/TextView;" => Some(TEXTVIEW),
         "Landroid/widget/ImageView;" => Some(IMAGEVIEW),
+        "Landroid/view/SurfaceView;" => Some(SURFACEVIEW),
         "Landroid/widget/ImageButton;" => Some(IMAGEBUTTON),
         "Landroid/widget/ProgressBar;" => Some(PROGRESSBAR),
         "Landroid/widget/CompoundButton;" => Some(COMPOUND_BUTTON),

@@ -223,6 +223,7 @@ fn query_roots(
                     clickable: n.clickable,
                     focusable: n.focusable,
                     truncated: n.truncated,
+                    preview: n.preview.clone(),
                     children: Vec::new(),
                 };
                 leaf.enabled = enabled;

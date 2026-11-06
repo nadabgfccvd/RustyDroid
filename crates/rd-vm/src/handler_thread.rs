@@ -93,6 +93,7 @@ fn ensure_looper(vm: &mut Engine, thread: ObjRef) -> Result<ObjRef, VmExit> {
     }
     let l = vm.alloc_looper()?;
     vm.fw.handler_loopers.push(l);
+    vm.fw.looper_threads.push((l, thread));
     crate::err::put_field_result(vm.heap.put_field(thread, LOOPER_FIELD, Value::Obj(l)))?;
     Ok(l)
 }

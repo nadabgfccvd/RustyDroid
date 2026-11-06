@@ -214,6 +214,10 @@ fn paint(n: &UiNode, fb: &mut Canvas, depth: usize) {
         (0xE8, 0xE8, 0xE8)
     };
     fb.fill_rect(x, y, w, h, color);
+    if let Some(p) = &n.preview {
+        // SurfaceView de preview: o frame da câmera ocupa a caixa da view.
+        fb.blit_gray_scaled(x, y, w, h, p.w, p.h, &p.gray);
+    }
     if n.clickable {
         fb.rect_border(x, y, w, h, (0x60, 0x60, 0x60));
     }
@@ -241,6 +245,7 @@ mod tests {
             clickable: false,
             focusable: false,
             truncated: false,
+            preview: None,
             children: Vec::new(),
         }
     }

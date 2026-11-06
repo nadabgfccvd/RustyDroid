@@ -1832,6 +1832,17 @@ fn resolve_or_run_host_invoke(
     let Some(first) = slots.first() else {
         return Err(err::vm_error("INVALID_FORMAT", "invoke não-static sem receiver").into());
     };
+    // ML Kit barcode (decisão do usuário, host_stub): o módulo dinâmico do GMS
+    // que faz a detecção não roda no VM. `BarcodeScannerImpl.process(InputImage)`
+    // devolve Task concluído com lista vazia (sem detecção).
+    if mref.class == "Lcom/google/mlkit/vision/barcode/internal/zzh;"
+        && mref.name == "process"
+        && mref.proto == "(Lcom/google/mlkit/vision/common/InputImage;)Lr3/i;"
+    {
+        return Ok(InvokeTarget::Value(
+            crate::intrinsics::barcode_process_empty(vm)?,
+        ));
+    }
     // java/lang/Object.<init> é no-op (raiz de toda hierarquia de usuário)
     if mref.class == "Ljava/lang/Object;" && mref.name == "<init>" {
         return Ok(InvokeTarget::Value(Value::Null));

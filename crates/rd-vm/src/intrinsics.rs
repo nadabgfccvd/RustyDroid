@@ -35,6 +35,8 @@ const VIEW_SET: &str = "Ljava/util/HashSet;";
 const MAP_ENTRY: &str = "Ljava/util/Map$Entry;";
 const ITERATOR: &str = "Ljava/util/Iterator;";
 const EXECUTORS: &str = "Ljava/util/concurrent/Executors;";
+/// Fábrica de threads do `Executors.defaultThreadFactory()` (host).
+const DEFAULT_TF: &str = "Ljava/util/concurrent/Executors$DefaultThreadFactory;";
 const KOTLIN_REFLECTION: &str = "Lkotlin/jvm/internal/Reflection;";
 const EXECUTOR: &str = "Ljava/util/concurrent/Executor;";
 const EXECUTOR_SVC: &str = "Ljava/util/concurrent/ExecutorService;";
@@ -79,6 +81,9 @@ const WEAK_REF: &str = "Ljava/lang/ref/WeakReference;";
 const SOFT_REF: &str = "Ljava/lang/ref/SoftReference;";
 const REF_QUEUE: &str = "Ljava/lang/ref/ReferenceQueue;";
 const HASH_MAP: &str = "Ljava/util/HashMap;";
+const PROPERTIES: &str = "Ljava/util/Properties;";
+const OUTPUT_STREAM: &str = "Ljava/io/OutputStream;";
+const RUNNING_APP_PROCESS_INFO: &str = "Landroid/app/ActivityManager$RunningAppProcessInfo;";
 /// `java.util.EnumMap`: chaves são constantes de enum. O modelo host é o mesmo
 /// `HostObj::Map` do HashMap (o estado guarda as chaves como objetos; a ordem de
 /// enumeração das constantes não é reconstruída — documentado, não inventado).
@@ -132,6 +137,19 @@ const ABSTRACT_COLLECTION_CTORS: [&str; 8] = [
 const ENUM_SET: &str = "Ljava/util/EnumSet;";
 
 const ARRAY_LIST: &str = "Ljava/util/ArrayList;";
+
+/// `BarcodeScannerImpl.process(InputImage)` sem o módulo do GMS: devolve a
+/// `Task` real do ML Kit (`r3/o`) já concluída com lista vazia.
+pub(crate) fn barcode_process_empty(vm: &mut Engine) -> Result<Value, VmExit> {
+    let list = vm.heap.alloc_instance(ARRAY_LIST.to_string(), vec![])?;
+    vm.fw
+        .objects
+        .insert(list, crate::framework::HostObj::List { elems: Vec::new() });
+    let task = vm.new_dex_instance_pub("Lr3/o;")?;
+    vm.invoke_instance(task, "<init>", "()V", &[])?;
+    vm.invoke_instance(task, "i", "(Ljava/lang/Object;)V", &[Value::Obj(list)])?;
+    Ok(Value::Obj(task))
+}
 const LINKED_LIST: &str = "Ljava/util/LinkedList;";
 const VECTOR: &str = "Ljava/util/Vector;";
 const STACK: &str = "Ljava/util/Stack;";
@@ -1053,14 +1071,37 @@ fn call_static_intrinsic_rooted(
                     "Collections.unmodifiableSet com coleção null",
                 )));
             };
-            let elems = match vm.fw.objects.get(src) {
+            let src = *src;
+            let elems = match vm.fw.objects.get(&src) {
                 Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+                // Set escrito em DEX (ex.: `Lq/g;` do ML Kit, que implementa
+                // Set): snapshot pelo próprio iterator(), como o caso host.
+                None if vm.cp.is_subtype(vm.heap.class_of(src)?, "Ljava/util/Set;") => {
+                    let it = match vm.invoke_instance(src, "iterator", "()Ljava/util/Iterator;", &[])? {
+                        Value::Obj(o) => o,
+                        _ => {
+                            return Err(VmExit::Exception(Throwable::new(
+                                "Ljava/lang/NullPointerException;",
+                                "Set.iterator() devolveu null",
+                            )))
+                        }
+                    };
+                    let mut out = Vec::new();
+                    while matches!(
+                        vm.invoke_instance(it, "hasNext", "()Z", &[])?,
+                        Value::Int(x) if x != 0
+                    ) {
+                        out.push(vm.invoke_instance(it, "next", "()Ljava/lang/Object;", &[])?);
+                    }
+                    out
+                }
                 _ => {
+                    let cls = vm.heap.class_of(src).unwrap_or("?").to_string();
                     return Err(crate::err::vm_error(
                         "VM_TYPE_ERROR",
-                        "unmodifiableSet sobre coleção sem estado host (Set)",
+                        format!("unmodifiableSet sobre coleção sem estado host (Set: {cls})"),
                     )
-                    .into())
+                    .into());
                 }
             };
             let r = vm
@@ -1113,8 +1154,18 @@ fn call_static_intrinsic_rooted(
         }
         // M8: fábricas de thread pool → executor host (execução inline).
         // Tamanho do pool e ThreadFactory são ignorados (VM single-threaded).
+        // `Executors.defaultThreadFactory()`: fábrica host que cria `Thread`
+        // para cada tarefa (ver `DEFAULT_TF`). Executores inline a usam em
+        // `execute`/`submit` (`exec_run_task`), como o pool real faz por thread.
+        (EXECUTORS, "defaultThreadFactory", "()Ljava/util/concurrent/ThreadFactory;") => {
+            let f = vm.heap.alloc_instance(DEFAULT_TF.to_string(), vec![])?;
+            Ok(Some(Value::Obj(f)))
+        }
         (c, n, s) if c == EXECUTORS && executors_factory(n, s) => {
             let r = vm.heap.alloc_instance(EXECUTOR_SVC.to_string(), vec![])?;
+            if let Some(f @ Value::Obj(_)) = args.last() {
+                crate::err::put_field_result(vm.heap.put_field(r, "rd_factory", f.clone()))?;
+            }
             Ok(Some(Value::Obj(r)))
         }
         // ADR 025 (etapa 1): `Reflection.getOrCreateKotlinClass(Class)` sem
@@ -1336,7 +1387,10 @@ fn collections_sync_wrapper(name: &str, sig: &str) -> bool {
 fn class_supported(name: &str, sig: &str) -> bool {
     matches!(
         (name, sig),
-        ("getName", "()Ljava/lang/String;")
+        (
+            "getResourceAsStream",
+            "(Ljava/lang/String;)Ljava/io/InputStream;"
+        ) | ("getName", "()Ljava/lang/String;")
             | ("getSimpleName", "()Ljava/lang/String;")
             | ("toString", "()Ljava/lang/String;")
             | ("getClassLoader", "()Ljava/lang/ClassLoader;")
@@ -1469,6 +1523,32 @@ fn class_intrinsic(
         Ok(Value::Obj(r)) => vm.heap.as_str(r)?.to_string(),
         _ => String::new(),
     };
+    if name == "getResourceAsStream" {
+        let res = string_arg(vm, &args[0])?;
+        let base = desc
+            .trim_start_matches('L')
+            .trim_end_matches(';')
+            .replace('.', "/");
+        let pkg = base
+            .rsplit_once('/')
+            .map(|(p, _)| format!("{p}/"))
+            .unwrap_or_default();
+        let entry = match res.strip_prefix('/') {
+            Some(abs) => abs.to_string(),
+            None => format!("{pkg}{res}"),
+        };
+        let bytes = match vm
+            .fw
+            .resources
+            .as_ref()
+            .and_then(|apk| apk.zip.find(&entry).map(|e| apk.zip.read_entry(e)))
+        {
+            Some(Ok(b)) => b,
+            // Recurso ausente → null, como `Class.getResourceAsStream` no JDK.
+            _ => return Ok(Some(Value::Null)),
+        };
+        return crate::jio_chars::new_byte_input_stream(vm, bytes).map(Some);
+    }
     if name == "getField" {
         // public fields of the class and its superclasses (JLS getField);
         // platform classes without DEX metadata expose their host constants
@@ -2071,6 +2151,31 @@ fn exec_run_inline(vm: &mut Engine, r: crate::heap::ObjRef) -> Result<(), VmExit
     Ok(())
 }
 
+/// Roda uma tarefa do executor. Se o executor tem ThreadFactory (`rd_factory`),
+/// o Thread criado por ela roda a tarefa (como o pool real, que executa em
+/// uma thread de trabalho); sem fábrica, roda inline.
+fn exec_run_task(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    r: crate::heap::ObjRef,
+) -> Result<(), VmExit> {
+    if let Ok(Value::Obj(f)) = vm.heap.get_field(recv, "rd_factory") {
+        if f != 0 {
+            let t = vm.invoke_instance(
+                f,
+                "newThread",
+                "(Ljava/lang/Runnable;)Ljava/lang/Thread;",
+                &[Value::Obj(r)],
+            )?;
+            if let Value::Obj(t) = t {
+                vm.invoke_instance(t, "run", "()V", &[])?;
+                return Ok(());
+            }
+        }
+    }
+    exec_run_inline(vm, r)
+}
+
 /// Roda `Callable.call()` inline e devolve o valor produzido.
 fn exec_call_inline(vm: &mut Engine, r: crate::heap::ObjRef) -> Result<Value, VmExit> {
     let rclass = vm.heap.class_of(r)?.to_string();
@@ -2109,21 +2214,21 @@ fn exec_intrinsic(
             let Some(r) = args[0].as_ref()? else {
                 return Err(exec_npe("execute sem runnable"));
             };
-            exec_run_inline(vm, r)?;
+            exec_run_task(vm, recv, r)?;
             Ok(Some(Value::Null))
         }
         ("submit", "(Ljava/lang/Runnable;)Ljava/util/concurrent/Future;") => {
             let Some(r) = args[0].as_ref()? else {
                 return Err(exec_npe("submit sem runnable"));
             };
-            exec_run_inline(vm, r)?;
+            exec_run_task(vm, recv, r)?;
             exec_completed_future(vm, Value::Null)
         }
         ("submit", "(Ljava/lang/Runnable;Ljava/lang/Object;)Ljava/util/concurrent/Future;") => {
             let Some(r) = args[0].as_ref()? else {
                 return Err(exec_npe("submit sem runnable"));
             };
-            exec_run_inline(vm, r)?;
+            exec_run_task(vm, recv, r)?;
             exec_completed_future(vm, args[1].clone())
         }
         ("submit", "(Ljava/util/concurrent/Callable;)Ljava/util/concurrent/Future;") => {
@@ -3330,6 +3435,17 @@ fn thread_local_supported(name: &str, sig: &str) -> bool {
 /// ThreadLocal host (M8): single-threaded ⇒ um valor por instância.
 /// `get` sem set prévio chama `initialValue()` (resolução DEX; default de
 /// Object/ThreadLocal → null), como na JDK.
+/// Campos do ThreadLocal por green thread (JDK: um valor por thread). A
+/// thread principal (`threads.current == None`) usa os nomes base; cada
+/// green thread usa `tl_value@<tid>` / `tl_set@<tid>`, guardados no próprio
+/// objeto (o GC continua enxergando as referências).
+fn tl_field(vm: &Engine, base: &str) -> String {
+    match vm.threads.current {
+        Some(t) => format!("{base}@{t}"),
+        None => base.to_string(),
+    }
+}
+
 fn thread_local_intrinsic(
     vm: &mut Engine,
     recv: crate::heap::ObjRef,
@@ -3337,6 +3453,8 @@ fn thread_local_intrinsic(
     name: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    let f_val = tl_field(vm, "tl_value");
+    let f_set = tl_field(vm, "tl_set");
     match name {
         "<init>" => {
             crate::err::put_field_result(vm.heap.put_field(recv, "tl_value", Value::Null))?;
@@ -3344,23 +3462,21 @@ fn thread_local_intrinsic(
             Ok(Some(Value::Null))
         }
         "set" => {
-            crate::err::put_field_result(vm.heap.put_field(recv, "tl_value", args[0].clone()))?;
-            crate::err::put_field_result(vm.heap.put_field(recv, "tl_set", Value::Int(1)))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, &f_val, args[0].clone()))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, &f_set, Value::Int(1)))?;
             Ok(Some(Value::Null))
         }
         "remove" => {
-            crate::err::put_field_result(vm.heap.put_field(recv, "tl_value", Value::Null))?;
-            crate::err::put_field_result(vm.heap.put_field(recv, "tl_set", Value::Int(0)))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, &f_val, Value::Null))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, &f_set, Value::Int(0)))?;
             Ok(Some(Value::Null))
         }
         "get" => {
-            let set = matches!(vm.heap.get_field(recv, "tl_set"), Ok(Value::Int(v)) if v != 0);
+            let set = matches!(vm.heap.get_field(recv, &f_set), Ok(Value::Int(v)) if v != 0);
             if set {
-                return Ok(Some(
-                    vm.heap.get_field(recv, "tl_value").unwrap_or(Value::Null),
-                ));
+                return Ok(Some(vm.heap.get_field(recv, &f_val).unwrap_or(Value::Null)));
             }
-            // primeira leitura: initialValue() via DEX (override de subclasse)
+            // primeira leitura nesta thread: initialValue() via DEX (override de subclasse)
             let initial = if let Some((d, def, m)) =
                 vm.cp
                     .resolve_method(recv_class, "initialValue", "()Ljava/lang/Object;")
@@ -3369,8 +3485,8 @@ fn thread_local_intrinsic(
             } else {
                 Value::Null
             };
-            crate::err::put_field_result(vm.heap.put_field(recv, "tl_value", initial.clone()))?;
-            crate::err::put_field_result(vm.heap.put_field(recv, "tl_set", Value::Int(1)))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, &f_val, initial.clone()))?;
+            crate::err::put_field_result(vm.heap.put_field(recv, &f_set, Value::Int(1)))?;
             Ok(Some(initial))
         }
         _ => Ok(None),
@@ -3887,6 +4003,118 @@ fn iobe(msg: String) -> VmExit {
 }
 
 /// Host maps. GC traces WeakHashMap keys weakly and values strongly.
+/// Lê o InputStream até o fim (limite de 16 MiB: `Properties` de app é pequeno).
+fn read_stream_bytes(vm: &mut Engine, stream: crate::heap::ObjRef) -> Result<Vec<u8>, VmExit> {
+    const LIMIT: usize = 16 << 20;
+    let mut out = Vec::new();
+    while let Value::Int(b) = vm.invoke_instance(stream, "read", "()I", &[])? {
+        if b < 0 {
+            break;
+        }
+        if out.len() >= LIMIT {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/io/IOException;",
+                "Properties.load: entrada maior que 16 MiB",
+            )));
+        }
+        out.push(b as u8);
+    }
+    Ok(out)
+}
+
+/// Formato de `Properties.load` (JDK): linhas lógicas com `\` de continuação,
+/// comentários `#`/`!`, separador `=`, `:` ou espaço em branco, escapes.
+/// A entrada é ISO-8859-1 (um byte = um char), como no JDK para InputStream.
+fn properties_parse(bytes: &[u8]) -> Vec<(String, String)> {
+    let text: String = bytes.iter().map(|b| *b as char).collect();
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    let mut continuing = false;
+    for raw in text.split('\n') {
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        let t = line.trim_start();
+        if !continuing && (t.is_empty() || t.starts_with('#') || t.starts_with('!')) {
+            continue;
+        }
+        if !continuing {
+            buf.clear();
+        }
+        buf.push_str(t);
+        let trailing = t.len() - t.trim_end_matches('\\').len();
+        if trailing % 2 == 1 {
+            buf.pop();
+            continuing = true;
+            continue;
+        }
+        continuing = false;
+        out.push(properties_split(&buf));
+    }
+    if continuing {
+        out.push(properties_split(&buf));
+    }
+    out
+}
+
+fn properties_split(s: &str) -> (String, String) {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    let mut key = String::new();
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' && i + 1 < chars.len() {
+            key.push(c);
+            key.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        if c == '=' || c == ':' || c.is_whitespace() {
+            break;
+        }
+        key.push(c);
+        i += 1;
+    }
+    while i < chars.len() && chars[i].is_whitespace() {
+        i += 1;
+    }
+    if i < chars.len() && (chars[i] == '=' || chars[i] == ':') {
+        i += 1;
+    }
+    while i < chars.len() && chars[i].is_whitespace() {
+        i += 1;
+    }
+    let value: String = chars[i..].iter().collect();
+    (properties_unescape(&key), properties_unescape(&value))
+}
+
+/// Escapes de `Properties`: `\t \n \r \f \uXXXX`; `\c` → `c`. `\u` inválido
+/// vira `?` (o JDK lança IllegalArgumentException — divergência documentada).
+fn properties_unescape(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            None => break,
+            Some('t') => out.push('\t'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('f') => out.push('\u{c}'),
+            Some('u') => {
+                let hex: String = (0..4).filter_map(|_| it.next()).collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(ch) => out.push(ch),
+                    None => out.push('?'),
+                }
+            }
+            Some(other) => out.push(other),
+        }
+    }
+    out
+}
+
 fn map_intrinsic(
     vm: &mut Engine,
     recv: crate::heap::ObjRef,
@@ -5000,6 +5228,24 @@ fn instance_intrinsic_core(
     if mref_class == ABSTRACT_EXECUTOR_SERVICE && name == "<init>" && sig == "()V" {
         return Ok(Some(Value::Null));
     }
+    // ContentProvider(): base dos providers do app, sem estado próprio.
+    if mref_class == "Landroid/content/ContentProvider;" && name == "<init>" && sig == "()V" {
+        return Ok(Some(Value::Null));
+    }
+    // OutputStream (base JDK) não modela close/flush: subclasses DEX (ex.:
+    // `zzaf` do ML Kit, que estende OutputStream) herdam os no-ops da JDK.
+    if matches!(name, "close" | "flush")
+        && sig == "()V"
+        && vm.cp.is_subtype(recv_class, OUTPUT_STREAM)
+        && vm.cp.resolve_method(recv_class, name, sig).is_none()
+    {
+        return Ok(Some(Value::Null));
+    }
+    // RunningAppProcessInfo(): `importance` começa em 0 (como o Java).
+    if recv_class == RUNNING_APP_PROCESS_INFO && name == "<init>" && sig == "()V" {
+        crate::err::put_field_result(vm.heap.put_field(recv, "importance", Value::Int(0)))?;
+        return Ok(Some(Value::Null));
+    }
     let recv_class = if mref_class == ATOMIC_INT || mref_class == ATOMIC_REF {
         mref_class
     } else {
@@ -5391,7 +5637,21 @@ fn instance_intrinsic_core(
         // ── AtomicInteger (M8) ──────────────────────────────────────────────
         // Estado no campo "value" (Int). Overflow i32 segue a semântica Java
         // (silencioso/wrapping); longValue/floatValue/doubleValue alargam.
-        (THREAD_POOL_EXECUTOR, "<init>", sig) if thread_pool_ctor(sig) => Ok(Some(Value::Null)),
+        (THREAD_POOL_EXECUTOR, "<init>", sig) if thread_pool_ctor(sig) => {
+            // ThreadFactory (índice 5) é guardada e usada em execute/submit.
+            if sig.contains("ThreadFactory;") {
+                if let Some(f @ Value::Obj(_)) = args.get(5) {
+                    crate::err::put_field_result(vm.heap.put_field(recv, "rd_factory", f.clone()))?;
+                }
+            }
+            Ok(Some(Value::Null))
+        }
+        (THREAD_POOL_EXECUTOR, "setThreadFactory", "(Ljava/util/concurrent/ThreadFactory;)V") => {
+            if let Some(f @ Value::Obj(_)) = args.first() {
+                crate::err::put_field_result(vm.heap.put_field(recv, "rd_factory", f.clone()))?;
+            }
+            Ok(Some(Value::Null))
+        }
         // Configuration setters are accepted and not applied (inline executor).
         // Their getters are not modelled, so a read of the value stays a typed
         // NOT_FOUND instead of a guess.
@@ -5497,6 +5757,13 @@ fn instance_intrinsic_core(
         // Override DEX vence (dispatch virtual da JVM): um executor do APK que
         // declara `execute` (ex.: CameraX `HandlerScheduledExecutorService`, que
         // posta no Handler do main looper) não pode rodar inline aqui.
+        (c, "newThread", "(Ljava/lang/Runnable;)Ljava/lang/Thread;") if c == DEFAULT_TF => {
+            let t = vm
+                .heap
+                .alloc_instance(crate::threads::THREAD.to_string(), vec![])?;
+            vm.invoke_instance(t, "<init>", "(Ljava/lang/Runnable;)V", &[args[0].clone()])?;
+            Ok(Some(Value::Obj(t)))
+        }
         (c, name, sig)
             if c != crate::framework::HANDLER_EXECUTOR
                 && (vm.cp.is_subtype(c, EXECUTOR_SVC)
@@ -5557,13 +5824,76 @@ fn instance_intrinsic_core(
         (_, "<init>", sig) if mref_class == LINKED_MAP && map_supported("<init>", sig) => {
             map_intrinsic(vm, recv, "<init>", sig, args)
         }
+        // ── java.util.Properties (M8): estado de Map host + getProperty/
+        // setProperty/load. Chaves e valores são Strings; `load` lê o
+        // InputStream inteiro (ISO-8859-1, formato de `Properties.load`).
+        (c, "getProperty", sig)
+            if c == PROPERTIES
+                && matches!(
+                    sig,
+                    "(Ljava/lang/String;)Ljava/lang/String;"
+                        | "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
+                ) =>
+        {
+            let key = args.first().cloned().unwrap_or(Value::Null);
+            let got = map_intrinsic(
+                vm,
+                recv,
+                "get",
+                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                std::slice::from_ref(&key),
+            )?
+            .unwrap_or(Value::Null);
+            let is_string = match &got {
+                Value::Obj(o) => vm.heap.class_of(*o)? == "Ljava/lang/String;",
+                _ => false,
+            };
+            if is_string {
+                Ok(Some(got))
+            } else {
+                Ok(Some(args.get(1).cloned().unwrap_or(Value::Null)))
+            }
+        }
+        (c, "setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;")
+            if c == PROPERTIES =>
+        {
+            map_intrinsic(
+                vm,
+                recv,
+                "put",
+                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                args,
+            )
+        }
+        (c, "load", "(Ljava/io/InputStream;)V") if c == PROPERTIES => {
+            let Some(Value::Obj(stream)) = args.first().cloned() else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "Properties.load(null)",
+                )));
+            };
+            let bytes = read_stream_bytes(vm, stream)?;
+            for (k, v) in properties_parse(&bytes) {
+                let kr = alloc_string(vm, k)?;
+                let vr = alloc_string(vm, v)?;
+                map_intrinsic(
+                    vm,
+                    recv,
+                    "put",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                    &[Value::Obj(kr), Value::Obj(vr)],
+                )?;
+            }
+            Ok(Some(Value::Null))
+        }
         (c, name, sig)
             if (c == HASH_MAP
                 || c == ENUM_MAP
                 || c == WEAK_MAP
                 || c == "Ljava/util/IdentityHashMap;"
                 || c == LINKED_MAP
-                || c == CONCURRENT_MAP)
+                || c == CONCURRENT_MAP
+                || c == PROPERTIES)
                 && map_supported(name, sig) =>
         {
             map_intrinsic(vm, recv, name, sig, args)
