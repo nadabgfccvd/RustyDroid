@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793974898490,
+  "lastUpdate": 1793975460154,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4895,6 +4895,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1864,
             "range": "± 56",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "52897f0489cdfd94d0ead4a92c64b21fcbfdc1cc",
+          "message": "docs(plan): MEDIA-03 — metaData aprovado e mesclado (#575); escopo de câmera (a) decidido; limite de memória da sandbox (#576)\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-06T11:30:25-03:00",
+          "tree_id": "516392d3a96b781fcea05888a73985926abf90d5",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/52897f0489cdfd94d0ead4a92c64b21fcbfdc1cc"
+        },
+        "date": 1793975459169,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3377,
+            "range": "± 151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3349,
+            "range": "± 22",
             "unit": "ns/iter"
           }
         ]
