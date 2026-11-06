@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793914628608,
+  "lastUpdate": 1793924274447,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4715,6 +4715,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3506,
             "range": "± 22",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f9d2ea201b244a688526cd5c2c8cfcdf3d77db3a",
+          "message": "docs(appendix-c): Rodada 0 concluída — android.jar API 26–36 verificado (#571)\n\nO plano dizia que o sandbox não tinha android.jar e que o inventário literal\nera um bloqueio. Ambas as afirmações estavam defasadas. Os 11 jars oficiais\n(API 26–36) foram obtidos de dl.google.com/android/repository (pacotes\nplatform-NN; o Maven do Google só publica com.google.android:android 4.1.1.4)\ne scripts/appendix_c_inventory.py regenerou docs/appendix-c-inventory.md e\ndocs/api-inventory/*.csv sem diferença em relação ao commitado.\n\nNenhum status de data/api-coverage.toml muda. A lacuna de C é de implementação.\n\nCo-authored-by: Arena Agent <agent@arena.ai>",
+          "timestamp": "2026-11-05T21:17:31-03:00",
+          "tree_id": "a539b218b1dca721c2e01335b6d13e5a86d3365d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f9d2ea201b244a688526cd5c2c8cfcdf3d77db3a"
+        },
+        "date": 1793924273577,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3343,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3358,
+            "range": "± 31",
             "unit": "ns/iter"
           }
         ]
