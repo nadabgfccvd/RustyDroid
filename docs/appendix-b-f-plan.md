@@ -29,9 +29,11 @@ Os números do texto da spec estão defasados. Valores medidos neste commit:
 | `permissions.toml` (B) | 195 permissões, 13 roles | 5 com `hardRestricted`; 5 com `role = "SMS"` (após este PR) |
 | Catálogo MCP | 52 tools | inclui `permissions_auto_revoke` e `permissions_role` (Apêndice B6) |
 
-Não é possível contar o inventário literal de C: o sandbox não tem `android.jar`
-(`find / -name android.jar` vazio). Sem o SDK, o total de classes públicas de API 26–36
-não é mensurável aqui. Isso é um bloqueio de C, não uma estimativa.
+O inventário literal de C está medido e commitado em `docs/appendix-c-inventory.md`
+(API 26–36, gerado de `android.jar` oficiais). Em 2026-11-06 os 11 jars foram baixados
+de `dl.google.com/android/repository` (pacotes `platform-NN`; o Maven do Google só publica
+`com.google.android:android` 4.1.1.4) e o script `scripts/appendix_c_inventory.py`
+regenerou os CSVs e o Markdown byte a byte iguais aos commitados. Ver §5, Apêndice C.
 
 ## 3. Apêndice B — estado
 
@@ -185,10 +187,19 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
   o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.
 
 ### Apêndice C (literal)
-- **Bloqueio fundamental:** sem `android.jar` não há inventário literal. Rodada 0:
-  obter um `android.jar` de API 26–36 (repositório Maven do Google, `com.google.android:android`),
-  gerar a lista de classes/métodos públicos por prefixo registrado e gravar o total em
-  `docs/appendix-c-inventory.md`. Nenhuma superfície muda de status antes disso.
+- **Rodada 0 — concluída (2026-11-06):** o `android.jar` de API 26–36 não está no Maven
+  do Google para essas APIs (`com.google.android:android` tem só 4.1.1.4). Os 11 jars
+  oficiais vieram dos pacotes `platform-NN` em `dl.google.com/android/repository`
+  (26: `platform-26_r02`, 27: `platform-27_r03`, 28: `platform-28_r06`, 29: `platform-29_r05`,
+  30: `platform-30_r03`, 31: `platform-31_r01`, 32: `platform-32_r01`, 33: `platform-33-ext3_r03`,
+  34: `platform-34-ext7_r03`, 35: `platform-35_r02`, 36: `platform-36_r02`).
+  `scripts/appendix_c_inventory.py --sdk-dir <dir>` reproduz `docs/appendix-c-inventory.md`
+  e `docs/api-inventory/*.csv` sem diferença. Nenhuma superfície mudou de status com isso.
+  Contagem do script: 4181 arquivos de classe no API 26 e 6227 no API 36 (brutos); o
+  Markdown reporta 4172 e 6222 classes públicas + protegidas.
+- **Próximo passo de C:** a lacuna é de implementação, não de inventário. Por domínio, com
+  maior número de superfícies `partial` primeiro (`android-view`, `android-widget`,
+  `android-os`, `android-content`, `android-graphics`), implementar ou marcar bloqueio por item.
 - Rodadas seguintes: por domínio, implementar ou marcar bloqueio por item, na ordem do
   maior número de superfícies `partial` (ver tabela da spec, domínios App/lifecycle e View/UI).
 
@@ -208,8 +219,8 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
 ## 6. Decisões que dependem do usuário
 
 1. **offline-device (F): resolvido pelo usuário em 2026-11-05** — mapeado para `PROVISIONING_ALLOW_OFFLINE` com a ressalva da §4. Se houver uma action de device feature oficial, substituir a linha da §4.
-2. **revokeWhenRequested, instant, softRestriction (B):** fornecer a fonte de semântica, ou aceitar como bloqueio documentado.
-3. **Apêndice C literal:** aceitar que o inventário depende de `android.jar` (obtenção pela rede do sandbox) ou fornecer o arquivo.
+2. **revokeWhenRequested, instant, softRestriction (B):** resolvido pelo usuário (autonomia para pesquisar e implementar com base em fonte oficial). Resultado da pesquisa na §3.
+3. **Apêndice C literal:** resolvido em 2026-11-06 — o `android.jar` foi obtido pela rede do sandbox (ver §5, Apêndice C).
 4. **Escopo de D e E:** quais das 20 bibliotecas D `not_implemented` e do serviço ML Kit entram nesta spec.
 
 ## 7. Validação deste plano
