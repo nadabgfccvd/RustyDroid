@@ -988,6 +988,11 @@ pub struct HostState {
     /// Recursion depth guard for `host_dispatch_draw` and `dispatch_touch` / `host_dispatch_touch`.
     pub(crate) view_dispatch_depth: usize,
     main_looper: Option<ObjRef>,
+    /// Loopers de `HandlerThread` iniciadas. Drenadas junto com o principal,
+    /// em ordem de deadline virtual (ver `handler_thread.rs`).
+    pub(crate) handler_loopers: Vec<ObjRef>,
+    /// Loopers encerradas com `quitSafely` que ainda têm mensagens devidas.
+    pub(crate) quitting_loopers: Vec<ObjRef>,
     /// M8: thread "main" sintética (VM single-threaded — ver `THREAD`)
     pub(crate) main_thread: Option<ObjRef>,
     /// Thread sintética de trabalho: `Thread.currentThread()` enquanto uma task
@@ -1287,6 +1292,13 @@ impl Engine {
         if let Some(l) = self.fw.main_looper {
             return Ok(l);
         }
+        let r = self.alloc_looper()?;
+        self.fw.main_looper = Some(r);
+        Ok(r)
+    }
+
+    /// Novo `Looper` com fila vazia (principal ou de `HandlerThread`).
+    pub(crate) fn alloc_looper(&mut self) -> Result<ObjRef, VmExit> {
         let r = self
             .heap
             .alloc_instance(LOOPER.to_string(), Vec::new())
@@ -1302,7 +1314,6 @@ impl Engine {
         self.fw
             .objects
             .insert(r, HostObj::Looper { queue: Vec::new() });
-        self.fw.main_looper = Some(r);
         Ok(r)
     }
 
@@ -2547,6 +2558,14 @@ impl Engine {
 
     /// M5 — mensagens pendentes na fila do Looper principal (saúde do
     /// runtime na tool `runtime_health`).
+    /// Mensagens pendentes numa looper específica (principal ou de HandlerThread).
+    pub fn looper_pending_of(&self, looper: ObjRef) -> usize {
+        match self.fw.objects.get(&looper) {
+            Some(HostObj::Looper { queue }) => queue.len(),
+            _ => 0,
+        }
+    }
+
     pub fn looper_pending(&self) -> usize {
         let Some(l) = self.fw.main_looper else {
             return 0;
@@ -2654,20 +2673,35 @@ impl Engine {
         // long press, single-tap-confirmed after the double-tap window)
         ran += crate::view_gesture::deliver_pending(self)?;
         loop {
-            // menor deadline entre os vencidos; idx empata estável
-            let due = self.fw.objects.get(&looper).and_then(|h| match h {
-                HostObj::Looper { queue } => queue
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, m)| m.when_ms <= now)
-                    .min_by_key(|(i, m)| (m.when_ms, *i))
-                    .map(|(i, m)| (i, m.clone())),
-                _ => None,
-            });
-            let Some((idx, msg)) = due else { break };
-            if let Some(HostObj::Looper { queue }) = self.fw.objects.get_mut(&looper) {
-                queue.remove(idx);
+            // Menor deadline entre todas as filas devidas: principal primeiro
+            // em empate, depois as HandlerThread (ordem de criação), depois
+            // as encerradas com quitSafely. Dentro de uma fila, empate
+            // estável por inserção.
+            let mut best: Option<(u64, usize, usize, ObjRef)> = None;
+            let candidates = std::iter::once(looper)
+                .chain(self.fw.handler_loopers.iter().copied())
+                .chain(self.fw.quitting_loopers.iter().copied());
+            for (rank, l) in candidates.enumerate() {
+                let Some(HostObj::Looper { queue }) = self.fw.objects.get(&l) else {
+                    continue;
+                };
+                for (i, m) in queue.iter().enumerate() {
+                    if m.when_ms > now {
+                        continue;
+                    }
+                    let key = (m.when_ms, rank, i);
+                    if best.is_none_or(|(w, r, j, _)| key < (w, r, j)) {
+                        best = Some((m.when_ms, rank, i, l));
+                    }
+                }
             }
+            let Some((_, _, idx, owner)) = best else {
+                break;
+            };
+            let msg = match self.fw.objects.get_mut(&owner) {
+                Some(HostObj::Looper { queue }) => queue.remove(idx),
+                _ => break,
+            };
             if std::env::var("RD_FW_DEBUG").is_ok() {
                 eprintln!(
                     "[fw] drain: runnable #{} ({}) quando {} <= {}",
@@ -2689,6 +2723,11 @@ impl Engine {
             self.call(d, def, &m, vec![Value::Obj(msg.runnable)])?;
             ran += 1;
         }
+        // Loopers encerradas com quitSafely saem da lista quando esvaziam.
+        let objects = &self.fw.objects;
+        self.fw.quitting_loopers.retain(
+            |l| matches!(objects.get(l), Some(HostObj::Looper { queue }) if !queue.is_empty()),
+        );
         // Main is idle: give ready green threads a turn (threads.rs). What
         // they post to the Looper runs on the next pass; alternate until
         // both are quiescent (fuel bounds pathological ping-pong).

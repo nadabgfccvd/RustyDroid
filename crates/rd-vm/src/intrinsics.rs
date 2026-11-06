@@ -39,6 +39,11 @@ const KOTLIN_REFLECTION: &str = "Lkotlin/jvm/internal/Reflection;";
 const EXECUTOR: &str = "Ljava/util/concurrent/Executor;";
 const EXECUTOR_SVC: &str = "Ljava/util/concurrent/ExecutorService;";
 const FORK_JOIN_POOL: &str = "Ljava/util/concurrent/ForkJoinPool;";
+/// `new ThreadPoolExecutor(...)` (CameraX builds its own executor this way).
+/// It is the same inline executor as `Executors.newFixedThreadPool`: the VM is
+/// single-threaded, so pool size, keep-alive, queue, factory and rejection
+/// handler are accepted and not applied (documented in `compat_gaps`).
+const THREAD_POOL_EXECUTOR: &str = "Ljava/util/concurrent/ThreadPoolExecutor;";
 const FUTURE: &str = "Ljava/util/concurrent/Future;";
 /// M8: 24º gap do launch real (`ServiceLoader.load`). Sem leitura de
 /// `META-INF/services` no APK, o loader é deliberadamente vazio; isso mantém
@@ -314,6 +319,11 @@ fn call_static_intrinsic_rooted(
 ) -> Result<Option<Value>, VmExit> {
     if class == crate::webkit_cookies::COOKIE_MANAGER {
         if let Some(value) = crate::webkit_cookies::static_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
+    if class == crate::java_util_logging::LOGGER {
+        if let Some(value) = crate::java_util_logging::static_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
         }
     }
@@ -1903,6 +1913,34 @@ fn reflect_field_intrinsic(
         }
         _ => Ok(None),
     }
+}
+
+/// `ThreadPoolExecutor` constructors of the JDK (the four overloads).
+fn thread_pool_ctor(sig: &str) -> bool {
+    matches!(
+        sig,
+        "(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;)V"
+            | "(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;Ljava/util/concurrent/ThreadFactory;)V"
+            | "(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;Ljava/util/concurrent/RejectedExecutionHandler;)V"
+            | "(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;Ljava/util/concurrent/ThreadFactory;Ljava/util/concurrent/RejectedExecutionHandler;)V"
+    )
+}
+
+/// `ThreadPoolExecutor` configuration setters (JDK signatures).
+fn thread_pool_config(name: &str, sig: &str) -> bool {
+    matches!(
+        (name, sig),
+        (
+            "setRejectedExecutionHandler",
+            "(Ljava/util/concurrent/RejectedExecutionHandler;)V"
+        ) | (
+            "setThreadFactory",
+            "(Ljava/util/concurrent/ThreadFactory;)V"
+        ) | ("setCorePoolSize", "(I)V")
+            | ("setMaximumPoolSize", "(I)V")
+            | ("setKeepAliveTime", "(JLjava/util/concurrent/TimeUnit;)V")
+            | ("allowCoreThreadTimeOut", "(Z)V")
+    )
 }
 
 /// (name, sig) de fábricas `Executors` suportadas (M8).
@@ -4359,6 +4397,13 @@ fn instance_intrinsic_dispatch_full(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if mref_class == crate::java_util_logging::LOGGER {
+        if let Some(value) =
+            crate::java_util_logging::instance_intrinsic(vm, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+    }
     if mref_class == crate::webkit_cookies::COOKIE_MANAGER {
         if let Some(value) = crate::webkit_cookies::instance_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -5280,6 +5325,11 @@ fn instance_intrinsic_core(
         // ── AtomicInteger (M8) ──────────────────────────────────────────────
         // Estado no campo "value" (Int). Overflow i32 segue a semântica Java
         // (silencioso/wrapping); longValue/floatValue/doubleValue alargam.
+        (THREAD_POOL_EXECUTOR, "<init>", sig) if thread_pool_ctor(sig) => Ok(Some(Value::Null)),
+        // Configuration setters are accepted and not applied (inline executor).
+        // Their getters are not modelled, so a read of the value stays a typed
+        // NOT_FOUND instead of a guess.
+        (THREAD_POOL_EXECUTOR, name, sig) if thread_pool_config(name, sig) => Ok(Some(Value::Null)),
         (ATOMIC_INT, "<init>", "()V") => {
             crate::err::put_field_result(vm.heap.put_field(recv, "value", Value::Int(0)))?;
             Ok(Some(Value::Null))

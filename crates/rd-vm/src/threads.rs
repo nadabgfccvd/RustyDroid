@@ -80,7 +80,7 @@ pub struct Threads {
 }
 
 impl Threads {
-    fn entry(&mut self, t: ObjRef) -> &mut GreenThread {
+    pub(crate) fn entry(&mut self, t: ObjRef) -> &mut GreenThread {
         if let std::collections::hash_map::Entry::Vacant(entry) = self.table.entry(t) {
             self.next_id += 1;
             let id = self.next_id + 1; // 1 is "main"
@@ -268,6 +268,17 @@ pub(crate) fn instance_intrinsic(
     {
         return Ok(None);
     }
+    if mref_class == crate::handler_thread::HANDLER_THREAD
+        || vm
+            .cp
+            .is_subtype(recv_class, crate::handler_thread::HANDLER_THREAD)
+    {
+        if let Some(v) =
+            crate::handler_thread::instance_intrinsic(vm, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(v));
+        }
+    }
     if name == "<init>" {
         if mref_class != THREAD {
             return Ok(None);
@@ -407,6 +418,14 @@ fn call_run(vm: &mut Engine, r: ObjRef) -> Result<(), VmExit> {
         return Ok(());
     }
     let Some((d, def, m)) = vm.cp.resolve_method(&class, "run", "()V") else {
+        // HandlerThread without a DEX run(): its body is the Looper drain
+        // (handler_thread.rs), so there is nothing to run here.
+        if vm
+            .cp
+            .is_subtype(&class, crate::handler_thread::HANDLER_THREAD)
+        {
+            return Ok(());
+        }
         return Err(crate::classpath::unresolved_method(&class, "run", "()V").into());
     };
     vm.call(d, def, &m, vec![Value::Obj(r)])?;

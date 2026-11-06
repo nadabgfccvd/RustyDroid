@@ -840,6 +840,9 @@ pub(crate) fn instance_intrinsic(
     if mref_class == crate::view_gesture::GESTURE_DETECTOR {
         return crate::view_gesture::instance_call(vm, name, sig, recv, args);
     }
+    if mref_class == crate::view_scale_gesture::SCALE_GESTURE_DETECTOR {
+        return crate::view_scale_gesture::instance_call(vm, name, sig, recv, args);
+    }
     if mref_class == STRICT_VM_POLICY || mref_class == STRICT_THREAD_POLICY {
         // AOSP policies are value-less singletons: identity equality, the
         // object hash, and the platform `toString` shape.

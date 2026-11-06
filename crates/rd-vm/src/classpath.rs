@@ -1220,6 +1220,12 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // false e o `invoke-direct <init>(String)` morre com NOT_FOUND em vez
         // de materializar a exceção do app. AOSP: estende RuntimeException.
         "Landroid/view/InflateException;" => Some(RUNTIME),
+        // `Resources.NotFoundException` (AOSP: `extends RuntimeException`) is what
+        // `android_res::not_found` throws for an unknown resource id. Without its
+        // entry the hierarchy is unknown, `checkcast Throwable` fails with
+        // `ClassCastException`, and a coroutine fatal error kills the app
+        // (Comprix, tab Scanner, 2026-11-06).
+        "Landroid/content/res/Resources$NotFoundException;" => Some(RUNTIME),
         "Ljava/lang/ClassNotFoundException;"
         | "Ljava/lang/InstantiationException;"
         | "Ljava/lang/NoSuchMethodException;"
@@ -1995,16 +2001,20 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/lang/Double;" => Some(&["Ljava/lang/Number;", "Ljava/lang/Object;"]),
         "Ljava/lang/Boolean;" | "Ljava/lang/Character;" => Some(OBJECT),
         "Ljava/util/concurrent/AbstractExecutorService;" => Some(OBJECT),
-        "Ljava/util/concurrent/ForkJoinPool;" => Some(&[
-            "Ljava/util/concurrent/AbstractExecutorService;",
-            "Ljava/lang/Object;",
-        ]),
+        "Ljava/util/concurrent/ForkJoinPool;" | "Ljava/util/concurrent/ThreadPoolExecutor;" => {
+            Some(&[
+                "Ljava/util/concurrent/AbstractExecutorService;",
+                "Ljava/lang/Object;",
+            ])
+        }
         "Landroid/text/method/BaseMovementMethod;" => Some(OBJECT),
         "Landroid/text/method/LinkMovementMethod;" => Some(&[
             "Landroid/text/method/BaseMovementMethod;",
             "Ljava/lang/Object;",
         ]),
         "Ljava/lang/Thread;" => Some(OBJECT),
+        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
+        "Ljava/util/logging/Logger;" => Some(OBJECT),
         "Ljava/lang/ThreadLocal;" => Some(OBJECT),
         "Ljava/lang/InheritableThreadLocal;" => {
             Some(&["Ljava/lang/ThreadLocal;", "Ljava/lang/Object;"])
@@ -3200,7 +3210,8 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         | "Ljava/util/concurrent/atomic/AtomicLong;"
         | "Ljava/util/concurrent/atomic/AtomicBoolean;" => Some(&["Ljava/io/Serializable;"]),
         "Ljava/util/concurrent/AbstractExecutorService;"
-        | "Ljava/util/concurrent/ForkJoinPool;" => Some(&[
+        | "Ljava/util/concurrent/ForkJoinPool;"
+        | "Ljava/util/concurrent/ThreadPoolExecutor;" => Some(&[
             "Ljava/util/concurrent/ExecutorService;",
             "Ljava/util/concurrent/Executor;",
         ]),
