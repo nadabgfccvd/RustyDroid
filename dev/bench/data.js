@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793975460154,
+  "lastUpdate": 1793980914893,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -4931,6 +4931,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3349,
             "range": "± 22",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "319817c6fb6cc8aacd2a81d757068de373331117",
+          "message": "fix(vm): Scanner do Comprix — Camera2 com câmera virtual até o preview (MEDIA-03) (#577)\n\nContinuação da causa raiz do MEDIA-03 (CameraX no Scanner). Cada ponto foi\nvalidado no log do Comprix v1.6.0 até o próximo bloqueio:\n\n- CameraCharacteristics.get: chaves sem valor devolviam null (NPE em\n  CameraCharacteristicsCompat.get); agora todas as chaves usadas pelo APK\n  têm valor, e chave desconhecida continua null.\n- SCALER_AVAILABLE_STREAM_USE_CASES é long[] (CameraX faz check-cast [J).\n- CamcorderProfile.hasProfile(II)Z = false: sem perfis de encoder, gravação\n  de vídeo indisponível (limite documentado).\n- Construtor de AbstractExecutorService (superclasse de\n  HandlerScheduledExecutorService): guarda por mref_class antes do match,\n  porque o braço por classe declarante nunca casava para subclasses do app.\n- EnumSet.copyOf(Collection): modelo sobre HostObj::List ordenado; coleção\n  sem lista host vira NOT_FOUND tipado.\n- java.util.logging.Level: constantes padrão e intValue(); Logger.log/logp\n  com Level roteiam para Log.println com a mesma prioridade do AndroidHandler.\n  Throwable entra como toString na mensagem (sem stack trace).\n- HandlerExecutor (Context.getMainExecutor) não roda mais inline: o braço\n  genérico de Executor trocava Thread.currentThread() para a thread de\n  worker e PreviewView.getSurfaceProvider (checkMainThread) lançava\n  IllegalStateException no listener do CameraX.\n\nEstado: last_error vazio e sem \"Retry init\" na tela Escanear; preview ainda\npreto (frames da câmera virtual não chegam ao PreviewView). Não fechado nesta PR.\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-06T13:01:14-03:00",
+          "tree_id": "0ef9f90b76813796076fa60f09f64299c2a22dd4",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/319817c6fb6cc8aacd2a81d757068de373331117"
+        },
+        "date": 1793980913873,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3188,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3193,
+            "range": "± 45",
             "unit": "ns/iter"
           }
         ]
