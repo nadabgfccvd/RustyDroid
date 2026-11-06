@@ -235,6 +235,12 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
   e `docs/api-inventory/*.csv` sem diferença. Nenhuma superfície mudou de status com isso.
   Contagem do script: 4181 arquivos de classe no API 26 e 6227 no API 36 (brutos); o
   Markdown reporta 4172 e 6222 classes públicas + protegidas.
+- **Verificação de fonte (2026-11-06, pedido do usuário "baixar do Maven do Google"):**
+  `maven.google.com` e `dl.google.com/dl/android/maven2` respondem 404 para
+  `com/google/android/android/` (metadados e o POM de 4.1.1.4). O artefato só existe no
+  Maven Central (`repo1.maven.org`), com versões até `4.1.1.4` (API 4.1, sem nenhuma API 26+).
+  Por isso APIs 26–36 vieram dos pacotes `platform-NN` oficiais (`dl.google.com/android/repository`),
+  que é a fonte oficial do `android.jar`. Substituição de fonte registrada aqui para decisão do usuário.
 - **Próximo passo de C:** a lacuna é de implementação, não de inventário. Por domínio, com
   maior número de superfícies `partial` primeiro (`android-view`, `android-widget`,
   `android-os`, `android-content`, `android-graphics`), implementar ou marcar bloqueio por item.
