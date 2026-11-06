@@ -35,6 +35,80 @@ const BYTE_BUFFER: &str = "Ljava/nio/ByteBuffer;";
 const NIO_BUFFER: &str = "Ljava/nio/Buffer;";
 const BYTE_ORDER: &str = "Ljava/nio/ByteOrder;";
 
+/// `CameraCharacteristics.Key` estáticos lidos pelo CameraX (camera-camera2 1.x). Cada nome
+/// precisa existir como campo, senão o campo fica `null` e `CameraCharacteristicsCompat.get(null)`
+/// lança `NullPointerException` (Retry init do CameraX, MEDIA-03).
+const CAMERA_CHARS_KEYS: &[&str] = &[
+    "LENS_FACING",
+    "SENSOR_ORIENTATION",
+    "FLASH_INFO_AVAILABLE",
+    "INFO_SUPPORTED_HARDWARE_LEVEL",
+    "SCALER_STREAM_CONFIGURATION_MAP",
+    "SCALER_STREAM_CONFIGURATION_MAP_MAXIMUM_RESOLUTION",
+    "SCALER_AVAILABLE_MAX_DIGITAL_ZOOM",
+    "SCALER_AVAILABLE_STREAM_USE_CASES",
+    "SENSOR_INFO_ACTIVE_ARRAY_SIZE",
+    "SENSOR_INFO_PIXEL_ARRAY_SIZE",
+    "SENSOR_INFO_PHYSICAL_SIZE",
+    "SENSOR_INFO_TIMESTAMP_SOURCE",
+    "REQUEST_AVAILABLE_CAPABILITIES",
+    "REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES",
+    "REQUEST_RECOMMENDED_TEN_BIT_DYNAMIC_RANGE_PROFILE",
+    "CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES",
+    "CONTROL_AE_COMPENSATION_RANGE",
+    "CONTROL_AE_COMPENSATION_STEP",
+    "CONTROL_AE_AVAILABLE_MODES",
+    "CONTROL_AF_AVAILABLE_MODES",
+    "CONTROL_AWB_AVAILABLE_MODES",
+    "CONTROL_MAX_REGIONS_AE",
+    "CONTROL_MAX_REGIONS_AF",
+    "CONTROL_MAX_REGIONS_AWB",
+    "CONTROL_ZOOM_RATIO_RANGE",
+    "LENS_INFO_AVAILABLE_FOCAL_LENGTHS",
+];
+
+/// `CaptureRequest.Key` usados pelo CameraX ao montar o `CaptureRequest.Builder`.
+const CAPTURE_REQUEST_KEYS: &[&str] = &[
+    "CONTROL_AE_EXPOSURE_COMPENSATION",
+    "CONTROL_AE_MODE",
+    "CONTROL_AE_PRECAPTURE_TRIGGER",
+    "CONTROL_AE_REGIONS",
+    "CONTROL_AE_TARGET_FPS_RANGE",
+    "CONTROL_AF_MODE",
+    "CONTROL_AF_REGIONS",
+    "CONTROL_AF_TRIGGER",
+    "CONTROL_AWB_MODE",
+    "CONTROL_AWB_REGIONS",
+    "CONTROL_ENABLE_ZSL",
+    "CONTROL_MODE",
+    "CONTROL_ZOOM_RATIO",
+    "FLASH_MODE",
+    "JPEG_ORIENTATION",
+    "JPEG_QUALITY",
+    "SCALER_CROP_REGION",
+    "TONEMAP_MODE",
+];
+
+/// `CaptureResult.Key` usados pelo CameraX nos callbacks de resultado.
+const CAPTURE_RESULT_KEYS: &[&str] = &[
+    "CONTROL_AE_EXPOSURE_COMPENSATION",
+    "CONTROL_AE_MODE",
+    "CONTROL_AE_STATE",
+    "CONTROL_AF_MODE",
+    "CONTROL_AF_STATE",
+    "CONTROL_AWB_MODE",
+    "CONTROL_AWB_STATE",
+    "CONTROL_POST_RAW_SENSITIVITY_BOOST",
+    "FLASH_STATE",
+    "JPEG_ORIENTATION",
+    "LENS_APERTURE",
+    "LENS_FOCAL_LENGTH",
+    "SCALER_CROP_REGION",
+    "SENSOR_EXPOSURE_TIME",
+    "SENSOR_SENSITIVITY",
+    "SENSOR_TIMESTAMP",
+];
+
 #[derive(Debug, Clone)]
 pub struct VirtualCamera {
     pub id: String,
@@ -250,6 +324,52 @@ fn boxed_int(vm: &mut Engine, v: i32) -> Result<Value, VmExit> {
     Ok(Value::Obj(r))
 }
 
+/// `int[]` do dispositivo virtual (modos, capacidades).
+fn int_array(vm: &mut Engine, vals: &[i32]) -> Result<Value, VmExit> {
+    let r = vm
+        .heap
+        .alloc_array(crate::heap::ElemKind::Int, vals.len(), "[I")?;
+    *vm.heap.array_elems_mut(r)? = vals.iter().map(|v| Value::Int(*v)).collect();
+    Ok(Value::Obj(r))
+}
+
+/// `float[]` do dispositivo virtual (distâncias focais).
+fn float_array(vm: &mut Engine, vals: &[f32]) -> Result<Value, VmExit> {
+    let r = vm
+        .heap
+        .alloc_array(crate::heap::ElemKind::Float, vals.len(), "[F")?;
+    *vm.heap.array_elems_mut(r)? = vals.iter().map(|v| Value::Float(*v)).collect();
+    Ok(Value::Obj(r))
+}
+
+/// `Range<Integer>` com os campos que o modelo de `android.util.Range` usa (`rd_lower`/`rd_upper`).
+fn int_range(vm: &mut Engine, lo: i32, hi: i32) -> Result<Value, VmExit> {
+    let r = alloc(vm, "Landroid/util/Range;")?;
+    let lo = boxed_int(vm, lo)?;
+    let hi = boxed_int(vm, hi)?;
+    put_field(vm, r, "rd_lower", lo)?;
+    put_field(vm, r, "rd_upper", hi)?;
+    Ok(Value::Obj(r))
+}
+
+/// `Range<Float>` (zoom).
+fn float_range(vm: &mut Engine, lo: f32, hi: f32) -> Result<Value, VmExit> {
+    let r = alloc(vm, "Landroid/util/Range;")?;
+    let lo = crate::boxes::box_value(vm, "Ljava/lang/Float;", Value::Float(lo))?;
+    let hi = crate::boxes::box_value(vm, "Ljava/lang/Float;", Value::Float(hi))?;
+    put_field(vm, r, "rd_lower", Value::Obj(lo))?;
+    put_field(vm, r, "rd_upper", Value::Obj(hi))?;
+    Ok(Value::Obj(r))
+}
+
+/// `android.util.Rational` (campos `rd_num`/`rd_den`, como em `android_stub_surfaces`).
+fn rational(vm: &mut Engine, num: i32, den: i32) -> Result<Value, VmExit> {
+    let r = alloc(vm, "Landroid/util/Rational;")?;
+    put_field(vm, r, "rd_num", Value::Int(num))?;
+    put_field(vm, r, "rd_den", Value::Int(den))?;
+    Ok(Value::Obj(r))
+}
+
 fn boxed_bool(vm: &mut Engine, v: bool) -> Result<Value, VmExit> {
     let r = alloc_with(
         vm,
@@ -265,12 +385,7 @@ pub(super) fn host_static(
     name: &str,
 ) -> Result<Option<Value>, VmExit> {
     match (owner, name) {
-        (CAMERA_CHARS, "LENS_FACING")
-        | (CAMERA_CHARS, "SENSOR_ORIENTATION")
-        | (CAMERA_CHARS, "FLASH_INFO_AVAILABLE")
-        | (CAMERA_CHARS, "INFO_SUPPORTED_HARDWARE_LEVEL")
-        | (CAMERA_CHARS, "SCALER_STREAM_CONFIGURATION_MAP")
-        | (CAMERA_CHARS, "SENSOR_INFO_ACTIVE_ARRAY_SIZE") => {
+        (CAMERA_CHARS, n) if CAMERA_CHARS_KEYS.contains(&n) => {
             alloc_key_obj(vm, CAMERA_CHARS_KEY, name).map(Some)
         }
         (CAMERA_CHARS, "LENS_FACING_FRONT") => Ok(Some(Value::Int(0))),
@@ -282,16 +397,10 @@ pub(super) fn host_static(
         (CAMERA_DEVICE, "TEMPLATE_PREVIEW") => Ok(Some(Value::Int(1))),
         (CAMERA_DEVICE, "TEMPLATE_STILL_CAPTURE") => Ok(Some(Value::Int(2))),
         (CAMERA_DEVICE, "TEMPLATE_RECORD") => Ok(Some(Value::Int(3))),
-        (CAPTURE_REQUEST, "CONTROL_AF_MODE")
-        | (CAPTURE_REQUEST, "CONTROL_AE_MODE")
-        | (CAPTURE_REQUEST, "FLASH_MODE")
-        | (CAPTURE_REQUEST, "JPEG_ORIENTATION") => {
+        (CAPTURE_REQUEST, n) if CAPTURE_REQUEST_KEYS.contains(&n) => {
             alloc_key_obj(vm, CAPTURE_REQUEST_KEY, name).map(Some)
         }
-        (CAPTURE_RESULT, "CONTROL_AF_STATE")
-        | (CAPTURE_RESULT, "CONTROL_AE_STATE")
-        | (CAPTURE_RESULT, "FLASH_STATE")
-        | (TOTAL_CAPTURE_RESULT, "CONTROL_AF_STATE") => {
+        (CAPTURE_RESULT, n) | (TOTAL_CAPTURE_RESULT, n) if CAPTURE_RESULT_KEYS.contains(&n) => {
             alloc_key_obj(vm, CAPTURE_RESULT_KEY, name).map(Some)
         }
         (IMAGE_FORMAT, "JPEG") => Ok(Some(Value::Int(256))),
@@ -315,6 +424,10 @@ pub(super) fn static_call(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match (class, name) {
+        // Dispositivo virtual sem perfis de encoder de vídeo: `hasProfile` = false faz o CameraX
+        // (`Camera2EncoderProfilesProvider`) devolver `null` sem chamar `CamcorderProfile.get`.
+        // Gravação de vídeo fica indisponível (limite documentado; Foto e Código não usam isso).
+        ("Landroid/media/CamcorderProfile;", "hasProfile") => Ok(Some(Value::Int(0))),
         (IMAGE_READER, "newInstance") => {
             let w = int_arg(args, 0);
             let h = int_arg(args, 1);
@@ -533,6 +646,53 @@ pub(super) fn instance_call(
                     "SENSOR_ORIENTATION" => Ok(Some(boxed_int(vm, cam.sensor_orientation)?)),
                     "FLASH_INFO_AVAILABLE" => Ok(Some(boxed_bool(vm, cam.flash_available)?)),
                     "INFO_SUPPORTED_HARDWARE_LEVEL" => Ok(Some(boxed_int(vm, 1)?)),
+                    // Valores do dispositivo virtual (um sensor, sem regiões de foco/exposição,
+                    // zoom 1x–4x, sem perfis de faixa dinâmica). Sem eles o CameraX recebia
+                    // `null` e falhava em `CameraXConfig` / `Camera2DeviceSurfaceManager`.
+                    "SENSOR_INFO_TIMESTAMP_SOURCE" => Ok(Some(boxed_int(vm, 1)?)), // REALTIME
+                    "CONTROL_MAX_REGIONS_AE"
+                    | "CONTROL_MAX_REGIONS_AF"
+                    | "CONTROL_MAX_REGIONS_AWB" => Ok(Some(boxed_int(vm, 0)?)),
+                    "REQUEST_AVAILABLE_CAPABILITIES" => Ok(Some(int_array(vm, &[0])?)), // BACKWARD_COMPATIBLE
+                    "CONTROL_AE_AVAILABLE_MODES" => Ok(Some(int_array(vm, &[1])?)),     // ON
+                    "CONTROL_AF_AVAILABLE_MODES" => Ok(Some(int_array(vm, &[0, 1, 4])?)), // OFF, AUTO, CONTINUOUS_PICTURE
+                    "CONTROL_AWB_AVAILABLE_MODES" => Ok(Some(int_array(vm, &[1])?)),      // AUTO
+                    // `Key<long[]>`: `StreamUseCaseUtil` faz `check-cast [J`; vazio = sem stream use cases.
+                    "SCALER_AVAILABLE_STREAM_USE_CASES" => {
+                        let r = vm.heap.alloc_array(crate::heap::ElemKind::Long, 0, "[J")?;
+                        Ok(Some(Value::Obj(r)))
+                    }
+                    "SCALER_AVAILABLE_MAX_DIGITAL_ZOOM" => {
+                        let f =
+                            crate::boxes::box_value(vm, "Ljava/lang/Float;", Value::Float(4.0))?;
+                        Ok(Some(Value::Obj(f)))
+                    }
+                    "CONTROL_ZOOM_RATIO_RANGE" => Ok(Some(float_range(vm, 1.0, 4.0)?)),
+                    "CONTROL_AE_COMPENSATION_RANGE" => Ok(Some(int_range(vm, -4, 4)?)),
+                    "CONTROL_AE_COMPENSATION_STEP" => Ok(Some(rational(vm, 1, 3)?)),
+                    "CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES" => {
+                        let r = int_range(vm, 15, 30)?;
+                        Ok(Some(obj_array(vm, "[Landroid/util/Range;", vec![r])?))
+                    }
+                    "LENS_INFO_AVAILABLE_FOCAL_LENGTHS" => Ok(Some(float_array(vm, &[4.0])?)),
+                    "SENSOR_INFO_PIXEL_ARRAY_SIZE" => {
+                        let sz = alloc_with(
+                            vm,
+                            SIZE_CLS,
+                            vec![
+                                ("rd_w".into(), Value::Int(cam.width)),
+                                ("rd_h".into(), Value::Int(cam.height)),
+                            ],
+                        )?;
+                        Ok(Some(Value::Obj(sz)))
+                    }
+                    "SENSOR_INFO_PHYSICAL_SIZE" => {
+                        // Pixel de 1,4 µm (suposição do modelo virtual).
+                        let sf = alloc(vm, "Landroid/util/SizeF;")?;
+                        put_field(vm, sf, "rd_w", Value::Float(cam.width as f32 * 0.0014))?;
+                        put_field(vm, sf, "rd_h", Value::Float(cam.height as f32 * 0.0014))?;
+                        Ok(Some(Value::Obj(sf)))
+                    }
                     "SCALER_STREAM_CONFIGURATION_MAP" => {
                         let m = alloc_with(
                             vm,
