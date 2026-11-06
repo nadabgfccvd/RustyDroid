@@ -55,13 +55,17 @@ regenerou os CSVs e o Markdown byte a byte iguais aos commitados. Ver §5, Apên
 | Flag `immutable` | `is_frozen` em grant/deny/revoke/auto-revoke | `immutable_permission_ignores_grant_deny_and_revoke` |
 | Roles (B6) — `role` | `set_role`, `roles_held`, `permissions_role` (MCP) | `role_holder_gets_role_permissions_and_loses_them_on_exit`; `role_holding_satisfies_hard_restriction_without_allowlist`; `role_grant_takes_precedence_over_an_earlier_denial`; `unknown_role_is_rejected`; `permissions_role_grants_sms_permissions_while_held` |
 
-### Bloqueios (sem fonte verificada; não implementados)
+### Bloqueios (com fonte oficial consultada em 2026-11-06; não implementados)
+
+Estado após a pesquisa: as três flags têm fonte para o que a flag **é**, mas nenhuma tem
+fonte completa para o que ela **faz no runtime**. Por isso continuam sem implementação.
+Pela regra de conclusão de B (§1), cada uma está registrada como bloqueio com fonte.
 
 | Flag | Evidência encontrada | Por que não implementar agora |
 |---|---|---|
-| `instant` | `PROTECTION_FLAG_INSTANT` existe na API oficial (`PermissionInfo`) | Exige modelo de app instantâneo, que o runtime não tem. Hoje o dado não marca nenhuma permissão. |
-| `revokeWhenRequested` | `FLAG_PERMISSION_REVOKE_WHEN_REQUESTED` existe no AOSP (`PackageManagerShellCommand`, `PermissionManagerService`) | A flag existe, mas não encontrei documentação oficial de **quando** a revogação ocorre. Implementar seria chute. |
-| `softRestriction` | Só `ACCESS_BACKGROUND_LOCATION` a usa; `FLAG_SOFT_RESTRICTED` existe na API | Metadado sem efeito verificado no runtime; a restrição do Android é aplicada pelo sistema. Precisa de fonte sobre o efeito antes de modelar. |
+| `instant` | Fonte oficial: `PermissionInfo.PROTECTION_FLAG_INSTANT` (API 27, valor 0x1000), "corresponding to the instant value of R.attr.protectionLevel" ([developer.android.com, PermissionInfo](https://developer.android.com/reference/android/content/pm/PermissionInfo)). O valor `instant` de `protectionLevel` é descrito por terceiros como "esta permissão pode ser concedida a apps instantâneos" (tabela de flags do IzzyOnDroid; a doc oficial só dá a constante). | Não é uma regra de runtime do app, é um atributo de declaração que só tem efeito para apps instantâneos. O runtime não tem modelo de app instantâneo, e `data/permissions.toml` não marca nenhuma permissão com ela. Implementar exigiria o modelo de instalação instantânea. |
+| `revokeWhenRequested` | Fonte: AOSP. `PackageManager.FLAG_PERMISSION_REVOKE_WHEN_REQUESTED` é uma flag de permissão (`PackageManager.permissionFlagToString`); o `PackageManagerShellCommand` a expõe como `revoke-when-requested` em `set-permission-flags`. No `PermissionController` (`KotlinUtils.kt`, caminho de concessão) a flag é limpa junto com a concessão. | A documentação pública da API não diz **quando** a revogação acontece (só que a flag existe). O trecho de revogação em `PermissionManagerServiceImpl.java` (29 partes no googlesource) não foi lido por completo. Sem essa leitura, implementar seria chute. Próximo passo: ler esse trecho. |
+| `softRestriction` | Fonte oficial: `PermissionInfo.FLAG_SOFT_RESTRICTED` (AOSP, javadoc): a permissão é restrita pela plataforma; é concedida na forma completa a apps que cumprem critérios da política da plataforma; caso contrário, "a weaker form of the permission would be granted. The weak grant depends on the permission." Allowlist: `PackageManager` documenta que liberar uma permissão soft restricted permite ao app tê-la "na sua forma completa, sem restrição" ([referência da API de allowlist](https://learn.microsoft.com/en-us/dotnet/api/android.content.pm.packagemanager.addwhitelistedrestrictedpermission?view=net-android-37.0&viewFallbackFrom=xamarin-android-sdk-12), espelho da doc AOSP). | A forma fraca **depende de cada permissão** e a fonte não a enumera. Modelar um padrão uniforme seria inventar o efeito, e isso muda o resultado de todo app que pede essas permissões. Precisa de decisão do usuário sobre a forma fraca de cada permissão (pergunta a registrar em §6). |
 
 A flag `role` foi implementada: a documentação AOSP de roles diz que o role concede as
 permissões declaradas em `<permissions>` ao holder. A ligação SMS → permissões de
