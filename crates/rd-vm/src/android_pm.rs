@@ -122,6 +122,63 @@ fn alloc(vm: &mut Engine, class: &str, fields: Vec<(&str, Value)>) -> Result<Obj
     Ok(vm.heap.alloc_instance(class.to_string(), fields)?)
 }
 
+/// AOSP `PackageParser` `metaData` of a `ComponentInfo`/`ApplicationInfo`:
+/// `null` when the manifest declares no `<meta-data>`, otherwise a `Bundle`
+/// with one entry per declared name. `android:value` is kept as the raw
+/// string, because the manifest parser keeps the text and does not re-type it;
+/// `android:resource` is the resource id as an int (AOSP `putInt`).
+///
+/// CameraX depends on this: `MetadataHolderService` carries the
+/// `CameraXConfig$Provider` entry, and without it `ProcessCameraProvider`
+/// fails with "No default CameraXConfig.Provider specified in meta-data".
+fn meta_data_bundle(
+    vm: &mut Engine,
+    entries: &[rd_apk::manifest::MetaData],
+) -> Result<Value, VmExit> {
+    let valid: Vec<(String, Option<String>, Option<u32>)> = entries
+        .iter()
+        .filter_map(|m| {
+            let name = m.name.clone()?;
+            (m.value.is_some() || m.resource.is_some()).then(|| (name, m.value.clone(), m.resource))
+        })
+        .collect();
+    if valid.is_empty() {
+        return Ok(Value::Null);
+    }
+    let mut map = Vec::with_capacity(valid.len());
+    for (name, value, resource) in valid {
+        let v = match (value, resource) {
+            (Some(s), _) => jstr(vm, &s)?,
+            (None, Some(id)) => Value::Int(id as i32),
+            (None, None) => Value::Null,
+        };
+        map.push((name, v));
+    }
+    let r = vm
+        .heap
+        .alloc_instance("Landroid/os/Bundle;".to_string(), Vec::new())?;
+    vm.fw
+        .objects
+        .insert(r, crate::framework::HostObj::Bundle { map });
+    Ok(Value::Obj(r))
+}
+
+/// `<meta-data>` declared for the component whose class is `class`.
+fn component_meta(vm: &Engine, class: &str) -> Vec<rd_apk::manifest::MetaData> {
+    vm.fw
+        .resources
+        .as_ref()
+        .and_then(|apk| {
+            apk.manifest
+                .application
+                .components
+                .iter()
+                .find(|c| c.class_name == class)
+        })
+        .map(|c| c.meta_data.clone())
+        .unwrap_or_default()
+}
+
 fn not_found(pkg: &str) -> VmExit {
     exc(
         "Landroid/content/pm/PackageManager$NameNotFoundException;",
@@ -131,6 +188,13 @@ fn not_found(pkg: &str) -> VmExit {
 
 fn app_info(vm: &mut Engine) -> Result<ObjRef, VmExit> {
     let m = meta(vm);
+    let app_entries = vm
+        .fw
+        .resources
+        .as_ref()
+        .map(|apk| apk.manifest.application.meta_data.clone())
+        .unwrap_or_default();
+    let app_meta = meta_data_bundle(vm, &app_entries)?;
     let data_dir = format!("/data/user/0/{}", m.package);
     let source_dir = format!("/data/app/{}/base.apk", m.package);
     let fields = vec![
@@ -149,7 +213,7 @@ fn app_info(vm: &mut Engine) -> Result<ObjRef, VmExit> {
         ("targetSdkVersion", Value::Int(m.target_sdk as i32)),
         ("enabled", Value::Int(1)),
         ("flags", Value::Int(0x0000_0004 | 0x0000_0080 | 0x0040_0000)), // HAS_CODE | INSTALLED… | SUPPORTS_RTL-ish
-        ("metaData", Value::Null),
+        ("metaData", app_meta),
         ("nonLocalizedLabel", jstr(vm, &m.label)?),
         ("labelRes", Value::Int(0)),
         ("icon", Value::Int(0)),
@@ -206,6 +270,7 @@ fn manifest_component_info(
     let enabled = i32::from(comp.enabled != Some(false));
     let exported = i32::from(comp.exported_effective);
     let process = comp.process.clone().unwrap_or_else(|| m.package.clone());
+    let comp_meta = meta_data_bundle(vm, &comp.meta_data)?;
     let fields = vec![
         ("name", jstr(vm, &comp.class_name)?),
         ("packageName", jstr(vm, &m.package)?),
@@ -213,7 +278,7 @@ fn manifest_component_info(
         ("applicationInfo", Value::Obj(ai)),
         ("enabled", Value::Int(enabled)),
         ("exported", Value::Int(exported)),
-        ("metaData", Value::Null),
+        ("metaData", comp_meta),
         (
             "authority",
             match &comp.authorities {
@@ -293,6 +358,7 @@ struct ComponentSpec {
     target_activity: Option<String>,
     exported_effective: bool,
     enabled: Option<bool>,
+    meta_data: Vec<rd_apk::manifest::MetaData>,
 }
 
 impl ComponentSpec {
@@ -305,6 +371,7 @@ impl ComponentSpec {
             target_activity: c.target_activity.clone(),
             exported_effective: c.exported_effective,
             enabled: c.enabled,
+            meta_data: c.meta_data.clone(),
         }
     }
 }
@@ -512,6 +579,8 @@ fn component_info(
         return Err(not_found(&format!("{pkg}/{cls}")));
     }
     let ai = app_info(vm)?;
+    let named = component_meta(vm, &cls);
+    let named_meta = meta_data_bundle(vm, &named)?;
     let fields = vec![
         ("name", jstr(vm, &cls)?),
         ("packageName", jstr(vm, &pkg)?),
@@ -519,7 +588,7 @@ fn component_info(
         ("applicationInfo", Value::Obj(ai)),
         ("enabled", Value::Int(1)),
         ("exported", Value::Int(0)),
-        ("metaData", Value::Null),
+        ("metaData", named_meta),
         ("authority", Value::Null),
         ("permission", Value::Null),
         ("theme", Value::Int(0)),
@@ -905,5 +974,68 @@ mod tests {
     fn phone_profile_excludes_tv() {
         assert!(FEATURES.contains(&"android.hardware.camera.any"));
         assert!(!FEATURES.contains(&"android.software.leanback"));
+    }
+}
+
+#[cfg(test)]
+mod meta_data_tests {
+    use super::*;
+    use rd_apk::manifest::MetaData;
+
+    fn entry(name: &str, value: Option<&str>, resource: Option<u32>) -> MetaData {
+        MetaData {
+            name: Some(name.to_string()),
+            value: value.map(str::to_string),
+            resource,
+        }
+    }
+
+    /// AOSP: no `<meta-data>` ⇒ `metaData == null`.
+    #[test]
+    fn no_meta_data_is_null() {
+        let mut vm = Engine::new(Vec::new(), crate::engine::VmConfig::default());
+        assert_eq!(meta_data_bundle(&mut vm, &[]).unwrap(), Value::Null);
+        let unnamed = MetaData {
+            name: None,
+            value: Some("x".into()),
+            resource: None,
+        };
+        assert_eq!(meta_data_bundle(&mut vm, &[unnamed]).unwrap(), Value::Null);
+    }
+
+    /// The CameraX lookup key comes back as the literal string value, and a
+    /// `android:resource` entry as its int id. Entries without a value are not
+    /// stored, as the platform does.
+    #[test]
+    fn declared_entries_become_bundle_extras() {
+        let mut vm = Engine::new(Vec::new(), crate::engine::VmConfig::default());
+        let entries = vec![
+            entry(
+                "androidx.camera.core.CameraXConfig$Provider",
+                Some("androidx.camera.camera2.Camera2Config$DefaultProvider"),
+                None,
+            ),
+            entry("with.resource", None, Some(0x7f01_0002)),
+            entry("no.payload", None, None),
+        ];
+        let Value::Obj(b) = meta_data_bundle(&mut vm, &entries).unwrap() else {
+            panic!("expected a Bundle");
+        };
+        assert_eq!(vm.heap.class_of(b).unwrap(), "Landroid/os/Bundle;");
+        let Some(crate::framework::HostObj::Bundle { map }) = vm.fw.objects.get(&b) else {
+            panic!("Bundle host state missing");
+        };
+        assert_eq!(map.len(), 2, "the payload-less entry is dropped");
+        assert_eq!(
+            map[1],
+            ("with.resource".to_string(), Value::Int(0x7f01_0002))
+        );
+        let Value::Obj(s) = map[0].1.clone() else {
+            panic!("string value expected");
+        };
+        assert_eq!(
+            vm.heap.as_str(s).unwrap(),
+            "androidx.camera.camera2.Camera2Config$DefaultProvider"
+        );
     }
 }
