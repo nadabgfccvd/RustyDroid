@@ -64,8 +64,46 @@ Pela regra de conclusão de B (§1), cada uma está registrada como bloqueio com
 | Flag | Evidência encontrada | Por que não implementar agora |
 |---|---|---|
 | `instant` | Fonte oficial: `PermissionInfo.PROTECTION_FLAG_INSTANT` (API 27, valor 0x1000), "corresponding to the instant value of R.attr.protectionLevel" ([developer.android.com, PermissionInfo](https://developer.android.com/reference/android/content/pm/PermissionInfo)). O valor `instant` de `protectionLevel` é descrito por terceiros como "esta permissão pode ser concedida a apps instantâneos" (tabela de flags do IzzyOnDroid; a doc oficial só dá a constante). | Não é uma regra de runtime do app, é um atributo de declaração que só tem efeito para apps instantâneos. O runtime não tem modelo de app instantâneo, e `data/permissions.toml` não marca nenhuma permissão com ela. Implementar exigiria o modelo de instalação instantânea. |
-| `revokeWhenRequested` | Fonte: AOSP. `PackageManager.FLAG_PERMISSION_REVOKE_WHEN_REQUESTED` é uma flag de permissão (`PackageManager.permissionFlagToString`); o `PackageManagerShellCommand` a expõe como `revoke-when-requested` em `set-permission-flags`. No `PermissionController` (`KotlinUtils.kt`, caminho de concessão) a flag é limpa junto com a concessão. | A documentação pública da API não diz **quando** a revogação acontece (só que a flag existe). O trecho de revogação em `PermissionManagerServiceImpl.java` (29 partes no googlesource) não foi lido por completo. Sem essa leitura, implementar seria chute. Próximo passo: ler esse trecho. |
+| `revokeWhenRequested` | Fonte: AOSP. `PackageManager.FLAG_PERMISSION_REVOKE_WHEN_REQUESTED` é uma flag de permissão (`PackageManager.permissionFlagToString`); o `PackageManagerShellCommand` a expõe como `revoke-when-requested` em `set-permission-flags`. No `PermissionController` (`KotlinUtils.kt`, caminho de concessão) a flag é limpa junto com a concessão. | A documentação pública da API não diz **quando** a revogação acontece (só que a flag existe). O trecho de revogação em `PermissionManagerServiceImpl.java` (29 partes no googlesource) não foi lido por completo (resolvido na segunda rodada abaixo). Sem essa leitura, implementar seria chute. Próximo passo: ler esse trecho. |
 | `softRestriction` | Fonte oficial: `PermissionInfo.FLAG_SOFT_RESTRICTED` (AOSP, javadoc): a permissão é restrita pela plataforma; é concedida na forma completa a apps que cumprem critérios da política da plataforma; caso contrário, "a weaker form of the permission would be granted. The weak grant depends on the permission." Allowlist: `PackageManager` documenta que liberar uma permissão soft restricted permite ao app tê-la "na sua forma completa, sem restrição" ([referência da API de allowlist](https://learn.microsoft.com/en-us/dotnet/api/android.content.pm.packagemanager.addwhitelistedrestrictedpermission?view=net-android-37.0&viewFallbackFrom=xamarin-android-sdk-12), espelho da doc AOSP). | A forma fraca **depende de cada permissão** e a fonte não a enumera. Modelar um padrão uniforme seria inventar o efeito, e isso muda o resultado de todo app que pede essas permissões. Precisa de decisão do usuário sobre a forma fraca de cada permissão (pergunta a registrar em §6). |
+
+#### Segunda rodada de pesquisa (2026-11-06): fontes lidas e pré-requisitos
+
+A pesquisa anterior parou no trecho de revogação de `PermissionManagerServiceImpl.java`. Nesta
+rodada o arquivo inteiro (5368 linhas, `services/core/java/com/android/server/pm/permission/`,
+branch `main`) e `PackageManager.java` foram baixados de `android.googlesource.com` (`?format=TEXT`)
+e lidos. Cópias locais fora do repositório: `/home/user/appc/aosp/`.
+
+- **`revokeWhenRequested` (fonte completa do comportamento):**
+  - Doc da flag (`PackageManager.java:5335`): "The permission has not been explicitly requested by the
+    app but has been added automatically by the system. Revoke once the app does explicitly request it."
+  - Revogação em `revokePermissionsNoLongerImplicitLocked` (PMSI ~2984–3045). Chamada em
+    `updatePermissions` de cada pacote (~2953), com o conjunto de permissões implícitas do pacote.
+    Revoga só se: permissão concedida e runtime; flag `REVOKE_WHEN_REQUESTED` setada; não está em
+    `BLOCKING_PERMISSION_FLAGS` (system fixed, policy fixed, granted by default); target SDK do UID >= 23;
+    e não é a preservação de "Nearby devices" com `ACCESS_BACKGROUND_LOCATION` concedida. Ao final,
+    a flag é removida sempre; as flags do usuário só se houve revogação.
+  - A flag é setada na migração de permissão split (PMSI ~3188), exceto `ACTIVITY_RECOGNITION` e
+    permissões de mídia aural/visual. Herança em ~4800–4870 (merge de flags entre fontes).
+  - **Pré-requisito que falta no VM:** não existe ciclo de update de pacote (o motor é construído
+    uma vez em `PermissionEngine::install`) e não há conjunto de permissões implícitas por versão.
+    Sem o gatilho de update, a função de revogação não teria chamador. Adicionar esse ciclo muda o
+    comportamento de todo app com permissão split, então precisa de decisão do usuário (ver §6).
+- **`instant` (fonte completa do comportamento no framework):**
+  - `checkSinglePermissionInternalLocked` (PMSI ~988–999): para app instantâneo, uma permissão concedida
+    só conta se `Permission.isInstant()`.
+  - `grantRuntimePermission` (PMSI ~1470–1472): concessão de permissão não-instant a app instantâneo
+    lança `SecurityException` ("Cannot grant non-ephemeral permission").
+  - **Pré-requisito que falta no VM:** não existe estado de app instantâneo. `isInstantApp` é fixo em
+    `false` (`android_pm.rs:721`). Modelar o estado muda a resposta de `isInstantApp` para
+    qualquer app que o VM hospede, então também precisa de decisão do usuário.
+- **`softRestriction` (concessão, fonte parcial):**
+  - `grantRuntimePermission` (PMSI ~1378–1390 e ~1456): permissão soft restricted só é concedida se
+    `SoftRestrictedPermissionPolicy.forPermission(...).mayGrantPermission()` for verdadeiro; senão a
+    concessão é recusada ("Cannot grant soft restricted permission"). A própria política
+    (`services/core/java/com/android/server/policy/SoftRestrictedPermissionPolicy.java`) ainda não foi lida.
+  - O VM não tem nenhuma modelagem de soft restriction (`rd-framework/src/fd_permissions.rs`).
+    A forma fraca continua na pergunta §6 item 2a.
 
 A flag `role` foi implementada: a documentação AOSP de roles diz que o role concede as
 permissões declaradas em `<permissions>` ao holder. A ligação SMS → permissões de
@@ -275,6 +313,12 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
 1. **offline-device (F): resolvido pelo usuário em 2026-11-05** — mapeado para `PROVISIONING_ALLOW_OFFLINE` com a ressalva da §4. Se houver uma action de device feature oficial, substituir a linha da §4.
 2. **revokeWhenRequested, instant, softRestriction (B):** resolvido pelo usuário (autonomia para pesquisar e implementar com base em fonte oficial). Resultado da pesquisa na §3.
 2a. **softRestriction (B), forma fraca:** a fonte oficial diz que a forma fraca "depende da permissão", sem listar qual é. Antes de modelar, o usuário precisa dizer, para cada permissão soft restricted usada pelo registro, qual é a forma fraca (ou aceitar que fique como bloqueio). Mudança afeta todos os apps que pedem essas permissões.
+2b. **revokeWhenRequested (B): ciclo de update de pacote.** Para implementar, o VM precisa de um
+   gatilho de update (conjunto de permissões implícitas por versão de pacote). Muda o comportamento de
+   todo app com permissão split quando o VM atualiza o pacote. Pergunta: aprovar esse ciclo?
+2c. **instant (B): estado de app instantâneo.** Hoje `isInstantApp` é sempre `false`. Modelar o estado
+   muda essa resposta para qualquer app hospedado. Pergunta: aprovar o modelo de app instantâneo, ou
+   manter `instant` como bloqueio?
 3. **Apêndice C literal:** resolvido em 2026-11-06 — o `android.jar` foi obtido pela rede do sandbox (ver §5, Apêndice C).
 4. **Escopo de D e E: resolvido pelo usuário (2026-11-05)** — Room (via ST-02) e prioridade da spec; ML Kit fora (ver §5).
 
