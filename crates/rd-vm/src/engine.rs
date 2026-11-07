@@ -300,6 +300,9 @@ pub struct Engine {
     pub(crate) monitors: crate::monitors::Monitors,
     /// Session permission grant set (perms.rs); None = all granted.
     pub granted_permissions: Option<HashSet<String>>,
+    /// Apêndice B `instant`: o app roda instalado como instantâneo.
+    /// `PackageManager.isInstantApp()` responde este valor. Falso por padrão.
+    pub instant_app: bool,
     /// Permissões cuja justificativa deve ser mostrada (Apêndice B: uma negativa
     /// do diálogo). Vazio por padrão: sem sessão, nada tem justificativa.
     pub permission_rationale: HashSet<String>,
@@ -445,6 +448,7 @@ impl Engine {
             threads: Default::default(),
             monitors: Default::default(),
             granted_permissions: None,
+            instant_app: false,
             permission_rationale: HashSet::new(),
             pending_permission_results: Vec::new(),
             window_decor: HashMap::new(),

@@ -56,6 +56,11 @@ impl PermissionDef {
     pub fn is_special(&self) -> bool {
         self.flags.iter().any(|f| f == "special")
     }
+    /// Apêndice B `instant` (`PermissionInfo.PROTECTION_FLAG_INSTANT`): a permissão
+    /// pode ser concedida a app instantâneo. Ver `PermissionEngine::set_instant`.
+    pub fn is_instant(&self) -> bool {
+        self.flags.iter().any(|f| f == "instant")
+    }
     pub fn is_appop(&self) -> bool {
         self.flags.iter().any(|f| f == "appop")
     }
@@ -263,6 +268,8 @@ pub struct PermissionEngine {
     /// Apêndice B6 `revokeWhenRequested`: permissões implícitas (split) que o
     /// sistema concedeu sem o app pedir explicitamente. Chave = nome do estado.
     revoke_when_requested: BTreeSet<String>,
+    /// Apêndice B `instant`: app instalado como instantâneo (`install` com `instant`).
+    instant: bool,
 }
 
 /// Dias sem uso após os quais o Android revoga permissões runtime de um app
@@ -411,6 +418,7 @@ impl PermissionEngine {
             roles_held: BTreeSet::new(),
             role_granted: BTreeSet::new(),
             revoke_when_requested: BTreeSet::new(),
+            instant: false,
         };
         engine.apply_implicit(&manifest.uses_permissions, manifest.target_sdk);
         engine
@@ -477,6 +485,50 @@ impl PermissionEngine {
             .any(|(k, st)| short_permission_name(k) == short && st.is_granted())
     }
 
+    /// Apêndice B `instant` (AOSP `checkSinglePermissionInternalLocked`): num app
+    /// instantâneo, uma concessão só conta se a permissão tem a flag `instant`. As
+    /// demais viram `DeniedSystem` (não concedidas) e não são concedíveis em runtime.
+    /// Só vale na instalação como instantâneo: não há volta para o modo completo.
+    pub fn set_instant(&mut self, instant: bool) {
+        self.instant = instant;
+        if instant {
+            self.apply_instant_rule();
+        }
+    }
+
+    pub fn is_instant(&self) -> bool {
+        self.instant
+    }
+
+    /// Permissão que o modo instantâneo bloqueia (não tem a flag `instant`).
+    fn instant_blocks(&self, name: &str) -> bool {
+        self.instant && self.table.get(name).is_some_and(|d| !d.is_instant())
+    }
+
+    fn apply_instant_rule(&mut self) {
+        let blocked: Vec<String> = self
+            .states
+            .iter()
+            .filter(|(k, st)| {
+                self.instant_blocks(k)
+                    && matches!(
+                        st,
+                        GrantState::AutoGranted
+                            | GrantState::Granted
+                            | GrantState::RuntimePending
+                            | GrantState::SpecialPending
+                            | GrantState::Denied
+                    )
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in blocked {
+            self.states.insert(k.clone(), GrantState::DeniedSystem);
+            self.denials.remove(&k);
+            self.revoke_when_requested.remove(&k);
+        }
+    }
+
     /// Apêndice B6 `revokeWhenRequested`: a permissão é implícita e ainda não foi
     /// pedida explicitamente pelo app (a flag sai quando o app a pede ou o usuário a concede).
     pub fn revoke_when_requested(&self, name: &str) -> bool {
@@ -541,6 +593,7 @@ impl PermissionEngine {
             }
         }
         self.apply_implicit(&manifest.uses_permissions, target);
+        self.apply_instant_rule();
         revoked
     }
 
@@ -613,7 +666,7 @@ impl PermissionEngine {
     /// app não declara a permissão ou se o targetSdk é anterior à API 34.
     pub fn grant_partial_media(&mut self) -> bool {
         const VISUAL: &str = "READ_MEDIA_VISUAL_USER_SELECTED";
-        if self.target_sdk < PARTIAL_MEDIA_API {
+        if self.target_sdk < PARTIAL_MEDIA_API || self.instant_blocks(VISUAL) {
             return false;
         }
         // a chave do mapa é o nome do manifesto (`android.permission.X`) ou o curto
@@ -717,6 +770,7 @@ impl PermissionEngine {
                         .get(k)
                         .is_some_and(|d| d.role.as_deref() == Some(role))
                 })
+                .filter(|k| !self.instant_blocks(k))
                 .cloned()
                 .collect();
             for name in names {
@@ -794,7 +848,7 @@ impl PermissionEngine {
 
     /// Runtime grant (diálogo) — dangerous → Granted.
     pub fn grant(&mut self, name: &str) -> RdResult<GrantState> {
-        if self.is_frozen(name) {
+        if self.is_frozen(name) || self.instant_blocks(name) {
             return self.current_or_missing(name);
         }
         let hard_blocked = self
@@ -1652,6 +1706,131 @@ mod appendix_b_behavior_tests {
             READ_EXT.to_string(),
         ];
         assert!(!implicit_permissions(&t, &both, 32).contains_key("READ_EXTERNAL_STORAGE"));
+    }
+
+    /// AOSP `frameworks/base/core/res/AndroidManifest.xml` (main): permissões com
+    /// `protectionLevel` contendo `instant`, exceto as que não estão na tabela
+    /// (INSTANT_APP_FOREGROUND_SERVICE, FOREGROUND_SERVICE_FILE_MANAGEMENT).
+    const AOSP_INSTANT_PERMISSIONS: &[&str] = &[
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "READ_PHONE_NUMBERS",
+        "RECORD_AUDIO",
+        "ACTIVITY_RECOGNITION",
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_CAMERA",
+        "FOREGROUND_SERVICE_CONNECTED_DEVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "FOREGROUND_SERVICE_LOCATION",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "FOREGROUND_SERVICE_PHONE_CALL",
+        "FOREGROUND_SERVICE_HEALTH",
+        "FOREGROUND_SERVICE_REMOTE_MESSAGING",
+        "FOREGROUND_SERVICE_SYSTEM_EXEMPTED",
+        "FOREGROUND_SERVICE_MEDIA_PROCESSING",
+        "FOREGROUND_SERVICE_SPECIAL_USE",
+    ];
+
+    #[test]
+    fn instant_flag_in_table_matches_framework_manifest() {
+        let t = PermissionTable::embedded().unwrap();
+        for p in &t.permission {
+            if p.is_instant() {
+                assert!(
+                    AOSP_INSTANT_PERMISSIONS.contains(&p.name.as_str()),
+                    "{} tem a flag instant mas não está no core/res do AOSP",
+                    p.name
+                );
+            }
+        }
+        for name in AOSP_INSTANT_PERMISSIONS {
+            if let Some(p) = t.get(name) {
+                assert!(
+                    p.is_instant(),
+                    "{name} é instant no AOSP e falta a flag no dado"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn instant_app_keeps_only_instant_capable_grants() {
+        // INTERNET (normal, instant) segue concedida; WIFI_STATE (normal, não instant) e
+        // READ_CONTACTS (dangerous, não instant) viram DeniedSystem; CAMERA (instant) fica pendente.
+        const WIFI: &str = "android.permission.ACCESS_WIFI_STATE";
+        const CONTACTS: &str = "android.permission.READ_CONTACTS";
+        const INET: &str = "android.permission.INTERNET";
+        let mut e = PermissionEngine::install(
+            &manifest_for(
+                30,
+                &["INTERNET", "ACCESS_WIFI_STATE", "CAMERA", "READ_CONTACTS"],
+            ),
+            PermissionTable::embedded().unwrap(),
+        );
+        assert_eq!(e.state(WIFI), Some(GrantState::AutoGranted));
+        e.set_instant(true);
+        assert!(e.is_instant());
+        assert_eq!(e.state(INET), Some(GrantState::AutoGranted));
+        assert_eq!(e.state(WIFI), Some(GrantState::DeniedSystem));
+        assert_eq!(e.state(CONTACTS), Some(GrantState::DeniedSystem));
+        assert_eq!(e.state(CAM), Some(GrantState::RuntimePending));
+        let granted: Vec<&String> = e
+            .all_states()
+            .iter()
+            .filter(|(_, s)| s.is_granted())
+            .map(|(k, _)| k)
+            .collect();
+        assert!(granted.iter().any(|k| k.as_str() == INET));
+        assert!(!granted
+            .iter()
+            .any(|k| k.as_str() == WIFI || k.as_str() == CONTACTS));
+    }
+
+    #[test]
+    fn instant_app_cannot_be_granted_non_instant_permission() {
+        const CONTACTS: &str = "android.permission.READ_CONTACTS";
+        let mut e = PermissionEngine::install(
+            &manifest_for(30, &["READ_CONTACTS", "CAMERA"]),
+            PermissionTable::embedded().unwrap(),
+        );
+        e.set_instant(true);
+        // AOSP: concessão de não-instant a app instantâneo é recusada
+        assert_eq!(e.grant(CONTACTS).unwrap(), GrantState::DeniedSystem);
+        assert_eq!(e.state(CONTACTS), Some(GrantState::DeniedSystem));
+        // a permissão instant continua concedível
+        assert_eq!(e.grant(CAM).unwrap(), GrantState::Granted);
+    }
+
+    #[test]
+    fn instant_rule_applies_to_permissions_requested_by_update() {
+        const CONTACTS: &str = "android.permission.READ_CONTACTS";
+        let mut e = PermissionEngine::install(
+            &manifest_for(30, &["INTERNET"]),
+            PermissionTable::embedded().unwrap(),
+        );
+        e.set_instant(true);
+        let revoked = e.update(&manifest_for(30, &["INTERNET", "READ_CONTACTS"]));
+        assert!(revoked.is_empty());
+        assert_eq!(e.state(CONTACTS), Some(GrantState::DeniedSystem));
+    }
+
+    #[test]
+    fn instant_app_cannot_receive_non_instant_role_permissions() {
+        const SMS: &str = "android.permission.READ_SMS";
+        let mut e = engine(34, &["READ_SMS", "CAMERA"]);
+        e.set_instant(true);
+        let changed = e.set_role("SMS", true).unwrap();
+        assert!(changed.is_empty());
+        assert_eq!(e.state(SMS), Some(GrantState::DeniedSystem));
     }
 
     #[test]

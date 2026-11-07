@@ -55,6 +55,7 @@ regenerou os CSVs e o Markdown byte a byte iguais aos commitados. Ver §5, Apên
 | Flag `immutable` | `is_frozen` em grant/deny/revoke/auto-revoke | `immutable_permission_ignores_grant_deny_and_revoke` |
 | Roles (B6) — `role` | `set_role`, `roles_held`, `permissions_role` (MCP) | `role_holder_gets_role_permissions_and_loses_them_on_exit`; `role_holding_satisfies_hard_restriction_without_allowlist`; `role_grant_takes_precedence_over_an_earlier_denial`; `unknown_role_is_rejected`; `permissions_role_grants_sms_permissions_while_held` |
 | Flag `softRestriction` (2a) — política da plataforma para READ/WRITE_EXTERNAL_STORAGE | `soft_may_grant`, `soft_weak_form`, recusa em `grant()` (`soft_blocked`); flag em `data/permissions.toml` para as duas permissões | `soft_restricted_storage_is_refused_below_q_without_allowlist`; `soft_restricted_storage_is_granted_in_full_from_api_29`; `soft_restricted_permission_without_platform_rule_keeps_full_grant`. Mutação (sem a recusa) derruba o primeiro teste. |
+| Flag `instant` + modo de app instantâneo (2c) | flag `instant` em 26 permissões do `core/res` do AOSP (`data/permissions.toml`); `install` com `instant` (opt-in, default false) → `PermissionEngine::set_instant`: permissão sem a flag vira `DeniedSystem`; `grant`, `set_role`, `grant_partial_media` e `update` respeitam; `isInstantApp` lê `Engine::instant_app` | `instant_flag_in_table_matches_framework_manifest`; `instant_app_keeps_only_instant_capable_grants`; `instant_app_cannot_be_granted_non_instant_permission`; `instant_rule_applies_to_permissions_requested_by_update`; `instant_app_cannot_receive_non_instant_role_permissions`; `install_as_instant_app_limits_grants_and_fixes_mode` (MCP); `is_instant_app_follows_install_mode` (VM) |
 | `revokeWhenRequested` + split permissions (2b) | `[[split]]` em `data/permissions.toml` (tabela do `platform.xml`); `implicit_permissions`, `apply_implicit` no `install`; `PermissionEngine::update` (ciclo de update, chamado pelo `install` do agente quando o pacote já existe); `grant` limpa a flag | `implicit_grant_is_revoked_when_updated_app_requests_it_explicitly`; `implicit_grant_is_kept_while_app_still_does_not_request_it`; `explicit_request_below_m_drops_flag_without_revoking`; `nearby_devices_grant_is_preserved_when_background_location_is_granted`; `user_grant_clears_revoke_when_requested_flag`; `split_implicit_permissions_depend_on_target_sdk` |
 
 ### Bloqueios (com fonte oficial consultada em 2026-11-06; não implementados)
@@ -336,8 +337,13 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
    feature flag). Para targetSdk < 23 a implícita concedida é aplicada na instalação (modelagem nossa, o AOSP
    concede na instalação; explícitas pré-M seguem `RuntimePending`). Efeito colateral aceito: apps com target < 33
    que pedem WRITE/READ ganham entradas `READ_MEDIA_*` no estado.
-2c. **instant (B): estado de app instantâneo — aprovado pelo usuário (2026-11-07), a implementar em PR próprio.**
-   Hoje `isInstantApp` é sempre `false`. Modelar o estado muda essa resposta para qualquer app hospedado.
+2c. **instant (B): estado de app instantâneo — aprovado pelo usuário (2026-11-07) e implementado.**
+   Modelo: opt-in na instalação (`install` com `instant: true`), que é o equivalente de `adb install --instant`.
+   Apps instalados sem a opção não mudam (`isInstantApp` segue `false` para eles). Fonte da lista de
+   permissões com `instant`: `core/res/AndroidManifest.xml` do AOSP `main` (28 entradas; 26 existem na tabela,
+   faltam `INSTANT_APP_FOREGROUND_SERVICE` e `FOREGROUND_SERVICE_FILE_MANAGEMENT`, lacuna de dado registrada).
+   O modo não muda em update (erro `INSTANT_MODE_CHANGE`). Não modelado: o cache de instalação instantânea
+   e o `PackageInstaller` de app instantâneo.
 2d. **MEDIA-03 (câmera): decisão de escopo tomada em 2026-11-06** — Camera2 com câmera virtual (opção a),
    que altera todos os apps com câmera. **Implementado e mesclado (#577, #578, #579).** Fechamento validado
    com o Scanner: `last_error` vazio, sem `Retry init`, `PreviewView` com frames (screenshot não preta).

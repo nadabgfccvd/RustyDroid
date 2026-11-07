@@ -34,6 +34,11 @@ impl Engine {
         self.granted_permissions = Some(granted.into_iter().collect());
     }
 
+    /// Apêndice B `instant`: marca o app em execução como instantâneo (`isInstantApp`).
+    pub fn set_instant_app(&mut self, instant: bool) {
+        self.instant_app = instant;
+    }
+
     /// Conjunto de permissões com justificativa (`shouldShowRequestPermissionRationale`).
     pub fn set_permission_rationale<I: IntoIterator<Item = String>>(&mut self, names: I) {
         self.permission_rationale = names.into_iter().collect();

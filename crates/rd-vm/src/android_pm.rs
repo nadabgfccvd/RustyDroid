@@ -718,7 +718,8 @@ pub fn instance_intrinsic(
         // devolve COMPONENT_ENABLED_STATE_DEFAULT (0), como um app sem overrides.
         "setComponentEnabledSetting" | "setApplicationEnabledSetting" => Value::Null,
         "getComponentEnabledSetting" | "getApplicationEnabledSetting" => Value::Int(0),
-        "isInstantApp" | "isSafeMode" => Value::Int(0),
+        "isInstantApp" => Value::Int(i32::from(vm.instant_app)),
+        "isSafeMode" => Value::Int(0),
         "checkPermission" => Value::Int(0), // PERMISSION_GRANTED; runtime grants are modelled elsewhere
         "getInstallerPackageName" => Value::Null,
         _ => return Ok(None),
@@ -1037,5 +1038,28 @@ mod meta_data_tests {
             vm.heap.as_str(s).unwrap(),
             "androidx.camera.camera2.Camera2Config$DefaultProvider"
         );
+    }
+}
+
+#[cfg(test)]
+mod instant_app_tests {
+    use super::*;
+
+    /// Apêndice B `instant`: `PackageManager.isInstantApp()` responde o modo da
+    /// instalação (`Engine::instant_app`), não mais um valor fixo.
+    #[test]
+    fn is_instant_app_follows_install_mode() {
+        let mut vm = Engine::new(Vec::new(), crate::engine::VmConfig::default());
+        let pm = alloc(&mut vm, APM, Vec::new()).unwrap();
+        let ask = |vm: &mut Engine| {
+            instance_intrinsic(vm, APM, APM, "isInstantApp", pm, &[])
+                .unwrap()
+                .unwrap()
+        };
+        assert_eq!(ask(&mut vm), Value::Int(0));
+        vm.set_instant_app(true);
+        assert_eq!(ask(&mut vm), Value::Int(1));
+        vm.set_instant_app(false);
+        assert_eq!(ask(&mut vm), Value::Int(0));
     }
 }
