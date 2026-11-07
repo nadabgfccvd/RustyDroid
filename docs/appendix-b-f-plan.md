@@ -335,7 +335,11 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
    muda essa resposta para qualquer app hospedado. Pergunta: aprovar o modelo de app instantâneo, ou
    manter `instant` como bloqueio?
 2d. **MEDIA-03 (câmera): decisão de escopo tomada em 2026-11-06** — Camera2 com câmera virtual (opção a),
-   que altera todos os apps com câmera. Implementação pendente (ver §5, item 8).
+   que altera todos os apps com câmera. **Implementado e mesclado (#577, #578, #579).** Fechamento validado
+   com o Scanner: `last_error` vazio, sem `Retry init`, `PreviewView` com frames (screenshot não preta).
+   Semânticas aprovadas: `ThreadLocal` por green thread e executores que honram `ThreadFactory`.
+   Limite documentado: o detector de código de barras do ML Kit é `host_stub` (Task concluído com lista
+   vazia; sem leitura de código de barras no VM), por decisão do usuário.
 3. **Apêndice C literal:** resolvido em 2026-11-06 — o `android.jar` foi obtido pela rede do sandbox (ver §5, Apêndice C).
 4. **Escopo de D e E: resolvido pelo usuário (2026-11-05)** — Room (via ST-02) e prioridade da spec; ML Kit fora (ver §5).
 
