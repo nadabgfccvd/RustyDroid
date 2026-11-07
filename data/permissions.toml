@@ -1538,3 +1538,122 @@ group = ""
 since_api = 36
 flags = []
 description = "Allows an application to access local network devices and traffic."
+
+# ==================== B6 — SPLIT PERMISSIONS (AOSP data/etc/platform.xml) ====================
+# Origem `from` pedida pelo app com targetSdk < `target_below` implica `to` como implícita.
+# Sem `target_below` vale para todo app. Omitidos: BODY_SENSORS(_BACKGROUND) -> android.permission.health.*,
+# que dependem da feature flag replace_body_sensor_permission (não modelada).
+[[split]]
+from = "WRITE_EXTERNAL_STORAGE"
+to = "READ_EXTERNAL_STORAGE"
+
+[[split]]
+from = "READ_CONTACTS"
+to = "READ_CALL_LOG"
+target_below = 16
+
+[[split]]
+from = "WRITE_CONTACTS"
+to = "WRITE_CALL_LOG"
+target_below = 16
+
+[[split]]
+from = "ACCESS_FINE_LOCATION"
+to = "ACCESS_COARSE_LOCATION"
+
+[[split]]
+from = "ACCESS_FINE_LOCATION"
+to = "ACCESS_BACKGROUND_LOCATION"
+target_below = 29
+
+[[split]]
+from = "ACCESS_COARSE_LOCATION"
+to = "ACCESS_BACKGROUND_LOCATION"
+target_below = 29
+
+[[split]]
+from = "READ_EXTERNAL_STORAGE"
+to = "ACCESS_MEDIA_LOCATION"
+target_below = 29
+
+[[split]]
+from = "WRITE_EXTERNAL_STORAGE"
+to = "ACCESS_MEDIA_LOCATION"
+target_below = 29
+
+[[split]]
+from = "BLUETOOTH"
+to = "BLUETOOTH_SCAN"
+target_below = 31
+
+[[split]]
+from = "BLUETOOTH"
+to = "BLUETOOTH_CONNECT"
+target_below = 31
+
+[[split]]
+from = "BLUETOOTH"
+to = "BLUETOOTH_ADVERTISE"
+target_below = 31
+
+[[split]]
+from = "BLUETOOTH_ADMIN"
+to = "BLUETOOTH_SCAN"
+target_below = 31
+
+[[split]]
+from = "BLUETOOTH_ADMIN"
+to = "BLUETOOTH_CONNECT"
+target_below = 31
+
+[[split]]
+from = "BLUETOOTH_ADMIN"
+to = "BLUETOOTH_ADVERTISE"
+target_below = 31
+
+[[split]]
+from = "BODY_SENSORS"
+to = "BODY_SENSORS_BACKGROUND"
+target_below = 33
+
+[[split]]
+from = "READ_EXTERNAL_STORAGE"
+to = "READ_MEDIA_IMAGES"
+target_below = 33
+
+[[split]]
+from = "READ_EXTERNAL_STORAGE"
+to = "READ_MEDIA_VIDEO"
+target_below = 33
+
+[[split]]
+from = "READ_EXTERNAL_STORAGE"
+to = "READ_MEDIA_AUDIO"
+target_below = 33
+
+[[split]]
+from = "WRITE_EXTERNAL_STORAGE"
+to = "READ_MEDIA_IMAGES"
+target_below = 33
+
+[[split]]
+from = "WRITE_EXTERNAL_STORAGE"
+to = "READ_MEDIA_VIDEO"
+target_below = 33
+
+[[split]]
+from = "WRITE_EXTERNAL_STORAGE"
+to = "READ_MEDIA_AUDIO"
+target_below = 33
+
+[[split]]
+from = "READ_MEDIA_IMAGES"
+to = "READ_MEDIA_VISUAL_USER_SELECTED"
+
+[[split]]
+from = "READ_MEDIA_VIDEO"
+to = "READ_MEDIA_VISUAL_USER_SELECTED"
+
+[[split]]
+from = "ACCESS_MEDIA_LOCATION"
+to = "READ_MEDIA_VISUAL_USER_SELECTED"

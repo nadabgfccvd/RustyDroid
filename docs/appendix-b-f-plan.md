@@ -55,6 +55,7 @@ regenerou os CSVs e o Markdown byte a byte iguais aos commitados. Ver §5, Apên
 | Flag `immutable` | `is_frozen` em grant/deny/revoke/auto-revoke | `immutable_permission_ignores_grant_deny_and_revoke` |
 | Roles (B6) — `role` | `set_role`, `roles_held`, `permissions_role` (MCP) | `role_holder_gets_role_permissions_and_loses_them_on_exit`; `role_holding_satisfies_hard_restriction_without_allowlist`; `role_grant_takes_precedence_over_an_earlier_denial`; `unknown_role_is_rejected`; `permissions_role_grants_sms_permissions_while_held` |
 | Flag `softRestriction` (2a) — política da plataforma para READ/WRITE_EXTERNAL_STORAGE | `soft_may_grant`, `soft_weak_form`, recusa em `grant()` (`soft_blocked`); flag em `data/permissions.toml` para as duas permissões | `soft_restricted_storage_is_refused_below_q_without_allowlist`; `soft_restricted_storage_is_granted_in_full_from_api_29`; `soft_restricted_permission_without_platform_rule_keeps_full_grant`. Mutação (sem a recusa) derruba o primeiro teste. |
+| `revokeWhenRequested` + split permissions (2b) | `[[split]]` em `data/permissions.toml` (tabela do `platform.xml`); `implicit_permissions`, `apply_implicit` no `install`; `PermissionEngine::update` (ciclo de update, chamado pelo `install` do agente quando o pacote já existe); `grant` limpa a flag | `implicit_grant_is_revoked_when_updated_app_requests_it_explicitly`; `implicit_grant_is_kept_while_app_still_does_not_request_it`; `explicit_request_below_m_drops_flag_without_revoking`; `nearby_devices_grant_is_preserved_when_background_location_is_granted`; `user_grant_clears_revoke_when_requested_flag`; `split_implicit_permissions_depend_on_target_sdk` |
 
 ### Bloqueios (com fonte oficial consultada em 2026-11-06; não implementados)
 
@@ -329,12 +330,14 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
 2. **revokeWhenRequested, instant, softRestriction (B):** resolvido pelo usuário (autonomia para pesquisar e implementar com base em fonte oficial). Resultado da pesquisa na §3.
 2a. **softRestriction (B), forma fraca: resolvido por pesquisa (autonomia do usuário, 2026-11-07).** Fonte da regra: AOSP `SoftRestrictedPermissionPolicy.java` (regras só para READ/WRITE_EXTERNAL_STORAGE; demais = concessão plena). Forma fraca: READ sem allowlist e target < 29 = só coleções de mídia visual/áudio (doc oficial de `READ_EXTERNAL_STORAGE`); WRITE sem allowlist e target < 29 = sem acesso (grant recusado). Efeito: apps com target < 29 que pedem storage deixam de receber a forma completa pelo runtime sem allowlist. Mudança registrada no PR de 2a.
 2e. **ACCESS_BACKGROUND_LOCATION: flag divergente da doc oficial (pergunta ao usuário).** O registro marca `softRestriction`; a doc oficial (`Manifest.permission`, API 29) diz que é **hard restricted** (só concedível com allowlist do instalador). Corrigir a flag muda o grant de todo app que pede localização em background, então não foi feito sem decisão. Hoje a flag não muda o comportamento (sem regra de política = concessão plena).
-2b. **revokeWhenRequested (B): ciclo de update de pacote.** Para implementar, o VM precisa de um
-   gatilho de update (conjunto de permissões implícitas por versão de pacote). Muda o comportamento de
-   todo app com permissão split quando o VM atualiza o pacote. Pergunta: aprovar esse ciclo?
-2c. **instant (B): estado de app instantâneo.** Hoje `isInstantApp` é sempre `false`. Modelar o estado
-   muda essa resposta para qualquer app hospedado. Pergunta: aprovar o modelo de app instantâneo, ou
-   manter `instant` como bloqueio?
+2b. **revokeWhenRequested (B): ciclo de update de pacote — aprovado pelo usuário (2026-11-07) e implementado.**
+   Gatilho: `install` do agente com pacote já instalado chama `PermissionEngine::update` (antes recriava o motor
+   e zerava as permissões). Escopo: splits de `platform.xml` (exceto BODY_SENSORS → `health.*`, que depende de
+   feature flag). Para targetSdk < 23 a implícita concedida é aplicada na instalação (modelagem nossa, o AOSP
+   concede na instalação; explícitas pré-M seguem `RuntimePending`). Efeito colateral aceito: apps com target < 33
+   que pedem WRITE/READ ganham entradas `READ_MEDIA_*` no estado.
+2c. **instant (B): estado de app instantâneo — aprovado pelo usuário (2026-11-07), a implementar em PR próprio.**
+   Hoje `isInstantApp` é sempre `false`. Modelar o estado muda essa resposta para qualquer app hospedado.
 2d. **MEDIA-03 (câmera): decisão de escopo tomada em 2026-11-06** — Camera2 com câmera virtual (opção a),
    que altera todos os apps com câmera. **Implementado e mesclado (#577, #578, #579).** Fechamento validado
    com o Scanner: `last_error` vazio, sem `Retry init`, `PreviewView` com frames (screenshot não preta).
