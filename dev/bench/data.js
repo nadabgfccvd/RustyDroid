@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794057166015,
+  "lastUpdate": 1794057767755,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5111,6 +5111,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3386,
             "range": "± 155",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f79b94f80776961062c698a08772047afc907014",
+          "message": "feat(permissions): revokeWhenRequested e ciclo de update com split permissions (Apêndice B, 2b) (#582)\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-07T10:22:25-03:00",
+          "tree_id": "6aba24e4ce8a1f2a3a0963c7bd0bc3e101674214",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f79b94f80776961062c698a08772047afc907014"
+        },
+        "date": 1794057766761,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2762,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2766,
+            "range": "± 19",
             "unit": "ns/iter"
           }
         ]
