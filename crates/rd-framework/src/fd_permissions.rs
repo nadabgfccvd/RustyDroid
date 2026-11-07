@@ -105,12 +105,29 @@ pub struct AppOp {
     pub description: String,
 }
 
+/// Split permission (AOSP `platform.xml`, `<split-permission>`): quando o app pede
+/// `from`, o sistema adiciona `to` como permissão implícita, se o targetSdk for
+/// menor que `target_below`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SplitPermission {
+    pub from: String,
+    pub to: String,
+    #[serde(default = "default_split_target_below")]
+    pub target_below: u32,
+}
+
+fn default_split_target_below() -> u32 {
+    SPLIT_ALL_TARGETS
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct PermissionTable {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
     #[serde(default)]
     pub permission: Vec<PermissionDef>,
+    #[serde(default)]
+    pub split: Vec<SplitPermission>,
     #[serde(default)]
     pub role: Vec<Role>,
     #[serde(default)]
@@ -224,6 +241,7 @@ pub enum Severity {
 /// issue #31: o gating por maxSdkVersion/since_api/sdk-23 está implementado —
 /// permissão fora da janela do targetSdk vira `NotRequested` (o Android real
 /// nem a registra).
+#[derive(Clone)]
 pub struct PermissionEngine {
     pub table: PermissionTable,
     states: BTreeMap<String, GrantState>,
@@ -242,6 +260,9 @@ pub struct PermissionEngine {
     roles_held: BTreeSet<String>,
     /// Permissões cuja concessão veio de um role (revertidas quando o role sai).
     role_granted: BTreeSet<String>,
+    /// Apêndice B6 `revokeWhenRequested`: permissões implícitas (split) que o
+    /// sistema concedeu sem o app pedir explicitamente. Chave = nome do estado.
+    revoke_when_requested: BTreeSet<String>,
 }
 
 /// Dias sem uso após os quais o Android revoga permissões runtime de um app
@@ -273,6 +294,63 @@ pub enum SoftWeakForm {
 
 fn short_permission_name(name: &str) -> &str {
     name.rsplit('.').next().unwrap_or(name)
+}
+
+/// Prefixo do nome completo de permissão no manifesto.
+const ANDROID_PERMISSION_PREFIX: &str = "android.permission.";
+
+/// API 23 (M): abaixo dela não há permissão de runtime (AOSP `supportsRuntimePermissions`).
+pub const RUNTIME_PERMISSIONS_API: u32 = 23;
+
+/// AOSP `SystemConfig.readSplitPermission`: split sem `targetSdk` vale para todo app
+/// (`CUR_DEVELOPMENT + 1`).
+pub const SPLIT_ALL_TARGETS: u32 = 10_001;
+
+/// AOSP `PermissionManagerServiceImpl`: permissões de mídia aural/visual e
+/// ACTIVITY_RECOGNITION não recebem a flag `revokeWhenRequested` no split.
+const READ_MEDIA_AURAL: &[&str] = &["READ_MEDIA_AUDIO"];
+const READ_MEDIA_VISUAL: &[&str] = &[
+    "READ_MEDIA_VIDEO",
+    "READ_MEDIA_IMAGES",
+    "ACCESS_MEDIA_LOCATION",
+    "READ_MEDIA_VISUAL_USER_SELECTED",
+];
+
+/// AOSP `NEARBY_DEVICES_PERMISSIONS`: preservadas na revogação se o app já tem
+/// `ACCESS_BACKGROUND_LOCATION` concedida (sem a flag).
+const NEARBY_DEVICES_PERMISSIONS: &[&str] =
+    &["BLUETOOTH_ADVERTISE", "BLUETOOTH_CONNECT", "BLUETOOTH_SCAN"];
+
+fn split_gets_revoke_flag(to: &str) -> bool {
+    to != "ACTIVITY_RECOGNITION"
+        && !READ_MEDIA_AURAL.contains(&to)
+        && !READ_MEDIA_VISUAL.contains(&to)
+}
+
+/// Permissões implícitas do manifesto: destino de cada split cuja origem o app
+/// pede, válido para o targetSdk, e que o app não pede explicitamente (AOSP
+/// `ParsingPackageUtils`). Chave = nome curto do destino; valor = origens.
+fn implicit_permissions(
+    table: &PermissionTable,
+    requested: &[String],
+    target_sdk: u32,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let req: BTreeSet<&str> = requested.iter().map(|n| short_permission_name(n)).collect();
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for split in &table.split {
+        if target_sdk >= split.target_below {
+            continue;
+        }
+        let from = short_permission_name(&split.from);
+        let to = short_permission_name(&split.to);
+        if !req.contains(from) || req.contains(to) {
+            continue;
+        }
+        out.entry(to.to_string())
+            .or_default()
+            .insert(from.to_string());
+    }
+    out
 }
 
 impl PermissionEngine {
@@ -320,25 +398,10 @@ impl PermissionEngine {
             .collect();
         let mut states = BTreeMap::new();
         for up in &manifest.uses_permissions {
-            let gated_out = up.max_sdk.is_some_and(|max| manifest.target_sdk > max)
-                || (up.sdk23 && manifest.target_sdk < 23);
-            let state = if gated_out {
-                GrantState::NotRequested
-            } else {
-                match table.get(&up.name) {
-                    Some(def) if def.since_api as u32 > manifest.target_sdk => {
-                        GrantState::NotRequested
-                    }
-                    Some(def) => Self::initial_state(def),
-                    // issue #69: ausente da tabela MAS declarada pelo próprio
-                    // APK não é "desconhecida" — o app a define.
-                    None if declared.contains(&up.name) => GrantState::AppDefined,
-                    None => GrantState::Unknown,
-                }
-            };
+            let state = Self::request_state(&table, &declared, up, manifest.target_sdk);
             states.insert(up.name.clone(), state);
         }
-        PermissionEngine {
+        let mut engine = PermissionEngine {
             table,
             states,
             declared,
@@ -347,7 +410,151 @@ impl PermissionEngine {
             restricted_allowed: false,
             roles_held: BTreeSet::new(),
             role_granted: BTreeSet::new(),
+            revoke_when_requested: BTreeSet::new(),
+        };
+        engine.apply_implicit(&manifest.uses_permissions, manifest.target_sdk);
+        engine
+    }
+
+    /// Estado de uma permissão pedida explicitamente pelo manifesto.
+    /// issue #31: gating por maxSdkVersion, `uses-permission-sdk-23`, since_api e
+    /// existência na tabela.
+    fn request_state(
+        table: &PermissionTable,
+        declared: &BTreeSet<String>,
+        up: &rd_apk::manifest::UsesPermission,
+        target_sdk: u32,
+    ) -> GrantState {
+        let gated_out =
+            up.max_sdk.is_some_and(|max| target_sdk > max) || (up.sdk23 && target_sdk < 23);
+        if gated_out {
+            return GrantState::NotRequested;
         }
+        match table.get(&up.name) {
+            Some(def) if def.since_api as u32 > target_sdk => GrantState::NotRequested,
+            Some(def) => Self::initial_state(def),
+            // issue #69: ausente da tabela MAS declarada pelo próprio APK não é "desconhecida".
+            None if declared.contains(&up.name) => GrantState::AppDefined,
+            None => GrantState::Unknown,
+        }
+    }
+
+    /// Apêndice B6 (split permissions): acrescenta as permissões implícitas que
+    /// ainda não têm estado. Runtime implícita recebe a flag `revokeWhenRequested`
+    /// (exceto mídia e ACTIVITY_RECOGNITION). Recebe a concessão se alguma origem
+    /// já está concedida, ou se o alvo é pré-M: o AOSP concede as permissões de
+    /// runtime de apps pré-M na instalação. (As explícitas pré-M continuam
+    /// `RuntimePending`: essa é a modelagem existente, não foi alterada aqui.)
+    fn apply_implicit(&mut self, requested: &[rd_apk::manifest::UsesPermission], target_sdk: u32) {
+        let names: Vec<String> = requested.iter().map(|u| u.name.clone()).collect();
+        for (to, sources) in implicit_permissions(&self.table, &names, target_sdk) {
+            let key = format!("{ANDROID_PERMISSION_PREFIX}{to}");
+            if self.states.contains_key(&key) {
+                continue;
+            }
+            let Some(def) = self.table.get(&to) else {
+                continue;
+            };
+            let level = def.level;
+            let inherits = target_sdk < RUNTIME_PERMISSIONS_API
+                || sources.iter().any(|s| self.source_is_granted(s));
+            let state = if inherits && level == ProtectionLevel::Dangerous {
+                GrantState::Granted
+            } else {
+                Self::initial_state(def)
+            };
+            self.states.insert(key.clone(), state);
+            if level == ProtectionLevel::Dangerous && split_gets_revoke_flag(&to) {
+                self.revoke_when_requested.insert(key);
+            }
+        }
+    }
+
+    /// A origem (nome curto) está concedida em algum estado?
+    fn source_is_granted(&self, short: &str) -> bool {
+        self.states
+            .iter()
+            .any(|(k, st)| short_permission_name(k) == short && st.is_granted())
+    }
+
+    /// Apêndice B6 `revokeWhenRequested`: a permissão é implícita e ainda não foi
+    /// pedida explicitamente pelo app (a flag sai quando o app a pede ou o usuário a concede).
+    pub fn revoke_when_requested(&self, name: &str) -> bool {
+        self.revoke_when_requested.contains(name)
+    }
+
+    /// Ciclo de update de pacote (AOSP `revokePermissionsNoLongerImplicitLocked`).
+    ///
+    /// Aplica o manifesto novo ao motor existente, preservando o estado de cada
+    /// permissão já conhecida. Devolve as permissões revogadas: concedidas, com a
+    /// flag `revokeWhenRequested`, e que deixaram de ser implícitas (o app passou a
+    /// pedi-las explicitamente). Só revoga com targetSdk >= 23 e fora da preservação
+    /// de "Nearby devices" (ver `preserves_nearby_grant`). A flag sai sempre que a
+    /// permissão era concedida, revogada ou não.
+    pub fn update(&mut self, manifest: &Manifest) -> Vec<String> {
+        let target = manifest.target_sdk;
+        self.declared = manifest
+            .declared_permissions
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
+        self.target_sdk = target;
+        let names: Vec<String> = manifest
+            .uses_permissions
+            .iter()
+            .map(|u| u.name.clone())
+            .collect();
+        let still_implicit = implicit_permissions(&self.table, &names, target);
+
+        let flagged_granted: Vec<String> = self
+            .revoke_when_requested
+            .iter()
+            .filter(|k| {
+                self.states
+                    .get(*k)
+                    .is_some_and(|st| *st == GrantState::Granted)
+            })
+            .cloned()
+            .collect();
+        let mut revoked = Vec::new();
+        for key in flagged_granted {
+            let short = short_permission_name(&key).to_string();
+            if still_implicit.contains_key(&short) {
+                continue;
+            }
+            self.revoke_when_requested.remove(&key);
+            if target < RUNTIME_PERMISSIONS_API || self.preserves_nearby_grant(&key) {
+                continue;
+            }
+            let Some(def) = self.table.get(&short) else {
+                continue;
+            };
+            let init = Self::initial_state(def);
+            self.states.insert(key.clone(), init);
+            revoked.push(key);
+        }
+
+        for up in &manifest.uses_permissions {
+            if !self.states.contains_key(&up.name) {
+                let st = Self::request_state(&self.table, &self.declared, up, target);
+                self.states.insert(up.name.clone(), st);
+            }
+        }
+        self.apply_implicit(&manifest.uses_permissions, target);
+        revoked
+    }
+
+    /// AOSP: a permissão "Nearby devices" fica concedida se o app já tem
+    /// `ACCESS_BACKGROUND_LOCATION` concedida (e sem a flag).
+    fn preserves_nearby_grant(&self, key: &str) -> bool {
+        if !NEARBY_DEVICES_PERMISSIONS.contains(&short_permission_name(key)) {
+            return false;
+        }
+        self.states.iter().any(|(k, st)| {
+            short_permission_name(k) == "ACCESS_BACKGROUND_LOCATION"
+                && *st == GrantState::Granted
+                && !self.revoke_when_requested.contains(k)
+        })
     }
 
     /// Negativas acumuladas do diálogo runtime desta permissão.
@@ -617,6 +824,7 @@ impl PermissionEngine {
                 *cur = GrantState::Granted;
                 // conceder limpa o histórico de negativas (Android zera o flag)
                 self.denials.remove(name);
+                self.revoke_when_requested.remove(name);
                 Ok(GrantState::Granted)
             }
             s => Ok(*s),
@@ -1325,6 +1533,125 @@ mod appendix_b_behavior_tests {
         let mut e = engine(29, &["ACCESS_BACKGROUND_LOCATION"]);
         assert_eq!(e.grant(BG).unwrap(), GrantState::Granted);
         assert_eq!(e.soft_weak_form(BG), None);
+    }
+
+    fn manifest_for(target: u32, perms: &[&str]) -> Manifest {
+        Manifest {
+            package: "com.t".into(),
+            min_sdk: 26,
+            target_sdk: target,
+            uses_permissions: perms
+                .iter()
+                .map(|p| UsesPermission {
+                    name: format!("android.permission.{p}"),
+                    max_sdk: None,
+                    sdk23: false,
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    const READ_EXT: &str = "android.permission.READ_EXTERNAL_STORAGE";
+    const BG_LOC: &str = "android.permission.ACCESS_BACKGROUND_LOCATION";
+    const BT_SCAN: &str = "android.permission.BLUETOOTH_SCAN";
+
+    #[test]
+    fn implicit_grant_is_revoked_when_updated_app_requests_it_explicitly() {
+        // pré-M: a implícita READ_EXTERNAL_STORAGE (split de WRITE) nasce concedida e com a flag
+        let mut e = PermissionEngine::install(
+            &manifest_for(22, &["WRITE_EXTERNAL_STORAGE"]),
+            PermissionTable::embedded().unwrap(),
+        );
+        assert_eq!(e.state(READ_EXT), Some(GrantState::Granted));
+        assert!(e.revoke_when_requested(READ_EXT));
+        // update para M que pede READ explicitamente: deixa de ser implícita e é revogada
+        let revoked = e.update(&manifest_for(
+            23,
+            &["WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"],
+        ));
+        assert_eq!(revoked, vec![READ_EXT.to_string()]);
+        assert_eq!(e.state(READ_EXT), Some(GrantState::RuntimePending));
+        assert!(!e.revoke_when_requested(READ_EXT));
+    }
+
+    #[test]
+    fn implicit_grant_is_kept_while_app_still_does_not_request_it() {
+        let mut e = PermissionEngine::install(
+            &manifest_for(22, &["WRITE_EXTERNAL_STORAGE"]),
+            PermissionTable::embedded().unwrap(),
+        );
+        let revoked = e.update(&manifest_for(23, &["WRITE_EXTERNAL_STORAGE"]));
+        assert!(revoked.is_empty());
+        assert_eq!(e.state(READ_EXT), Some(GrantState::Granted));
+        assert!(e.revoke_when_requested(READ_EXT));
+    }
+
+    #[test]
+    fn explicit_request_below_m_drops_flag_without_revoking() {
+        // sem runtime abaixo de M: a flag sai, a concessão fica
+        let mut e = PermissionEngine::install(
+            &manifest_for(22, &["WRITE_EXTERNAL_STORAGE"]),
+            PermissionTable::embedded().unwrap(),
+        );
+        let revoked = e.update(&manifest_for(
+            22,
+            &["WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"],
+        ));
+        assert!(revoked.is_empty());
+        assert_eq!(e.state(READ_EXT), Some(GrantState::Granted));
+        assert!(!e.revoke_when_requested(READ_EXT));
+    }
+
+    #[test]
+    fn nearby_devices_grant_is_preserved_when_background_location_is_granted() {
+        const BLUETOOTH: &[&str] = &["BLUETOOTH", "ACCESS_BACKGROUND_LOCATION"];
+        let mut e = PermissionEngine::install(
+            &manifest_for(30, BLUETOOTH),
+            PermissionTable::embedded().unwrap(),
+        );
+        // BLUETOOTH_SCAN é implícita (split de BLUETOOTH abaixo de 31) e tem a flag
+        assert!(e.revoke_when_requested(BT_SCAN));
+        assert_eq!(e.grant(BG_LOC).unwrap(), GrantState::Granted);
+        // simula a concessão já feita da permissão implícita
+        e.states.insert(BT_SCAN.to_string(), GrantState::Granted);
+        let revoked = e.update(&manifest_for(
+            30,
+            &["BLUETOOTH", "ACCESS_BACKGROUND_LOCATION", "BLUETOOTH_SCAN"],
+        ));
+        assert!(revoked.is_empty());
+        assert_eq!(e.state(BT_SCAN), Some(GrantState::Granted));
+        assert!(!e.revoke_when_requested(BT_SCAN));
+    }
+
+    #[test]
+    fn user_grant_clears_revoke_when_requested_flag() {
+        let mut e = PermissionEngine::install(
+            &manifest_for(30, &["WRITE_EXTERNAL_STORAGE"]),
+            PermissionTable::embedded().unwrap(),
+        );
+        assert!(e.revoke_when_requested(READ_EXT));
+        assert_eq!(e.grant(READ_EXT).unwrap(), GrantState::Granted);
+        assert!(!e.revoke_when_requested(READ_EXT));
+    }
+
+    #[test]
+    fn split_implicit_permissions_depend_on_target_sdk() {
+        let t = PermissionTable::embedded().unwrap();
+        let req = vec!["android.permission.WRITE_EXTERNAL_STORAGE".to_string()];
+        // WRITE -> READ vale para todo app; WRITE -> READ_MEDIA_* só abaixo de 33
+        let at32 = implicit_permissions(&t, &req, 32);
+        assert!(at32.contains_key("READ_EXTERNAL_STORAGE"));
+        assert!(at32.contains_key("READ_MEDIA_IMAGES"));
+        let at33 = implicit_permissions(&t, &req, 33);
+        assert!(at33.contains_key("READ_EXTERNAL_STORAGE"));
+        assert!(!at33.contains_key("READ_MEDIA_IMAGES"));
+        // pedir a permissão explícita tira a implícita
+        let both = vec![
+            "android.permission.WRITE_EXTERNAL_STORAGE".to_string(),
+            READ_EXT.to_string(),
+        ];
+        assert!(!implicit_permissions(&t, &both, 32).contains_key("READ_EXTERNAL_STORAGE"));
     }
 
     #[test]

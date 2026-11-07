@@ -1520,11 +1520,25 @@ impl AgentSession {
         let manifest = apk.manifest.clone();
         let package = manifest.package.clone();
         let components = manifest.application.components.len();
-        let perms = PermissionEngine::install(
-            &manifest,
-            PermissionTable::embedded()
-                .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?,
-        );
+        // Apêndice B6: reinstalar/atualizar um package já instalado é um UPDATE —
+        // preserva o estado de permissão e aplica `revokeWhenRequested` (AOSP
+        // `revokePermissionsNoLongerImplicitLocked`). Package novo: instalação limpa.
+        let (perms, revoked_on_update) =
+            match self.installed.iter().position(|a| a.package == package) {
+                Some(i) => {
+                    let mut perms = self.installed[i].perms.clone();
+                    let revoked = perms.update(&manifest);
+                    (perms, revoked)
+                }
+                None => (
+                    PermissionEngine::install(
+                        &manifest,
+                        PermissionTable::embedded()
+                            .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?,
+                    ),
+                    Vec::new(),
+                ),
+            };
         let version = manifest.version_name.clone().unwrap_or_else(|| "?".into());
         // Reinstalar o package EM EXECUÇÃO o encerra (Android mata o app);
         // reinstalar outro package NÃO derruba o engine (multi-app honesto).
@@ -1553,6 +1567,7 @@ impl AgentSession {
             "components": components,
             "killed_running": killed,
             "installed_count": self.installed.len(),
+            "revoked_on_update": revoked_on_update,
             "runtime_pending": self.find_installed(&package).map(|a| a.perms.pending_runtime().len()).unwrap_or(0),
             "runtime_special": self.find_installed(&package).map(|a| a.perms.pending_special().len()).unwrap_or(0),
             "bundle": bundle_splits.as_ref().map(|splits| {
@@ -5640,6 +5655,50 @@ mod tests {
         zip.add("base.apk", base);
         zip.add("config.arm64.apk", config_bytes);
         fixture_apk_write(zip.build())
+    }
+
+    /// Apêndice B6 (2b): reinstalar um package já instalado é um UPDATE. O estado
+    /// de permissão é preservado e a implícita que o app passa a pedir é revogada.
+    #[test]
+    fn reinstall_is_an_update_that_revokes_implicit_grant_now_requested() {
+        use rd_framework::fd_permissions::GrantState;
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let apk_for = |target: i32, perms: &[&str]| {
+            let (arsc, layout, dex) = fixture_parts();
+            fixture_apk_write(rd_testsupport::apkfix::build_apk_sdk_perms(
+                "com.test.mcp",
+                "com.test.mcp.Main",
+                arsc,
+                vec![
+                    ("res/layout/activity_main.xml", layout),
+                    ("classes.dex", dex),
+                ],
+                26,
+                target,
+                perms,
+            ))
+        };
+        let read = "android.permission.READ_EXTERNAL_STORAGE";
+        let mut s = AgentSession::new();
+        // v1 (pré-M) pede só WRITE: READ entra como implícita concedida na instalação.
+        let v1 = install_ok(
+            &mut s,
+            &apk_for(22, &["android.permission.WRITE_EXTERNAL_STORAGE"]),
+        );
+        assert_eq!(v1["revoked_on_update"], serde_json::json!([]));
+        let st = |s: &AgentSession| {
+            s.find_installed("com.test.mcp")
+                .and_then(|a| a.perms.state(read))
+        };
+        assert_eq!(st(&s), Some(GrantState::Granted));
+        // v2 (target 23) pede READ explicitamente: a implícita sai e é revogada no update.
+        let v2 = install_ok(
+            &mut s,
+            &apk_for(23, &["android.permission.WRITE_EXTERNAL_STORAGE", read]),
+        );
+        assert_eq!(v2["revoked_on_update"], serde_json::json!([read]));
+        assert_eq!(st(&s), Some(GrantState::RuntimePending));
+        assert_eq!(s.installed.len(), 1, "update substitui, não duplica");
     }
 
     /// ADR 022: a classe de um split de feature de XAPK entra no classpath da
