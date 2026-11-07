@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794056363459,
+  "lastUpdate": 1794057166015,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5075,6 +5075,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3501,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e84f01dba74c2188aeb71cf2cdc229b25aa3b6d7",
+          "message": "feat(permissions): softRestriction com política da plataforma (Apêndice B, 2a) (#581)\n\nRegra AOSP SoftRestrictedPermissionPolicy: só READ/WRITE_EXTERNAL_STORAGE têm\nregra própria. Forma completa sem allowlist do instalador exige targetSdk >= 29;\nsenão grant() é recusado (mesmo caminho do hardRestricted) e a forma fraca fica\nconsultável (soft_weak_form): READ = só coleções de mídia; WRITE = sem acesso.\nDemais permissões soft restricted seguem concessão plena (DUMMY_POLICY).\n\nFontes: AOSP services/core/.../policy/SoftRestrictedPermissionPolicy.java;\ndeveloper.android.com Manifest.permission (READ_EXTERNAL_STORAGE soft restricted).\n\nPendente (pergunta ao usuário, não alterado): ACCESS_BACKGROUND_LOCATION tem\nsoftRestriction no dado; a doc oficial diz hardRestricted.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-07T10:12:11-03:00",
+          "tree_id": "ef5669bfb74e7a3621c9a079eef9dc84c410cf5f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e84f01dba74c2188aeb71cf2cdc229b25aa3b6d7"
+        },
+        "date": 1794057165249,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3317,
+            "range": "± 122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3386,
+            "range": "± 155",
             "unit": "ns/iter"
           }
         ]
