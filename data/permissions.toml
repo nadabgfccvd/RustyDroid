@@ -14,7 +14,7 @@ name = "ACCESS_FINE_LOCATION"
 level = "dangerous"
 group = "LOCATION"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Access precise device location from GNSS, Wi-Fi and cell towers."
 
 [[permission]]
@@ -22,7 +22,7 @@ name = "ACCESS_COARSE_LOCATION"
 level = "dangerous"
 group = "LOCATION"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Access approximate device location derived from cell towers and Wi-Fi."
 
 [[permission]]
@@ -30,7 +30,7 @@ name = "ACCESS_BACKGROUND_LOCATION"
 level = "dangerous"
 group = "LOCATION"
 since_api = 29
-flags = ["runtime", "softRestriction"]
+flags = ["runtime", "softRestriction", "instant"]
 description = "Access device location while the app is in the background (restricted since API 29)."
 
 # --- grupo CAMERA ---
@@ -39,7 +39,7 @@ name = "CAMERA"
 level = "dangerous"
 group = "CAMERA"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Access camera devices to capture photos and video."
 
 # --- grupo MICROPHONE ---
@@ -48,7 +48,7 @@ name = "RECORD_AUDIO"
 level = "dangerous"
 group = "MICROPHONE"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Record audio from the device microphone."
 
 # --- grupo CONTACTS ---
@@ -90,7 +90,7 @@ name = "READ_PHONE_NUMBERS"
 level = "dangerous"
 group = "PHONE"
 since_api = 24
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Read the device phone numbers without full phone state access."
 
 [[permission]]
@@ -266,7 +266,7 @@ name = "ACTIVITY_RECOGNITION"
 level = "dangerous"
 group = "SENSORS/BODY"
 since_api = 29
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Recognize physical activity such as walking, running or cycling."
 
 [[permission]]
@@ -341,7 +341,7 @@ name = "POST_NOTIFICATIONS"
 level = "dangerous"
 group = "NOTIFICATIONS"
 since_api = 33
-flags = ["runtime"]
+flags = ["runtime", "instant"]
 description = "Post notifications visible to the user (runtime permission since API 33)."
 
 # --- grupo HEALTH ---
@@ -499,7 +499,7 @@ name = "INTERNET"
 level = "normal"
 group = ""
 since_api = 1
-flags = []
+flags = ["instant"]
 description = "Open network sockets and access the internet."
 
 [[permission]]
@@ -507,7 +507,7 @@ name = "ACCESS_NETWORK_STATE"
 level = "normal"
 group = ""
 since_api = 1
-flags = []
+flags = ["instant"]
 description = "Access information about network connectivity."
 
 [[permission]]
@@ -547,7 +547,7 @@ name = "VIBRATE"
 level = "normal"
 group = ""
 since_api = 1
-flags = []
+flags = ["instant"]
 description = "Control the device vibrator."
 
 [[permission]]
@@ -555,7 +555,7 @@ name = "WAKE_LOCK"
 level = "normal"
 group = ""
 since_api = 1
-flags = []
+flags = ["instant"]
 description = "Keep the CPU running or prevent the screen from dimming."
 
 [[permission]]
@@ -571,7 +571,7 @@ name = "FOREGROUND_SERVICE"
 level = "normal"
 group = ""
 since_api = 28
-flags = []
+flags = ["instant"]
 description = "Start foreground services (required since API 28)."
 
 [[permission]]
@@ -579,7 +579,7 @@ name = "FOREGROUND_SERVICE_CAMERA"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the camera type (API 34)."
 
 [[permission]]
@@ -587,7 +587,7 @@ name = "FOREGROUND_SERVICE_MICROPHONE"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the microphone type (API 34)."
 
 [[permission]]
@@ -595,7 +595,7 @@ name = "FOREGROUND_SERVICE_LOCATION"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the location type (API 34)."
 
 [[permission]]
@@ -603,7 +603,7 @@ name = "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the mediaPlayback type (API 34)."
 
 [[permission]]
@@ -611,7 +611,7 @@ name = "FOREGROUND_SERVICE_MEDIA_PROJECTION"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the mediaProjection type (API 34)."
 
 [[permission]]
@@ -619,7 +619,7 @@ name = "FOREGROUND_SERVICE_DATA_SYNC"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the dataSync type (API 34)."
 
 [[permission]]
@@ -627,7 +627,7 @@ name = "FOREGROUND_SERVICE_PHONE_CALL"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the phoneCall type (API 34)."
 
 [[permission]]
@@ -635,7 +635,7 @@ name = "FOREGROUND_SERVICE_REMOTE_MESSAGING"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the remoteMessaging type (API 34)."
 
 [[permission]]
@@ -643,7 +643,7 @@ name = "FOREGROUND_SERVICE_HEALTH"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the health type (API 34)."
 
 [[permission]]
@@ -651,7 +651,7 @@ name = "FOREGROUND_SERVICE_SPECIAL_USE"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the specialUse type (API 34)."
 
 [[permission]]
@@ -659,7 +659,7 @@ name = "FOREGROUND_SERVICE_SYSTEM_EXEMPTED"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the systemExempted type (API 34)."
 
 [[permission]]
@@ -675,7 +675,7 @@ name = "FOREGROUND_SERVICE_MEDIA_PROCESSING"
 level = "normal"
 group = ""
 since_api = 35
-flags = []
+flags = ["instant"]
 description = "Start a foreground service with the mediaProcessing type (API 35)."
 
 [[permission]]
@@ -1520,7 +1520,7 @@ name = "FOREGROUND_SERVICE_CONNECTED_DEVICE"
 level = "normal"
 group = ""
 since_api = 34
-flags = []
+flags = ["instant"]
 description = "Allows a regular application to use Service.startForeground with the type connectedDevice."
 
 [[permission]]

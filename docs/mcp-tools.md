@@ -42,7 +42,7 @@ ADR 023 (sessões): fecha uma sessão aberta com `session_open` e libera o slot.
 
 Instala um APK na sessão (abre, valida o piso API 9 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.
 
-- Parâmetros: `apk` · obrigatórios: `apk`
+- Parâmetros: `apk, instant` · obrigatórios: `apk`
 
 ### `launch`
 

@@ -740,7 +740,10 @@ pub fn tool_defs() -> Vec<ToolDef> {
             description:
                 "Instala um APK na sessão (abre, valida o piso API 9 e prepara o estado de permissões). Caminho PRECISA estar dentro do sandbox (RD_MCP_SANDBOX); URL é recusada; APK acima de RD_MCP_MAX_APK_MB (default 256) é recusado. Reinstalar o package EM EXECUÇÃO o encerra (sem estado inconsistente). Não executa o app.",
             schema: obj(
-                serde_json::json!({ "apk": { "type": "string", "description": "caminho do arquivo .apk dentro do sandbox" } }),
+                serde_json::json!({
+                    "apk": { "type": "string", "description": "caminho do arquivo .apk dentro do sandbox" },
+                    "instant": { "type": "boolean", "description": "instala como app instantâneo (Apêndice B, `instant`): isInstantApp=true e só conta a permissão com flag instant; as demais ficam negadas pelo sistema. Default false. Não muda em update." }
+                }),
                 &["apk"],
             ),
         },
@@ -1146,7 +1149,12 @@ impl AgentSession {
             return self.tool_error_result(name, &e);
         }
         let res: Result<ToolResult, RdError> = match name {
-            "install" => self.tool_install(args.get("apk").and_then(|v| v.as_str()).unwrap_or("")),
+            "install" => self.tool_install(
+                args.get("apk").and_then(|v| v.as_str()).unwrap_or(""),
+                args.get("instant")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            ),
             "launch" => {
                 let engine = match args.get("engine") {
                     None => None,
@@ -1431,7 +1439,7 @@ impl AgentSession {
 
     // ── install / launch / input ────────────────────────────────────────────
 
-    fn tool_install(&mut self, apk_path: &str) -> Result<ToolResult, RdError> {
+    fn tool_install(&mut self, apk_path: &str, instant: bool) -> Result<ToolResult, RdError> {
         if apk_path.is_empty() {
             return Err(agent_error(
                 "INVALID_FORMAT",
@@ -1523,22 +1531,35 @@ impl AgentSession {
         // Apêndice B6: reinstalar/atualizar um package já instalado é um UPDATE —
         // preserva o estado de permissão e aplica `revokeWhenRequested` (AOSP
         // `revokePermissionsNoLongerImplicitLocked`). Package novo: instalação limpa.
-        let (perms, revoked_on_update) =
-            match self.installed.iter().position(|a| a.package == package) {
-                Some(i) => {
-                    let mut perms = self.installed[i].perms.clone();
-                    let revoked = perms.update(&manifest);
-                    (perms, revoked)
+        let (perms, revoked_on_update) = match self
+            .installed
+            .iter()
+            .position(|a| a.package == package)
+        {
+            Some(i) => {
+                // Apêndice B `instant`: o modo é fixado na instalação (sem volta).
+                if self.installed[i].perms.is_instant() != instant {
+                    let atual = if instant { "completo" } else { "instantâneo" };
+                    return Err(agent_error(
+                            "INSTANT_MODE_CHANGE",
+                            format!("{package:?} já está instalado como app {atual}; o modo não muda em update"),
+                            Some("reinstale com o mesmo valor de `instant`"),
+                        ));
                 }
-                None => (
-                    PermissionEngine::install(
-                        &manifest,
-                        PermissionTable::embedded()
-                            .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?,
-                    ),
-                    Vec::new(),
-                ),
-            };
+                let mut perms = self.installed[i].perms.clone();
+                let revoked = perms.update(&manifest);
+                (perms, revoked)
+            }
+            None => {
+                let mut perms = PermissionEngine::install(
+                    &manifest,
+                    PermissionTable::embedded()
+                        .map_err(|e| RdError::new(&e.code, &e.cause, &e.module_id))?,
+                );
+                perms.set_instant(instant);
+                (perms, Vec::new())
+            }
+        };
         let version = manifest.version_name.clone().unwrap_or_else(|| "?".into());
         // Reinstalar o package EM EXECUÇÃO o encerra (Android mata o app);
         // reinstalar outro package NÃO derruba o engine (multi-app honesto).
@@ -1568,6 +1589,7 @@ impl AgentSession {
             "killed_running": killed,
             "installed_count": self.installed.len(),
             "revoked_on_update": revoked_on_update,
+            "instant": instant,
             "runtime_pending": self.find_installed(&package).map(|a| a.perms.pending_runtime().len()).unwrap_or(0),
             "runtime_special": self.find_installed(&package).map(|a| a.perms.pending_special().len()).unwrap_or(0),
             "bundle": bundle_splits.as_ref().map(|splits| {
@@ -1725,6 +1747,10 @@ impl AgentSession {
         // perms.rs: checkSelfPermission/requestPermissions see the
         // session's real grant state
         eng.set_granted_permissions(granted);
+        let instant = self
+            .find_installed(package_out)
+            .is_some_and(|a| a.perms.is_instant());
+        eng.set_instant_app(instant);
         let rationale = self
             .find_installed(package_out)
             .map(|a| a.perms.rationale_names())
@@ -5699,6 +5725,74 @@ mod tests {
         assert_eq!(v2["revoked_on_update"], serde_json::json!([read]));
         assert_eq!(st(&s), Some(GrantState::RuntimePending));
         assert_eq!(s.installed.len(), 1, "update substitui, não duplica");
+    }
+
+    /// Apêndice B `instant`: `install` com `instant=true` fixa o modo instantâneo;
+    /// concessão só conta com a flag `instant`; trocar o modo em update é recusado.
+    #[test]
+    fn install_as_instant_app_limits_grants_and_fixes_mode() {
+        use rd_framework::fd_permissions::GrantState;
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let apk_for = |perms: &[&str]| {
+            let (arsc, layout, dex) = fixture_parts();
+            fixture_apk_write(rd_testsupport::apkfix::build_apk_sdk_perms(
+                "com.test.mcp",
+                "com.test.mcp.Main",
+                arsc,
+                vec![
+                    ("res/layout/activity_main.xml", layout),
+                    ("classes.dex", dex),
+                ],
+                26,
+                30,
+                perms,
+            ))
+        };
+        let contacts = "android.permission.READ_CONTACTS";
+        let internet = "android.permission.INTERNET";
+        let camera = "android.permission.CAMERA";
+        let mut s = AgentSession::new();
+        let (v, err) = call(
+            &mut s,
+            "install",
+            serde_json::json!({
+                "apk": apk_for(&["android.permission.INTERNET", "android.permission.READ_CONTACTS", "android.permission.CAMERA"]),
+                "instant": true,
+            }),
+        );
+        assert!(!err, "install instantâneo: {v}");
+        assert_eq!(v["instant"], serde_json::json!(true));
+        let st = |s: &AgentSession, n: &str| {
+            s.find_installed("com.test.mcp")
+                .and_then(|a| a.perms.state(n))
+        };
+        assert_eq!(st(&s, internet), Some(GrantState::AutoGranted));
+        assert_eq!(st(&s, contacts), Some(GrantState::DeniedSystem));
+        assert_eq!(st(&s, camera), Some(GrantState::RuntimePending));
+        // update no mesmo modo: ok
+        let (v2, err2) = call(
+            &mut s,
+            "install",
+            serde_json::json!({
+                "apk": apk_for(&["android.permission.INTERNET", "android.permission.CAMERA"]),
+                "instant": true,
+            }),
+        );
+        assert!(!err2, "update instantâneo: {v2}");
+        // trocar para app completo em update: recusado, registro intacto
+        let (v3, err3) = call(
+            &mut s,
+            "install",
+            serde_json::json!({
+                "apk": apk_for(&["android.permission.INTERNET"]),
+                "instant": false,
+            }),
+        );
+        assert!(err3, "troca de modo deve ser recusada: {v3}");
+        assert!(v3.to_string().contains("INSTANT_MODE_CHANGE"), "{v3}");
+        assert!(s
+            .find_installed("com.test.mcp")
+            .is_some_and(|a| a.perms.is_instant()));
     }
 
     /// ADR 022: a classe de um split de feature de XAPK entra no classpath da
