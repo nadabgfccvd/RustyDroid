@@ -193,7 +193,7 @@ name = "READ_EXTERNAL_STORAGE"
 level = "dangerous"
 group = "STORAGE/MEDIA"
 since_api = 16
-flags = ["runtime"]
+flags = ["runtime", "softRestriction"]
 description = "Read files from shared external storage (legacy, superseded by READ_MEDIA_* since API 33)."
 
 [[permission]]
@@ -201,7 +201,7 @@ name = "WRITE_EXTERNAL_STORAGE"
 level = "dangerous"
 group = "STORAGE/MEDIA"
 since_api = 1
-flags = ["runtime"]
+flags = ["runtime", "softRestriction"]
 description = "Write files to shared external storage (legacy)."
 
 [[permission]]

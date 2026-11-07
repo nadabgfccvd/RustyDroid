@@ -75,6 +75,12 @@ impl PermissionDef {
     pub fn is_immutable(&self) -> bool {
         self.flags.iter().any(|f| f == "immutable")
     }
+    /// Apêndice B1 `softRestriction`: a plataforma concede a forma completa só
+    /// a apps que cumprem a política da plataforma; senão, uma forma fraca
+    /// (ver `PermissionEngine::soft_weak_form`).
+    pub fn is_soft_restricted(&self) -> bool {
+        self.flags.iter().any(|f| f == "softRestriction")
+    }
     pub fn group_name(&self) -> Option<&str> {
         self.group
             .as_deref()
@@ -249,6 +255,25 @@ pub const PARTIAL_MEDIA_API: u32 = 34;
 
 /// targetSdk mínimo para o auto-revoke de apps sem uso.
 pub const AUTO_REVOKE_TARGET_SDK: u32 = 30;
+
+/// API 29 (Android 10): a partir dela, a política de storage libera a forma
+/// completa de READ/WRITE_EXTERNAL_STORAGE sem allowlist (ver `soft_may_grant`).
+pub const SOFT_STORAGE_FULL_FORM_API: u32 = 29;
+
+/// Forma fraca de uma permissão soft restricted quando a política não libera a
+/// forma completa (AOSP `SoftRestrictedPermissionPolicy`; doc oficial de
+/// `READ_EXTERNAL_STORAGE`: sem allowlist, só as coleções de mídia visual e áudio).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoftWeakForm {
+    /// Só acesso às coleções de mídia visual e áudio (READ_EXTERNAL_STORAGE).
+    MediaCollectionsOnly,
+    /// Nenhum acesso concedido pela permissão (WRITE_EXTERNAL_STORAGE).
+    NoAccess,
+}
+
+fn short_permission_name(name: &str) -> &str {
+    name.rsplit('.').next().unwrap_or(name)
+}
 
 impl PermissionEngine {
     /// Estado inicial de uma permissão dado o nível/firmware.
@@ -525,10 +550,39 @@ impl PermissionEngine {
             .ok_or_else(|| RdError::missing_entry(name))
     }
 
-    /// Apêndice B1 `hardRestricted`: o instalador do APK está na allowlist.
-    /// Sem isso, `grant()` de permissão hard-restricted não muda o estado.
+    /// Apêndice B1 `hardRestricted` e `softRestriction`: o instalador do APK está
+    /// na allowlist (`SessionParams.setWhitelistedRestrictedPermissions`, que vale
+    /// para as duas classes). Sem isso, `grant()` de permissão hard-restricted não
+    /// muda o estado, e a forma completa de soft-restricted não é concedida.
     pub fn allow_hard_restricted(&mut self, allowed: bool) {
         self.restricted_allowed = allowed;
+    }
+
+    /// Apêndice B1 `softRestriction`: a política da plataforma libera a forma
+    /// completa? Só READ/WRITE_EXTERNAL_STORAGE têm regra própria (AOSP
+    /// `SoftRestrictedPermissionPolicy.forPermission`): liberam com allowlist
+    /// do instalador ou com targetSdk >= 29. As demais seguem `DUMMY_POLICY`
+    /// (concessão plena).
+    pub fn soft_may_grant(&self, def: &PermissionDef) -> bool {
+        match short_permission_name(&def.name) {
+            "READ_EXTERNAL_STORAGE" | "WRITE_EXTERNAL_STORAGE" => {
+                self.restricted_allowed || self.target_sdk >= SOFT_STORAGE_FULL_FORM_API
+            }
+            _ => true,
+        }
+    }
+
+    /// Apêndice B1 `softRestriction`: forma fraca em vigor para a permissão, ou
+    /// `None` se a permissão não é soft-restricted ou a forma completa vale.
+    pub fn soft_weak_form(&self, name: &str) -> Option<SoftWeakForm> {
+        let def = self.table.get(name)?;
+        if !def.is_soft_restricted() || self.soft_may_grant(def) {
+            return None;
+        }
+        match short_permission_name(&def.name) {
+            "READ_EXTERNAL_STORAGE" => Some(SoftWeakForm::MediaCollectionsOnly),
+            _ => Some(SoftWeakForm::NoAccess),
+        }
     }
 
     /// Runtime grant (diálogo) — dangerous → Granted.
@@ -543,6 +597,15 @@ impl PermissionEngine {
             && !self.restricted_allowed;
         if hard_blocked {
             // B1 hardRestricted: sem allowlist do instalador a permissão não é concedível.
+            return self.current_or_missing(name);
+        }
+        // B1 softRestriction: sem a regra da plataforma, a forma completa não é
+        // concedida pelo runtime (AOSP: "Cannot grant soft restricted permission").
+        let soft_blocked = self
+            .table
+            .get(name)
+            .is_some_and(|d| d.is_soft_restricted() && !self.soft_may_grant(d));
+        if soft_blocked {
             return self.current_or_missing(name);
         }
         let cur = self
@@ -1222,6 +1285,46 @@ mod appendix_b_behavior_tests {
         // com allowlist, o grant volta a valer
         e.allow_hard_restricted(true);
         assert_eq!(e.grant(SMS).unwrap(), GrantState::Granted);
+    }
+
+    #[test]
+    fn soft_restricted_storage_is_refused_below_q_without_allowlist() {
+        const WRITE: &str = "android.permission.WRITE_EXTERNAL_STORAGE";
+        const READ: &str = "android.permission.READ_EXTERNAL_STORAGE";
+        let mut e = engine(28, &["WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE"]);
+        // sem a regra da plataforma (target < 29, sem allowlist): grant não muda o estado
+        assert_eq!(e.grant(WRITE).unwrap(), GrantState::RuntimePending);
+        assert_eq!(e.grant(READ).unwrap(), GrantState::RuntimePending);
+        // forma fraca: WRITE não dá acesso; READ dá só as coleções de mídia
+        assert_eq!(e.soft_weak_form(WRITE), Some(SoftWeakForm::NoAccess));
+        assert_eq!(
+            e.soft_weak_form(READ),
+            Some(SoftWeakForm::MediaCollectionsOnly)
+        );
+        // com allowlist do instalador, a forma completa é concedida
+        e.allow_hard_restricted(true);
+        assert_eq!(e.grant(WRITE).unwrap(), GrantState::Granted);
+        assert_eq!(e.grant(READ).unwrap(), GrantState::Granted);
+        assert_eq!(e.soft_weak_form(WRITE), None);
+        assert_eq!(e.soft_weak_form(READ), None);
+    }
+
+    #[test]
+    fn soft_restricted_storage_is_granted_in_full_from_api_29() {
+        const WRITE: &str = "android.permission.WRITE_EXTERNAL_STORAGE";
+        let mut e = engine(29, &["WRITE_EXTERNAL_STORAGE"]);
+        assert_eq!(e.grant(WRITE).unwrap(), GrantState::Granted);
+        assert_eq!(e.soft_weak_form(WRITE), None);
+    }
+
+    #[test]
+    fn soft_restricted_permission_without_platform_rule_keeps_full_grant() {
+        // ACCESS_BACKGROUND_LOCATION tem a flag, mas a política AOSP só tem regra
+        // para storage: as demais seguem DUMMY_POLICY (concessão plena).
+        const BG: &str = "android.permission.ACCESS_BACKGROUND_LOCATION";
+        let mut e = engine(29, &["ACCESS_BACKGROUND_LOCATION"]);
+        assert_eq!(e.grant(BG).unwrap(), GrantState::Granted);
+        assert_eq!(e.soft_weak_form(BG), None);
     }
 
     #[test]
