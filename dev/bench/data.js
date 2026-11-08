@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794159583944,
+  "lastUpdate": 1794161060140,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5651,6 +5651,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3306,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "25a7a9e4726e679eb069987f4093e2998905d353",
+          "message": "test(gms): erro programável e ciclo de vida para Integrity, Fit e Location (E) (#597)\n\nCritério do Apêndice E: serviço parcial com caminho de sucesso, de erro e de\nciclo de vida. Três shims ganham falha programável, sem efeito colateral:\n\n- Play Integrity: gms_set_integrity_failure(code) → IntegrityServiceException;\n  o pedido falho não registra nonce. Códigos oficiais (-1, -3, -100).\n- Fit: gms_fit_set_failure(code) → ApiException em leitura, escrita, gravação\n  e sessões; falha não grava nem inicia sessão.\n- Fused Location: gms_location_set_failure(code) → ApiException em\n  getLastLocation/getCurrentLocation/getLocationAvailability/requestLocationUpdates;\n  removeLocationUpdates segue disponível.\n\nTestes: crates/rd-vm/tests/gms_erro_ciclo.rs (5 testes). Mutações das\nchecagens de falha derrubam os testes correspondentes.\nDocs: data/gms.toml (notas e evidência), docs/gms.md regenerado, ledger E.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T15:04:02-03:00",
+          "tree_id": "ab02a3fa9272e216d467a23d7975a9de0feca81b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/25a7a9e4726e679eb069987f4093e2998905d353"
+        },
+        "date": 1794161059445,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1871,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1812,
+            "range": "± 16",
             "unit": "ns/iter"
           }
         ]
