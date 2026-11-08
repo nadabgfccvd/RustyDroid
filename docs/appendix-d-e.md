@@ -181,7 +181,7 @@ um teste. Testes em `crates/rd-vm/tests/gms.rs` e `crates/rd-vm/tests/gms_erro_c
 | firebase-messaging | `messaging_token_topics_and_delivery` | `messaging_failure_blocks_token_and_topics_then_recovers` (token e tópico falham com IOException; sem efeito) | mesmo teste (deleteToken segue; recuperação restaura token e assinatura) |
 | firebase-crashlytics | `crashlytics_records_and_uncaught_bridge` | `crashlytics_custom_keys_capped_at_64_and_truncated` (limite de 64 chaves e truncamento) | crash não capturado vira registro; coleção desligada (mesmo teste) |
 | firebase-firestore | `firestore_set_get_query_and_seed` | `firestore_missing_document_reads_as_absent_not_error` | `firestore_query_filter_and_snapshot_listener` |
-| firebase-rtdb | `rtdb_set_resolve_and_listener` | **sem caminho de erro no shim** | `rtdb_remove_event_listener_stops_callbacks` |
+| firebase-rtdb | `rtdb_set_resolve_and_listener` | `rtdb_permission_denied_cancels_listeners_and_blocks_writes_then_recovers` (negação: onCancelled, escrita não grava, remoção e leitura falham) | mesmo teste (listener registrado volta a receber após recuperação) |
 | firebase-remoteconfig | `remoteconfig_fetch_activate_semantics` | `remote_config_failed_fetch_keeps_active_values_then_recovers` | fetch falho mantém valores ativos; recuperação aplica o novo (mesmo teste) |
 | firebase-storage | `storage_seed_download_and_missing` | `storage_getbytes_size_limit_error_and_delete_lifecycle` | mesmo teste (delete) |
 
@@ -469,8 +469,14 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   e `subscribeToTopic`/`unsubscribeFromTopic` falham com `java.io.IOException` (SERVICE_NOT_AVAILABLE), sem efeito
   colateral; `deleteToken` segue disponível. A exceção segue relatos do SDK (firebase-android-sdk issues #4053 e #5826),
   não a referência oficial. Teste em `gms_erro_ciclo.rs`; mutação do guard derruba o teste.
+- **RTDB** (`firebase-rtdb`): negação de acesso programável (`gms_rtdb_set_permission_denied(true|false)`). Leituras por
+  listener chamam `onCancelled(DatabaseError)` e o listener não fica registrado (o cancelamento é terminal); escritas
+  não acontecem e o `CompletionListener` recebe o erro; `removeValue`, `updateChildren` e `get` falham com
+  `DatabaseException`. A doc oficial diz que, com negação das regras, o callback de cancelamento é disparado com
+  `PERMISSION_DENIED`. Limitação: o código numérico de `DatabaseError` não é modelado. Teste em `gms_erro_ciclo.rs`;
+  mutação do setter derruba o teste.
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
 estado como ciclo). Serviços parciais ainda sem caminho de erro programável (conforme a tabela de
-erro/ciclo): Firebase RTDB, Google Ads, SafetyNet (`attest`) e Google Sign-In. Próximas entregas
+erro/ciclo): Google Ads, SafetyNet (`attest`) e Google Sign-In. Próximas entregas
 desta etapa seguem essa ordem.

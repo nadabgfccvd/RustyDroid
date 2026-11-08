@@ -172,6 +172,8 @@ pub const SET_OPTIONS: &str = "Lcom/google/firebase/firestore/SetOptions;";
 pub const LISTENER_REG: &str = "Lcom/google/firebase/firestore/ListenerRegistration;";
 pub const FIREBASE_DATABASE: &str = "Lcom/google/firebase/database/FirebaseDatabase;";
 pub const DATABASE_REF: &str = "Lcom/google/firebase/database/DatabaseReference;";
+pub const DATABASE_ERROR: &str = "Lcom/google/firebase/database/DatabaseError;";
+pub const DATABASE_EXCEPTION: &str = "Lcom/google/firebase/database/DatabaseException;";
 pub const DATA_SNAPSHOT: &str = "Lcom/google/firebase/database/DataSnapshot;";
 pub const REMOTE_CONFIG: &str = "Lcom/google/firebase/remoteconfig/FirebaseRemoteConfig;";
 pub const RC_FETCH_EXCEPTION: &str =
@@ -644,6 +646,8 @@ pub struct GmsState {
     pub rtdb_listeners: Vec<(String, ObjRef)>,
     pub rtdb_snaps: HashMap<ObjRef, String>,
     pub rtdb_counter: u32,
+    /// Regras negam o acesso: leituras cancelam, escritas não alteram os dados.
+    pub rtdb_denied: bool,
     // Remote Config
     pub rc_obj: Option<ObjRef>,
     pub rc_server: Vec<(String, String)>,
@@ -3569,7 +3573,13 @@ fn rtdb_instance(
             }
             "setValue" => {
                 let v = args.first().cloned().unwrap_or(Value::Null);
-                rtdb_set(vm, &path, v)?;
+                // Negado: a escrita não acontece e o CompletionListener recebe o erro.
+                let err = if vm.fw.gms.rtdb_denied {
+                    Value::Obj(alloc(vm, DATABASE_ERROR)?)
+                } else {
+                    rtdb_set(vm, &path, v)?;
+                    Value::Null
+                };
                 // CompletionListener opcional no 2º arg.
                 if let Some(l) = oarg(args, 1) {
                     let _ = call_dex_any(
@@ -3579,17 +3589,25 @@ fn rtdb_instance(
                         &[
                             "(Lcom/google/firebase/database/DatabaseError;Lcom/google/firebase/database/DatabaseReference;)V",
                         ],
-                        vec![Value::Null, Value::Obj(recv)],
+                        vec![err, Value::Obj(recv)],
                     )?;
                 }
                 Value::Obj(void_task(vm)?)
             }
             "removeValue" => {
+                if vm.fw.gms.rtdb_denied {
+                    let exc = failed_task(vm, DATABASE_EXCEPTION, "Permission denied")?;
+                    return Ok(Some(Value::Obj(exc)));
+                }
                 rtdb_set(vm, &path, Value::Null)?;
                 vm.fw.gms.rtdb_values.remove(&path);
                 Value::Obj(void_task(vm)?)
             }
             "updateChildren" => {
+                if vm.fw.gms.rtdb_denied {
+                    let exc = failed_task(vm, DATABASE_EXCEPTION, "Permission denied")?;
+                    return Ok(Some(Value::Obj(exc)));
+                }
                 if let Some(m) = oarg(args, 0) {
                     let entries: Vec<(String, Value)> = read_host_map(vm, m)
                         .into_iter()
@@ -3603,10 +3621,29 @@ fn rtdb_instance(
                 Value::Obj(void_task(vm)?)
             }
             "get" => {
+                if vm.fw.gms.rtdb_denied {
+                    let exc = failed_task(vm, DATABASE_EXCEPTION, "Permission denied")?;
+                    return Ok(Some(Value::Obj(exc)));
+                }
                 let snap = rtdb_snap_obj(vm, &path)?;
                 Value::Obj(completed_task(vm, Value::Obj(snap))?)
             }
             "addValueEventListener" => {
+                if vm.fw.gms.rtdb_denied {
+                    // Cancelamento é terminal: o listener não fica registrado.
+                    let l = oarg(args, 0);
+                    if let Some(l) = l {
+                        let err = alloc(vm, DATABASE_ERROR)?;
+                        let _ = call_dex_any(
+                            vm,
+                            l,
+                            "onCancelled",
+                            &["(Lcom/google/firebase/database/DatabaseError;)V"],
+                            vec![Value::Obj(err)],
+                        )?;
+                    }
+                    return Ok(Some(l.map(Value::Obj).unwrap_or(Value::Null)));
+                }
                 if let Some(l) = oarg(args, 0) {
                     vm.fw.gms.rtdb_listeners.push((path.clone(), l));
                     let snap = rtdb_snap_obj(vm, &path)?;
@@ -3623,6 +3660,19 @@ fn rtdb_instance(
                 }
             }
             "addListenerForSingleValueEvent" => {
+                if vm.fw.gms.rtdb_denied {
+                    if let Some(l) = oarg(args, 0) {
+                        let err = alloc(vm, DATABASE_ERROR)?;
+                        let _ = call_dex_any(
+                            vm,
+                            l,
+                            "onCancelled",
+                            &["(Lcom/google/firebase/database/DatabaseError;)V"],
+                            vec![Value::Obj(err)],
+                        )?;
+                    }
+                    return Ok(Some(Value::Null));
+                }
                 if let Some(l) = oarg(args, 0) {
                     let snap = rtdb_snap_obj(vm, &path)?;
                     let _ = call_dex_any(
@@ -6449,6 +6499,13 @@ impl Engine {
     /// Propriedades de utilizador do Analytics.
     pub fn gms_analytics_user_props(&self) -> Vec<(String, String)> {
         self.fw.gms.analytics_user_properties.clone()
+    }
+
+    /// Programa a negação de acesso das regras do RTDB: leituras por listener
+    /// chamam `onCancelled(DatabaseError)`, escritas não acontecem e
+    /// `get`/`removeValue`/`updateChildren` falham.
+    pub fn gms_rtdb_set_permission_denied(&mut self, denied: bool) {
+        self.fw.gms.rtdb_denied = denied;
     }
 
     /// Programa a falha do FCM (getToken e tópicos) com `IOException` SERVICE_NOT_AVAILABLE.

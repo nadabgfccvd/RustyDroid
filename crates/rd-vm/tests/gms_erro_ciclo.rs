@@ -1079,3 +1079,183 @@ fn messaging_failure_blocks_token_and_topics_then_recovers() {
     );
     assert_eq!(e.gms_fcm_topics(), vec!["noticias".to_string()]);
 }
+
+// ── RTDB: negação das regras. Leituras por listener chamam onCancelled e o
+// listener não fica registrado; escritas não acontecem; removeValue, updateChildren
+// e get falham. Limpar a negação volta ao comportamento normal.
+const RTDB_CB: &str = "LRtdbCb;";
+
+fn rtdb_cb_class(b: &mut DexBuilder) {
+    let cls = b.class(RTDB_CB, "Ljava/lang/Object;");
+    b.static_field(cls, "data", "I", common::SVal::Int(0));
+    b.static_field(cls, "cancelled", "I", common::SVal::Int(0));
+    for (method, param, field) in [
+        (
+            "onDataChange",
+            "Lcom/google/firebase/database/DataSnapshot;",
+            "data",
+        ),
+        (
+            "onCancelled",
+            "Lcom/google/firebase/database/DatabaseError;",
+            "cancelled",
+        ),
+    ] {
+        let f = b.field_idx(RTDB_CB, "I", field);
+        b.r#virtual(
+            cls,
+            method,
+            "V",
+            vec![param],
+            ACC_PUBLIC,
+            Some(b.code(3, 2, 0, {
+                let mut u = op21c(0x60, 0, f);
+                u.extend(op11n(0x12, 1, 1));
+                u.extend(op23x(0x90, 0, 0, 1));
+                u.extend(op21c(0x67, 0, f));
+                u.extend(op10x(0x0E));
+                u
+            })),
+        );
+    }
+}
+
+fn rtdb_count(e: &Engine, field: &str) -> i32 {
+    match e.statics.get(&(RTDB_CB.to_string(), field.to_string())) {
+        Some(Value::Int(n)) => *n,
+        None => 0,
+        other => panic!("{field}: {other:?}"),
+    }
+}
+
+#[test]
+fn rtdb_permission_denied_cancels_listeners_and_blocks_writes_then_recovers() {
+    let mut b = DexBuilder::new();
+    rtdb_cb_class(&mut b);
+    let mut e = engine_of(&b);
+    let db = ov(cs!(
+        e,
+        FIREBASE_DATABASE,
+        "getInstance",
+        "()Lcom/google/firebase/database/FirebaseDatabase;",
+        []
+    )
+    .unwrap());
+    let path = s(&mut e, "config/tema");
+    let reference = ov(ci!(
+        e,
+        FIREBASE_DATABASE,
+        "getReference",
+        "(Ljava/lang/String;)Lcom/google/firebase/database/DatabaseReference;",
+        db,
+        [path]
+    )
+    .unwrap());
+    let v1 = s(&mut e, "escuro");
+    ci!(
+        e,
+        DATABASE_REF,
+        "setValue",
+        "(Ljava/lang/Object;)V",
+        reference,
+        [v1]
+    )
+    .unwrap();
+
+    // Sem negação: o listener recebe o valor ao registrar.
+    let l1 = obj(&mut e, RTDB_CB);
+    ci!(
+        e,
+        DATABASE_REF,
+        "addValueEventListener",
+        "(Lcom/google/firebase/database/ValueEventListener;)Lcom/google/firebase/database/ValueEventListener;",
+        reference,
+        [Value::Obj(l1)]
+    )
+    .unwrap();
+    assert_eq!(rtdb_count(&e, "data"), 1, "entrega normal ao registrar");
+
+    // Negação: escrita não acontece e remoção/leitura falham.
+    e.gms_rtdb_set_permission_denied(true);
+    let v2 = s(&mut e, "claro");
+    ci!(
+        e,
+        DATABASE_REF,
+        "setValue",
+        "(Ljava/lang/Object;)V",
+        reference,
+        [v2]
+    )
+    .unwrap();
+    assert_eq!(
+        sv(&e, e.fw.gms.rtdb_values.get("config/tema").cloned()),
+        "escuro",
+        "escrita negada não altera o valor"
+    );
+    assert_eq!(
+        rtdb_count(&e, "data"),
+        1,
+        "nenhuma entrega com acesso negado"
+    );
+    let rm = ov(ci!(
+        e,
+        DATABASE_REF,
+        "removeValue",
+        "()Lcom/google/android/gms/tasks/Task;",
+        reference,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, rm, "isSuccessful"), 0, "remoção falha");
+    let g = ov(ci!(
+        e,
+        DATABASE_REF,
+        "get",
+        "()Lcom/google/android/gms/tasks/Task;",
+        reference,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, g, "isSuccessful"), 0, "leitura falha");
+
+    // Novo listener sob negação é cancelado (sem onDataChange) e não fica registrado.
+    let l2 = obj(&mut e, RTDB_CB);
+    ci!(
+        e,
+        DATABASE_REF,
+        "addValueEventListener",
+        "(Lcom/google/firebase/database/ValueEventListener;)Lcom/google/firebase/database/ValueEventListener;",
+        reference,
+        [Value::Obj(l2)]
+    )
+    .unwrap();
+    assert_eq!(
+        rtdb_count(&e, "cancelled"),
+        1,
+        "cancelado com PERMISSION_DENIED"
+    );
+    assert_eq!(rtdb_count(&e, "data"), 1, "sem entrega de dados");
+
+    // Recuperação: a escrita volta a valer e o listener registrado recebe a mudança.
+    e.gms_rtdb_set_permission_denied(false);
+    let v3 = s(&mut e, "novo");
+    ci!(
+        e,
+        DATABASE_REF,
+        "setValue",
+        "(Ljava/lang/Object;)V",
+        reference,
+        [v3]
+    )
+    .unwrap();
+    assert_eq!(
+        sv(&e, e.fw.gms.rtdb_values.get("config/tema").cloned()),
+        "novo"
+    );
+    assert_eq!(
+        rtdb_count(&e, "data"),
+        2,
+        "listener registrado volta a receber"
+    );
+    assert_eq!(rtdb_count(&e, "cancelled"), 1, "nenhum cancelamento extra");
+}
