@@ -1259,3 +1259,59 @@ fn rtdb_permission_denied_cancels_listeners_and_blocks_writes_then_recovers() {
     );
     assert_eq!(rtdb_count(&e, "cancelled"), 1, "nenhum cancelamento extra");
 }
+
+// ── SafetyNet: falha programada no attest. A Task falha com ApiException, o
+// pedido falho não registra nonce; limpar a falha volta ao sucesso.
+#[test]
+fn safetynet_failure_blocks_attestation_then_recovers() {
+    let mut e = engine();
+    let sn = ov(cs!(
+        e,
+        SAFETYNET,
+        "getClient",
+        "(Landroid/content/Context;)Lcom/google/android/gms/safetynet/SafetyNetClient;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+
+    e.gms_safetynet_set_failure(7);
+    let key = s(&mut e, "api-key");
+    let t = ov(ci!(
+        e,
+        SAFETYNET_CLIENT,
+        "attest",
+        "([BLjava/lang/String;)Lcom/google/android/gms/tasks/Task;",
+        sn,
+        [Value::Null, key]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 0, "attest falha");
+    let exc = ov(ci!(e, TASK, "getException", "()Ljava/lang/Exception;", t, []).unwrap());
+    let class = e.heap.class_of(exc).unwrap().to_string();
+    assert_eq!(class, API_EXCEPTION, "tipo da exceção da lib");
+    assert_eq!(exc_message(&e, exc), "SafetyNet API error (7)");
+    assert!(
+        e.gms_integrity_nonces().is_empty(),
+        "pedido falho não registra nonce"
+    );
+
+    // Recuperação: attest volta a concluir e registra o nonce.
+    e.gms_safetynet_clear_failure();
+    let key2 = s(&mut e, "api-key");
+    let t = ov(ci!(
+        e,
+        SAFETYNET_CLIENT,
+        "attest",
+        "([BLjava/lang/String;)Lcom/google/android/gms/tasks/Task;",
+        sn,
+        [Value::Null, key2]
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1, "attest volta");
+    let nonces = e.gms_integrity_nonces();
+    assert_eq!(nonces.len(), 1);
+    assert!(
+        nonces[0].starts_with("safetynet:"),
+        "nonce registrado: {nonces:?}"
+    );
+}

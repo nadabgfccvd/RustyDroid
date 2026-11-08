@@ -739,6 +739,8 @@ pub struct GmsState {
     pub nearby_messages: HashMap<ObjRef, Vec<u8>>,
     // Integridade
     pub safetynet_client: Option<ObjRef>,
+    /// Falha programada do SafetyNet attest (código do ApiException).
+    pub safetynet_failure: Option<i32>,
     pub attestations: HashMap<ObjRef, String>,
     pub integrity_managers: Vec<ObjRef>,
     pub integrity_requests: HashMap<ObjRef, String>,
@@ -5767,6 +5769,12 @@ fn cast_nearby_integrity_instance(
     }
     if vm.fw.gms.safetynet_client == Some(recv) {
         return Ok(Some(match name {
+            // Com falha programada, o attest falha sem JWS e sem registrar nonce.
+            "attest" if vm.fw.gms.safetynet_failure.is_some() => {
+                let code = vm.fw.gms.safetynet_failure.unwrap_or_default();
+                let msg = format!("SafetyNet API error ({code})");
+                Value::Obj(failed_task(vm, API_EXCEPTION, &msg)?)
+            }
             "attest" => {
                 let nonce = args.first().map(|v| read_bytes(vm, v)).unwrap_or_default();
                 let jws = if !vm.fw.gms.attestation_jws.is_empty() {
@@ -6855,6 +6863,16 @@ impl Engine {
     }
 
     /// Define o JWS de atestação SafetyNet devolvido.
+    /// Programa a falha do SafetyNet attest com `ApiException(code)`.
+    pub fn gms_safetynet_set_failure(&mut self, code: i32) {
+        self.fw.gms.safetynet_failure = Some(code);
+    }
+
+    /// Remove a falha programada do SafetyNet attest.
+    pub fn gms_safetynet_clear_failure(&mut self) {
+        self.fw.gms.safetynet_failure = None;
+    }
+
     pub fn gms_set_attestation_jws(&mut self, jws: &str) {
         self.fw.gms.attestation_jws = jws.to_string();
     }

@@ -174,7 +174,7 @@ um teste. Testes em `crates/rd-vm/tests/gms.rs` e `crates/rd-vm/tests/gms_erro_c
 | gms-fit-health | `fit_steps_programmable` | `fit_zero_steps_yields_empty_data_set_not_fake_points` | **sem ciclo de vida no shim** (leitura sem estado) |
 | gms-cast | `cast_states_follow_programmed_session` | estado NO_DEVICES sem sessão (mesmo teste) | `cast_state_listener_fires_only_on_real_transitions` |
 | gms-nearby | `nearby_discovery_reports_programmed_endpoint` | `nearby_request_connection_only_reaches_discovered_endpoints` | `nearby_lifecycle_discovery_and_connections` |
-| gms-integrity | `integrity_and_safetynet_deterministic_tokens` | `integrity_failure_code_is_programmable_per_error_kind` | `integrity_failure_then_recovery_is_a_full_lifecycle` |
+| gms-integrity | `integrity_and_safetynet_deterministic_tokens` | `integrity_failure_code_is_programmable_per_error_kind`; `safetynet_failure_blocks_attestation_then_recovers` (attest com ApiException, sem nonce) | `integrity_failure_then_recovery_is_a_full_lifecycle`; mesmo teste do SafetyNet (recuperação) |
 | firebase-core | `firebase_autoinit_and_strict_mode` (auto-init) | strict sem initializeApp (mesmo teste) | mesmo teste (init → uso) |
 | firebase-analytics | `firebase_autoinit_and_strict_mode` (evento) | `analytics_invalid_names_are_rejected_then_valid_events_recorded` (nome inválido rejeitado e contado) | mesmo teste (coleção desligada e religada) |
 | firebase-auth | `firebase_auth_full_flow` | senha errada (mesmo teste) | `firebase_auth_state_listener_fires_on_add_and_signin` |
@@ -475,8 +475,11 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   `DatabaseException`. A doc oficial diz que, com negação das regras, o callback de cancelamento é disparado com
   `PERMISSION_DENIED`. Limitação: o código numérico de `DatabaseError` não é modelado. Teste em `gms_erro_ciclo.rs`;
   mutação do setter derruba o teste.
+- **SafetyNet** (dentro de `gms-integrity`): `gms_safetynet_set_failure(code)` faz `attest` falhar com `ApiException`
+  sem JWS e sem registrar nonce; `gms_safetynet_clear_failure()` recupera. Teste `safetynet_failure_blocks_attestation_then_recovers`;
+  mutação do guard derruba o teste. A doc oficial pede nonce com pelo menos 16 bytes; essa regra não virou falha.
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
 estado como ciclo). Serviços parciais ainda sem caminho de erro programável (conforme a tabela de
-erro/ciclo): Google Ads, SafetyNet (`attest`) e Google Sign-In. Próximas entregas
+erro/ciclo): Google Ads e Google Sign-In. Próximas entregas
 desta etapa seguem essa ordem.
