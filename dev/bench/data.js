@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794151417555,
+  "lastUpdate": 1794152029182,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5327,6 +5327,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3480,
             "range": "± 78",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cc2a1f89545c2c4542bfa7bed12ead7217419ef8",
+          "message": "docs(api): reproduz inventário do Apêndice C a partir de platform-NN oficiais (#588)\n\n- Os 11 platform-NN (API 26–36) foram baixados de dl.google.com e o android.jar\n  extraído; contagens do SDK por API idênticas às commitadas.\n- Coluna de implementação (rd-vm) regenerada: o código avançou desde a última\n  geração (ex.: ScaleGestureDetector passa a yes, MEDIA-03).\n- Maven Central rechecado: com.google.android:android só tem 4.1.1.4; fonte oficial mantida.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T12:33:31-03:00",
+          "tree_id": "8437b9dd9dc752063d4e6765849a3944be242a73",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/cc2a1f89545c2c4542bfa7bed12ead7217419ef8"
+        },
+        "date": 1794152028476,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1914,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1963,
+            "range": "± 28",
             "unit": "ns/iter"
           }
         ]
