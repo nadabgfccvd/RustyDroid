@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794154732086,
+  "lastUpdate": 1794156401340,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5507,6 +5507,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2758,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "380904dede6bae548cea70f6e7c6e3b47ec08877",
+          "message": "fix(vm): biometria AndroidX e herança host de Material no DEX (#229, #232) (#593)\n\n* fix(vm): configuração AndroidX de biometria chega ao shim M10 no despacho DEX (#229, supera #504)\n\nandroidx_set_biometric agora espelha o resultado de canAuthenticate e o\noutcome no vdev.biometrics. Antes, o despacho DEX via M10 respondia com o\nestado do vdev e ignorava a configuração programada pelo host AndroidX.\n\nRecupera testes de regressão do PR #504 (m10.rs, gms.rs). O gate\nvirtual_hardware_enabled do PR já está em main via m10::dispatch_enabled\n(#505), por isso a parte de interp.rs não foi portada.\n\n* fix(vm): biometria AndroidX e herança host de Material no DEX (#229, #232; supera #251)\n\nTrês correções que faltavam no main e que o PR #251 cobria:\n\n- is_virtual_hardware_class: inclui Landroidx/biometric/. Sem isso,\n  BiometricManager.canAuthenticate do AndroidX passava por dispatch_enabled\n  e o shim M10 respondia SUCCESS com o hardware virtual desligado.\n- do_invoke: invoke-direct <init> em superclasse sem DEX (non_dex_super_ctor)\n  resolve pela cadeia host, por exemplo MaterialButton sob uma subclasse DEX.\n- inherited_android_host: ancestrais Landroidx/, Lcom/google/android/material/\n  e Lcom/google/common/util/concurrent/ seguem a cadeia de shims host.\n\nTraz gms_androidx_dispatch_229_232.rs (4 testes do #251) e os testes de\nregressão de #504. Não porta a mudança de semântica de\nrequestLocationUpdates do #251 (ver pergunta ao usuário).\n\n---------\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T13:46:18-03:00",
+          "tree_id": "2314a475f1f016e08c59918ad04057a5b19a422c",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/380904dede6bae548cea70f6e7c6e3b47ec08877"
+        },
+        "date": 1794156400131,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2768,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2771,
+            "range": "± 48",
             "unit": "ns/iter"
           }
         ]
