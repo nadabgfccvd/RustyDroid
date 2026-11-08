@@ -2683,6 +2683,21 @@ const ROOM_FRAMEWORK_FACTORY: &str =
     "Landroidx/sqlite/db/framework/FrameworkSQLiteOpenHelperFactory;";
 const ROOM_CONTEXT_FIELD: &str = "m8_room_context";
 const ROOM_FACTORY_FIELD: &str = "m8_room_factory";
+/// `RoomDatabase.MigrationContainer` real do builder (recebe `addMigrations`).
+const ROOM_MIGRATIONS_FIELD: &str = "m8_room_migrations";
+const ROOM_MIGRATION_CONTAINER: &str = "Landroidx/room/RoomDatabase$MigrationContainer;";
+/// `fallbackToDestructiveMigration()` chamado no builder (`Int(1)`).
+const ROOM_DESTRUCTIVE_FIELD: &str = "m8_room_destructive";
+
+/// Container de migrações do builder: criado na primeira `addMigrations`.
+fn room_migration_container(vm: &mut Engine, builder: ObjRef) -> Result<ObjRef, VmExit> {
+    if let Ok(Value::Obj(c)) = vm.heap.get_field(builder, ROOM_MIGRATIONS_FIELD) {
+        return Ok(c);
+    }
+    let c = vm.new_dex_instance_pub(ROOM_MIGRATION_CONTAINER)?;
+    room_set(vm, builder, ROOM_MIGRATIONS_FIELD, Value::Obj(c))?;
+    Ok(c)
+}
 
 fn room_set(vm: &mut Engine, obj: ObjRef, field: &str, v: Value) -> Result<(), VmExit> {
     vm.heap.put_field(obj, field, v).map_err(|e| {
@@ -2719,9 +2734,21 @@ fn room_init(vm: &mut Engine, db: ObjRef, builder: ObjRef, name: &str) -> Result
     }
     let not_required = crate::collections::new_list(vm, "Ljava/util/HashSet;", Vec::new())?;
     room_set(vm, cfg, "migrationNotRequiredFrom", not_required)?;
-    let migrations =
-        Value::Obj(vm.new_dex_instance_pub("Landroidx/room/RoomDatabase$MigrationContainer;")?);
+    // Migrações do builder (`addMigrations`) e modo destrutivo, como no Room real:
+    // sem `fallbackToDestructiveMigration`, uma versão sem caminho de migração
+    // lança IllegalStateException em vez de recriar as tabelas.
+    let migrations = Value::Obj(room_migration_container(vm, builder)?);
     room_set(vm, cfg, "migrationContainer", migrations)?;
+    let destructive = matches!(
+        vm.heap.get_field(builder, ROOM_DESTRUCTIVE_FIELD),
+        Ok(Value::Int(1))
+    );
+    room_set(
+        vm,
+        cfg,
+        "requireMigration",
+        Value::Int(if destructive { 0 } else { 1 }),
+    )?;
     // Executores do Room: o builder padrão usa um pool de threads. O host já
     // modela `Executors` (intrínseco); o pool é o mesmo do app.
     let executor = vm.invoke_static(
@@ -2795,11 +2822,26 @@ fn room_builder(
             }
             Ok(Some(Value::Obj(recv)))
         }
+        // ADR 025: `addMigrations(Migration...)` grava no container real do Room.
+        "addMigrations" => {
+            if let Some(arr @ Value::Obj(_)) = args.first() {
+                let container = room_migration_container(vm, recv)?;
+                vm.invoke_instance(
+                    container,
+                    "addMigrations",
+                    "([Landroidx/room/migration/Migration;)V",
+                    std::slice::from_ref(arr),
+                )?;
+            }
+            Ok(Some(Value::Obj(recv)))
+        }
+        "fallbackToDestructiveMigration" => {
+            room_set(vm, recv, ROOM_DESTRUCTIVE_FIELD, Value::Int(1))?;
+            Ok(Some(Value::Obj(recv)))
+        }
         // builder fluente: tudo devolve this
         "allowMainThreadQueries"
         | "addCallback"
-        | "addMigrations"
-        | "fallbackToDestructiveMigration"
         | "setQueryExecutor"
         | "setTransactionExecutor"
         | "setJournalMode" => Ok(Some(Value::Obj(recv))),

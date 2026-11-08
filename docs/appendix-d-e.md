@@ -301,3 +301,47 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
   - D — `partial` agora: DrawerLayout, SwipeRefreshLayout, CardView, ViewPager2,
     photo picker, RxJava (6). `stub` (3): ConstraintLayout, CoordinatorLayout,
     material. `not_implemented` (18).
+
+### S13 — Apêndice D: Room 2.6.1 real sobre o VM (ST-02) (2026-11-08)
+
+- **S13 (rodada 5 de D, branch `fix/room-migrations-close-20261108`)**: o Room
+  deixa de ser um builder com migrações no-op. Três desvios do VM, achados por um
+  fixture real, foram corrigidos, com aprovação do usuário para mudar a semântica
+  que afeta todos os apps:
+  - `addMigrations` grava as migrações no `MigrationContainer` real do Room
+    (`crates/rd-vm/src/m8.rs`). Antes era no-op: a migração 1→2 nunca rodava.
+  - `requireMigration` segue o padrão do Room. Sem `fallbackToDestructiveMigration()`,
+    uma versão sem caminho de migração lança `IllegalStateException`
+    ("A migration from 1 to 2 was required but not found"). Antes, o VM recriava
+    a tabela em silêncio e perdia os dados.
+  - `close()` libera a conexão do backend (`crates/rd-vm/src/jsqlite.rs`), como o
+    Android. Antes ficava com a conexão viva, e a tabela TEMP do invalidation
+    tracker sobrevivia; a reabertura falhava com `table room_table_modification_log
+    already exists`. O `close` do `SQLiteOpenHelper` (que o Room chama ao fechar)
+    também libera a conexão do banco que abriu.
+  - Evidência do bug antes da correção (trace SQL, `RD_SQL_TRACE=1`): com a migração
+    declarada, nenhum `ALTER TABLE` era executado; o Room rodava `DROP TABLE IF
+    EXISTS item` e recriava a tabela. Sem migração, o mesmo `DROP` acontecia sem erro.
+  - Fixture: `crates/rd-vm/tests/fixtures/room/src/` (duas versões do mesmo banco:
+    v1 com `item(id, name)`; v2 com `qty INTEGER NOT NULL DEFAULT 0` e
+    `Migration(1,2)`). O `_Impl` é gerado pelo processador real do
+    `androidx.room:room-compiler:2.6.1` no javac, e o DEX sai do D8 (R8 8.7.18,
+    `--min-api 26`). `scripts/gen-room-fixture.sh` regenera tudo a partir do Google
+    Maven (AndroidX não existe no Maven Central), com `platform-35` para o
+    `android.jar`. O SHA-256 gerado nesta rodada foi `134e9ab7…`.
+  - O DEX **não** é versionado: `.dex` é bloqueante no RD Sentinel e a exceção da
+    ADR 036 cobre só o fixture do RxJava. Por isso `crates/rd-vm/tests/jetpack_room.rs`
+    (3 testes) é `#[ignore]` e exige `RD_ROOM_FIXTURE_DEX`. Rodar no CI exige uma
+    exceção de política nova, que é decisão de mantenedor.
+  - Testes: `migration_declared_runs_alter_and_keeps_rows` (`count=1,qty=0`),
+    `without_migration_refuses_to_open_like_room` (ISE do Room) e
+    `fresh_database_reopens_in_same_process` (reabertura após `close`).
+    Os três passam com a correção. No VM original (`main`) os três falham.
+  - Regressão: `cargo test -p rd-vm -- --include-ignored` com o DEX presente: todos
+    os blocos `test result: ok`, zero falhas.
+  - Não modelado: `fallbackToDestructiveMigrationFrom`/`OnDowngrade` (o builder real
+    roda, mas o config não recebe o conjunto de versões: é mais estrito que o Room,
+    nunca mais permissivo), auto-migrations, observers do InvalidationTracker
+    (triggers) e coroutines/Flow. Por isso o status é `partial`, não `supported`.
+  - Observado no trace: cada abertura em conexão nova reexecuta o `onOpen` do Room
+    (`CREATE TEMP TABLE`), e agora ele não falha. Sem erro de SQL nos três cenários.

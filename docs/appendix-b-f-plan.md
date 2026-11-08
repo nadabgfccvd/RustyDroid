@@ -313,8 +313,9 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
   critério da spec. ML Kit fica fora.
 - Prioridade da spec ("Room via ST-02, work via SYS-04, navigation via UI-04"): as três já estão
   `partial` com `host-shim`. Lacunas que restam:
-  - Room: DAOs gerados por annotation processing, migrations e `InvalidationTracker` não são
-    modelados (`docs/jetpack.md`, linha room).
+  - Room (S13): o `_Impl` do processador real roda, e `addMigrations`, `requireMigration` e
+    `close` seguem o Room real. Não modelados: `fallbackToDestructiveMigrationFrom`/`OnDowngrade`,
+    observers do `InvalidationTracker` e coroutines/Flow (`docs/jetpack.md`, linha room).
   - work e navigation: ver o campo `notes` de cada entrada em `data/jetpack.toml`.
 - Entre as 18 `not_implemented`, o ST-04 (AES-GCM no AndroidKeyStore, PR #564) não muda o
   status de `security-crypto`: `EncryptedSharedPreferences` e `MasterKey` dependem de Tink, e
