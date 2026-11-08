@@ -608,3 +608,68 @@ fn remote_config_failed_fetch_keeps_active_values_then_recovers() {
         "novo valor após recuperação"
     );
 }
+
+fn cast_context(mut e: &mut Engine) -> u32 {
+    let c = ctx(e);
+    ov(cs!(
+        e,
+        CAST_CONTEXT,
+        "getSharedInstance",
+        "(Landroid/content/Context;)Lcom/google/android/gms/cast/framework/CastContext;",
+        [c]
+    )
+    .unwrap())
+}
+
+#[test]
+fn cast_failed_connect_creates_no_session_then_recovers() {
+    let mut e = engine();
+    let cc = cast_context(&mut e);
+    let state =
+        |mut e: &mut Engine| iv(ci!(e, CAST_CONTEXT, "getCastState", "()I", cc, []).unwrap());
+
+    // 1) Sucesso: conecta e expõe a sessão ao convidado.
+    e.gms_cast_connect("TV da Sala");
+    assert_eq!(state(&mut e), 4, "CONNECTED");
+    assert_eq!(e.gms_cast_last_error(), None);
+    e.gms_cast_disconnect();
+    assert_eq!(state(&mut e), 1, "volta a NO_DEVICES");
+
+    // 2) Erro: a tentativa falha; sem sessão e com o erro registrado.
+    e.gms_cast_set_connect_failure(2);
+    e.gms_cast_connect("TV do Quarto");
+    assert_eq!(state(&mut e), 1, "falha não conecta");
+    assert_eq!(e.gms_cast_last_error(), Some(2), "erro registrado");
+    let sm = ov(ci!(
+        e,
+        CAST_CONTEXT,
+        "getSessionManager",
+        "()Lcom/google/android/gms/cast/framework/SessionManager;",
+        cc,
+        []
+    )
+    .unwrap());
+    let session = ci!(
+        e,
+        SESSION_MANAGER,
+        "getCurrentCastSession",
+        "()Lcom/google/android/gms/cast/framework/CastSession;",
+        sm,
+        []
+    )
+    .unwrap();
+    assert!(
+        matches!(session, Some(Value::Null)),
+        "sem sessão após falha: {session:?}"
+    );
+
+    // 3) Recuperação: sem falha, a nova tentativa conecta e limpa o erro.
+    e.gms_cast_clear_connect_failure();
+    e.gms_cast_connect("TV do Quarto");
+    assert_eq!(state(&mut e), 4, "conecta após limpar a falha");
+    assert_eq!(
+        e.gms_cast_last_error(),
+        None,
+        "erro limpo pela tentativa bem-sucedida"
+    );
+}
