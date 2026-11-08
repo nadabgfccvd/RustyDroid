@@ -108,7 +108,7 @@ mínimas documentadas no PR.
     | emoji2 | dex-passthrough | Fora do escopo desta rodada (fontes de emoji) |
     | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
     | camerax | host-shim → DEX real | `partial` (S19): o DEX real do CameraX 1.6.0 roda sobre a Camera2 virtual, sem shim novo. Preview renderiza. Captura não confirmada. Prova ponta a ponta local (APK fora do CI) |
-    | security-crypto | host-shim | **Partial (S17).** Depende de AndroidKeyStore (ST-04), já disponível |
+    | security-crypto | host-shim | **Partial (S17, S20).** Depende de AndroidKeyStore (ST-04). Persistência entre sessões no VFS app-private (S20); chave do AndroidKeyStore em claro no VFS, sem hardware |
     | credentials | host-shim | **Partial (S18, S18b).** Padrão sem provedor. Provedor fake opt-in só para `get` (senha ou falha `Get*`); create sem armazenamento; `clear` |
     | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
     | hilt-dagger | dex-passthrough | Exige app com DEX gerado pelo Hilt |
@@ -442,7 +442,7 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   AAD = arquivo + chave. Mutação de teste: remover o arquivo do AAD derruba `value_copied_to_another_file_*`.
 - **Desvios** (também em `notes` do registro): o formato não é o do Tink, então não há interoperabilidade
   com dados gravados por um dispositivo real; só os valores são cifrados (nomes ficam em claro na memória
-  do host); o estado dura só a sessão do Engine (nada no VFS); `create` é interceptado mesmo com o DEX da
+  do host); o estado dura só a sessão do Engine (nada no VFS; superado pelo S20); `create` é interceptado mesmo com o DEX da
   biblioteca presente. `MasterKey.Builder` e `MasterKeys.getOrCreate` rodam no DEX sobre o ST-04.
 - **Decisão do usuário (2026-11-08)**: o escopo de D nesta rodada são os host-shim (CameraX, security-crypto,
   credentials). Os dex-passthrough continuam `not_implemented` sem teste de carga de DEX real.
@@ -521,6 +521,37 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   Sobre o registro anterior ("pendente: fixture ou aceitar evidência local"): fica resolvido pela aceitação acima.
 - **Limites da evidência**: o preview foi verificado visualmente (screenshot). Não foi medido frame a frame, e a
   captura não foi confirmada. `ImageAnalysis` (modo Código) não foi exercitado.
+
+### S20 — Apêndice D: security-crypto, persistência entre sessões (2026-11-08)
+
+- **Lacuna fechada**: até o S19, o estado do security-crypto durava só a sessão do Engine. O cabeçalho de
+  `security_crypto.rs` dizia "nada é gravado no VFS", e isso não é mais verdade. O VFS da sessão
+  (`Engine::set_vfs`) guarda agora duas coisas:
+  - o arquivo cifrado em `files/rd_encrypted/<nome em hex>.enc`, em formato de texto (`RDENC1`, uma linha por
+    valor com IV e `ciphertext||tag` em hex), regravado a cada `commit`/`apply` e na criação;
+  - a chave do AndroidKeyStore em `files/rd_keystore/<alias em hex>.key`, gravada em `generateKey` e apagada
+    em `deleteEntry`.
+- **Recarga**: `create` recarrega a chave e o arquivo do VFS quando a Engine não os tem em memória.
+  `containsAlias`, `getKey`, `Cipher.init` e `doFinal` também recarregam a chave. A leitura de valor não
+  recarrega: uma chave removida da memória continua falhando fechado.
+- **Falhas tipadas**: arquivo presente mas inválido → `GeneralSecurityException` (não vira arquivo vazio, para
+  não sobrescrever dados); chave removida → `GeneralSecurityException` no `create`; byte alterado no
+  ciphertext gravado → `SecurityException` na leitura da sessão seguinte.
+- **Desvios** (também em `notes` do registro): o material da chave fica em claro no VFS, sem TEE/StrongBox
+  (o AndroidKeyStore real não expõe o material); o formato é próprio, não o do Tink; os nomes de arquivo e de
+  chave aparecem em hex no VFS (sem separador de caminho), não cifrados.
+- **Testes** (`crates/rd-vm/src/security_crypto.rs`, 4 novos; módulo com 18 testes):
+  - `values_and_keystore_key_survive_a_new_engine_on_the_same_vfs`: a Engine B, sem nada em memória, lê o valor
+    gravado pela Engine A; o texto puro não aparece no arquivo gravado;
+  - `deleted_keystore_key_is_not_loaded_by_the_next_engine`;
+  - `tampered_file_on_the_vfs_fails_authentication_in_the_next_engine`;
+  - `corrupted_file_on_the_vfs_is_a_typed_error_not_an_empty_file`.
+- **Mutação**: sem a gravação no `apply`, caem os 2 testes de sessão que dependem dela; sem a recarga da chave
+  no `create`, caem os mesmos 2. O arquivo foi restaurado e conferido por checksum.
+- **Validação**: `cargo test -p rd-vm` completo passa, com 0 falhas; `cargo clippy -p rd-vm --lib --tests -- -D warnings`
+  ok; `cargo fmt --all -- --check` ok.
+- **Fora deste passo**: DataStore (fica para depois, depende de coroutines e de persistência em disco);
+  AES256_SIV para nomes de chave; EncryptedFile; o caminho Tink do DEX.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 

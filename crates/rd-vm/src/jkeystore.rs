@@ -62,6 +62,79 @@ pub(crate) fn random_bytes(n: usize) -> Result<Vec<u8>, VmExit> {
     Ok(buf)
 }
 
+// ── persistência entre sessões (VFS app-private) ─────────────────────────
+//
+// O AndroidKeyStore real sobrevive ao processo. Aqui cada chave vai para o VFS
+// da sessão (`Engine::set_vfs`), em `files/rd_keystore/<alias em hex>.key`, e
+// é recarregada sob demanda por outra Engine com o mesmo VFS. Desvio
+// declarado: o material fica em claro no VFS, sem TEE/StrongBox.
+
+/// Hex minúsculo, usado para nomes de arquivo e campos de texto do VFS.
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push(DIGITS[(b >> 4) as usize] as char);
+        out.push(DIGITS[(b & 0xF) as usize] as char);
+    }
+    out
+}
+
+/// Inverso de `hex_encode`. `None` para comprimento ímpar ou dígito inválido.
+pub(crate) fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if !s.is_ascii() || !s.len().is_multiple_of(2) {
+        return None;
+    }
+    s.as_bytes()
+        .chunks(2)
+        .map(|p| {
+            let hi = (p[0] as char).to_digit(16)?;
+            let lo = (p[1] as char).to_digit(16)?;
+            Some((hi * 16 + lo) as u8)
+        })
+        .collect()
+}
+
+/// Diretório privado do pacote (mesma raiz de `prefs::path`).
+pub(crate) fn app_files_dir(package: &str) -> String {
+    let package = if package.is_empty() { "app" } else { package };
+    format!("/data/user/0/{package}/files")
+}
+
+fn key_path(vm: &Engine, alias: &str) -> String {
+    format!(
+        "{}/rd_keystore/{}.key",
+        app_files_dir(&vm.fw.package_name),
+        hex_encode(alias.as_bytes())
+    )
+}
+
+/// Grava a chave recém-gerada no VFS.
+fn persist_key(vm: &Engine, alias: &str) {
+    if let Some(material) = vm.fw.keystore.keys.get(alias) {
+        crate::jfile::write_bytes(&vm.fw.vfs, &key_path(vm, alias), material.clone());
+    }
+}
+
+/// `deleteEntry`: a chave sai da memória e do VFS.
+fn forget_key(vm: &Engine, alias: &str) {
+    crate::jfile::delete_file(&vm.fw.vfs, &key_path(vm, alias));
+}
+
+/// Recarrega a chave do VFS se esta Engine ainda não a tem em memória. Um
+/// material de tamanho fora de AES-128/256 é tratado como ausente.
+pub(crate) fn ensure_key_loaded(vm: &mut Engine, alias: &str) {
+    if vm.fw.keystore.keys.contains_key(alias) {
+        return;
+    }
+    let path = key_path(vm, alias);
+    if let Some(bytes) = crate::jfile::read_bytes(&vm.fw.vfs, &path) {
+        if matches!(bytes.len(), 16 | 32) {
+            vm.fw.keystore.keys.insert(alias.to_string(), bytes);
+        }
+    }
+}
+
 fn str_arg(vm: &Engine, v: Option<&Value>) -> Option<String> {
     match v {
         Some(Value::Obj(r)) => vm.heap.as_str(*r).ok().map(str::to_string),
@@ -233,6 +306,9 @@ pub fn instance_intrinsic(
 
 fn keystore_method(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Option<Value>, VmExit> {
     let alias = str_arg(vm, args.first());
+    if let Some(a) = &alias {
+        ensure_key_loaded(vm, a);
+    }
     Ok(Some(match name {
         "load" => Value::Null,
         "containsAlias" => {
@@ -246,6 +322,7 @@ fn keystore_method(vm: &mut Engine, name: &str, args: &[Value]) -> Result<Option
         "deleteEntry" => {
             if let Some(a) = alias {
                 vm.fw.keystore.keys.remove(&a);
+                forget_key(vm, &a);
             }
             Value::Null
         }
@@ -321,6 +398,7 @@ fn key_generator_method(
             };
             let material = random_bytes((bits / 8) as usize)?;
             vm.fw.keystore.keys.insert(alias.clone(), material);
+            persist_key(vm, &alias);
             Ok(Some(new_key(vm, &alias)?))
         }
         _ => Ok(None),
@@ -401,6 +479,7 @@ fn cipher_init(vm: &mut Engine, recv: ObjRef, args: &[Value]) -> Result<(), VmEx
             .unwrap_or_default(),
         _ => String::new(),
     };
+    ensure_key_loaded(vm, &alias);
     if !vm.fw.keystore.keys.contains_key(&alias) {
         return Err(throw(
             "Ljava/security/InvalidKeyException;",
@@ -470,6 +549,7 @@ fn cipher_finish(vm: &mut Engine, recv: ObjRef, msg: &[u8]) -> Result<Value, VmE
             .unwrap_or_default(),
         _ => String::new(),
     };
+    ensure_key_loaded(vm, &alias);
     let Some(key) = vm.fw.keystore.keys.get(&alias).cloned() else {
         return Err(throw(
             "Ljava/lang/IllegalStateException;",
