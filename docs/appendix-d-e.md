@@ -108,7 +108,7 @@ mínimas documentadas no PR.
     | emoji2 | dex-passthrough | Fora do escopo desta rodada (fontes de emoji) |
     | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
     | camerax | host-shim | Depende de MEDIA-03 (câmera virtual) |
-    | security-crypto | host-shim | Depende de AndroidKeyStore (ST-04) |
+    | security-crypto | host-shim | **Partial (S17).** Depende de AndroidKeyStore (ST-04), já disponível |
     | credentials | host-shim | Depende de provedor fake de credencial (decisão de produto) |
     | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
     | hilt-dagger | dex-passthrough | Exige app com DEX gerado pelo Hilt |
@@ -430,6 +430,23 @@ Ainda pendente: tags/progresso/output
 em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estados avançam pelo harness).
 `Constraints` são aceitas e não aplicadas. Por isso `work` segue `partial`.
 
+### S17 — Apêndice D: security-crypto sobre o AndroidKeyStore (ST-04) (2026-11-08)
+
+- **S17 (rodada 7 de D, branch `feat/appd-security-crypto-20261108`)**: `EncryptedSharedPreferences.create`
+  (assinaturas com `MasterKey` e com alias deprecado) e a superfície `SharedPreferences`/`Editor` sobem de
+  `not_implemented` para `partial`. Módulo `crates/rd-vm/src/security_crypto.rs`, com 14 testes unitários
+  (codec, cifragem, AAD por arquivo e por chave, chave mestra ausente ou diferente, tipos errados, edições
+  pendentes, `clear` seguido de `put`, listeners). A API pública foi conferida no AAR oficial 1.1.0
+  (`dl.google.com`), não só na documentação.
+- Valores cifrados com AES-256-GCM pela chave do AndroidKeyStore (`jkeystore.rs`), IV aleatório por valor e
+  AAD = arquivo + chave. Mutação de teste: remover o arquivo do AAD derruba `value_copied_to_another_file_*`.
+- **Desvios** (também em `notes` do registro): o formato não é o do Tink, então não há interoperabilidade
+  com dados gravados por um dispositivo real; só os valores são cifrados (nomes ficam em claro na memória
+  do host); o estado dura só a sessão do Engine (nada no VFS); `create` é interceptado mesmo com o DEX da
+  biblioteca presente. `MasterKey.Builder` e `MasterKeys.getOrCreate` rodam no DEX sobre o ST-04.
+- **Decisão do usuário (2026-11-08)**: o escopo de D nesta rodada são os host-shim (CameraX, security-crypto,
+  credentials). Os dex-passthrough continuam `not_implemented` sem teste de carga de DEX real.
+
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 
 Critério por serviço parcial: além do caminho de sucesso, o shim tem um caminho de erro programável
@@ -480,6 +497,7 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   mutação do guard derruba o teste. A doc oficial pede nonce com pelo menos 16 bytes; essa regra não virou falha.
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
-estado como ciclo). Serviços parciais ainda sem caminho de erro programável (conforme a tabela de
-erro/ciclo): Google Ads e Google Sign-In. Próximas entregas
-desta etapa seguem essa ordem.
+estado como ciclo). Google Ads e Google Sign-In também já cumprem o critério por testes existentes
+(`ads_banner_success_failure_and_rewarded`, `google_signin_silent_requires_host_completion`,
+`google_signin_sign_out_ends_silent_session_and_sign_in_restores_it`). Com isso, a etapa 7 (os 20 serviços
+`partial`) está fechada pela tabela de erro/ciclo. Registro da etapa 7 no plano: PR #607.

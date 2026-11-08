@@ -573,14 +573,14 @@ category = "behavior"
 coordinates = "androidx.security:security-crypto"
 prefixes = ["androidx.security"]
 strategy = "host-shim"
-status = "not_implemented"
-module = "none"
-code = []
-milestone = "future"
-notes = "ST-04: EncryptedSharedPreferences/MasterKey sem shim; depende de AndroidKeyStore (Apêndice C, gap próprio)."
-evidence = ["docs/appendix-d-e.md"]
+status = "partial"
+module = "rd-vm/security_crypto"
+code = ["crates/rd-vm/src/security_crypto.rs", "crates/rd-vm/src/jkeystore.rs"]
+milestone = "appendix-d"
+notes = "ST-04 (2026-11-08): EncryptedSharedPreferences.create (duas assinaturas públicas: MasterKey e alias deprecado) e a superfície SharedPreferences/Editor (getters tipados, getAll, contains, edit/put*/remove/clear, commit/apply com listeners) sobre AES-256-GCM pela chave do AndroidKeyStore (jkeystore.rs). Valores cifrados com IV aleatório e AAD = arquivo + chave; chave mestra ausente ou diferente falha tipado; tipo errado → ClassCastException; AEAD inválido → SecurityException. Desvios: formato não é o do Tink (sem interop com dados de dispositivo real), nomes das chaves em claro na memória do host, estado só da sessão do Engine (nada no VFS), create interceptado mesmo com DEX presente. MasterKey.Builder/MasterKeys.getOrCreate rodam no DEX sobre o ST-04. Faltam: persistência entre sessões, AES256_SIV para nomes de chave, EncryptedFile, e o caminho Tink do DEX."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/src/security_crypto.rs"]
 gap_id = "gap-jetpack-security-crypto"
-key_apis = ["androidx.security.crypto.EncryptedSharedPreferences.create", "androidx.security.crypto.MasterKeys.getOrCreate"]
+key_apis = ["androidx.security.crypto.EncryptedSharedPreferences.create"]
 
 [[library]]
 id = "androidx-credentials"

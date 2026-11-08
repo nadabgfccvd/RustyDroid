@@ -231,6 +231,8 @@ pub struct AndroidxState {
     pub custom_tab_launches: Vec<String>,
     pub multidex_installs: i32,
     pub futures: HashMap<ObjRef, FutureHost>,
+    /// security-crypto (ST-04): arquivos cifrados, editores e listeners.
+    pub enc: crate::security_crypto::Tables,
 }
 
 impl Default for AndroidxState {
@@ -272,6 +274,7 @@ impl Default for AndroidxState {
             custom_tab_launches: Vec::new(),
             multidex_installs: 0,
             futures: HashMap::new(),
+            enc: crate::security_crypto::Tables::default(),
         }
     }
 }
@@ -480,6 +483,13 @@ fn call_static_rooted(
     match (class, name) {
         // The VM loads every classes*.dex natively; install() is an
         // explicitly recorded no-op (never the real zip extraction).
+        // security-crypto (ST-04): EncryptedSharedPreferences.create intercepted
+        // with or without the library DEX (Tink path is out of model).
+        (crate::security_crypto::ENCRYPTED_PREFS, "create")
+            if crate::security_crypto::is_create_sig(sig) =>
+        {
+            crate::security_crypto::create(vm, sig, args).map(Some)
+        }
         (MULTIDEX, "install") => {
             vm.fw.androidx.multidex_installs += 1;
             Ok(Some(Value::Null))
@@ -2875,6 +2885,11 @@ fn call_instance_rooted(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     let recv_class = vm.heap.class_of(recv).unwrap_or("").to_string();
+    if recv_class == crate::security_crypto::ENCRYPTED_PREFS
+        || recv_class == crate::security_crypto::ENCRYPTED_EDITOR
+    {
+        return crate::security_crypto::call_instance(vm, &recv_class, name, sig, recv, args);
+    }
     // Snapshot the tracking flags first so the immutable borrow ends
     // before the &mut family calls below.
     let (

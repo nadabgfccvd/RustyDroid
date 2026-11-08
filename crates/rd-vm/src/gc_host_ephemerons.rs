@@ -237,6 +237,8 @@ pub(super) fn collect_ephemeron_keys(fw: &HostState, out: &mut Vec<ObjRef>) {
     }
 
     let ax = &fw.androidx;
+    out.extend(ax.enc.listeners.keys().copied());
+    out.extend(ax.enc.listeners.values().flatten().copied());
     out.extend(ax.lifecycles.keys().copied());
     out.extend(ax.livedata.keys().copied());
     out.extend(ax.vm_stores.keys().copied());
@@ -604,6 +606,8 @@ where
 
     // ── AndroidX purge ───────────────────────────────────────────────────
     let ax = &mut fw.androidx;
+    ax.enc.editors.retain(|r, _| alive(r));
+    ax.enc.listeners.retain(|r, _| alive(r));
     ax.lifecycles.retain(|r, _| alive(r));
     ax.state_name_by_obj.retain(|r, _| alive(r));
     ax.event_name_by_obj.retain(|r, _| alive(r));

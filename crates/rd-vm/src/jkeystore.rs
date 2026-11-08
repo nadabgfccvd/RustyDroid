@@ -49,7 +49,7 @@ fn throw(class: &str, msg: impl Into<String>) -> VmExit {
     VmExit::Exception(Throwable::new(class, msg))
 }
 
-fn random_bytes(n: usize) -> Result<Vec<u8>, VmExit> {
+pub(crate) fn random_bytes(n: usize) -> Result<Vec<u8>, VmExit> {
     let mut buf = vec![0u8; n];
     std::fs::File::open("/dev/urandom")
         .and_then(|mut f| f.read_exact(&mut buf))
@@ -120,7 +120,7 @@ fn alloc(vm: &mut Engine, class: &str, fields: Vec<(String, Value)>) -> Result<V
 
 /// AES-GCM. Devolve `ciphertext || tag`. `None` se a chave ou o IV têm tamanho
 /// inválido (já validados antes; aqui é defesa).
-fn gcm_seal(key: &[u8], iv: &[u8], aad: &[u8], msg: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn gcm_seal(key: &[u8], iv: &[u8], aad: &[u8], msg: &[u8]) -> Option<Vec<u8>> {
     let nonce = Nonce::from_slice(iv);
     let p = Payload { msg, aad };
     match key.len() {
@@ -131,7 +131,7 @@ fn gcm_seal(key: &[u8], iv: &[u8], aad: &[u8], msg: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Inverso de `gcm_seal`. `None` = tag não confere (AEADBadTagException).
-fn gcm_open(key: &[u8], iv: &[u8], aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn gcm_open(key: &[u8], iv: &[u8], aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
     let nonce = Nonce::from_slice(iv);
     let p = Payload { msg: sealed, aad };
     match key.len() {
