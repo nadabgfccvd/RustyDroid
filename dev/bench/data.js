@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794166111178,
+  "lastUpdate": 1794167210357,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5867,6 +5867,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2805,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5aadc6451daf8ec5d40f6a9321c57ebe5ec1f4a",
+          "message": "test(gms): falha programável no Firebase Messaging (E) (#603)\n\ngms_fcm_set_failure(): getToken e subscribe/unsubscribeFromTopic falham com\njava.io.IOException (SERVICE_NOT_AVAILABLE), sem efeito colateral. deleteToken\nsegue disponível. gms_fcm_clear_failure() recupera (token e assinatura voltam).\n\nTeste: messaging_failure_blocks_token_and_topics_then_recovers\n(crates/rd-vm/tests/gms_erro_ciclo.rs). Mutação do guard derruba o teste.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T16:46:31-03:00",
+          "tree_id": "c1b8c6e1b5f069e1ea87b0de6d629289480c0637",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e5aadc6451daf8ec5d40f6a9321c57ebe5ec1f4a"
+        },
+        "date": 1794167209917,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3199,
+            "range": "± 71",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3181,
+            "range": "± 18",
             "unit": "ns/iter"
           }
         ]
