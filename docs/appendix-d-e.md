@@ -107,7 +107,7 @@ mínimas documentadas no PR.
     | compose | host-native | UI-05 experimental/longo prazo; segue `not_implemented` |
     | emoji2 | dex-passthrough | Fora do escopo desta rodada (fontes de emoji) |
     | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
-    | camerax | host-shim → DEX real | **S19:** o CameraX real roda sobre a Camera2 virtual (evidência local). Segue `not_implemented`: falta teste no repositório (fixture ou APK) |
+    | camerax | host-shim → DEX real | `partial` (S19): o DEX real do CameraX 1.6.0 roda sobre a Camera2 virtual, sem shim novo. Preview renderiza. Captura não confirmada. Prova ponta a ponta local (APK fora do CI) |
     | security-crypto | host-shim | **Partial (S17).** Depende de AndroidKeyStore (ST-04), já disponível |
     | credentials | host-shim | **Partial (S18).** Sem provedor fake (decisão de produto), só as falhas tipadas e `clear` |
     | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
@@ -485,13 +485,17 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
     `ImageSaver`), então o sucesso da captura não é afirmado.
   - **Reteste (2026-11-08, 22:15, `rd-cli` de `main` 8c3e9f2)**: com `RD_TRACE_METHOD=Lbr/com/comprix/`, que
     cobre os callbacks do app, nenhum `onCaptureSuccess`, `onError` ou `onImageSaved` aparece. O screenshot
-    pós-\"Tirar foto\" (`/home/user/comprix/cx_capture.png`, fora do repositório) ainda mostra a tela
-    \"Escanear preço\", sem a tela de confirmação do que o app leu. `last_error` = `null`. A captura continua
+    pós-"Tirar foto" (`/home/user/comprix/cx_capture.png`, fora do repositório) ainda mostra a tela
+    "Escanear preço", sem a tela de confirmação do que o app leu. `last_error` = `null`. A captura continua
     não confirmada.
-- **Por que o status não sobe**: `partial` exige implementação versionada e teste no repositório (`gap_id`,
-  `module`, `code`, `evidence`). O APK do Comprix não é versionável, e o CI não o tem. O precedente do
-  RxJava usa fixture DEX com exceção de ADR (036). Ficam em aberto: (a) fixture DEX do CameraX com ADR de
-  exceção, ou (b) aceitar evidência local como prova. Esta é uma decisão do usuário.
+- **Decisão de status (2026-11-08, usuário)**: o usuário aceitou a evidência local e pediu que o CameraX vire
+  `partial`. Registro: `module = "rd-vm/m10"`, `code` = `m10/camera.rs` e `m10/preview.rs`, `gap_id` mantido.
+  Os testes no repositório cobrem a camada Camera2 que o CameraX usa: `camera_305.rs`, `m10.rs` e
+  `android_scale_gesture.rs` (caminho do `PreviewView`). A prova do DEX do CameraX em si continua local, porque
+  o APK não é versionável. Isso abre uma exceção à regra de `partial` com teste específico, registrada aqui e
+  no PR. Não houve fixture com ADR. A estratégia na tabela segue `host-shim`, como o escopo de D, mas a
+  implementação é o DEX real.
+  Sobre o registro anterior ("pendente: fixture ou aceitar evidência local"): fica resolvido pela aceitação acima.
 - **Limites da evidência**: o preview foi verificado visualmente (screenshot). Não foi medido frame a frame, e a
   captura não foi confirmada. `ImageAnalysis` (modo Código) não foi exercitado.
 
