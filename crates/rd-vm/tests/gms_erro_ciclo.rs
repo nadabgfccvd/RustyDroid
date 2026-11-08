@@ -882,3 +882,98 @@ fn crashlytics_custom_keys_capped_at_64_and_truncated() {
     assert_eq!(keys[0].0.chars().count(), 1024);
     assert_eq!(keys[0].1.chars().count(), 1024);
 }
+
+// ── Maps: falha de carregamento programada. `MapsInitializer.initialize`
+// devolve o código de erro e `getMapAsync` não entrega o GoogleMap enquanto a
+// falha durar; limpar a falha volta ao carregamento normal.
+const MAP_CB: &str = "LMapReadyCb;";
+
+fn map_ready_class(b: &mut DexBuilder) {
+    let cls = b.class(MAP_CB, "Ljava/lang/Object;");
+    b.static_field(cls, "called", "I", common::SVal::Int(0));
+    let f = b.field_idx(MAP_CB, "I", "called");
+    let params = vec!["Lcom/google/android/gms/maps/GoogleMap;"];
+    b.r#virtual(
+        cls,
+        "onMapReady",
+        "V",
+        params,
+        ACC_PUBLIC,
+        Some(b.code(3, 2, 0, {
+            let mut u = op21c(0x60, 0, f);
+            u.extend(op11n(0x12, 1, 1));
+            u.extend(op23x(0x90, 0, 0, 1));
+            u.extend(op21c(0x67, 0, f));
+            u.extend(op10x(0x0E));
+            u
+        })),
+    );
+}
+
+fn map_ready_count(e: &Engine) -> i32 {
+    match e.statics.get(&(MAP_CB.to_string(), "called".to_string())) {
+        Some(Value::Int(n)) => *n,
+        None => 0,
+        other => panic!("called: {other:?}"),
+    }
+}
+
+#[test]
+fn maps_load_failure_blocks_map_ready_then_recovers() {
+    let mut b = DexBuilder::new();
+    map_ready_class(&mut b);
+    let mut e = engine_of(&b);
+    let frag = ov(cs!(
+        e,
+        SUPPORT_MAP_FRAGMENT,
+        "newInstance",
+        "()Lcom/google/android/gms/maps/SupportMapFragment;",
+        []
+    )
+    .unwrap());
+    let cb = obj(&mut e, MAP_CB);
+
+    // Falha programada: initialize devolve o código e o mapa não é entregue.
+    e.gms_maps_set_load_failure(1);
+    let code = iv(cs!(
+        e,
+        MAPS_INITIALIZER,
+        "initialize",
+        "(Landroid/content/Context;)I",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+    assert_eq!(code, 1, "initialize devolve o código de falha");
+    ci!(
+        e,
+        SUPPORT_MAP_FRAGMENT,
+        "getMapAsync",
+        "(Lcom/google/android/gms/maps/OnMapReadyCallback;)V",
+        frag,
+        [Value::Obj(cb)]
+    )
+    .unwrap();
+    assert_eq!(map_ready_count(&e), 0, "sem mapa, sem onMapReady");
+
+    // Limpar a falha: initialize volta a SUCCESS e o mapa é entregue.
+    e.gms_maps_clear_load_failure();
+    let code = iv(cs!(
+        e,
+        MAPS_INITIALIZER,
+        "initialize",
+        "(Landroid/content/Context;)I",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+    assert_eq!(code, 0, "SUCCESS após limpar a falha");
+    ci!(
+        e,
+        SUPPORT_MAP_FRAGMENT,
+        "getMapAsync",
+        "(Lcom/google/android/gms/maps/OnMapReadyCallback;)V",
+        frag,
+        [Value::Obj(cb)]
+    )
+    .unwrap();
+    assert_eq!(map_ready_count(&e), 1, "mapa entregue após recuperação");
+}
