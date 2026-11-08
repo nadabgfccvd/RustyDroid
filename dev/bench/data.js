@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794154188036,
+  "lastUpdate": 1794154732086,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5471,6 +5471,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1842,
             "range": "± 38",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0268a592a6d95e66f0a73322b692d0993cb86aac",
+          "message": "docs(jetpack): lacunas conhecidas de WorkManager (Apêndice D, S16) (#592)\n\nAuditoria do modelo host de androidx.work: cancelWorkById, cancelAllWorkByTag e\ncancelUniqueWork cancelam todo o trabalho ENQUEUED (sem casar id, tag ou nome);\nWorkRecord sem id UUID nem tags; getWorkInfos* devolvem future sem valor.\nSem mudança de comportamento: a correção exige modelar id, tag e unique name.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T13:18:27-03:00",
+          "tree_id": "3a871b8ea10e493b36f55d59b32fe0089c832604",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/0268a592a6d95e66f0a73322b692d0993cb86aac"
+        },
+        "date": 1794154731260,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2758,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2758,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
