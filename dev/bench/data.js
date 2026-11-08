@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794167210357,
+  "lastUpdate": 1794168170065,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5903,6 +5903,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3181,
             "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e2e2f132f42a60f7631bfb6568fcc692c45e70e7",
+          "message": "test(gms): negação de acesso programável no Realtime Database (E) (#604)\n\ngms_rtdb_set_permission_denied(bool): com a negação, listeners recebem\nonCancelled(DatabaseError) e não ficam registrados; setValue não grava (o\nCompletionListener recebe o erro); removeValue, updateChildren e get falham\ncom DatabaseException. Limpar a negação volta ao normal.\n\nTeste: rtdb_permission_denied_cancels_listeners_and_blocks_writes_then_recovers\n(crates/rd-vm/tests/gms_erro_ciclo.rs). Mutação do setter derruba o teste.\nLimite: o código numérico de DatabaseError não é modelado.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T17:02:32-03:00",
+          "tree_id": "960caf57914419c1c1384349c9a33a29ecc8a3ed",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e2e2f132f42a60f7631bfb6568fcc692c45e70e7"
+        },
+        "date": 1794168169623,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3311,
+            "range": "± 32",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3319,
+            "range": "± 30",
             "unit": "ns/iter"
           }
         ]
