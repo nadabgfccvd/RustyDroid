@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794148082569,
+  "lastUpdate": 1794148100699,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5219,6 +5219,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3423,
             "range": "± 60",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9857f4fa23d1ee91e8e3f2a3cdd248f1b4d539e5",
+          "message": "test(apk): auditoria das extensões F-3 contra a doc oficial (dream, voice, print, autofill, call-redirection, screening, carrier) (#585)\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-08T11:27:46-03:00",
+          "tree_id": "476a84dca7448a91689e507168c6c9e2bbe781a5",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9857f4fa23d1ee91e8e3f2a3cdd248f1b4d539e5"
+        },
+        "date": 1794148100253,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3285,
+            "range": "± 283",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3190,
+            "range": "± 25",
             "unit": "ns/iter"
           }
         ]
