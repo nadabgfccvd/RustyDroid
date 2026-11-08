@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794157459313,
+  "lastUpdate": 1794158832242,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5579,6 +5579,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1726,
             "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "df8226fdc85192d82c33296cb6ee46ddf24c65d0",
+          "message": "feat(m8): WorkInfo real com id, State e futures completos (S16) (#595)\n\n- getWorkInfosByTag, getWorkInfosForUniqueWork e getWorkInfoById devolvem\n  ListenableFuture já completo, com WorkInfo (id UUID e WorkInfo.State).\n- WorkInfo.State: enum host com a ordem da AndroidX, cache em statics,\n  sget resolve via host_static; isFinished() cobre SUCCEEDED/FAILED/CANCELLED.\n- Teste DEX novo (dex_work_infos_expose_states_through_future_list_and_enum_identity)\n  e m8_workmanager_work_infos_return_real_values substitui o antigo \"não forjado\".\n- Limite: a identidade do cache não é coberta entre chamadas (documentado).\n- Documentação: jetpack.toml, appendix-d-e.md (S16, segunda rodada),\n  jetpack.md regenerado, nota do cameraX atualizada (MEDIA-03 mesclado,\n  status segue not_implemented sem teste ponta a ponta).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T14:26:52-03:00",
+          "tree_id": "1c93886e56cfc27a41513aa4c10a0da2471cd3bf",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/df8226fdc85192d82c33296cb6ee46ddf24c65d0"
+        },
+        "date": 1794158831451,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1875,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1857,
+            "range": "± 18",
             "unit": "ns/iter"
           }
         ]
