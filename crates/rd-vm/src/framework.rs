@@ -5043,7 +5043,7 @@ fn persist_prefs(vm: &Engine, name: &str) -> bool {
     true
 }
 
-fn pref_wrong_type(key: &str, expected: &str, actual: &PrefValue) -> VmExit {
+pub(crate) fn pref_wrong_type(key: &str, expected: &str, actual: &PrefValue) -> VmExit {
     VmExit::Exception(crate::err::Throwable::new(
         "Ljava/lang/ClassCastException;",
         format!(
@@ -5053,7 +5053,7 @@ fn pref_wrong_type(key: &str, expected: &str, actual: &PrefValue) -> VmExit {
     ))
 }
 
-fn pref_string_set_obj(
+pub(crate) fn pref_string_set_obj(
     vm: &mut Engine,
     values: &std::collections::BTreeSet<Option<String>>,
 ) -> Result<ObjRef, VmExit> {
@@ -5072,7 +5072,7 @@ fn pref_string_set_obj(
     Ok(set)
 }
 
-fn pref_materialize(vm: &mut Engine, value: &PrefValue) -> Result<Value, VmExit> {
+pub(crate) fn pref_materialize(vm: &mut Engine, value: &PrefValue) -> Result<Value, VmExit> {
     Ok(match value {
         PrefValue::String(text) => Value::Obj(intrinsics::alloc_string(vm, text.clone())?),
         PrefValue::Int(value) => Value::Obj(crate::boxes::box_value(
@@ -5095,7 +5095,7 @@ fn pref_materialize(vm: &mut Engine, value: &PrefValue) -> Result<Value, VmExit>
     })
 }
 
-fn extract_pref_string_set(
+pub(crate) fn extract_pref_string_set(
     vm: &mut Engine,
     value: Option<&Value>,
 ) -> Result<Option<PrefValue>, VmExit> {
