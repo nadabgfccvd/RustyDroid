@@ -109,7 +109,7 @@ mínimas documentadas no PR.
     | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
     | camerax | host-shim → DEX real | `partial` (S19): o DEX real do CameraX 1.6.0 roda sobre a Camera2 virtual, sem shim novo. Preview renderiza. Captura não confirmada. Prova ponta a ponta local (APK fora do CI) |
     | security-crypto | host-shim | **Partial (S17).** Depende de AndroidKeyStore (ST-04), já disponível |
-    | credentials | host-shim | **Partial (S18).** Sem provedor fake (decisão de produto), só as falhas tipadas e `clear` |
+    | credentials | host-shim | **Partial (S18, S18b).** Padrão sem provedor. Provedor fake opt-in só para `get` (senha ou falha `Get*`); create sem armazenamento; `clear` |
     | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
     | hilt-dagger | dex-passthrough | Exige app com DEX gerado pelo Hilt |
     | kotlinx-coroutines | dex-passthrough | Depende de `Dispatchers.Main` no modelo de threads |
@@ -454,7 +454,7 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   `crates/rd-vm/tests/credentials_shim.rs`: o DEX sintético chama a interface por `invoke-interface/range`
   e o callback é uma classe do próprio DEX que guarda o que recebe. A API foi conferida no AAR oficial
   androidx.credentials 1.7.0-alpha03 (`dl.google.com`, `javap`).
-- **Sem provedor** (o RustyDroid não tem provedor fake): `getCredentialAsync` → `onError(NoCredentialException)`;
+- **Padrão sem provedor** (sem provedor fake instalado; o fake é opt-in, ver S18b): `getCredentialAsync` → `onError(NoCredentialException)`;
   `createCredentialAsync` → `onError(CreateCredentialUnsupportedException)`; `clearCredentialStateAsync` →
   `onResult(null)`, porque não há estado a limpar. Os campos `type` e `errorMessage` seguem o construtor
   real (constantes lidas do bytecode). Argumentos obrigatórios nulos (contexto, request, callback) → NPE.
@@ -465,8 +465,31 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
 - **Não modelados** (caem no DEX da biblioteca): `prepareGetCredentialAsync`,
   `getCredentialAsync(PendingGetCredentialHandle, …)`, `createSettingsPendingIntent`, `signalCredentialState*`
   e as variantes `suspend`.
-- **Pendente**: o caminho de sucesso de get/create só fica testável com um provedor fake. Isso depende de
-  decisão de produto, então não entrou nesta rodada.
+- **Pendente (resolvido em S18b)**: o caminho de sucesso só ficava testável com um provedor fake.
+
+### S18b — Apêndice D: provedor fake do credentials (2026-11-08)
+
+- **Pesquisa**: o Credential Manager é atendido por provedores do sistema (`CredentialProviderService`, Android 14+
+  para terceiros). O app não instala provedor no próprio processo, então um "provedor fake" é dublê de teste.
+  A documentação oficial pede tratar `NoCredentialException`, cancelamento, interrupção, erro de configuração
+  e falha desconhecida (`developer.android.com/identity/sign-in/smart-lock-migration`).
+- **Opções avaliadas**: (1) manter o padrão sem provedor, sem caminho de sucesso testável; (2) provedor fake
+  programável, opt-in, só para `get`, no formato dos `gms_*_set_*` do Apêndice E; (3) provedor completo com
+  armazenamento, leitura das opções do `GetCredentialRequest` e `preferImmediatelyAvailableCredentials`.
+- **Escolhida: (2).** Cobre o caminho de sucesso e as falhas tipadas sem a complexidade da (3), que depende de
+  ler as opções do request e de um armazenamento para o create. A (3) fica como próximo passo.
+- **Implementação**: `credentials_set_password(id, senha)` faz `getCredentialAsync` devolver
+  `GetCredentialResponse` com um `PasswordCredential` (campos `type`, `id`, `password` e a lista `credentials`,
+  como o construtor real grava). `credentials_set_get_failure(GetFailure)` faz o get falhar com
+  `GetCredentialCancellationException`, `GetCredentialInterruptedException`,
+  `GetCredentialProviderConfigurationException` ou `GetCredentialUnknownException`, com o `type` lido do bytecode
+  do AAR 1.7.0-alpha03. `credentials_clear_fake()` volta ao padrão. Estado em `HostState.credentials`, padrão `None`.
+- **Desvios**: o fake ignora o `GetCredentialRequest` e responde igual a qualquer pedido. `PasswordCredential.data`
+  fica nulo (o `Bundle` não é modelado). Create e clear não mudam com o fake.
+- **Testes**: 4 novos em `credentials_shim.rs`: sucesso com `PasswordCredential` (id, senha e type conferidos);
+  cada uma das 4 exceções `Get*` com a classe e o `type` da biblioteca; ciclo sucesso → erro → limpar → volta ao
+  padrão sem resíduo; create e clear inalterados. Mutação do dispatch (ignorar o fake): derruba 3 dos 4.
+- **Próximo passo (não feito)**: (3), com armazenamento para o create e leitura das opções do request.
 
 ### S19 — Apêndice D: CameraX, validação ponta a ponta do DEX real (2026-11-08)
 

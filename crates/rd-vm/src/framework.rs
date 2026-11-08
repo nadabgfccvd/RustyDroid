@@ -1065,6 +1065,9 @@ pub struct HostState {
     /// GMS" honesto): `crates/rd-vm/src/gms.rs`. Enraizado pelo GC via o
     /// mesmo render Debug que cobre todo o `HostState`.
     pub gms: crate::gms::GmsState,
+    /// Provedor fake do `androidx.credentials` (Apêndice D): `crates/rd-vm/src/credentials.rs`.
+    /// Padrão sem provedor, então o estado inicial não muda nenhum teste existente.
+    pub credentials: crate::credentials::CredentialsState,
     /// Cookies do `android.webkit.CookieManager` (ver `webkit_cookies.rs`).
     pub cookie_jar: crate::webkit_cookies::CookieJar,
     /// Instância canônica do `CookieManager` (getInstance devolve sempre a mesma).
