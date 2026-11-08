@@ -351,3 +351,165 @@ fn null_context_is_npe_before_any_callback() {
     }
     assert_eq!(field(&vm, cb, "err"), Value::Int(SENTINEL));
 }
+
+// ---- Provedor fake (opt-in). Padrão sem provedor: os testes acima seguem valendo.
+
+const PWD_CRED: &str = "Landroidx/credentials/PasswordCredential;";
+const GET_RESP: &str = "Landroidx/credentials/GetCredentialResponse;";
+const TYPE_PWD: &str = "android.credentials.TYPE_PASSWORD_CREDENTIAL";
+const GET_CANCELLED: &str = "Landroidx/credentials/exceptions/GetCredentialCancellationException;";
+const GET_INTERRUPTED: &str = "Landroidx/credentials/exceptions/GetCredentialInterruptedException;";
+const GET_PROVIDER_CONFIG: &str =
+    "Landroidx/credentials/exceptions/GetCredentialProviderConfigurationException;";
+const GET_UNKNOWN: &str = "Landroidx/credentials/exceptions/GetCredentialUnknownException;";
+
+/// Um `getCredentialAsync` com callback novo; devolve o callback preenchido.
+fn get_once(vm: &mut Engine, mgr: &Value) -> ObjRef {
+    let ctx = alloc(vm, CTX);
+    let req = alloc(vm, "Landroidx/credentials/GetCredentialRequest;");
+    let cb = callback(vm);
+    invoke(
+        vm,
+        "runGet",
+        RUN_GET_SIG,
+        &[mgr.clone(), ctx, req, Value::Obj(cb)],
+    )
+    .expect("getCredentialAsync");
+    cb
+}
+
+#[test]
+fn fake_password_delivers_response_with_password_credential() {
+    let mut vm = engine();
+    let mgr = manager(&mut vm);
+    vm.credentials_set_password("ana@exemplo.com", "s3cret");
+    let cb = get_once(&mut vm, &mgr);
+
+    // onResult recebe o GetCredentialResponse; onError nunca é chamado.
+    let Value::Obj(resp) = field(&vm, cb, "ok") else {
+        panic!("onResult não foi chamado");
+    };
+    assert_eq!(vm.heap.class_of(resp).unwrap(), GET_RESP);
+    assert_eq!(field(&vm, cb, "err"), Value::Int(SENTINEL));
+
+    // A lista `credentials` tem um PasswordCredential com id, senha e type da biblioteca.
+    let Value::Obj(list) = field(&vm, resp, "credentials") else {
+        panic!("credentials ausente");
+    };
+    let elems = match vm.fw.objects.get(&list) {
+        Some(rd_vm::framework::HostObj::List { elems }) => elems.clone(),
+        other => panic!("lista esperada, veio {other:?}"),
+    };
+    assert_eq!(elems.len(), 1);
+    let Value::Obj(cred) = elems[0] else {
+        panic!("elemento não é objeto");
+    };
+    assert_eq!(vm.heap.class_of(cred).unwrap(), PWD_CRED);
+    assert_eq!(text(&vm, &field(&vm, cred, "type")), TYPE_PWD);
+    assert_eq!(text(&vm, &field(&vm, cred, "id")), "ana@exemplo.com");
+    assert_eq!(text(&vm, &field(&vm, cred, "password")), "s3cret");
+}
+
+#[test]
+fn fake_failure_delivers_each_get_exception_with_library_type() {
+    use rd_vm::credentials::GetFailure;
+    let cases = [
+        (
+            GetFailure::UserCanceled,
+            GET_CANCELLED,
+            "android.credentials.GetCredentialException.TYPE_USER_CANCELED",
+        ),
+        (
+            GetFailure::Interrupted,
+            GET_INTERRUPTED,
+            "android.credentials.GetCredentialException.TYPE_INTERRUPTED",
+        ),
+        (
+            GetFailure::ProviderConfiguration,
+            GET_PROVIDER_CONFIG,
+            "androidx.credentials.TYPE_GET_CREDENTIAL_PROVIDER_CONFIGURATION_EXCEPTION",
+        ),
+        (
+            GetFailure::Unknown,
+            GET_UNKNOWN,
+            "android.credentials.GetCredentialException.TYPE_UNKNOWN",
+        ),
+    ];
+    for (failure, class, ty) in cases {
+        let mut vm = engine();
+        let mgr = manager(&mut vm);
+        vm.credentials_set_get_failure(failure);
+        let cb = get_once(&mut vm, &mgr);
+        let Value::Obj(exc) = field(&vm, cb, "err") else {
+            panic!("{failure:?}: onError não foi chamado");
+        };
+        assert_eq!(vm.heap.class_of(exc).unwrap(), class, "{failure:?}");
+        assert_eq!(text(&vm, &field(&vm, exc, "type")), ty, "{failure:?}");
+        assert!(text(&vm, &field(&vm, exc, "errorMessage")).contains("provedor fake"));
+        assert_eq!(field(&vm, cb, "ok"), Value::Int(SENTINEL), "{failure:?}");
+    }
+}
+
+#[test]
+fn fake_cycle_success_then_error_then_clear_restores_no_provider() {
+    use rd_vm::credentials::GetFailure;
+    let mut vm = engine();
+    let mgr = manager(&mut vm);
+
+    vm.credentials_set_password("ana", "s3cret");
+    let ok = get_once(&mut vm, &mgr);
+    assert!(matches!(field(&vm, ok, "ok"), Value::Obj(_)), "sucesso");
+
+    vm.credentials_set_get_failure(GetFailure::Interrupted);
+    let err = get_once(&mut vm, &mgr);
+    let Value::Obj(exc) = field(&vm, err, "err") else {
+        panic!("erro não entregue");
+    };
+    assert_eq!(vm.heap.class_of(exc).unwrap(), GET_INTERRUPTED);
+    assert_eq!(field(&vm, err, "ok"), Value::Int(SENTINEL));
+
+    // Sem resíduo: depois de limpar, volta a NoCredentialException do padrão.
+    vm.credentials_clear_fake();
+    let back = get_once(&mut vm, &mgr);
+    let Value::Obj(exc) = field(&vm, back, "err") else {
+        panic!("padrão não voltou");
+    };
+    assert_eq!(vm.heap.class_of(exc).unwrap(), NO_CRED);
+    assert_eq!(text(&vm, &field(&vm, exc, "type")), TYPE_NO_CRED);
+}
+
+#[test]
+fn fake_does_not_change_create_or_clear() {
+    let mut vm = engine();
+    let mgr = manager(&mut vm);
+    vm.credentials_set_password("ana", "s3cret");
+
+    let ctx = alloc(&mut vm, CTX);
+    let req = alloc(&mut vm, "Landroidx/credentials/CreateCredentialRequest;");
+    let cb = callback(&mut vm);
+    invoke(
+        &mut vm,
+        "runCreate",
+        RUN_CREATE_SIG,
+        &[mgr.clone(), ctx, req, Value::Obj(cb)],
+    )
+    .expect("createCredentialAsync");
+    let Value::Obj(exc) = field(&vm, cb, "err") else {
+        panic!("create devia continuar sem suporte");
+    };
+    assert_eq!(vm.heap.class_of(exc).unwrap(), CREATE_UNSUP);
+
+    let req = alloc(
+        &mut vm,
+        "Landroidx/credentials/ClearCredentialStateRequest;",
+    );
+    let cb = callback(&mut vm);
+    invoke(
+        &mut vm,
+        "runClear",
+        RUN_CLEAR_SIG,
+        &[mgr.clone(), req, Value::Obj(cb)],
+    )
+    .expect("clearCredentialStateAsync");
+    assert_eq!(field(&vm, cb, "ok"), Value::Null);
+}
