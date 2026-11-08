@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794162332517,
+  "lastUpdate": 1794163239992,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5723,6 +5723,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3736,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5fd536b8c91f81cef7ff844143e60c5dd473fde",
+          "message": "test(gms): falha programável e ciclo de vida para Cast (E) (#599)\n\ngms_cast_set_connect_failure(code): a tentativa falha sem criar sessão (estado\nNO_DEVICES_AVAILABLE, getCurrentCastSession nulo). O erro fica em\ngms_cast_last_error e a tentativa seguinte bem-sucedida o limpa.\n\nNearby: critério já atendido por testes existentes (ENDPOINT_UNKNOWN e ciclo\nde descoberta/conexão); registrado em data/gms.toml, sem mudança de código.\n\nTeste: cast_failed_connect_creates_no_session_then_recovers. Mutação da\nchecagem de falha derruba o teste.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T15:40:08-03:00",
+          "tree_id": "2da1277682df1a3429200c99f01347f0e100280a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/b5fd536b8c91f81cef7ff844143e60c5dd473fde"
+        },
+        "date": 1794163238947,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2815,
+            "range": "± 165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2756,
+            "range": "± 7",
             "unit": "ns/iter"
           }
         ]
