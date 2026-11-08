@@ -123,6 +123,12 @@ pub struct WorkRecord {
     /// Nome de `enqueueUniqueWork` / `enqueueUniquePeriodicWork`.
     pub unique_name: Option<String>,
 }
+/// Políticas de `enqueueUniqueWork` / `enqueueUniquePeriodicWork` (ordem da AndroidX).
+/// Só `KEEP` e `REPLACE` são modeladas; as demais são aceitas e enfileiram como antes.
+const EXISTING_WORK_POLICY: &str = "Landroidx/work/ExistingWorkPolicy;";
+const EXISTING_WORK_POLICY_NAMES: [&str; 4] = ["KEEP", "REPLACE", "APPEND", "APPEND_OR_REPLACE"];
+const EXISTING_PERIODIC_POLICY: &str = "Landroidx/work/ExistingPeriodicWorkPolicy;";
+const EXISTING_PERIODIC_POLICY_NAMES: [&str; 3] = ["KEEP", "REPLACE", "UPDATE"];
 /// `WorkInfo` e o enum `WorkInfo.State` (constantes com a ordem da AndroidX).
 const WORK_INFO: &str = "Landroidx/work/WorkInfo;";
 const WORK_INFO_STATE: &str = "Landroidx/work/WorkInfo$State;";
@@ -2719,6 +2725,30 @@ fn work_manager(
                     _ => None,
                 }
             };
+            // Política de enqueueUniqueWork/PeriodicWork (args[1]). Sem política
+            // reconhecida (APPEND*, UPDATE, nulo) o pedido entra como antes.
+            let policy = if name == "enqueue" {
+                None
+            } else {
+                match args.get(1) {
+                    Some(Value::Obj(p)) => work_str_field(vm, *p, "rd_name"),
+                    _ => None,
+                }
+            };
+            let mut keep_existing = false;
+            if let (Some(policy), Some(uname)) = (policy.as_deref(), unique_name.as_deref()) {
+                match policy {
+                    // REPLACE: cancela o enfileirado com o mesmo nome e enfileira o novo.
+                    "REPLACE" => cancel_enqueued(vm, |w| w.unique_name.as_deref() == Some(uname)),
+                    // KEEP: se já há trabalho não concluído com o nome, o novo é descartado.
+                    "KEEP" => {
+                        keep_existing = vm.fw.m8.work.iter().any(|w| {
+                            w.state == "ENQUEUED" && w.unique_name.as_deref() == Some(uname)
+                        });
+                    }
+                    _ => {}
+                }
+            }
             let mut requests = Vec::new();
             for a in args {
                 let Value::Obj(o) = a else { continue };
@@ -2731,7 +2761,7 @@ fn work_manager(
                     requests.push(*o);
                 }
             }
-            for req in requests {
+            for req in requests.into_iter().filter(|_| !keep_existing) {
                 let worker = work_str_field(vm, req, "m8_worker").unwrap_or_default();
                 let id = match work_str_field(vm, req, WORK_ID_FIELD) {
                     Some(id) => id,
@@ -2849,19 +2879,22 @@ enum WorkTarget {
 
 /// Constante de `WorkInfo.State`, cacheada em `statics` (mesmo objeto a cada acesso).
 fn work_state_enum(vm: &mut Engine, name: &str) -> Result<Value, VmExit> {
-    let key = (WORK_INFO_STATE.to_string(), name.to_string());
+    host_enum(vm, WORK_INFO_STATE, &WORK_STATE_NAMES, name)
+}
+
+/// Constante de um enum host (`owner`), com cache em `statics` para manter a
+/// identidade entre `sget` e o valor devolvido por `getState()`.
+fn host_enum(vm: &mut Engine, owner: &str, names: &[&str], name: &str) -> Result<Value, VmExit> {
+    let key = (owner.to_string(), name.to_string());
     if let Some(v) = vm.statics.get(&key) {
         return Ok(v.clone());
     }
-    let ordinal = WORK_STATE_NAMES
-        .iter()
-        .position(|n| *n == name)
-        .unwrap_or(0) as i32;
+    let ordinal = names.iter().position(|n| *n == name).unwrap_or(0) as i32;
     let text = intrinsics::alloc_string(vm, name.to_string())?;
     let r = vm
         .heap
         .alloc_instance(
-            WORK_INFO_STATE.to_string(),
+            owner.to_string(),
             vec![
                 ("rd_name".into(), Value::Obj(text)),
                 ("name".into(), Value::Obj(text)),
@@ -2885,10 +2918,16 @@ pub(crate) fn host_static(
     owner: &str,
     field: &str,
 ) -> Result<Option<Value>, VmExit> {
-    if owner != WORK_INFO_STATE || !WORK_STATE_NAMES.contains(&field) {
+    let names: &[&str] = match owner {
+        WORK_INFO_STATE => &WORK_STATE_NAMES,
+        EXISTING_WORK_POLICY => &EXISTING_WORK_POLICY_NAMES,
+        EXISTING_PERIODIC_POLICY => &EXISTING_PERIODIC_POLICY_NAMES,
+        _ => return Ok(None),
+    };
+    if !names.contains(&field) {
         return Ok(None);
     }
-    work_state_enum(vm, field).map(Some)
+    host_enum(vm, owner, names, field).map(Some)
 }
 
 fn get_field_value(vm: &Engine, r: ObjRef, field: &str) -> Value {
