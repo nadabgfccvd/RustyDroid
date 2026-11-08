@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794181355649,
+  "lastUpdate": 1794181884868,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6299,6 +6299,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3752,
             "range": "± 17",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6cd32bf954d60ede351eedebe53be5bcce1c7e8c",
+          "message": "docs(adr): decisão sobre D03 do eval (registrar, não migrar) (#615)\n\nAvalia cada thread_local/global apontado pelo eval (heap STRING_CLASS,\ncache UTF-16, cache de regex, DEFAULT_APP_STDOUT). Os três primeiros são\ncaches sem estado de sessão; DEFAULT_APP_STDOUT só semeia Engine::new.\nRegistrado no ADR 017, com a consequência de -0,2 no eval e o follow-up\n(mover o padrão para VmConfig; separar cache puro no critério do scorer).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T20:50:52-03:00",
+          "tree_id": "abc825d886ee58b907cb9161dd1d4e1b8389f00e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/6cd32bf954d60ede351eedebe53be5bcce1c7e8c"
+        },
+        "date": 1794181884079,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2763,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2761,
+            "range": "± 11",
             "unit": "ns/iter"
           }
         ]
