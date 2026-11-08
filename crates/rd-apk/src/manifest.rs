@@ -1447,6 +1447,77 @@ mod appendix_f_tests {
     }
 
     #[test]
+    fn every_extension_rule_matches_its_official_action_and_bind_permission() {
+        // Conferido em 2026-11-08 contra developer.android.com (reference de cada
+        // classe de serviço e manifest). Cada linha: tipo, ação do intent-filter,
+        // permissão BIND_* exigida, nome da extensão. call-redirection: a doc
+        // oficial cita BIND_REDIRECTION_SERVICE por engano; o nome real é
+        // BIND_CALL_REDIRECTION_SERVICE (confirmado por código e issue pública).
+        let cases: &[(ComponentKind, &str, &str, &str)] = &[
+            (
+                ComponentKind::Service,
+                "android.service.dreams.DreamService",
+                "android.permission.BIND_DREAM_SERVICE",
+                "dream",
+            ),
+            (
+                ComponentKind::Service,
+                "android.service.voice.VoiceInteractionService",
+                "android.permission.BIND_VOICE_INTERACTION",
+                "voice-interaction",
+            ),
+            (
+                ComponentKind::Service,
+                "android.printservice.PrintService",
+                "android.permission.BIND_PRINT_SERVICE",
+                "print-service",
+            ),
+            (
+                ComponentKind::Service,
+                "android.service.autofill.AutofillService",
+                "android.permission.BIND_AUTOFILL_SERVICE",
+                "autofill-service",
+            ),
+            (
+                ComponentKind::Service,
+                "android.telecom.CallRedirectionService",
+                "android.permission.BIND_CALL_REDIRECTION_SERVICE",
+                "call-redirection",
+            ),
+            (
+                ComponentKind::Service,
+                "android.telecom.CallScreeningService",
+                "android.permission.BIND_SCREENING_SERVICE",
+                "call-screening",
+            ),
+            (
+                ComponentKind::Service,
+                "android.service.carrier.CarrierService",
+                "android.permission.BIND_CARRIER_SERVICES",
+                "carrier-config",
+            ),
+        ];
+        for &(kind, action, bind, name) in cases {
+            let acts = [action];
+            assert_eq!(
+                extension_kinds(kind, &acts, Some(bind)),
+                vec![name.to_string()],
+                "{name}: ação e BIND_* oficiais devem casar"
+            );
+            // sem a permissão exigida, o sistema não faz bind: é serviço comum
+            assert!(
+                extension_kinds(kind, &acts, None).is_empty(),
+                "{name}: sem BIND_* não é extensão"
+            );
+            // outro BIND_* (de outra extensão) também não casa
+            assert!(
+                extension_kinds(kind, &acts, Some("android.permission.BIND_WALLPAPER")).is_empty(),
+                "{name}: BIND_* de outra extensão não casa"
+            );
+        }
+    }
+
+    #[test]
     fn build_marks_components_with_their_extension_kind() {
         let svc = el(
             "service",

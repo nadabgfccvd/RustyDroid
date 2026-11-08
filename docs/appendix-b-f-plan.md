@@ -154,7 +154,7 @@ Auditoria de extensões (rodada F-3, 2026-11-05), para as regras que já existia
 |---|---|---|
 | device-admin | A documentação oficial exige, além da ação `android.app.action.DEVICE_ADMIN_ENABLED` e de `BIND_DEVICE_ADMIN`, o `<meta-data android:name="android.app.device_admin">`. A plataforma falha com "No android.app.device_admin meta-data" sem ele (`DeviceAdminInfo`). A regra não exigia o meta-data | `build_component` só mantém `device-admin` com o meta-data; teste com e sem ele |
 | wallpaper, ime | Ação e `BIND_WALLPAPER` / `BIND_INPUT_METHOD` confirmadas | Sem mudança |
-| dream, media-browser, voice-interaction, print-service, autofill-service, call-screening, carrier-config | Ação e permissão conferidas com a tabela de regras; não reconfirmadas uma a uma na documentação nesta rodada | Sem mudança; pendente de checagem contra a documentação |
+| dream, media-browser, voice-interaction, print-service, autofill-service, call-screening, call-redirection, carrier-config | Conferidas em 2026-11-08 contra developer.android.com (reference de cada serviço): ação e `BIND_*` batem com a regra. Nota: a doc de `CallRedirectionService` cita `BIND_REDIRECTION_SERVICE`, mas o nome usado pela plataforma é `BIND_CALL_REDIRECTION_SERVICE` (a regra usa esse). | Sem mudança de regra. Teste `every_extension_rule_matches_its_official_action_and_bind_permission` cobre as 7 (positivo, sem BIND, BIND de outra extensão); mutação do `BIND_CALL_REDIRECTION_SERVICE` derruba o teste. |
 
 ## 5. Apêndices C, D e E — plano por rodadas
 
