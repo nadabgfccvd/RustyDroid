@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794169292064,
+  "lastUpdate": 1794169674575,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5975,6 +5975,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3304,
             "range": "± 282",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5fc859f6daecabc71ad24e5c376cc44d9411929",
+          "message": "docs(e): sincroniza tabela de erro e ciclo com os testes (E) (#606)\n\nLocation, Fit e Cast tinham linhas antigas (sem erro ou sem ciclo). Os testes\njá existem em gms_erro_ciclo.rs e tests/gms.rs; a tabela agora aponta para\neles. Só documentação.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T17:27:30-03:00",
+          "tree_id": "9cd580ce193785c1afef6ea58950d28857d76bcf",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e5fc859f6daecabc71ad24e5c376cc44d9411929"
+        },
+        "date": 1794169673180,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2766,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2813,
+            "range": "± 73",
             "unit": "ns/iter"
           }
         ]
