@@ -303,6 +303,10 @@ pub fn is_virtual_hardware_class(class: &str) -> bool {
     const HARDWARE_PREFIXES: &[&str] = &[
         // Sensors, camera2, biometrics/fingerprint, VirtualDisplay, USB…
         "Landroid/hardware/",
+        // AndroidX biometric wrappers over the same fingerprint/face sensor.
+        // Without this, `BiometricManager.canAuthenticate` reached the M10
+        // shim with virtual hardware disabled and reported SUCCESS.
+        "Landroidx/biometric/",
         // GPS / fused location providers.
         "Landroid/location/",
         // Radios: Bluetooth/BLE, NFC, telephony/SMS, Wi-Fi and network state.
