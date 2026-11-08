@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794163239992,
+  "lastUpdate": 1794164482190,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5759,6 +5759,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2756,
             "range": "± 7",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c6696095c09eaa6694bcf7e5d953206e5836b17",
+          "message": "test(gms): nome inválido rejeitado e contado no Firebase Analytics (E) (#600)\n\nlogEvent e setUserProperty validam os nomes pela regra documentada do\nFirebase: letra inicial, só letras, dígitos e _, sem prefixos reservados\nfirebase_/google_/ga_; até 40 caracteres para evento e parâmetro e 24 para\npropriedade. Nome inválido é rejeitado e contado em\nEngine::gms_analytics_rejected. Parâmetro inválido rejeita o evento inteiro.\nColeção desligada continua descartando sem contar como rejeição.\n\nTeste: analytics_invalid_names_are_rejected_then_valid_events_recorded\n(crates/rd-vm/tests/gms_erro_ciclo.rs). Mutação do validador derruba o teste.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T16:01:03-03:00",
+          "tree_id": "b7f04ceb2726833f2987faec18f2b54f637144ff",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/0c6696095c09eaa6694bcf7e5d953206e5836b17"
+        },
+        "date": 1794164481520,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3287,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3267,
+            "range": "± 24",
             "unit": "ns/iter"
           }
         ]
