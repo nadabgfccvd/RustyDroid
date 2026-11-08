@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794177846188,
+  "lastUpdate": 1794178296645,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6227,6 +6227,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3890,
             "range": "± 24",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bda725fe01f2d1baaefc8cf69524f3a27a35326b",
+          "message": "feat(credentials): provedor fake opt-in para getCredentialAsync (S18b) (#613)",
+          "timestamp": "2026-11-08T19:51:17-03:00",
+          "tree_id": "0858b96f6daba909345ac73d95ae141deb274f4d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/bda725fe01f2d1baaefc8cf69524f3a27a35326b"
+        },
+        "date": 1794178296024,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3774,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3796,
+            "range": "± 111",
             "unit": "ns/iter"
           }
         ]
