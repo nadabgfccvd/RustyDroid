@@ -66,3 +66,27 @@ O item 4 (`reset_vfs()` na fronteira de sessão) foi superado: o VFS agora é um
 Migrar as tabelas indexadas por `ObjRef` para dentro de `HostState`. Isso
 elimina a premissa do item 1 e torna os resets dos itens 2 a 4 desnecessários
 para essas tabelas. O VFS continua sendo estado de sessão.
+
+## Decisão sobre o D03 do eval (2026-11-08): registrar, não migrar
+
+O eval de 2026-11-08 marcou regressão em `D03-GLOBAL-HOST-STATE` (`thread_local_count` 1 → 3 e um
+hit novo de global mutável), vinda de #534 (perf), não de uma mudança desta rodada. Avaliação por local:
+
+| Local | Tipo | Decisão |
+|---|---|---|
+| `heap.rs` (`STRING_CLASS`) | cache puro de `Arc<str>` com o nome de `java/lang/String` | Mantido. Não guarda `ObjRef` nem dado de sessão. |
+| `intrinsics.rs` (cache de unidades UTF-16) | cache de um texto longo, com chave pelo próprio conteúdo | Mantido. Sem `ObjRef`, então `reset_host_thread_state` não precisa limpá-lo. |
+| `jregex.rs` (`CACHE`) | cache de regex compiladas por (pattern, flags) | Mantido, como já decidido na seção de Decisão, item 2. |
+| `intrinsics.rs` (`DEFAULT_APP_STDOUT`) | `Mutex<HostOut>` global, semente para `Engine::new` | Mantido com a fronteira atual: o destino de cada engine vive em `HostState` (`set_app_stdout`), e o global só é lido em `Engine::new`. Ver follow-up. |
+
+**Por que não corrigir agora**: os três `thread_local!` são caches sem estado de sessão, e trocá-los por
+estado por engine só mudaria a contagem do eval, com custo de desempenho. O `DEFAULT_APP_STDOUT` só
+semeia engines novas e não vaza entre sessões (ADR 024, passo 1). Migrá-lo para `VmConfig` exige mudar
+o `rd-cli` e o teste do `rd-engine-registry`, e fica como follow-up.
+
+**Consequência no eval**: o desconto de D03 continua aparecendo como regressão de 0,2 na nota. Isso é
+aceito e registrado aqui, não escondido. Se o eval passar a contar `thread_local!` de cache puro, o
+critério deve ser ajustado no scorer, e não o código.
+
+**Follow-up**: mover `DEFAULT_APP_STDOUT` para `VmConfig` (o padrão passa a vir da config da engine), e
+rever a contagem de `thread_local!` no eval para separar cache puro de estado de sessão.
