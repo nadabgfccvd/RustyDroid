@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794174314829,
+  "lastUpdate": 1794175994493,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6119,6 +6119,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1720,
             "range": "± 10",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c3e9f2d1ac4dbdd6628e6a588b09cc1de3b4b62",
+          "message": "docs(jetpack): CameraX (S19) evidência ponta a ponta do DEX real (#610)\n\n- O CameraX real do Comprix 1.6.0 roda inteiro no DEX sobre a Camera2 virtual\n  (trace: ProcessCameraProvider.getInstance, PreviewView, ImageCapture.takePicture).\n- Scanner sem last_error e preview renderizado (evidência local, fora do CI).\n- Conclusão da captura não confirmada no trace: não é afirmada.\n- Sem teste versionado (APK não versionável): partial exige teste no repositório.\n  Fica em aberto: fixture DEX do CameraX com exceção de ADR, ou aceitar evidência local.\n- Decisão do usuário (2026-11-08): validar o DEX real, sem shim novo.\n\nGeradores do job Docs integrity rodados; só docs/jetpack.md e o registro mudaram.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T19:12:53-03:00",
+          "tree_id": "499c945ed6dfe6dfcd53c3e1a55bb69e158c54b4",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/8c3e9f2d1ac4dbdd6628e6a588b09cc1de3b4b62"
+        },
+        "date": 1794175993379,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3499,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3496,
+            "range": "± 20",
             "unit": "ns/iter"
           }
         ]
