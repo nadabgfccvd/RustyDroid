@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794058300718,
+  "lastUpdate": 1794148082569,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5183,6 +5183,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3779,
             "range": "± 36",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ca45dccc8e0a4bd3463820b0e601d33a441393f4",
+          "message": "docs(plan): Apêndice B — bloqueios 2a/2b/2c resolvidos com PRs #581–#583 e testes (#584)\n\nCo-authored-by: Arena-Agent <agent@arena.ai>",
+          "timestamp": "2026-11-08T11:27:43-03:00",
+          "tree_id": "fb9acd7bb4189c4908870420d6d43c79f3d7bfc1",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/ca45dccc8e0a4bd3463820b0e601d33a441393f4"
+        },
+        "date": 1794148082050,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3527,
+            "range": "± 150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3423,
+            "range": "± 60",
             "unit": "ns/iter"
           }
         ]
