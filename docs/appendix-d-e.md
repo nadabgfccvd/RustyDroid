@@ -166,13 +166,13 @@ um teste. Testes em `crates/rd-vm/tests/gms.rs` e `crates/rd-vm/tests/gms_erro_c
 |---|---|---|---|
 | gms-common | `availability_programmable_codes` | mesmo teste (códigos programados) | troca de código no mesmo teste |
 | gms-tasks | `tasks_completion_source_roundtrip_with_dex_listener` | `tasks_failure_surfaces_exception` | `tasks_when_all_success_failure_and_complete` |
-| gms-location | `location_fix_and_callback_delivery` | sem fix ⇒ `null` (mesmo teste) | `location_fix_cleared_mid_session_returns_null_until_reseeded` |
+| gms-location | `location_fix_and_callback_delivery` | `location_failure_blocks_reads_and_registrations_then_recovers` (falha programada: leitura e registro falham) | mesmo teste (remoção segue disponível; recuperação volta a entregar); `location_fix_cleared_mid_session_returns_null_until_reseeded` |
 | gms-maps | `maps_ready_camera_and_markers` | `maps_load_failure_blocks_map_ready_then_recovers` (falha programada: initialize com código, sem onMapReady) | mesmo teste (limpar a falha volta a entregar o mapa) |
 | gms-billing | `billing_product_details_modern_path` | `billing_purchase_flow_and_cancel` (cancel) | `billing_listener_relaunching_flow_is_bounded` |
 | gms-auth | `google_signin_silent_requires_host_completion` | ApiException 4 (mesmo teste) | `google_signin_sign_out_ends_silent_session_and_sign_in_restores_it` |
 | gms-ads | `ads_banner_success_failure_and_rewarded` | `gms_ads_set_failure` (mesmo teste) | `clear_failure` no mesmo teste |
-| gms-fit-health | `fit_steps_programmable` | `fit_zero_steps_yields_empty_data_set_not_fake_points` | **sem ciclo de vida no shim** (leitura sem estado) |
-| gms-cast | `cast_states_follow_programmed_session` | estado NO_DEVICES sem sessão (mesmo teste) | `cast_state_listener_fires_only_on_real_transitions` |
+| gms-fit-health | `fit_steps_programmable` | `fit_failure_does_not_start_sessions` (falha sem efeito colateral) | `fit_failure_blocks_reads_and_writes_then_recovers` (bloqueio e recuperação); `fit_zero_steps_yields_empty_data_set_not_fake_points` |
+| gms-cast | `cast_states_follow_programmed_session` | `cast_failed_connect_creates_no_session_then_recovers` (falha sem sessão; erro em `gms_cast_last_error`) | `cast_state_listener_fires_only_on_real_transitions` |
 | gms-nearby | `nearby_discovery_reports_programmed_endpoint` | `nearby_request_connection_only_reaches_discovered_endpoints` | `nearby_lifecycle_discovery_and_connections` |
 | gms-integrity | `integrity_and_safetynet_deterministic_tokens` | `integrity_failure_code_is_programmable_per_error_kind`; `safetynet_failure_blocks_attestation_then_recovers` (attest com ApiException, sem nonce) | `integrity_failure_then_recovery_is_a_full_lifecycle`; mesmo teste do SafetyNet (recuperação) |
 | firebase-core | `firebase_autoinit_and_strict_mode` (auto-init) | strict sem initializeApp (mesmo teste) | mesmo teste (init → uso) |
