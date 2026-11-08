@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794158832242,
+  "lastUpdate": 1794159583944,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5614,6 +5614,42 @@ window.BENCHMARK_DATA = {
           {
             "name": "parse_field_ids_20k",
             "value": 1857,
+            "range": "± 18",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "77ff389a03251ce5eeb537cedee1bced3711a7dc",
+          "message": "feat(m8): ExistingWorkPolicy KEEP e REPLACE em enqueueUniqueWork (S16) (#596)\n\n- ExistingWorkPolicy e ExistingPeriodicWorkPolicy viram enums host (host_static,\n  cache em statics, nome em rd_name).\n- KEEP descarta o pedido novo quando já há trabalho ENQUEUED com o mesmo nome único.\n- REPLACE cancela o ENQUEUED com o nome e enfileira o novo.\n- APPEND, APPEND_OR_REPLACE e UPDATE seguem aceitas e não modeladas (documentado).\n- Teste DEX: dex_unique_work_keep_and_replace_follow_existing_work_policy;\n  mutações de KEEP e de REPLACE derrubam o teste.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T14:39:24-03:00",
+          "tree_id": "fe279377f716dbe63ecd425a8ffe095c16733b5b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/77ff389a03251ce5eeb537cedee1bced3711a7dc"
+        },
+        "date": 1794159583202,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3306,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3306,
             "range": "± 18",
             "unit": "ns/iter"
           }
