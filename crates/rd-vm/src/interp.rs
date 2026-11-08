@@ -2148,8 +2148,13 @@ fn resolve_or_run_host_invoke(
     vm.trace_resolve(_t0);
     let Some((d2, def, m)) = resolved else {
         // D8 may use an app subclass as the inherited Android method owner.
-        // DEX overrides above always win; direct app constructors stay direct.
-        if !is_direct || is_super {
+        // DEX overrides above always win; direct app constructors stay direct,
+        // while `super.<init>(...)` targeting a host-backed non-DEX superclass
+        // (`AppCompatActivity`, `MaterialButton`, ...) resolves through the
+        // host ancestor chain.
+        let non_dex_super_ctor =
+            is_direct && mref.name == "<init>" && vm.cp.find_class(&start_class).is_none();
+        if !is_direct || is_super || non_dex_super_ctor {
             if let Some(value) = inherited_android_host(
                 vm,
                 &start_class,
@@ -2301,6 +2306,30 @@ pub(crate) fn inherited_android_host(
             }
         } else if is_bundled_shim_owner(&ancestor) {
             if let Some(value) = call_host_shim_layer(vm, &ancestor, name, sig, recv, args)? {
+                return Ok(Some(value));
+            }
+        } else if ancestor.starts_with("Landroidx/")
+            || ancestor.starts_with("Lcom/google/android/material/")
+            || ancestor.starts_with("Lcom/google/common/util/concurrent/")
+        {
+            // AndroidX, Material and Guava superclasses (for example
+            // `MaterialButton` under a DEX subclass) are hosted by the M2 shim
+            // layers, not by `Landroid/` dispatch. Walk them the same way.
+            #[cfg(feature = "virtual-devices")]
+            if vm.fw.vdev.virtual_hardware_enabled {
+                if let Some(value) =
+                    crate::m10::call_instance(vm, &ancestor, name, sig, recv, args)?
+                {
+                    return Ok(Some(value));
+                }
+            }
+            if let Some(value) = crate::m8::call_m8_instance(vm, &ancestor, name, sig, recv, args)?
+            {
+                return Ok(Some(value));
+            }
+            if let Some(value) =
+                crate::androidx::call_instance(vm, &ancestor, name, sig, recv, args)?
+            {
                 return Ok(Some(value));
             }
         }
