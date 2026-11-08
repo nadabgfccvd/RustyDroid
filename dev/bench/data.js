@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794170056003,
+  "lastUpdate": 1794173525034,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6047,6 +6047,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1805,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b7cd9ff8abd74d20ca4375df8107f0a3283faf4a",
+          "message": "feat(jetpack): security-crypto sobre o AndroidKeyStore (D, ST-04) (#608)\n\n* feat(jetpack): security-crypto sobre o AndroidKeyStore (D, ST-04)\n\n* docs: regenera compat-matrix após security-crypto (partial 26)\n\n---------\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T18:31:48-03:00",
+          "tree_id": "a5c21e286c1916fad6dc516c7bd289afc48c8516",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/b7cd9ff8abd74d20ca4375df8107f0a3283faf4a"
+        },
+        "date": 1794173524340,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1735,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1722,
+            "range": "± 66",
             "unit": "ns/iter"
           }
         ]
