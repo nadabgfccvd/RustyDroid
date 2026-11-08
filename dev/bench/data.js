@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794161060140,
+  "lastUpdate": 1794162332517,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5687,6 +5687,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1812,
             "range": "± 16",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e51f79402b597edae0bc079491d7c6e13cf51af",
+          "message": "test(gms): falha programável e ciclo de vida para Remote Config (E) (#598)\n\ngms_remoteconfig_set_fetch_failure(code) faz fetch e fetchAndActivate falharem\ncom FirebaseRemoteConfigFetchException, sem valor pendente. Os valores ativados\ncontinuam valendo (inclusive no caminho fetch + activate), e a recuperação\naplica o novo valor.\n\nTeste: remote_config_failed_fetch_keeps_active_values_then_recovers. Mutação\ndas duas checagens de falha derruba o teste.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T15:25:11-03:00",
+          "tree_id": "b9b5067373fde54f44ccd494022f23ac5f8190fb",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/2e51f79402b597edae0bc079491d7c6e13cf51af"
+        },
+        "date": 1794162331592,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3737,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3736,
+            "range": "± 20",
             "unit": "ns/iter"
           }
         ]
