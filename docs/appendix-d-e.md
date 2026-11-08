@@ -428,3 +428,24 @@ cancela esse trabalho (só `ENQUEUED`, como o cancelamento) e enfileira o novo. 
 Ainda pendente: tags/progresso/output
 em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estados avançam pelo harness).
 `Constraints` são aceitas e não aplicadas. Por isso `work` segue `partial`.
+
+## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
+
+Critério por serviço parcial: além do caminho de sucesso, o shim tem um caminho de erro programável
+e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo do erro).
+
+- **Play Integrity** (`gms-integrity`): `gms_set_integrity_failure(code)` faz `requestIntegrityToken`
+  falhar com `IntegrityServiceException` (códigos oficiais: -1 API não disponível, -3 rede, -100 erro interno).
+  O pedido falho não registra nonce. Testes em `crates/rd-vm/tests/gms_erro_ciclo.rs`.
+- **Fit** (`gms-fit-health`): `gms_fit_set_failure(code)` faz leitura, escrita, gravação e sessões falharem
+  com `ApiException` sem efeito colateral (sem gravação, sem sessão iniciada). Testes no mesmo arquivo.
+- Mutações da checagem de falha em cada shim derrubam os testes correspondentes.
+
+- **Fused Location** (`gms-location`): `gms_location_set_failure(code)` faz leitura, disponibilidade e
+  registro de atualizações falharem com `ApiException` sem registrar callback; remover continua disponível.
+  Testes no mesmo arquivo, com callback DEX que prova a entrega do convidado.
+
+Serviços parciais ainda sem caminho de erro programável: Maps, Billing, Auth, Ads, Cast, Nearby, Integrity
+SafetyNet (`attest`), Tasks (sem falha de serviço além de `setException`), Firebase (core, analytics, auth,
+messaging, crashlytics, firestore, rtdb, remote config, storage) e GMS core (disponibilidade já tem códigos).
+Próximas entregas desta etapa seguem essa ordem.

@@ -81,8 +81,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "Fix GPS (lat/lng/accuracy/tempo) devolvido por getLastLocation/getCurrentLocation; callbacks registrados (MEDIA-05)."
-notes = "FusedLocationProviderClient host: getLastLocation/getCurrentLocation concluem com android.location.Location cunhada do fix programado (Engine::gms_set_location_fix) ou null sem fix; requestLocationUpdates entrega LocationResult ao registar e em cada Engine::gms_push_location; removeLocationUpdates cancela. Sem geofencing nem fusão multi-provider; a ponte para o GPS virtual do M10 (MEDIA-05) fica para pós-merge do PR #201."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "FusedLocationProviderClient host: getLastLocation/getCurrentLocation concluem com android.location.Location cunhada do fix programado (Engine::gms_set_location_fix) ou null sem fix; requestLocationUpdates entrega LocationResult ao registar e em cada Engine::gms_push_location; removeLocationUpdates cancela. Sem geofencing nem fusão multi-provider; a ponte para o GPS virtual do M10 (MEDIA-05) fica para pós-merge do PR #201. Falha programável (E, critério de erro e ciclo): Engine::gms_location_set_failure(code) faz getLastLocation, getCurrentLocation, getLocationAvailability e requestLocationUpdates falharem com ApiException sem registrar callback; removeLocationUpdates segue disponível; gms_location_clear_failure restaura."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-gms-location"
 key_apis = ["com.google.android.gms.location.FusedLocationProviderClient.getLastLocation", "com.google.android.gms.location.LocationServices.getFusedLocationProviderClient"]
 
@@ -166,8 +166,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "Datasets fake (passos, frequência, sessões) devolvidos às leituras; gravações capturadas."
-notes = "Dados falsos programáveis: HistoryClient.readData/readDailyTotal vendem um DataSet com os passos de Engine::gms_fit_set_steps (DataPoint→Value.asInt), RecordingClient subscribe e SessionsClient start/stop concluem Tasks vazias. Superfície intencionalmente fina — sem sensores, sem Health Connect, sem séries temporais."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "Dados falsos programáveis: HistoryClient.readData/readDailyTotal vendem um DataSet com os passos de Engine::gms_fit_set_steps (DataPoint→Value.asInt), RecordingClient subscribe e SessionsClient start/stop concluem Tasks vazias. Superfície intencionalmente fina — sem sensores, sem Health Connect, sem séries temporais. Falha programável (E, critério de erro e ciclo): Engine::gms_fit_set_failure(code) faz as chamadas de leitura, escrita, gravação e sessões falharem com ApiException sem efeito (sem gravação, sem sessão iniciada); gms_fit_clear_failure restaura o comportamento."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-gms-fit-health"
 key_apis = ["com.google.android.gms.fitness.Fitness.getHistoryClient"]
 
@@ -217,8 +217,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "Token/veredito determinístico fake, rotulado como shim; nonce registrado. NUNCA atesta um dispositivo real."
-notes = "Respostas determinísticas declaradamente falsas: IntegrityManagerFactory.create + requestIntegrityToken devolve o token de Engine::gms_set_integrity_token ('rustydroid-fake-integrity-token' por defeito) e regista os nonces (Engine::gms_integrity_nonces); SafetyNetClient.attest devolve JWS marcado 'not-a-real-attestation'. Os tokens NÃO passam verificação server-side — por design honesto."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "Respostas determinísticas declaradamente falsas: IntegrityManagerFactory.create + requestIntegrityToken devolve o token de Engine::gms_set_integrity_token ('rustydroid-fake-integrity-token' por defeito) e regista os nonces (Engine::gms_integrity_nonces); SafetyNetClient.attest devolve JWS marcado 'not-a-real-attestation'. Os tokens NÃO passam verificação server-side — por design honesto. Falha programável (E, critério de erro e ciclo): Engine::gms_set_integrity_failure(code) faz requestIntegrityToken falhar com IntegrityServiceException (código do IntegrityErrorCode, ex.: -1, -3, -100); o pedido falho não registra nonce; gms_clear_integrity_failure restaura o sucesso."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-gms-integrity"
 key_apis = ["com.google.android.gms.safetynet.SafetyNetClient.attest", "com.google.android.play.core.integrity.IntegrityManager.requestIntegrityToken"]
 
