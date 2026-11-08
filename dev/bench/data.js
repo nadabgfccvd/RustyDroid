@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794150595420,
+  "lastUpdate": 1794151417555,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5291,6 +5291,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1934,
             "range": "± 227",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e8e379359bc3ab8fb2eeb70989f72db8d6c7933c",
+          "message": "test(agent): valida softRestriction, revokeWhenRequested e instant via MCP (Apêndice B) (#587)\n\n- Novo teste MCP soft_restricted_storage_grant_follows_target_sdk_via_mcp:\n  WRITE_EXTERNAL_STORAGE é recusado com target 28 e concedido com target 29.\n- Registro da validação prática de 2a, 2b e 2c no plano (docs/appendix-b-f-plan.md),\n  com cenário, resultado observado e teste automatizado de cada um.\n- Limitação registrada: a forma fraca de READ não aparece no MCP/CLI.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T12:23:20-03:00",
+          "tree_id": "f279f046e30365bfaeb0a876e3c8f282227e59b0",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e8e379359bc3ab8fb2eeb70989f72db8d6c7933c"
+        },
+        "date": 1794151416899,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3518,
+            "range": "± 76",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3480,
+            "range": "± 78",
             "unit": "ns/iter"
           }
         ]
