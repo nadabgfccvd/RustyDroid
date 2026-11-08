@@ -109,7 +109,7 @@ mínimas documentadas no PR.
     | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
     | camerax | host-shim | Depende de MEDIA-03 (câmera virtual) |
     | security-crypto | host-shim | **Partial (S17).** Depende de AndroidKeyStore (ST-04), já disponível |
-    | credentials | host-shim | Depende de provedor fake de credencial (decisão de produto) |
+    | credentials | host-shim | **Partial (S18).** Sem provedor fake (decisão de produto), só as falhas tipadas e `clear` |
     | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
     | hilt-dagger | dex-passthrough | Exige app com DEX gerado pelo Hilt |
     | kotlinx-coroutines | dex-passthrough | Depende de `Dispatchers.Main` no modelo de threads |
@@ -446,6 +446,27 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   biblioteca presente. `MasterKey.Builder` e `MasterKeys.getOrCreate` rodam no DEX sobre o ST-04.
 - **Decisão do usuário (2026-11-08)**: o escopo de D nesta rodada são os host-shim (CameraX, security-crypto,
   credentials). Os dex-passthrough continuam `not_implemented` sem teste de carga de DEX real.
+
+### S18 — Apêndice D: credentials, host-shim sem provedor (2026-11-08)
+
+- **S18 (rodada 8 de D, branch `feat/appd-credentials-20261108`)**: `CredentialManager` sobe de
+  `not_implemented` para `partial`. Módulo `crates/rd-vm/src/credentials.rs`, com 6 testes de guest em
+  `crates/rd-vm/tests/credentials_shim.rs`: o DEX sintético chama a interface por `invoke-interface/range`
+  e o callback é uma classe do próprio DEX que guarda o que recebe. A API foi conferida no AAR oficial
+  androidx.credentials 1.7.0-alpha03 (`dl.google.com`, `javap`).
+- **Sem provedor** (o RustyDroid não tem provedor fake): `getCredentialAsync` → `onError(NoCredentialException)`;
+  `createCredentialAsync` → `onError(CreateCredentialUnsupportedException)`; `clearCredentialStateAsync` →
+  `onResult(null)`, porque não há estado a limpar. Os campos `type` e `errorMessage` seguem o construtor
+  real (constantes lidas do bytecode). Argumentos obrigatórios nulos (contexto, request, callback) → NPE.
+- Mutação: desligar o dispatch de instância derruba 5 dos 6 testes.
+- **Desvios** (também em `notes` do registro): callback entregue inline, antes de a chamada retornar; executor
+  ignorado; o construtor do DEX não roda (o host grava os campos); nada é persistido, porque sem provedor não
+  existe credencial.
+- **Não modelados** (caem no DEX da biblioteca): `prepareGetCredentialAsync`,
+  `getCredentialAsync(PendingGetCredentialHandle, …)`, `createSettingsPendingIntent`, `signalCredentialState*`
+  e as variantes `suspend`.
+- **Pendente**: o caminho de sucesso de get/create só fica testável com um provedor fake. Isso depende de
+  decisão de produto, então não entrou nesta rodada.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 

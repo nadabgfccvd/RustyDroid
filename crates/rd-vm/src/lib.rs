@@ -39,6 +39,7 @@ pub(crate) mod choreographer;
 pub mod classpath;
 pub(crate) mod collections;
 pub(crate) mod content;
+pub mod credentials;
 pub mod engine;
 pub mod err;
 pub mod framework;

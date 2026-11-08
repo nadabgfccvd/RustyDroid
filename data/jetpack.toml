@@ -589,14 +589,14 @@ category = "behavior"
 coordinates = "androidx.credentials:credentials"
 prefixes = ["androidx.credentials"]
 strategy = "host-shim"
-status = "not_implemented"
-module = "none"
-code = []
-milestone = "future"
-notes = "CredentialManager get/createCredential sem shim; nenhum provedor fake responde (passkeys/senhas)."
-evidence = ["docs/appendix-d-e.md"]
+status = "partial"
+module = "rd-vm/credentials"
+code = ["crates/rd-vm/src/credentials.rs"]
+milestone = "appendix-d"
+notes = "S18 (2026-11-08): CredentialManager (interface; a implementação do host é CredentialManagerImpl) com create(Context) e as chamadas assíncronas com callback getCredentialAsync, createCredentialAsync e clearCredentialStateAsync, sem provedor instalado: get → onError(NoCredentialException), create → onError(CreateCredentialUnsupportedException), clear → onResult(null). Exceções com os campos type/errorMessage do construtor real; NPE em argumentos obrigatórios nulos. Callbacks entregues inline; executor ignorado. Não modelados: prepareGetCredentialAsync, getCredentialAsync com PendingGetCredentialHandle, createSettingsPendingIntent, signalCredentialState* e variantes suspend (caem no DEX). Provedor fake pendente (decisão de produto)."
+evidence = ["docs/appendix-d-e.md", "crates/rd-vm/src/credentials.rs", "crates/rd-vm/tests/credentials_shim.rs"]
 gap_id = "gap-jetpack-credential-manager"
-key_apis = ["androidx.credentials.CredentialManager.create"]
+key_apis = ["androidx.credentials.CredentialManager.create", "androidx.credentials.CredentialManager.getCredentialAsync"]
 
 [[library]]
 id = "androidx-photopicker"
