@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794173525034,
+  "lastUpdate": 1794174314829,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6083,6 +6083,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1722,
             "range": "± 66",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9399bf3819eb8803375e0bea29b169d9a65d31f0",
+          "message": "feat(jetpack): credentials host-shim sem provedor (D, host-shim) (#609)\n\nCredentialManager sobe de not_implemented para partial (S18).\n\n- create(Context) devolve o CredentialManagerImpl do host.\n- getCredentialAsync sem provedor -> onError(NoCredentialException).\n- createCredentialAsync sem provedor -> onError(CreateCredentialUnsupportedException).\n- clearCredentialStateAsync -> onResult(null) (nada a limpar).\n- Campos type/errorMessage seguem o construtor real (constantes do AAR 1.7.0-alpha03).\n- NPE para contexto, request e callback nulos.\n\nTestes de guest em tests/credentials_shim.rs: DEX sintetico chama a\ninterface por invoke-interface/range; callback do proprio DEX. Mutar o\ndispatch derruba 5 dos 6 testes.\n\nNao modelado (cai no DEX): prepareGetCredentialAsync, PendingGetCredentialHandle,\ncreateSettingsPendingIntent, signalCredentialState*, variantes suspend.\nProvedor fake segue pendente (decisao de produto).\n\ndocs/compat-matrix.md, docs/jetpack.md e RustyDroid.md regenerados com\ntodos os geradores do job Docs integrity.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T18:44:56-03:00",
+          "tree_id": "53f27cb6f096b093cedaf74116cb561b2629d812",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9399bf3819eb8803375e0bea29b169d9a65d31f0"
+        },
+        "date": 1794174313838,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1755,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1720,
+            "range": "± 10",
             "unit": "ns/iter"
           }
         ]
