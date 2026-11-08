@@ -977,3 +977,105 @@ fn maps_load_failure_blocks_map_ready_then_recovers() {
     .unwrap();
     assert_eq!(map_ready_count(&e), 1, "mapa entregue após recuperação");
 }
+
+// ── Messaging (FCM): falha programada no token e nos tópicos. A Task falha com
+// java.io.IOException (SERVICE_NOT_AVAILABLE) e não muda estado; deleteToken
+// segue disponível; limpar a falha volta ao sucesso.
+#[test]
+fn messaging_failure_blocks_token_and_topics_then_recovers() {
+    let mut e = engine();
+    let msg = ov(cs!(
+        e,
+        FIREBASE_MESSAGING,
+        "getInstance",
+        "()Lcom/google/firebase/messaging/FirebaseMessaging;",
+        []
+    )
+    .unwrap());
+    e.gms_set_fcm_token("tok-1");
+
+    // Token falha com IOException e não devolve valor.
+    e.gms_fcm_set_failure();
+    let t = ov(ci!(
+        e,
+        FIREBASE_MESSAGING,
+        "getToken",
+        "()Lcom/google/android/gms/tasks/Task;",
+        msg,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 0, "token falha");
+    assert_eq!(
+        task_flag(&mut e, t, "isComplete"),
+        1,
+        "falha também completa a Task"
+    );
+    let exc = ov(ci!(e, TASK, "getException", "()Ljava/lang/Exception;", t, []).unwrap());
+    let class = e.heap.class_of(exc).unwrap().to_string();
+    assert_eq!(class, "Ljava/io/IOException;", "tipo da exceção");
+    assert_eq!(exc_message(&e, exc), "SERVICE_NOT_AVAILABLE");
+
+    // Tópico: a assinatura falha e o tópico não entra.
+    let topic = s(&mut e, "noticias");
+    let sub = ov(ci!(
+        e,
+        FIREBASE_MESSAGING,
+        "subscribeToTopic",
+        "(Ljava/lang/String;)Lcom/google/android/gms/tasks/Task;",
+        msg,
+        [topic]
+    )
+    .unwrap());
+    assert_eq!(
+        task_flag(&mut e, sub, "isSuccessful"),
+        0,
+        "assinatura falha"
+    );
+    assert!(e.gms_fcm_topics().is_empty(), "tópico não entra");
+
+    // deleteToken não depende do serviço neste modelo: segue com sucesso.
+    let del = ov(ci!(
+        e,
+        FIREBASE_MESSAGING,
+        "deleteToken",
+        "()Lcom/google/android/gms/tasks/Task;",
+        msg,
+        []
+    )
+    .unwrap());
+    assert_eq!(
+        task_flag(&mut e, del, "isSuccessful"),
+        1,
+        "deleteToken segue"
+    );
+
+    // Recuperação: token e assinatura voltam a funcionar.
+    e.gms_fcm_clear_failure();
+    let topic = s(&mut e, "noticias");
+    let t = ov(ci!(
+        e,
+        FIREBASE_MESSAGING,
+        "getToken",
+        "()Lcom/google/android/gms/tasks/Task;",
+        msg,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t, "isSuccessful"), 1, "token volta");
+    let sub = ov(ci!(
+        e,
+        FIREBASE_MESSAGING,
+        "subscribeToTopic",
+        "(Ljava/lang/String;)Lcom/google/android/gms/tasks/Task;",
+        msg,
+        [topic]
+    )
+    .unwrap());
+    assert_eq!(
+        task_flag(&mut e, sub, "isSuccessful"),
+        1,
+        "assinatura volta"
+    );
+    assert_eq!(e.gms_fcm_topics(), vec!["noticias".to_string()]);
+}
