@@ -457,8 +457,11 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   inválidos pela regra documentada do Firebase são rejeitados e contados em `gms_analytics_rejected`. Parâmetro
   inválido rejeita o evento inteiro (escolha de modelagem; a doc não especifica). Coleção desligada descarta sem
   contar como rejeição. Testes em `gms_erro_ciclo.rs`; mutação do validador derruba o teste.
+- **Crashlytics** (`firebase-crashlytics`): no máximo 64 pares chave/valor (novas chaves além do limite são ignoradas;
+  regravar chave existente continua valendo, em `setCustomKey` e `setCustomKeys`), chave e valor truncados em 1024
+  caracteres (contagem por `char`). Teste em `gms_erro_ciclo.rs`; mutação do limite derruba o teste (70 em vez de 64).
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
 estado como ciclo). Serviços parciais ainda sem caminho de erro programável: Maps, Google Sign-In, Ads, SafetyNet
-(`attest`), Firebase (messaging, crashlytics, firestore, rtdb, storage) e Billing. Próximas entregas
+(`attest`), Firebase (messaging, firestore, rtdb, storage) e Billing. Próximas entregas
 desta etapa seguem essa ordem.

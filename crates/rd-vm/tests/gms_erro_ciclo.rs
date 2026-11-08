@@ -785,3 +785,100 @@ fn analytics_invalid_names_are_rejected_then_valid_events_recorded() {
     assert_eq!(e.gms_analytics_events().len(), 3);
     assert_eq!(e.gms_analytics_events()[2].name, "volta");
 }
+
+// ── Crashlytics: no máximo 64 pares chave/valor (novas chaves além do limite
+// são ignoradas; regravar uma chave existente continua valendo) e chave/valor
+// acima de 1024 caracteres são truncados. Vale para setCustomKey e setCustomKeys.
+fn crash_key(mut e: &mut Engine, cl: u32, k: &str, v: &str) {
+    let kk = s(e, k);
+    let vv = s(e, v);
+    ci!(
+        e,
+        FIREBASE_CRASHLYTICS,
+        "setCustomKey",
+        "(Ljava/lang/String;Ljava/lang/String;)V",
+        cl,
+        [kk, vv]
+    )
+    .unwrap();
+}
+
+#[test]
+fn crashlytics_custom_keys_capped_at_64_and_truncated() {
+    let mut e = engine();
+    let cl = ov(cs!(
+        e,
+        FIREBASE_CRASHLYTICS,
+        "getInstance",
+        "()Lcom/google/firebase/crashlytics/FirebaseCrashlytics;",
+        []
+    )
+    .unwrap());
+
+    // 70 chaves individuais: só as 64 primeiras entram.
+    for i in 0..70 {
+        crash_key(&mut e, cl, &format!("k{i}"), "v");
+    }
+    let keys = e.gms_crashlytics_keys();
+    assert_eq!(keys.len(), 64, "limite de 64 pares");
+    assert_eq!(keys.last().unwrap().0, "k63", "k64..k69 ignoradas");
+
+    // Regravar chave existente no limite atualiza o valor.
+    crash_key(&mut e, cl, "k0", "novo");
+    let keys = e.gms_crashlytics_keys();
+    assert_eq!(keys.len(), 64);
+    assert_eq!(keys[0], ("k0".to_string(), "novo".to_string()));
+
+    // setCustomKeys (CustomKeysAndValues) também respeita o limite.
+    let b = obj(&mut e, CKAV_BUILDER);
+    ci!(e, CKAV_BUILDER, "<init>", "()V", b, []).unwrap();
+    let k = s(&mut e, "nova_ckav");
+    let v = s(&mut e, "x");
+    ci!(
+        e,
+        CKAV_BUILDER,
+        "put",
+        "(Ljava/lang/String;Ljava/lang/String;)Lcom/google/firebase/crashlytics/CustomKeysAndValues$Builder;",
+        b,
+        [k, v]
+    )
+    .unwrap();
+    let ckav = ov(ci!(
+        e,
+        CKAV_BUILDER,
+        "build",
+        "()Lcom/google/firebase/crashlytics/CustomKeysAndValues;",
+        b,
+        []
+    )
+    .unwrap());
+    ci!(
+        e,
+        FIREBASE_CRASHLYTICS,
+        "setCustomKeys",
+        "(Lcom/google/firebase/crashlytics/CustomKeysAndValues;)V",
+        cl,
+        [Value::Obj(ckav)]
+    )
+    .unwrap();
+    let keys = e.gms_crashlytics_keys();
+    assert_eq!(keys.len(), 64, "setCustomKeys não ultrapassa 64");
+    assert!(!keys.iter().any(|(k, _)| k == "nova_ckav"));
+
+    // Truncamento: chave e valor de 1500 caracteres ficam com 1024.
+    let mut e2 = engine();
+    let cl2 = ov(cs!(
+        e2,
+        FIREBASE_CRASHLYTICS,
+        "getInstance",
+        "()Lcom/google/firebase/crashlytics/FirebaseCrashlytics;",
+        []
+    )
+    .unwrap());
+    let longa = "x".repeat(1500);
+    crash_key(&mut e2, cl2, &longa, &"z".repeat(1500));
+    let keys = e2.gms_crashlytics_keys();
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].0.chars().count(), 1024);
+    assert_eq!(keys[0].1.chars().count(), 1024);
+}

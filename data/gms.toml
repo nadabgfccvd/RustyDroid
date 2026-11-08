@@ -303,8 +303,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "Captura: recordException/log/custom keys + crashes REAIS (exceções não tratadas da VM), nunca upload."
-notes = "recordException/log/setCustomKey/setUserId capturam para estado local consultável (Engine::gms_crashlytics_crash_summaries/gms_crashlytics_log); a coleção desligada larga e conta registos. Crashes reais da VM entram pela ponte Engine::gms_report_uncaught_crash (não há hook no loop do interpretador nesta ronda). Nada é enviado."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "recordException/log/setCustomKey/setUserId capturam para estado local consultável (Engine::gms_crashlytics_crash_summaries/gms_crashlytics_log); a coleção desligada larga e conta registos. Crashes reais da VM entram pela ponte Engine::gms_report_uncaught_crash (não há hook no loop do interpretador nesta ronda). Nada é enviado. Chaves customizadas: no máximo 64 pares (novas chaves além do limite são ignoradas; regravar chave existente vale), chave e valor truncados em 1024 caracteres (Engine::gms_crashlytics_keys), vale para setCustomKey e setCustomKeys."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-firebase-crashlytics"
 key_apis = ["com.google.firebase.crashlytics.FirebaseCrashlytics.recordException", "com.google.firebase.crashlytics.FirebaseCrashlytics.log"]
 
