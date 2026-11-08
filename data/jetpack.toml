@@ -255,8 +255,8 @@ status = "partial"
 module = "rd-vm/m8"
 code = ["crates/rd-vm/src/m8.rs", "crates/rd-vm/src/androidx.rs"]
 milestone = "M8"
-notes = "WorkManager.getInstance/enqueue registram WorkRecords consultáveis (SYS-04, sessão); Worker.doWork() NÃO roda em background — estados avançam via harness (m8_complete_work). Data/Constraints/WorkInfo completos ainda não. androidx.work.Data/Data.Builder (put* e getters tipados, getKeyValueMap) têm modelo host em androidx.rs, consultável via Engine::androidx_work_data. Gap conhecido (m8.rs, S16): cancelWorkById, cancelAllWorkByTag e cancelUniqueWork marcam TODO o trabalho ENQUEUED como CANCELLED, sem casar id, tag ou nome; WorkRecord não guarda id UUID nem tags (tags fica sempre vazio, sem getId); getWorkInfosByTag e getWorkInfosForUniqueWork devolvem um ListenableFuture sem valor."
-evidence = ["docs/compat-matrix.md", "docs/appendix-d-e.md", "crates/rd-vm/tests/androidx.rs"]
+notes = "WorkManager.getInstance/enqueue registram WorkRecords consultáveis (SYS-04, sessão); cada WorkRequest tem id UUID (WorkRequest.getId), tags do builder (addTag) e o nome único de enqueueUniqueWork; cancelWorkById/cancelAllWorkByTag/cancelUniqueWork cancelam só o que casa e só ENQUEUED (S16, corrigido). Worker.doWork() NÃO roda em background — estados avançam via harness (m8_complete_work). Constraints, WorkInfo, políticas ExistingWorkPolicy e getWorkInfosByTag/ForUniqueWork (não modelados: a chamada não é sequestrada) ainda não. androidx.work.Data/Data.Builder (put* e getters tipados, getKeyValueMap) têm modelo host em androidx.rs, consultável via Engine::androidx_work_data."
+evidence = ["docs/compat-matrix.md", "docs/appendix-d-e.md", "crates/rd-vm/tests/androidx.rs", "crates/rd-vm/tests/m8.rs", "crates/rd-vm/tests/m8_workmanager_dex.rs"]
 gap_id = "gap-jetpack-work-partial"
 key_apis = ["androidx.work.WorkManager.getInstance", "androidx.work.WorkManager.enqueue", "androidx.work.Data.Builder.build", "androidx.work.Data.getString"]
 
