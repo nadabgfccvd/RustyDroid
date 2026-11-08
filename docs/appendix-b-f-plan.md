@@ -382,6 +382,9 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
    vazia; sem leitura de código de barras no VM), por decisão do usuário.
 3. **Apêndice C literal:** resolvido em 2026-11-06 — o `android.jar` foi obtido pela rede do sandbox (ver §5, Apêndice C).
 4. **Escopo de D e E: resolvido pelo usuário (2026-11-05)** — Room (via ST-02) e prioridade da spec; ML Kit fora (ver §5).
+5. **DEX do fixture do Room (D, ST-02): resolvido pelo usuário (2026-11-08) — gerar no CI.** Sem versionar `.dex` e sem nova exceção da ADR 036. Job `room-fixture` (ver `docs/appendix-d-e.md`, S15).
+6. **Navegação na raiz (D): resolvido pelo usuário (2026-11-08) — pesquisar e escolher.** Escolhido: alinhar ao AOSP (desempilhar a raiz esvazia a pilha e retorna false). Ver S14.
+7. **ACCESS_BACKGROUND_LOCATION (B, 2e): resolvido pelo usuário (2026-11-08) — corrigir para hardRestricted.** Ver §3 e item 2e.
 
 ## 7. Validação deste plano
 

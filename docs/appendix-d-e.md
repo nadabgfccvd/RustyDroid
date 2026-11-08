@@ -365,3 +365,16 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
   - Não modelado: `navigate()` com pilha vazia (o AOSP exige o destino atual),
     `popUpTo`/`saveState`/`restoreState`, e validação de destino desconhecido ao navegar.
     Por isso o status segue `partial`.
+
+### S15 — Apêndice D: testes do Room no CI, com DEX gerado na hora (2026-11-08)
+
+- **Decisão do usuário (2026-11-08, `room_dex_policy`): gerar no CI.** O DEX do fixture do
+  Room continua **não versionado** (ADR 036 inalterada: a exceção cobre só o RxJava).
+- Novo job `room-fixture` em `.github/workflows/ci.yml`: roda `scripts/gen-room-fixture.sh`
+  (Room 2.6.1 com o processador real no javac, D8/R8 8.7.18, ~24 s) e depois
+  `RD_ROOM_FIXTURE_DEX=… cargo test -p rd-vm --test jetpack_room -- --ignored`.
+- Validado localmente com os mesmos comandos: SHA-256 do DEX `134e9ab7…` (igual ao da S13),
+  3 testes do Room passam.
+- Os 3 testes continuam `#[ignore]`, para que `cargo test --workspace` não dependa do DEX.
+- Status de `room` segue `partial` (ver S13: não modelados `fallbackToDestructiveMigrationFrom`/`OnDowngrade`,
+  auto-migrations, observers do InvalidationTracker e coroutines/Flow).
