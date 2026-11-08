@@ -860,11 +860,13 @@ fn m8_workmanager_cancel_never_revives_finished_work() {
 }
 
 #[test]
-fn m8_workmanager_work_infos_are_not_faked() {
-    // Sem WorkInfo real, o host não sequestra getWorkInfos*: a chamada não
-    // devolve um future vazio (Ok(None) = não modelado).
+fn m8_workmanager_work_infos_return_real_values() {
+    // getWorkInfosByTag devolve um future já completo com a lista real de
+    // WorkInfo (vazia quando nenhum pedido tem a tag).
     let mut e = engine();
     let wm = wm_instance(&mut e);
+    let req = wm_request(&mut e, "Lcom/example/A;", &["sync"]);
+    wm_enqueue(&mut e, wm, req);
     let tag = s(&mut e, "sync");
     let got = call_m8_instance(
         &mut e,
@@ -875,9 +877,20 @@ fn m8_workmanager_work_infos_are_not_faked() {
         &[tag],
     )
     .unwrap();
+    assert!(matches!(got, Some(Value::Obj(_))), "future: {got:?}");
+    let other = s(&mut e, "nenhuma");
+    let none = call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "getWorkInfosForUniqueWork",
+        "(Ljava/lang/String;)Lcom/google/common/util/concurrent/ListenableFuture;",
+        wm,
+        &[other],
+    )
+    .unwrap();
     assert!(
-        got.is_none(),
-        "getWorkInfosByTag não deve ser fingido: {got:?}"
+        matches!(none, Some(Value::Obj(_))),
+        "future vazio: {none:?}"
     );
 }
 

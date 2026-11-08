@@ -123,6 +123,17 @@ pub struct WorkRecord {
     /// Nome de `enqueueUniqueWork` / `enqueueUniquePeriodicWork`.
     pub unique_name: Option<String>,
 }
+/// `WorkInfo` e o enum `WorkInfo.State` (constantes com a ordem da AndroidX).
+const WORK_INFO: &str = "Landroidx/work/WorkInfo;";
+const WORK_INFO_STATE: &str = "Landroidx/work/WorkInfo$State;";
+const WORK_STATE_NAMES: [&str; 6] = [
+    "ENQUEUED",
+    "RUNNING",
+    "SUCCEEDED",
+    "FAILED",
+    "BLOCKED",
+    "CANCELLED",
+];
 /// Campo do builder e do `WorkRequest` com as tags, unidas por U+001F.
 const WORK_TAG_SEP: char = '\u{1f}';
 /// Campo do `WorkRequest` com o UUID gerado no `build()`.
@@ -547,6 +558,20 @@ fn call_m8_instance_rooted(
     }
     if mref_class == ROOM_BUILDER || recv_class == ROOM_BUILDER {
         return room_builder(vm, name, sig, recv, args);
+    }
+    if mref_class == WORK_INFO || recv_class == WORK_INFO {
+        match name {
+            "getId" => return Ok(Some(get_field_value(vm, recv, "rd_id"))),
+            "getState" => return Ok(Some(get_field_value(vm, recv, "rd_state"))),
+            _ => {}
+        }
+    }
+    if (mref_class == WORK_INFO_STATE || recv_class == WORK_INFO_STATE) && name == "isFinished" {
+        let finished = matches!(
+            work_state_name(vm, recv).as_deref(),
+            Some("SUCCEEDED" | "FAILED" | "CANCELLED")
+        );
+        return Ok(Some(Value::Int(finished as i32)));
     }
     // `WorkRequest.getId()` devolve o UUID gerado no `build()` do builder.
     if name == "getId" && sig == "()Ljava/util/UUID;" && is_work_request_object(&recv_class) {
@@ -2762,9 +2787,53 @@ fn work_manager(
             let op = alloc(vm, OPERATION)?;
             Ok(Some(Value::Obj(op)))
         }
-        // `getWorkInfosByTag` / `getWorkInfosForUniqueWork` não são modelados
-        // (WorkInfo chega no próximo passo): sem arm, a chamada não é sequestrada
-        // e falha de forma explícita em vez de devolver um future sem valor.
+        // Consultas devolvem `ListenableFuture` já completo com o valor real
+        // (lista de WorkInfo, ou WorkInfo/null por id), como no WorkManager.
+        "getWorkInfosByTag" | "getWorkInfosForUniqueWork" | "getWorkInfoById" => {
+            let target = match args.first() {
+                Some(Value::Obj(o)) if name == "getWorkInfoById" => {
+                    crate::juuid::uuid_string_of(vm, *o).map(WorkTarget::Id)
+                }
+                Some(Value::Obj(s)) => vm.heap.as_str(*s).ok().map(|t| {
+                    if name == "getWorkInfosByTag" {
+                        WorkTarget::Tag(t.to_string())
+                    } else {
+                        WorkTarget::Unique(t.to_string())
+                    }
+                }),
+                _ => None,
+            };
+            let matched: Vec<WorkRecord> = vm
+                .fw
+                .m8
+                .work
+                .iter()
+                .filter(|w| match &target {
+                    Some(WorkTarget::Id(id)) => &w.id == id,
+                    Some(WorkTarget::Tag(t)) => w.tags.iter().any(|x| x == t),
+                    Some(WorkTarget::Unique(n)) => w.unique_name.as_deref() == Some(n.as_str()),
+                    None => false,
+                })
+                .cloned()
+                .collect();
+            let result = if name == "getWorkInfoById" {
+                match matched.first() {
+                    Some(w) => Value::Obj(new_work_info(vm, w)?),
+                    None => Value::Null,
+                }
+            } else {
+                let mut elems = Vec::with_capacity(matched.len());
+                for w in &matched {
+                    elems.push(Value::Obj(new_work_info(vm, w)?));
+                }
+                let list = alloc(vm, "Ljava/util/ArrayList;")?;
+                vm.fw.objects.insert(list, HostObj::List { elems });
+                Value::Obj(list)
+            };
+            let future = vm.androidx_new_future()?;
+            vm.androidx_complete_future(future, result)?;
+            Ok(Some(Value::Obj(future)))
+        }
         "beginWith" | "beginUniqueWork" => {
             let r = alloc(vm, "Landroidx/work/WorkContinuation;")?;
             Ok(Some(Value::Obj(r)))
@@ -2772,6 +2841,72 @@ fn work_manager(
         _ => Ok(None),
     }
 }
+enum WorkTarget {
+    Id(String),
+    Tag(String),
+    Unique(String),
+}
+
+/// Constante de `WorkInfo.State`, cacheada em `statics` (mesmo objeto a cada acesso).
+fn work_state_enum(vm: &mut Engine, name: &str) -> Result<Value, VmExit> {
+    let key = (WORK_INFO_STATE.to_string(), name.to_string());
+    if let Some(v) = vm.statics.get(&key) {
+        return Ok(v.clone());
+    }
+    let ordinal = WORK_STATE_NAMES
+        .iter()
+        .position(|n| *n == name)
+        .unwrap_or(0) as i32;
+    let text = intrinsics::alloc_string(vm, name.to_string())?;
+    let r = vm
+        .heap
+        .alloc_instance(
+            WORK_INFO_STATE.to_string(),
+            vec![
+                ("rd_name".into(), Value::Obj(text)),
+                ("name".into(), Value::Obj(text)),
+                ("rd_ord".into(), Value::Int(ordinal)),
+                ("ordinal".into(), Value::Int(ordinal)),
+            ],
+        )
+        .map_err(crate::err::oom_throwable)?;
+    vm.statics.insert(key, Value::Obj(r));
+    Ok(Value::Obj(r))
+}
+
+/// Nome da constante de `WorkInfo.State` de um objeto enum host.
+fn work_state_name(vm: &Engine, state: ObjRef) -> Option<String> {
+    work_str_field(vm, state, "rd_name")
+}
+
+/// `WorkInfo.State` via `sget` (provider host de campos estáticos).
+pub(crate) fn host_static(
+    vm: &mut Engine,
+    owner: &str,
+    field: &str,
+) -> Result<Option<Value>, VmExit> {
+    if owner != WORK_INFO_STATE || !WORK_STATE_NAMES.contains(&field) {
+        return Ok(None);
+    }
+    work_state_enum(vm, field).map(Some)
+}
+
+fn get_field_value(vm: &Engine, r: ObjRef, field: &str) -> Value {
+    vm.heap.get_field(r, field).unwrap_or(Value::Null)
+}
+
+/// Cria o `WorkInfo` host de um registro: id UUID e estado do enum.
+fn new_work_info(vm: &mut Engine, rec: &WorkRecord) -> Result<ObjRef, VmExit> {
+    let id = crate::juuid::uuid_value(vm, &rec.id)?.unwrap_or(Value::Null);
+    let state = work_state_enum(vm, &rec.state)?;
+    vm.heap
+        .alloc_instance(
+            WORK_INFO.to_string(),
+            vec![("rd_id".into(), id), ("rd_state".into(), state)],
+        )
+        .map_err(crate::err::oom_throwable)
+}
+
 /// Texto canônico do `UUID` devolvido por `WorkRequest.getId()`.
 pub fn work_request_id_text(vm: &Engine, id: ObjRef) -> Option<String> {
     crate::juuid::uuid_string_of(vm, id)

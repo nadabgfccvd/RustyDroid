@@ -408,6 +408,17 @@ Testes: `crates/rd-vm/tests/m8.rs` (`m8_workmanager_*`, incluindo mutação do c
 os testes de cancelamento) e `crates/rd-vm/tests/m8_workmanager_dex.rs` (bytecode DEX em memória:
 builder, `getId`, `enqueue`, `cancelWorkById`).
 
-Ainda pendente (próximas etapas de `work`): `Constraints`, `WorkInfo` com estados, `ExistingWorkPolicy`
-(hoje o nome é gravado, a política é ignorada), `Worker.doWork()` em background. Por isso `work`
-segue `partial`.
+Segunda rodada (mesma branch de correção, 2026-11-08): `WorkInfo` real.
+
+- `getWorkInfosByTag`, `getWorkInfosForUniqueWork` e `getWorkInfoById` devolvem `ListenableFuture`
+  já completo, com `List<WorkInfo>` (ou `WorkInfo`/`null` por id). `WorkInfo.getId()` (UUID) e
+  `getState()` (enum `WorkInfo.State`, constantes com a ordem da AndroidX, cache em `statics`).
+  `WorkInfo.State.isFinished()`. `sget` de `WorkInfo.State.X` resolve pelo provider host
+  (`m8::host_static`, em `engine.rs`).
+- Teste DEX: `crates/rd-vm/tests/m8_workmanager_dex.rs` (lista, `Future.get`, `List.get`, `getState`
+  comparado com `sget` por identidade, `isFinished`). Limite: o teste não pega o cache de identidade
+  quebrado em referências guardadas de uma chamada anterior (mutação aplicada e não detectada).
+
+Ainda pendente: `ExistingWorkPolicy` (o nome é gravado, a política é ignorada), tags/progresso/output
+em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estados avançam pelo harness).
+`Constraints` são aceitas e não aplicadas. Por isso `work` segue `partial`.

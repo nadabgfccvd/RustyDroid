@@ -1291,6 +1291,9 @@ impl Engine {
         if let Some(v) = crate::boxes::host_static(self, owner, field)? {
             return Ok(Some(v));
         }
+        if let Some(v) = crate::m8::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
         // issue #330: constantes predefinidas de java.util.Locale (antes
         // `sget-object Locale.US` devolvia Null e quebrava <clinit> de APKs
         // reais — org.primftpd_71.apk via DateTimeFormatter.ofPattern)
