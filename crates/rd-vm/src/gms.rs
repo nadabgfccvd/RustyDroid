@@ -699,6 +699,9 @@ pub struct GmsState {
     pub marker_map: HashMap<ObjRef, ObjRef>,
     pub maps_counter: u32,
     pub maps_initialized: i32,
+    /// Falha programada do carregamento do Maps: código devolvido por
+    /// `MapsInitializer.initialize` e bloqueio de `getMapAsync`.
+    pub maps_load_failure: Option<i32>,
     // Fit
     pub fit_steps: i32,
     /// Código de erro programado para os clientes Fit: as chamadas falham sem efeito.
@@ -5307,6 +5310,8 @@ fn maps_instance(
     {
         return Ok(Some(match name {
             "<init>" => Value::Null,
+            // Com falha de carregamento programada, o mapa nunca é entregue.
+            "getMapAsync" if vm.fw.gms.maps_load_failure.is_some() => Value::Null,
             "getMapAsync" => {
                 let map = match vm.fw.gms.map_by_fragment.get(&recv).copied() {
                     Some(m) if vm.fw.gms.google_maps.contains_key(&m) => m,
@@ -5351,7 +5356,11 @@ fn maps_static(
 ) -> Result<Option<Value>, VmExit> {
     match (class, name) {
         (MAPS_INITIALIZER, "initialize") => {
-            let code = vm.fw.gms.availability_code;
+            let code = vm
+                .fw
+                .gms
+                .maps_load_failure
+                .unwrap_or(vm.fw.gms.availability_code);
             vm.fw.gms.maps_initialized += 1;
             Ok(Some(Value::Int(code)))
         }
@@ -6305,6 +6314,17 @@ impl Engine {
             accuracy_m,
             ..FixCfg::default()
         });
+    }
+
+    /// Programa a falha do carregamento do Maps: `MapsInitializer.initialize`
+    /// devolve `code` e `getMapAsync` não entrega o `GoogleMap`.
+    pub fn gms_maps_set_load_failure(&mut self, code: i32) {
+        self.fw.gms.maps_load_failure = Some(code);
+    }
+
+    /// Remove a falha do carregamento do Maps.
+    pub fn gms_maps_clear_load_failure(&mut self) {
+        self.fw.gms.maps_load_failure = None;
     }
 
     /// Programa a falha do Fused Location (leitura, disponibilidade e registro de atualizações).

@@ -160,34 +160,35 @@ mínimas documentadas no PR.
 Critério (plano §5): cada serviço `partial` precisa de teste de **sucesso**,
 de **erro** e de **ciclo de vida**, quando o shim tem esses caminhos. Onde o
 shim não tem caminho de erro programável, a célula diz isso em vez de inventar
-um teste. Testes em `crates/rd-vm/tests/gms.rs` (45 passando).
+um teste. Testes em `crates/rd-vm/tests/gms.rs` e `crates/rd-vm/tests/gms_erro_ciclo.rs` (etapa 7).
 
 | Serviço | Sucesso | Erro | Ciclo de vida |
 |---|---|---|---|
 | gms-common | `availability_programmable_codes` | mesmo teste (códigos programados) | troca de código no mesmo teste |
 | gms-tasks | `tasks_completion_source_roundtrip_with_dex_listener` | `tasks_failure_surfaces_exception` | `tasks_when_all_success_failure_and_complete` |
 | gms-location | `location_fix_and_callback_delivery` | sem fix ⇒ `null` (mesmo teste) | `location_fix_cleared_mid_session_returns_null_until_reseeded` |
-| gms-maps | `maps_ready_camera_and_markers` | **sem caminho de erro no shim** | `maps_marker_remove_drops_only_that_marker` |
+| gms-maps | `maps_ready_camera_and_markers` | `maps_load_failure_blocks_map_ready_then_recovers` (falha programada: initialize com código, sem onMapReady) | mesmo teste (limpar a falha volta a entregar o mapa) |
 | gms-billing | `billing_product_details_modern_path` | `billing_purchase_flow_and_cancel` (cancel) | `billing_listener_relaunching_flow_is_bounded` |
 | gms-auth | `google_signin_silent_requires_host_completion` | ApiException 4 (mesmo teste) | `google_signin_sign_out_ends_silent_session_and_sign_in_restores_it` |
 | gms-ads | `ads_banner_success_failure_and_rewarded` | `gms_ads_set_failure` (mesmo teste) | `clear_failure` no mesmo teste |
 | gms-fit-health | `fit_steps_programmable` | `fit_zero_steps_yields_empty_data_set_not_fake_points` | **sem ciclo de vida no shim** (leitura sem estado) |
 | gms-cast | `cast_states_follow_programmed_session` | estado NO_DEVICES sem sessão (mesmo teste) | `cast_state_listener_fires_only_on_real_transitions` |
 | gms-nearby | `nearby_discovery_reports_programmed_endpoint` | `nearby_request_connection_only_reaches_discovered_endpoints` | `nearby_lifecycle_discovery_and_connections` |
-| gms-integrity | `integrity_and_safetynet_deterministic_tokens` | **sem caminho de erro no shim** | `safetynet_programmed_jws_and_nonce_record_track_api_key` |
+| gms-integrity | `integrity_and_safetynet_deterministic_tokens` | `integrity_failure_code_is_programmable_per_error_kind` | `integrity_failure_then_recovery_is_a_full_lifecycle` |
 | firebase-core | `firebase_autoinit_and_strict_mode` (auto-init) | strict sem initializeApp (mesmo teste) | mesmo teste (init → uso) |
-| firebase-analytics | `firebase_autoinit_and_strict_mode` (evento) | **eventos não falham no shim** | collection off + `analytics_null_user_property_value_removes_it` |
+| firebase-analytics | `firebase_autoinit_and_strict_mode` (evento) | `analytics_invalid_names_are_rejected_then_valid_events_recorded` (nome inválido rejeitado e contado) | mesmo teste (coleção desligada e religada) |
 | firebase-auth | `firebase_auth_full_flow` | senha errada (mesmo teste) | `firebase_auth_state_listener_fires_on_add_and_signin` |
 | firebase-messaging | `messaging_token_topics_and_delivery` | **sem caminho de erro no shim** | tópicos (mesmo teste) |
-| firebase-crashlytics | `crashlytics_records_and_uncaught_bridge` | crash não capturado vira registro (mesmo teste) | `gms_logs_are_capped_with_dropped_counter` |
+| firebase-crashlytics | `crashlytics_records_and_uncaught_bridge` | `crashlytics_custom_keys_capped_at_64_and_truncated` (limite de 64 chaves e truncamento) | crash não capturado vira registro; coleção desligada (mesmo teste) |
 | firebase-firestore | `firestore_set_get_query_and_seed` | `firestore_missing_document_reads_as_absent_not_error` | `firestore_query_filter_and_snapshot_listener` |
 | firebase-rtdb | `rtdb_set_resolve_and_listener` | **sem caminho de erro no shim** | `rtdb_remove_event_listener_stops_callbacks` |
-| firebase-remoteconfig | `remoteconfig_fetch_activate_semantics` | **sem falha programável no shim** | fetch → activate (mesmo teste) |
+| firebase-remoteconfig | `remoteconfig_fetch_activate_semantics` | `remote_config_failed_fetch_keeps_active_values_then_recovers` | fetch falho mantém valores ativos; recuperação aplica o novo (mesmo teste) |
 | firebase-storage | `storage_seed_download_and_missing` | `storage_getbytes_size_limit_error_and_delete_lifecycle` | mesmo teste (delete) |
 
-Os itens "sem caminho de erro no shim" não são lacunas de teste: o shim
-não tem uma falha programável para exercitar. Criar um caminho de falha novo é
-mudança de comportamento e fica fora desta rodada.
+Na etapa 7, cada célula "sem caminho de erro" ganhou uma falha programável opt-in
+(sem falha programada, o comportamento é o de antes), com teste que falha sem ela.
+As células que ainda dizem "sem caminho de erro no shim" são as que continuam sem
+falha programável (Messaging, RTDB), e entram nas próximas entregas da etapa 7.
 
 Mudanças de comportamento nesta rodada (cada uma com teste que falha sem ela):
 - **gms-cast**: `onCastStateChanged(int)` agora dispara em transição real de
@@ -460,8 +461,13 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
 - **Crashlytics** (`firebase-crashlytics`): no máximo 64 pares chave/valor (novas chaves além do limite são ignoradas;
   regravar chave existente continua valendo, em `setCustomKey` e `setCustomKeys`), chave e valor truncados em 1024
   caracteres (contagem por `char`). Teste em `gms_erro_ciclo.rs`; mutação do limite derruba o teste (70 em vez de 64).
+- **Maps** (`gms-maps`): falha de carregamento programável (`gms_maps_set_load_failure(code)`): `MapsInitializer.initialize`
+  devolve o código e `getMapAsync` não entrega o `GoogleMap` enquanto a falha durar; `gms_maps_clear_load_failure()`
+  recupera. Opt-in: sem falha programada, o comportamento é o de antes. Não acoplado ao `availability_code` global,
+  para não mudar o comportamento de apps com mapas. Teste em `gms_erro_ciclo.rs`; mutação do bloqueio derruba o teste.
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
-estado como ciclo). Serviços parciais ainda sem caminho de erro programável: Maps, Google Sign-In, Ads, SafetyNet
-(`attest`), Firebase (messaging, firestore, rtdb, storage) e Billing. Próximas entregas
+estado como ciclo). Serviços parciais ainda sem caminho de erro programável (conforme a tabela de
+erro/ciclo): Firebase Messaging, Firebase RTDB, Google Ads, SafetyNet (`attest`) e
+Google Sign-In. Próximas entregas
 desta etapa seguem essa ordem.
