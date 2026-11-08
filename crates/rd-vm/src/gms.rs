@@ -174,6 +174,8 @@ pub const FIREBASE_DATABASE: &str = "Lcom/google/firebase/database/FirebaseDatab
 pub const DATABASE_REF: &str = "Lcom/google/firebase/database/DatabaseReference;";
 pub const DATA_SNAPSHOT: &str = "Lcom/google/firebase/database/DataSnapshot;";
 pub const REMOTE_CONFIG: &str = "Lcom/google/firebase/remoteconfig/FirebaseRemoteConfig;";
+pub const RC_FETCH_EXCEPTION: &str =
+    "Lcom/google/firebase/remoteconfig/FirebaseRemoteConfigFetchException;";
 pub const REMOTE_CONFIG_VALUE: &str =
     "Lcom/google/firebase/remoteconfig/FirebaseRemoteConfigValue;";
 pub const FIREBASE_STORAGE: &str = "Lcom/google/firebase/storage/FirebaseStorage;";
@@ -640,6 +642,8 @@ pub struct GmsState {
     pub rc_obj: Option<ObjRef>,
     pub rc_server: Vec<(String, String)>,
     pub rc_pending: Vec<(String, String)>,
+    /// Código de erro programado para o fetch: o fetch falha e não há dados pendentes.
+    pub rc_fetch_failure: Option<i32>,
     pub rc_values: Vec<(String, String)>,
     pub rc_defaults: Vec<(String, String)>,
     pub rc_value_objs: HashMap<ObjRef, (String, i32)>,
@@ -3638,6 +3642,12 @@ fn remote_config_instance(
             Value::Obj(void_task(vm)?)
         }
         "fetch" => {
+            if let Some(code) = vm.fw.gms.rc_fetch_failure {
+                // Fetch falho: nada fica pendente, e a configuração ativa não muda.
+                vm.fw.gms.rc_pending.clear();
+                let msg = format!("Remote Config fetch error ({code})");
+                return Ok(Some(Value::Obj(failed_task(vm, RC_FETCH_EXCEPTION, &msg)?)));
+            }
             vm.fw.gms.rc_pending = vm.fw.gms.rc_server.clone();
             Value::Obj(void_task(vm)?)
         }
@@ -3656,6 +3666,12 @@ fn remote_config_instance(
             }
         }
         "fetchAndActivate" => {
+            if let Some(code) = vm.fw.gms.rc_fetch_failure {
+                // Falha do fetch: os valores ativados (ou os defaults) continuam valendo.
+                vm.fw.gms.rc_pending.clear();
+                let msg = format!("Remote Config fetch error ({code})");
+                return Ok(Some(Value::Obj(failed_task(vm, RC_FETCH_EXCEPTION, &msg)?)));
+            }
             // fetch seguido de activate (mesma lógica, sem recursão DEX).
             vm.fw.gms.rc_pending = vm.fw.gms.rc_server.clone();
             let mut changed = false;
@@ -6452,6 +6468,16 @@ impl Engine {
     }
 
     /// Valores que o próximo fetch do RemoteConfig vai buscar.
+    /// Programa a falha do fetch do Remote Config (ex.: sem rede ou limitado pelo servidor).
+    pub fn gms_remoteconfig_set_fetch_failure(&mut self, code: i32) {
+        self.fw.gms.rc_fetch_failure = Some(code);
+    }
+
+    /// Remove a falha programada do fetch.
+    pub fn gms_remoteconfig_clear_fetch_failure(&mut self) {
+        self.fw.gms.rc_fetch_failure = None;
+    }
+
     pub fn gms_remoteconfig_program(&mut self, values: Vec<(String, String)>) {
         for (k, v) in values {
             upsert(&mut self.fw.gms.rc_server, k, v);

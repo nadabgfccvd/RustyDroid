@@ -495,3 +495,116 @@ fn location_failure_blocks_reads_and_registrations_then_recovers() {
         "remoção desfaz o registro"
     );
 }
+
+fn rc_string(mut e: &mut Engine, rc: u32, key: &str) -> String {
+    let k = s(e, key);
+    let v = ci!(
+        e,
+        REMOTE_CONFIG,
+        "getString",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        rc,
+        [k]
+    )
+    .unwrap();
+    sv(e, v)
+}
+
+#[test]
+fn remote_config_failed_fetch_keeps_active_values_then_recovers() {
+    let mut e = engine();
+    let rc = ov(cs!(
+        e,
+        REMOTE_CONFIG,
+        "getInstance",
+        "()Lcom/google/firebase/RemoteConfig/FirebaseRemoteConfig;",
+        []
+    )
+    .unwrap());
+
+    // 1) Sucesso: fetchAndActivate aplica o valor servido.
+    e.gms_remoteconfig_program(vec![("banner".into(), "v1".into())]);
+    let t1 = ov(ci!(
+        e,
+        REMOTE_CONFIG,
+        "fetchAndActivate",
+        "()Lcom/google/android/gms/tasks/Task;",
+        rc,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t1, "isSuccessful"), 1, "fetch inicial");
+    assert_eq!(rc_string(&mut e, rc, "banner"), "v1");
+
+    // 2) Erro no fetch: o servidor tem v2, mas a falha impede a troca; v1 continua ativo.
+    e.gms_remoteconfig_program(vec![("banner".into(), "v2".into())]);
+    e.gms_remoteconfig_set_fetch_failure(1);
+    let t2 = ov(ci!(
+        e,
+        REMOTE_CONFIG,
+        "fetchAndActivate",
+        "()Lcom/google/android/gms/tasks/Task;",
+        rc,
+        []
+    )
+    .unwrap());
+    assert_eq!(
+        task_flag(&mut e, t2, "isSuccessful"),
+        0,
+        "fetchAndActivate falha"
+    );
+    let exc = ov(ci!(e, TASK, "getException", "()Ljava/lang/Exception;", t2, []).unwrap());
+    assert_eq!(e.heap.class_of(exc).unwrap(), RC_FETCH_EXCEPTION);
+    assert_eq!(
+        rc_string(&mut e, rc, "banner"),
+        "v1",
+        "valor ativo preservado após falha"
+    );
+
+    // Caminho separado fetch + activate: fetch falho não deixa nada pendente para ativar.
+    let t3 = ov(ci!(
+        e,
+        REMOTE_CONFIG,
+        "fetch",
+        "()Lcom/google/android/gms/tasks/Task;",
+        rc,
+        []
+    )
+    .unwrap());
+    assert_eq!(task_flag(&mut e, t3, "isSuccessful"), 0, "fetch falha");
+    let _ = ci!(
+        e,
+        REMOTE_CONFIG,
+        "activate",
+        "()Lcom/google/android/gms/tasks/Task;",
+        rc,
+        []
+    );
+    assert_eq!(
+        rc_string(&mut e, rc, "banner"),
+        "v1",
+        "activate sem fetch válido não troca"
+    );
+
+    // 3) Recuperação: sem falha, o próximo fetchAndActivate aplica v2.
+    e.gms_remoteconfig_clear_fetch_failure();
+    let t4 = ov(ci!(
+        e,
+        REMOTE_CONFIG,
+        "fetchAndActivate",
+        "()Lcom/google/android/gms/tasks/Task;",
+        rc,
+        []
+    )
+    .unwrap());
+    assert_eq!(
+        task_flag(&mut e, t4, "isSuccessful"),
+        1,
+        "fetch após recuperação"
+    );
+    assert_eq!(
+        rc_string(&mut e, rc, "banner"),
+        "v2",
+        "novo valor após recuperação"
+    );
+}

@@ -354,8 +354,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "(Futuro) mapa chave→valor programável; fetch completa sem rede."
-notes = "Mapa de valores programável (Engine::gms_remoteconfig_program) com semântica fetch→pendentes→activate fiel: fetchAndActivate devolve Boolean de mudança, getString/getLong/getBoolean/getDouble e getValue com source (0 default/1 remote/2 static), setDefaultsAsync. Sem pedidos ao servidor de Remote Config."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "Mapa de valores programável (Engine::gms_remoteconfig_program) com semântica fetch→pendentes→activate fiel: fetchAndActivate devolve Boolean de mudança, getString/getLong/getBoolean/getDouble e getValue com source (0 default/1 remote/2 static), setDefaultsAsync. Sem pedidos ao servidor de Remote Config. Falha programável (E, critério de erro e ciclo): Engine::gms_remoteconfig_set_fetch_failure(code) faz fetch e fetchAndActivate falharem com FirebaseRemoteConfigFetchException, sem valor pendente; os valores ativados continuam valendo; gms_remoteconfig_clear_fetch_failure restaura."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-firebase-remoteconfig"
 key_apis = ["com.google.firebase.remoteconfig.FirebaseRemoteConfig.fetchAndActivate"]
 
