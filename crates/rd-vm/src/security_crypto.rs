@@ -12,8 +12,13 @@
 //!   são compatíveis com um dispositivo real nos dois sentidos.
 //! - Só os VALORES são cifrados. Os nomes das chaves ficam em claro na
 //!   memória do host; o AES-SIV do Tink cifraria também os nomes.
-//! - O estado dura só a sessão do Engine, como o próprio AndroidKeyStore do
-//!   host. Nada é gravado no VFS.
+//! - Persistência entre sessões (VFS app-private, `Engine::set_vfs`): cada
+//!   arquivo cifrado vai para `files/rd_encrypted/<nome em hex>.enc` a cada
+//!   `commit`/`apply` e na criação, e é recarregado por `create` em outra
+//!   Engine com o mesmo VFS. As chaves do AndroidKeyStore vão para
+//!   `files/rd_keystore/` (`jkeystore.rs`). Desvios: o material da chave fica
+//!   em claro no VFS, sem hardware (TEE/StrongBox), e o formato do arquivo é
+//!   próprio, não o do Tink. Arquivo corrompido falha fechado (GSE).
 //! - `create` é interceptado mesmo com o DEX da biblioteca presente: o
 //!   caminho Tink exige JCA/keyset fora do modelo.
 //! - A biblioteca tem um único esquema por parâmetro (AES256_SIV para chave,
@@ -270,6 +275,82 @@ fn open(
 
 // ── create ──────────────────────────────────────────────────────────────
 
+// ── persistência (VFS app-private) ───────────────────────
+
+const FILE_MAGIC: &str = "RDENC1";
+
+/// Caminho do arquivo cifrado. Nome em hex: não há separador de caminho.
+fn file_path(vm: &Engine, file: &str) -> String {
+    format!(
+        "{}/rd_encrypted/{}.enc",
+        jkeystore::app_files_dir(&vm.fw.package_name),
+        jkeystore::hex_encode(file.as_bytes())
+    )
+}
+
+/// Formato de texto: magic, `alias <hex>`, depois uma linha
+/// `e <hex chave> <hex iv> <hex ciphertext||tag>` por entrada.
+fn encode_file(file: &EncFile) -> Vec<u8> {
+    use jkeystore::hex_encode;
+    let mut out = format!(
+        "{FILE_MAGIC}\nalias {}\n",
+        hex_encode(file.alias.as_bytes())
+    );
+    for (key, sealed) in &file.entries {
+        out.push_str(&format!(
+            "e {} {} {}\n",
+            hex_encode(key.as_bytes()),
+            hex_encode(&sealed.iv),
+            hex_encode(&sealed.ct)
+        ));
+    }
+    out.into_bytes()
+}
+
+fn decode_file(bytes: &[u8]) -> Option<EncFile> {
+    use jkeystore::hex_decode;
+    let text = std::str::from_utf8(bytes).ok()?;
+    let mut lines = text.lines();
+    if lines.next()? != FILE_MAGIC {
+        return None;
+    }
+    let alias_hex = lines.next()?.strip_prefix("alias ")?;
+    let alias = String::from_utf8(hex_decode(alias_hex)?).ok()?;
+    let mut entries = BTreeMap::new();
+    for line in lines {
+        let mut parts = line.split(' ');
+        if parts.next()? != "e" {
+            return None;
+        }
+        let key = String::from_utf8(hex_decode(parts.next()?)?).ok()?;
+        let iv: [u8; 12] = hex_decode(parts.next()?)?.try_into().ok()?;
+        let ct = hex_decode(parts.next()?)?;
+        if parts.next().is_some() {
+            return None;
+        }
+        entries.insert(key, Sealed { iv, ct });
+    }
+    Some(EncFile { alias, entries })
+}
+
+/// Carrega o arquivo do VFS. `None` = não existe. Arquivo presente e inválido
+/// é erro tipado, não vazio, para não sobrescrever dados.
+fn load_file(vm: &Engine, file: &str) -> Result<Option<EncFile>, VmExit> {
+    let Some(bytes) = crate::jfile::read_bytes(&vm.fw.vfs, &file_path(vm, file)) else {
+        return Ok(None);
+    };
+    decode_file(&bytes)
+        .map(Some)
+        .ok_or_else(|| exc(GSE, format!("arquivo cifrado '{file}' corrompido")))
+}
+
+/// Regrava o arquivo inteiro. Não faz nada se o arquivo não está em memória.
+fn persist_file(vm: &Engine, file: &str) {
+    if let Some(f) = vm.fw.androidx.enc.files.get(file) {
+        crate::jfile::write_bytes(&vm.fw.vfs, &file_path(vm, file), encode_file(f));
+    }
+}
+
 /// Só as duas assinaturas públicas de `EncryptedSharedPreferences.create`.
 pub fn is_create_sig(sig: &str) -> bool {
     sig == CREATE_WITH_KEY || sig == CREATE_WITH_ALIAS
@@ -296,11 +377,17 @@ pub fn create(vm: &mut Engine, sig: &str, args: &[Value]) -> Result<Value, VmExi
     obj_arg(args, 3, "prefKeyEncryptionScheme")?;
     obj_arg(args, 4, "prefValueEncryptionScheme")?;
 
+    jkeystore::ensure_key_loaded(vm, &alias);
     if !vm.fw.keystore.keys.contains_key(&alias) {
         return Err(exc(
             GSE,
             format!("chave mestra '{alias}' ausente no AndroidKeyStore"),
         ));
+    }
+    if !vm.fw.androidx.enc.files.contains_key(&file) {
+        if let Some(loaded) = load_file(vm, &file)? {
+            vm.fw.androidx.enc.files.insert(file.clone(), loaded);
+        }
     }
     match vm.fw.androidx.enc.files.get(&file) {
         Some(f) if f.alias != alias => {
@@ -318,6 +405,7 @@ pub fn create(vm: &mut Engine, sig: &str, args: &[Value]) -> Result<Value, VmExi
                     entries: BTreeMap::new(),
                 },
             );
+            persist_file(vm, &file);
         }
     }
     let name = intrinsics::alloc_string(vm, file)?;
@@ -559,6 +647,7 @@ fn apply(vm: &mut Engine, editor: ObjRef) -> Result<(), VmExit> {
             }
         }
     }
+    persist_file(vm, &file);
     let listeners = vm
         .fw
         .androidx
@@ -751,6 +840,11 @@ mod tests {
     /// `create` pela API pública de dispatch (`androidx::call_static`),
     /// com a assinatura deprecada (alias em string).
     fn create_file(vm: &mut Engine, file: &str, alias: &str) -> ObjRef {
+        obj(try_create_file(vm, file, alias).unwrap())
+    }
+
+    /// `create` que devolve o erro tipado (testes de falha de sessão).
+    fn try_create_file(vm: &mut Engine, file: &str, alias: &str) -> Result<Option<Value>, VmExit> {
         let f = js(vm, file);
         let a = js(vm, alias);
         let ctx = obj(Some(Value::Obj(
@@ -768,14 +862,29 @@ mod tests {
                 .alloc_instance("Ljava/lang/Object;".into(), vec![])
                 .unwrap(),
         );
-        let r = crate::androidx::call_static(
+        crate::androidx::call_static(
             vm,
             ENCRYPTED_PREFS,
             "create",
             CREATE_WITH_ALIAS,
             &[f, a, Value::Obj(ctx), k_scheme, v_scheme],
-        );
-        obj(r.unwrap())
+        )
+    }
+
+    /// `KeyStore.deleteEntry` pelo caminho do app (instância do provedor).
+    fn delete_key(vm: &mut Engine, alias: &str) {
+        let p = js(vm, PROVIDER);
+        let ks = obj(jkeystore::static_intrinsic(vm, KEYSTORE, "getInstance", &[p]).unwrap());
+        let a = js(vm, alias);
+        jkeystore::instance_intrinsic(
+            vm,
+            KEYSTORE,
+            "deleteEntry",
+            "(Ljava/lang/String;)V",
+            ks,
+            &[a],
+        )
+        .unwrap();
     }
 
     fn get(
@@ -1350,6 +1459,101 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, VmExit::Exception(t) if t.class == SEC));
+    }
+
+    // ── persistência entre sessões (VFS compartilhado) ──────
+
+    /// Engine A grava valor e chave no VFS; Engine B, sem nada em memória,
+    /// lê o valor de volta. O texto puro não aparece no arquivo gravado.
+    #[test]
+    fn values_and_keystore_key_survive_a_new_engine_on_the_same_vfs() {
+        let vfs = crate::jfile::VfsHandle::new();
+        let mut a = vm();
+        a.set_vfs(vfs.clone());
+        make_key(&mut a, "chave.mestra");
+        let prefs = create_file(&mut a, FILE, "chave.mestra");
+        let e = edit(&mut a, prefs);
+        put_string(&mut a, e, "token", "segredo-123");
+        editor(&mut a, e, "commit", "()Z", &[]).unwrap();
+
+        let stored =
+            crate::jfile::read_bytes(&vfs, &file_path(&a, FILE)).expect("arquivo cifrado no VFS");
+        assert!(!stored.windows(10).any(|w| w == b"segredo-123"));
+
+        let mut b = vm();
+        b.set_vfs(vfs.clone());
+        let prefs = create_file(&mut b, FILE, "chave.mestra");
+        assert_eq!(
+            get_string(&mut b, prefs, "token", "padrao"),
+            Some("segredo-123".into())
+        );
+    }
+
+    /// Remoção de chave (`deleteEntry`) vale para a próxima sessão.
+    #[test]
+    fn deleted_keystore_key_is_not_loaded_by_the_next_engine() {
+        let vfs = crate::jfile::VfsHandle::new();
+        let mut a = vm();
+        a.set_vfs(vfs.clone());
+        make_key(&mut a, "chave.mestra");
+        create_file(&mut a, FILE, "chave.mestra");
+        delete_key(&mut a, "chave.mestra");
+
+        let mut b = vm();
+        b.set_vfs(vfs.clone());
+        let err = try_create_file(&mut b, FILE, "chave.mestra").unwrap_err();
+        assert!(matches!(err, VmExit::Exception(t) if t.class == GSE));
+    }
+
+    /// Byte alterado no ciphertext gravado: a sessão seguinte falha fechado.
+    #[test]
+    fn tampered_file_on_the_vfs_fails_authentication_in_the_next_engine() {
+        let vfs = crate::jfile::VfsHandle::new();
+        let mut a = vm();
+        a.set_vfs(vfs.clone());
+        make_key(&mut a, "chave.mestra");
+        let prefs = create_file(&mut a, FILE, "chave.mestra");
+        let e = edit(&mut a, prefs);
+        put_string(&mut a, e, "token", "x");
+        editor(&mut a, e, "commit", "()Z", &[]).unwrap();
+
+        // Último caractere antes do '\n' é o último nibble da tag GCM.
+        let path = file_path(&a, FILE);
+        let mut bytes = crate::jfile::read_bytes(&vfs, &path).unwrap();
+        let i = bytes.len() - 2;
+        bytes[i] = if bytes[i] == b'0' { b'1' } else { b'0' };
+        crate::jfile::write_bytes(&vfs, &path, bytes);
+
+        let mut b = vm();
+        b.set_vfs(vfs.clone());
+        let prefs = create_file(&mut b, FILE, "chave.mestra");
+        let key = js(&mut b, "token");
+        let err = get(
+            &mut b,
+            prefs,
+            "getString",
+            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            &[key, Value::Null],
+        )
+        .unwrap_err();
+        assert!(matches!(err, VmExit::Exception(t) if t.class == SEC));
+    }
+
+    /// Arquivo presente mas ilegível não vira arquivo vazio (sem perda silenciosa).
+    #[test]
+    fn corrupted_file_on_the_vfs_is_a_typed_error_not_an_empty_file() {
+        let vfs = crate::jfile::VfsHandle::new();
+        let mut a = vm();
+        a.set_vfs(vfs.clone());
+        make_key(&mut a, "chave.mestra");
+        create_file(&mut a, FILE, "chave.mestra");
+        crate::jfile::write_bytes(&vfs, &file_path(&a, FILE), b"lixo\n".to_vec());
+
+        let mut b = vm();
+        b.set_vfs(vfs.clone());
+        make_key(&mut b, "chave.mestra");
+        let err = try_create_file(&mut b, FILE, "chave.mestra").unwrap_err();
+        assert!(matches!(err, VmExit::Exception(t) if t.class == GSE));
     }
 
     #[test]
