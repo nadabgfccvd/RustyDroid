@@ -709,6 +709,10 @@ pub struct GmsState {
     pub cast_device_name: Option<String>,
     pub cast_session_manager: Option<ObjRef>,
     pub cast_session: Option<ObjRef>,
+    /// Código de erro programado para a conexão Cast: a tentativa falha e não cria sessão.
+    pub cast_connect_failure: Option<i32>,
+    /// Último erro de conexão Cast (lido pelo host; limpo por uma tentativa bem-sucedida).
+    pub cast_last_error: Option<i32>,
     pub cast_listeners: Vec<ObjRef>,
     // Nearby
     pub nearby_endpoints: Vec<(String, String)>,
@@ -6602,6 +6606,12 @@ impl Engine {
 
     /// Liga uma sessão Cast programada (getCastState → CONNECTED).
     pub fn gms_cast_connect(&mut self, device_name: &str) {
+        // Falha programada: a tentativa não cria sessão nem muda o estado (continua NO_DEVICES).
+        if let Some(code) = self.fw.gms.cast_connect_failure {
+            self.fw.gms.cast_last_error = Some(code);
+            return;
+        }
+        self.fw.gms.cast_last_error = None;
         let before = cast_state_of(&self.fw.gms);
         self.fw.gms.cast_device_name = Some(device_name.to_string());
         if self.fw.gms.cast_session.is_none() {
@@ -6615,6 +6625,21 @@ impl Engine {
             // propagar; a entrega segue a mesma guarda dos outros listeners.
             let _ = fire_guarded(self, PendingFire::Cast(after));
         }
+    }
+
+    /// Programa a falha das tentativas de conexão Cast.
+    pub fn gms_cast_set_connect_failure(&mut self, code: i32) {
+        self.fw.gms.cast_connect_failure = Some(code);
+    }
+
+    /// Remove a falha programada da conexão Cast.
+    pub fn gms_cast_clear_connect_failure(&mut self) {
+        self.fw.gms.cast_connect_failure = None;
+    }
+
+    /// Último erro de conexão Cast, se a última tentativa falhou.
+    pub fn gms_cast_last_error(&self) -> Option<i32> {
+        self.fw.gms.cast_last_error
     }
 
     /// Finaliza a sessão Cast programada e avisa os `CastStateListener`.
