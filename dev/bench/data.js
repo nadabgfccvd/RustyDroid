@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794148100699,
+  "lastUpdate": 1794150595420,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5255,6 +5255,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3190,
             "range": "± 25",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9289f0e39b8918eac49fbcfea1d375dff4d7977a",
+          "message": "fix(vm): Room — migrações, requireMigration e close (Apêndice D, ST-02) (#586)\n\nFixture real (Room 2.6.1 processado pelo javac, DEX por D8) mostrou três\ndesvios do VM. Corrigidos com aprovação do usuário, por afetarem todos os apps:\n\n- addMigrations grava no MigrationContainer real do Room. Antes era no-op:\n  a migração 1→2 nunca rodava.\n- requireMigration segue o Room real: sem fallbackToDestructiveMigration(),\n  versão sem caminho de migração lança IllegalStateException. Antes, o VM\n  recriava a tabela em silêncio e perdia os dados.\n- SQLiteDatabase.close() e SQLiteOpenHelper.close() liberam a conexão do\n  backend (persistem antes). Antes a conexão ficava viva e a tabela TEMP do\n  invalidation tracker do Room sobrevivia: a reabertura falhava com\n  \"table room_table_modification_log already exists\".\n\nTestes: crates/rd-vm/tests/jetpack_room.rs (3 cenários, #[ignore] porque o\nDEX não é versionado: .dex é bloqueante no RD Sentinel). Gerador:\nscripts/gen-room-fixture.sh; fontes em tests/fixtures/room/src.\nContra o VM anterior, os três falham; com a correção, passam.\nrd-vm completo com --include-ignored: zero falhas.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T12:09:37-03:00",
+          "tree_id": "aaa61ca128aca35693bd0bcea17a8e1b6f8fe016",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9289f0e39b8918eac49fbcfea1d375dff4d7977a"
+        },
+        "date": 1794150594827,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1880,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1934,
+            "range": "± 227",
             "unit": "ns/iter"
           }
         ]
