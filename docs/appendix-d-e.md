@@ -445,7 +445,10 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   registro de atualizações falharem com `ApiException` sem registrar callback; remover continua disponível.
   Testes no mesmo arquivo, com callback DEX que prova a entrega do convidado.
 
-Serviços parciais ainda sem caminho de erro programável: Maps, Billing, Auth, Ads, Cast, Nearby, Integrity
-SafetyNet (`attest`), Tasks (sem falha de serviço além de `setException`), Firebase (core, analytics, auth,
-messaging, crashlytics, firestore, rtdb, remote config, storage) e GMS core (disponibilidade já tem códigos).
-Próximas entregas desta etapa seguem essa ordem.
+- **Remote Config** (`firebase-remoteconfig`): `gms_remoteconfig_set_fetch_failure(code)` faz `fetch` e
+  `fetchAndActivate` falharem com `FirebaseRemoteConfigFetchException`; os valores ativados continuam valendo
+  e nenhum valor fica pendente para o `activate`. Testes no mesmo arquivo.
+
+Serviços parciais ainda sem caminho de erro programável: Maps, Cast, Nearby, Auth, Ads, SafetyNet (`attest`),
+Firebase (core, analytics, auth, messaging, crashlytics, firestore, rtdb, storage) e Billing (já tem
+resultado de cancelamento). Próximas entregas desta etapa seguem essa ordem.
