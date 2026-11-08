@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794152029182,
+  "lastUpdate": 1794153532747,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5363,6 +5363,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1963,
             "range": "± 28",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d040eb69c6c6019f14c4b6936bb7a02bd1be75e8",
+          "message": "fix(vm): navigation — popBackStack esvazia a pilha ao desempilhar a raiz (Apêndice D, S14) (#589)\n\nSegue o AOSP NavController: popBackStack() é popBackStack(atual, true); o retorno\né popped && dispatch, que não ocorre com pilha vazia. Desempilhar a raiz agora\nesvazia a pilha (getCurrentDestination() nulo) e retorna false. navigateUp() na\nraiz segue sem desempilhar, como no AOSP.\n\nAprovado pelo usuário (2026-11-08): pesquisar e escolher a melhor solução.\nTeste: dex_navigation_root_pop_empties_stack_like_android (mutação derruba).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T12:58:31-03:00",
+          "tree_id": "7d2e351dcf5bea98f7fc8f07b2649bd3f35abbb5",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/d040eb69c6c6019f14c4b6936bb7a02bd1be75e8"
+        },
+        "date": 1794153531715,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2756,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2757,
+            "range": "± 17",
             "unit": "ns/iter"
           }
         ]
