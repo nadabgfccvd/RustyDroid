@@ -58,16 +58,19 @@ regenerou os CSVs e o Markdown byte a byte iguais aos commitados. Ver §5, Apên
 | Flag `instant` + modo de app instantâneo (2c) | flag `instant` em 26 permissões do `core/res` do AOSP (`data/permissions.toml`); `install` com `instant` (opt-in, default false) → `PermissionEngine::set_instant`: permissão sem a flag vira `DeniedSystem`; `grant`, `set_role`, `grant_partial_media` e `update` respeitam; `isInstantApp` lê `Engine::instant_app` | `instant_flag_in_table_matches_framework_manifest`; `instant_app_keeps_only_instant_capable_grants`; `instant_app_cannot_be_granted_non_instant_permission`; `instant_rule_applies_to_permissions_requested_by_update`; `instant_app_cannot_receive_non_instant_role_permissions`; `install_as_instant_app_limits_grants_and_fixes_mode` (MCP); `is_instant_app_follows_install_mode` (VM) |
 | `revokeWhenRequested` + split permissions (2b) | `[[split]]` em `data/permissions.toml` (tabela do `platform.xml`); `implicit_permissions`, `apply_implicit` no `install`; `PermissionEngine::update` (ciclo de update, chamado pelo `install` do agente quando o pacote já existe); `grant` limpa a flag | `implicit_grant_is_revoked_when_updated_app_requests_it_explicitly`; `implicit_grant_is_kept_while_app_still_does_not_request_it`; `explicit_request_below_m_drops_flag_without_revoking`; `nearby_devices_grant_is_preserved_when_background_location_is_granted`; `user_grant_clears_revoke_when_requested_flag`; `split_implicit_permissions_depend_on_target_sdk` |
 
-### Bloqueios (com fonte oficial consultada em 2026-11-06; não implementados)
+### Resolvido após a pesquisa (2026-11-07, PRs #581–#583)
 
-Estado após a pesquisa: as três flags têm fonte para o que a flag **é**, mas nenhuma tem
-fonte completa para o que ela **faz no runtime**. Por isso continuam sem implementação.
-Pela regra de conclusão de B (§1), cada uma está registrada como bloqueio com fonte.
+Os três bloqueios desta seção foram resolvidos com as decisões do usuário (§6, itens 2a–2c).
+A pesquisa original (fontes e pré-requisitos) continua abaixo, como registro.
 
-| Flag | Evidência encontrada | Por que não implementar agora |
-|---|---|---|
-| `instant` | Fonte oficial: `PermissionInfo.PROTECTION_FLAG_INSTANT` (API 27, valor 0x1000), "corresponding to the instant value of R.attr.protectionLevel" ([developer.android.com, PermissionInfo](https://developer.android.com/reference/android/content/pm/PermissionInfo)). O valor `instant` de `protectionLevel` é descrito por terceiros como "esta permissão pode ser concedida a apps instantâneos" (tabela de flags do IzzyOnDroid; a doc oficial só dá a constante). | Não é uma regra de runtime do app, é um atributo de declaração que só tem efeito para apps instantâneos. O runtime não tem modelo de app instantâneo, e `data/permissions.toml` não marca nenhuma permissão com ela. Implementar exigiria o modelo de instalação instantânea. |
-| `revokeWhenRequested` | Fonte: AOSP. `PackageManager.FLAG_PERMISSION_REVOKE_WHEN_REQUESTED` é uma flag de permissão (`PackageManager.permissionFlagToString`); o `PackageManagerShellCommand` a expõe como `revoke-when-requested` em `set-permission-flags`. No `PermissionController` (`KotlinUtils.kt`, caminho de concessão) a flag é limpa junto com a concessão. | A documentação pública da API não diz **quando** a revogação acontece (só que a flag existe). O trecho de revogação em `PermissionManagerServiceImpl.java` (29 partes no googlesource) não foi lido por completo (resolvido na segunda rodada abaixo). Sem essa leitura, implementar seria chute. Próximo passo: ler esse trecho. |
+| Flag | Decisão | Implementação | Testes |
+|---|---|---|---|
+| `softRestriction` (2a) | Forma fraca decidida pela pesquisa: política da plataforma (`SoftRestrictedPermissionPolicy`) só para `READ/WRITE_EXTERNAL_STORAGE`; demais permissões mantêm concessão plena | `soft_may_grant`, `soft_weak_form`, recusa em `grant()` (`soft_blocked`); flag em `data/permissions.toml` (#581) | `soft_restricted_storage_is_refused_below_q_without_allowlist`; `soft_restricted_storage_is_granted_in_full_from_api_29`; `soft_restricted_permission_without_platform_rule_keeps_full_grant` |
+| `revokeWhenRequested` (2b) | Aprovado: ciclo de update de pacote e conjunto de permissões implícitas por versão | `[[split]]` em `data/permissions.toml` (tabela do `platform.xml`); `implicit_permissions`, `apply_implicit` no `install`; `PermissionEngine::update`; `grant` limpa a flag (#582) | `implicit_grant_is_revoked_when_updated_app_requests_it_explicitly`; `implicit_grant_is_kept_while_app_still_does_not_request_it`; `revoke_when_requested` |
+| `instant` (2c) | Aprovado: modelo de app instantâneo, opt-in por instalação (default falso) | Flag `instant` em 26 permissões do `core/res` do AOSP; `PermissionEngine::set_instant`; permissão sem a flag vira `DeniedSystem`; `grant`, `set_role`, `grant_partial_media` e `update` respeitam; `isInstantApp` lê `Engine::instant_app` (#583) | `instant_app_cannot_be_granted_non_instant_permission`; `instant_app_keeps_only_instant_capable_grants`; `instant_app_cannot_receive_non_instant_role_permissions`; `instant_flag_in_table_matches_framework_manifest`; `instant_rule_applies_to_permissions_requested_by_update` |
+
+Desvio conhecido: `isInstantApp` só muda quando o VM é configurado como app instantâneo;
+o padrão continua `false`, então apps existentes não mudam de comportamento.
 
 #### Segunda rodada de pesquisa (2026-11-06): fontes lidas e pré-requisitos
 
