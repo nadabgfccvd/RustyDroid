@@ -975,6 +975,21 @@ fn call_dex_any_inner(
     }
     Ok(None)
 }
+/// Limites documentados do Crashlytics: no máximo 64 pares chave/valor por
+/// relatório; chaves novas além do limite são ignoradas (regravar uma chave já
+/// existente continua valendo); chave e valor acima de 1024 caracteres são
+/// truncados. Conta caracteres (`char`), não bytes ou unidades UTF-16.
+pub const CRASHLYTICS_MAX_KEYS: usize = 64;
+pub const CRASHLYTICS_MAX_KV_CHARS: usize = 1024;
+
+fn crashlytics_set_key(pairs: &mut Vec<(String, String)>, k: String, v: String) {
+    let k: String = k.chars().take(CRASHLYTICS_MAX_KV_CHARS).collect();
+    let v: String = v.chars().take(CRASHLYTICS_MAX_KV_CHARS).collect();
+    if pairs.iter().any(|(ek, _)| *ek == k) || pairs.len() < CRASHLYTICS_MAX_KEYS {
+        upsert(pairs, k, v);
+    }
+}
+
 fn upsert(pairs: &mut Vec<(String, String)>, k: String, v: String) {
     if let Some(e) = pairs.iter_mut().find(|(ek, _)| *ek == k) {
         e.1 = v;
@@ -2787,7 +2802,7 @@ fn crashlytics_instance(
                     .get(1)
                     .map(|a| value_display(vm, a))
                     .unwrap_or_default();
-                upsert(&mut vm.fw.gms.crashlytics_keys, k, v);
+                crashlytics_set_key(&mut vm.fw.gms.crashlytics_keys, k, v);
             }
             Value::Null
         }
@@ -2795,7 +2810,7 @@ fn crashlytics_instance(
             if let Some(r) = oarg(args, 0) {
                 let pairs = vm.fw.gms.ckav_objs.get(&r).cloned().unwrap_or_default();
                 for (k, v) in pairs {
-                    upsert(&mut vm.fw.gms.crashlytics_keys, k, v);
+                    crashlytics_set_key(&mut vm.fw.gms.crashlytics_keys, k, v);
                 }
             }
             Value::Null
@@ -6386,6 +6401,11 @@ impl Engine {
     /// Quantos eventos/propriedades foram rejeitados por nome inválido.
     pub fn gms_analytics_rejected(&self) -> usize {
         self.fw.gms.analytics_rejected
+    }
+
+    /// Pares chave/valor de Crashlytics gravados (até o limite de 64).
+    pub fn gms_crashlytics_keys(&self) -> Vec<(String, String)> {
+        self.fw.gms.crashlytics_keys.clone()
     }
 
     /// Propriedades de utilizador do Analytics.
