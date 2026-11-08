@@ -1580,13 +1580,27 @@ mod appendix_b_behavior_tests {
     }
 
     #[test]
-    fn soft_restricted_permission_without_platform_rule_keeps_full_grant() {
-        // ACCESS_BACKGROUND_LOCATION tem a flag, mas a política AOSP só tem regra
-        // para storage: as demais seguem DUMMY_POLICY (concessão plena).
+    fn background_location_is_hard_restricted_until_allowlisted() {
+        // Doc oficial de Manifest.permission (API 29): ACCESS_BACKGROUND_LOCATION é
+        // hard restricted: não é concedível até o instalador allowlistar a permissão.
         const BG: &str = "android.permission.ACCESS_BACKGROUND_LOCATION";
         let mut e = engine(29, &["ACCESS_BACKGROUND_LOCATION"]);
-        assert_eq!(e.grant(BG).unwrap(), GrantState::Granted);
+        assert_eq!(e.grant(BG).unwrap(), GrantState::RuntimePending);
         assert_eq!(e.soft_weak_form(BG), None);
+        e.allow_hard_restricted(true);
+        assert_eq!(e.grant(BG).unwrap(), GrantState::Granted);
+    }
+
+    #[test]
+    fn soft_restricted_permission_without_platform_rule_keeps_full_grant() {
+        // Sem regra da política AOSP, a permissão segue DUMMY_POLICY (concessão plena).
+        // CAMERA é runtime comum: não tem softRestriction nem hardRestricted.
+        let mut e = engine(29, &["CAMERA"]);
+        assert_eq!(
+            e.grant("android.permission.CAMERA").unwrap(),
+            GrantState::Granted
+        );
+        assert_eq!(e.soft_weak_form("android.permission.CAMERA"), None);
     }
 
     fn manifest_for(target: u32, perms: &[&str]) -> Manifest {
@@ -1666,6 +1680,8 @@ mod appendix_b_behavior_tests {
         );
         // BLUETOOTH_SCAN é implícita (split de BLUETOOTH abaixo de 31) e tem a flag
         assert!(e.revoke_when_requested(BT_SCAN));
+        // BG_LOC é hard restricted: a concessão exige a allowlist do instalador.
+        e.allow_hard_restricted(true);
         assert_eq!(e.grant(BG_LOC).unwrap(), GrantState::Granted);
         // simula a concessão já feita da permissão implícita
         e.states.insert(BT_SCAN.to_string(), GrantState::Granted);

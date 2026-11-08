@@ -30,7 +30,7 @@ name = "ACCESS_BACKGROUND_LOCATION"
 level = "dangerous"
 group = "LOCATION"
 since_api = 29
-flags = ["runtime", "softRestriction", "instant"]
+flags = ["runtime", "hardRestricted", "instant"]
 description = "Access device location while the app is in the background (restricted since API 29)."
 
 # --- grupo CAMERA ---

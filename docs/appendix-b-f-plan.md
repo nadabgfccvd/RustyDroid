@@ -26,7 +26,7 @@ Os números do texto da spec estão defasados. Valores medidos neste commit:
 | `api-coverage.toml` (C) | 106 superfícies, 17 domínios | 4 supported · 102 partial · 0 stub · 0 not_implemented |
 | `jetpack.toml` (D) | 46 bibliotecas, 6 categorias | 25 partial · 3 stub · 18 not_implemented (medido em 2026-11-06) |
 | `gms.toml` (E) | 21 serviços, 3 categorias | 20 partial · 1 not_implemented (ML Kit, fora de escopo por decisão do usuário) |
-| `permissions.toml` (B) | 195 permissões, 13 roles | 5 com `hardRestricted`; 5 com `role = "SMS"` (após este PR) |
+| `permissions.toml` (B) | 195 permissões, 13 roles | 6 com `hardRestricted` (inclui ACCESS_BACKGROUND_LOCATION); 5 com `role = "SMS"` (após este PR) |
 | Catálogo MCP | 52 tools | inclui `permissions_auto_revoke` e `permissions_role` (Apêndice B6) |
 
 O inventário literal de C está medido e commitado em `docs/appendix-c-inventory.md`
@@ -360,7 +360,7 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
 1. **offline-device (F): resolvido pelo usuário em 2026-11-05** — mapeado para `PROVISIONING_ALLOW_OFFLINE` com a ressalva da §4. Se houver uma action de device feature oficial, substituir a linha da §4.
 2. **revokeWhenRequested, instant, softRestriction (B):** resolvido pelo usuário (autonomia para pesquisar e implementar com base em fonte oficial). Resultado da pesquisa na §3.
 2a. **softRestriction (B), forma fraca: resolvido por pesquisa (autonomia do usuário, 2026-11-07).** Fonte da regra: AOSP `SoftRestrictedPermissionPolicy.java` (regras só para READ/WRITE_EXTERNAL_STORAGE; demais = concessão plena). Forma fraca: READ sem allowlist e target < 29 = só coleções de mídia visual/áudio (doc oficial de `READ_EXTERNAL_STORAGE`); WRITE sem allowlist e target < 29 = sem acesso (grant recusado). Efeito: apps com target < 29 que pedem storage deixam de receber a forma completa pelo runtime sem allowlist. Mudança registrada no PR de 2a.
-2e. **ACCESS_BACKGROUND_LOCATION: flag divergente da doc oficial (pergunta ao usuário).** O registro marca `softRestriction`; a doc oficial (`Manifest.permission`, API 29) diz que é **hard restricted** (só concedível com allowlist do instalador). Corrigir a flag muda o grant de todo app que pede localização em background, então não foi feito sem decisão. Hoje a flag não muda o comportamento (sem regra de política = concessão plena).
+2e. **ACCESS_BACKGROUND_LOCATION: flag corrigida para hardRestricted (decisão do usuário, 2026-11-08).** A doc oficial de `Manifest.permission` (API 29) diz "hard restricted permission which cannot be held by an app until the installer on record allowlists the permission". Efeito: `grant()` recusa a permissão sem allowlist do instalador (`allow_hard_restricted`). Não alterado nesta rodada: a concessão implícita por split para targetSdk < 29 (`apply_implicit`) segue como antes; a fonte AOSP para esse caminho não foi verificada.
 2b. **revokeWhenRequested (B): ciclo de update de pacote — aprovado pelo usuário (2026-11-07) e implementado.**
    Gatilho: `install` do agente com pacote já instalado chama `PermissionEngine::update` (antes recriava o motor
    e zerava as permissões). Escopo: splits de `platform.xml` (exceto BODY_SENSORS → `health.*`, que depende de
