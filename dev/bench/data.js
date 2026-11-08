@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794164482190,
+  "lastUpdate": 1794165226506,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5795,6 +5795,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3267,
             "range": "± 24",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6bb27d9a3190648d41114cb38ac615bc0fcebcc4",
+          "message": "test(gms): limite de chaves e truncamento no Firebase Crashlytics (E) (#601)\n\nCrashlytics aceita no máximo 64 pares chave/valor: chaves novas além do\nlimite são ignoradas, e regravar uma chave existente continua valendo.\nChave e valor acima de 1024 caracteres são truncados. A regra agora vale\npara setCustomKey e setCustomKeys (CustomKeysAndValues), pelo helper\ncrashlytics_set_key. Engine::gms_crashlytics_keys expõe os pares gravados.\n\nTeste: crashlytics_custom_keys_capped_at_64_and_truncated\n(crates/rd-vm/tests/gms_erro_ciclo.rs). Mutação do limite derruba o teste\n(70 em vez de 64).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T16:13:26-03:00",
+          "tree_id": "082da1b8914cd61bb14cdef9f922317d1ac05e8d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/6bb27d9a3190648d41114cb38ac615bc0fcebcc4"
+        },
+        "date": 1794165225521,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1832,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1819,
+            "range": "± 17",
             "unit": "ns/iter"
           }
         ]
