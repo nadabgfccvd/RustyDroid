@@ -178,7 +178,7 @@ um teste. Testes em `crates/rd-vm/tests/gms.rs` e `crates/rd-vm/tests/gms_erro_c
 | firebase-core | `firebase_autoinit_and_strict_mode` (auto-init) | strict sem initializeApp (mesmo teste) | mesmo teste (init → uso) |
 | firebase-analytics | `firebase_autoinit_and_strict_mode` (evento) | `analytics_invalid_names_are_rejected_then_valid_events_recorded` (nome inválido rejeitado e contado) | mesmo teste (coleção desligada e religada) |
 | firebase-auth | `firebase_auth_full_flow` | senha errada (mesmo teste) | `firebase_auth_state_listener_fires_on_add_and_signin` |
-| firebase-messaging | `messaging_token_topics_and_delivery` | **sem caminho de erro no shim** | tópicos (mesmo teste) |
+| firebase-messaging | `messaging_token_topics_and_delivery` | `messaging_failure_blocks_token_and_topics_then_recovers` (token e tópico falham com IOException; sem efeito) | mesmo teste (deleteToken segue; recuperação restaura token e assinatura) |
 | firebase-crashlytics | `crashlytics_records_and_uncaught_bridge` | `crashlytics_custom_keys_capped_at_64_and_truncated` (limite de 64 chaves e truncamento) | crash não capturado vira registro; coleção desligada (mesmo teste) |
 | firebase-firestore | `firestore_set_get_query_and_seed` | `firestore_missing_document_reads_as_absent_not_error` | `firestore_query_filter_and_snapshot_listener` |
 | firebase-rtdb | `rtdb_set_resolve_and_listener` | **sem caminho de erro no shim** | `rtdb_remove_event_listener_stops_callbacks` |
@@ -465,9 +465,12 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   devolve o código e `getMapAsync` não entrega o `GoogleMap` enquanto a falha durar; `gms_maps_clear_load_failure()`
   recupera. Opt-in: sem falha programada, o comportamento é o de antes. Não acoplado ao `availability_code` global,
   para não mudar o comportamento de apps com mapas. Teste em `gms_erro_ciclo.rs`; mutação do bloqueio derruba o teste.
+- **Messaging** (`firebase-messaging`): falha programável (`gms_fcm_set_failure`/`gms_fcm_clear_failure`): `getToken`
+  e `subscribeToTopic`/`unsubscribeFromTopic` falham com `java.io.IOException` (SERVICE_NOT_AVAILABLE), sem efeito
+  colateral; `deleteToken` segue disponível. A exceção segue relatos do SDK (firebase-android-sdk issues #4053 e #5826),
+  não a referência oficial. Teste em `gms_erro_ciclo.rs`; mutação do guard derruba o teste.
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
 estado como ciclo). Serviços parciais ainda sem caminho de erro programável (conforme a tabela de
-erro/ciclo): Firebase Messaging, Firebase RTDB, Google Ads, SafetyNet (`attest`) e
-Google Sign-In. Próximas entregas
+erro/ciclo): Firebase RTDB, Google Ads, SafetyNet (`attest`) e Google Sign-In. Próximas entregas
 desta etapa seguem essa ordem.

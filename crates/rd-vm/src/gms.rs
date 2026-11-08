@@ -606,6 +606,9 @@ pub struct GmsState {
     pub fcm_topics: Vec<String>,
     pub fcm_auto_init_disabled: bool,
     pub fcm_token_deleted: bool,
+    /// Falha programada do FCM: token e tópicos falham com `IOException`
+    /// (SERVICE_NOT_AVAILABLE), sem efeito colateral.
+    pub fcm_failure: bool,
     pub remote_messages: HashMap<ObjRef, RemoteMsg>,
     pub rm_builders: HashMap<ObjRef, RemoteMsg>,
     pub messaging_services: Vec<ObjRef>,
@@ -2671,6 +2674,21 @@ fn messaging_instance(
             },
             _ => return Ok(None),
         }));
+    }
+    // Falha programada: token e tópicos dependem do serviço e falham sem efeito.
+    // deleteToken e setAutoInitEnabled seguem disponíveis.
+    if vm.fw.gms.fcm_failure
+        && matches!(
+            name,
+            "getToken" | "subscribeToTopic" | "unsubscribeFromTopic"
+        )
+    {
+        let exc = "Ljava/io/IOException;";
+        return Ok(Some(Value::Obj(failed_task(
+            vm,
+            exc,
+            "SERVICE_NOT_AVAILABLE",
+        )?)));
     }
     Ok(Some(match name {
         "<init>" => Value::Null,
@@ -6431,6 +6449,16 @@ impl Engine {
     /// Propriedades de utilizador do Analytics.
     pub fn gms_analytics_user_props(&self) -> Vec<(String, String)> {
         self.fw.gms.analytics_user_properties.clone()
+    }
+
+    /// Programa a falha do FCM (getToken e tópicos) com `IOException` SERVICE_NOT_AVAILABLE.
+    pub fn gms_fcm_set_failure(&mut self) {
+        self.fw.gms.fcm_failure = true;
+    }
+
+    /// Remove a falha programada do FCM.
+    pub fn gms_fcm_clear_failure(&mut self) {
+        self.fw.gms.fcm_failure = false;
     }
 
     /// Define o token FCM vendido por `getToken()`.

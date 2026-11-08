@@ -286,8 +286,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "Token FCM fake; tópicos inscritos; injeção de RemoteMessage pelo agente (SYS-08)."
-notes = "getToken vende o token de Engine::gms_set_fcm_token ('rustydroid-fcm-token-0001' por defeito), subscribeToTopic/unsubscribeFromTopic rastreados (Engine::gms_fcm_topics), RemoteMessage(+Builder, notification/data) cunhada pelo hospedeiro e entregue às FirebaseMessagingService do APK via Engine::gms_deliver_remote_message (SYS-08). Sem push real nem ligação FCM."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "getToken vende o token de Engine::gms_set_fcm_token ('rustydroid-fcm-token-0001' por defeito), subscribeToTopic/unsubscribeFromTopic rastreados (Engine::gms_fcm_topics), RemoteMessage(+Builder, notification/data) cunhada pelo hospedeiro e entregue às FirebaseMessagingService do APK via Engine::gms_deliver_remote_message (SYS-08). Sem push real nem ligação FCM. Falha programável (Engine::gms_fcm_set_failure/clear): getToken e subscribe/unsubscribe de tópico falham com java.io.IOException SERVICE_NOT_AVAILABLE, sem efeito colateral; deleteToken segue disponível."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-firebase-messaging"
 key_apis = ["com.google.firebase.messaging.FirebaseMessaging.getToken", "com.google.firebase.messaging.RemoteMessage"]
 
