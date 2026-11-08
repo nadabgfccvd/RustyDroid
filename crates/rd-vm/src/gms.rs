@@ -143,6 +143,8 @@ pub const INTEGRITY_TOKEN_REQUEST: &str =
     "Lcom/google/android/play/core/integrity/IntegrityTokenRequest;";
 pub const INTEGRITY_TOKEN_BUILDER: &str =
     "Lcom/google/android/play/core/integrity/IntegrityTokenRequest$Builder;";
+pub const INTEGRITY_SERVICE_EXCEPTION: &str =
+    "Lcom/google/android/play/core/integrity/IntegrityServiceException;";
 pub const INTEGRITY_TOKEN_RESPONSE: &str =
     "Lcom/google/android/play/core/integrity/IntegrityTokenResponse;";
 pub const FIREBASE_APP: &str = "Lcom/google/firebase/FirebaseApp;";
@@ -650,6 +652,8 @@ pub struct GmsState {
     // Location
     pub fused_client: Option<ObjRef>,
     pub location_fix: Option<FixCfg>,
+    /// Código de erro programado para o Fused Location: as chamadas que dependem do serviço falham.
+    pub location_failure: Option<i32>,
     pub location_requests: Vec<(ObjRef, LocReq)>,
     pub loc_request_objs: HashMap<ObjRef, LocReq>,
     pub loc_results: HashMap<ObjRef, Vec<ObjRef>>,
@@ -690,6 +694,8 @@ pub struct GmsState {
     pub maps_initialized: i32,
     // Fit
     pub fit_steps: i32,
+    /// Código de erro programado para os clientes Fit: as chamadas falham sem efeito.
+    pub fit_failure: Option<i32>,
     pub fit_clients: HashMap<ObjRef, String>,
     pub fit_inserts: i32,
     pub fit_sessions_started: Vec<String>,
@@ -717,6 +723,8 @@ pub struct GmsState {
     pub integrity_requests: HashMap<ObjRef, String>,
     pub integrity_responses: HashMap<ObjRef, String>,
     pub integrity_token: String,
+    /// Código de erro programado (`IntegrityErrorCode`): a Task falha antes de chegar ao serviço.
+    pub integrity_failure: Option<i32>,
     pub integrity_nonces: Vec<String>,
     pub attestation_jws: String,
 }
@@ -4024,6 +4032,20 @@ fn location_instance(
         return Ok(Some(Value::Obj(recv)));
     }
     if vm.fw.gms.fused_client == Some(recv) {
+        // Falha programada: as chamadas que dependem do serviço falham sem efeito.
+        // removeLocationUpdates segue disponível (remover um registro não depende do serviço).
+        if let Some(code) = vm.fw.gms.location_failure {
+            if matches!(
+                name,
+                "getLastLocation"
+                    | "getCurrentLocation"
+                    | "getLocationAvailability"
+                    | "requestLocationUpdates"
+            ) {
+                let msg = format!("Location API error ({code})");
+                return Ok(Some(Value::Obj(failed_task(vm, API_EXCEPTION, &msg)?)));
+            }
+        }
         return Ok(Some(match name {
             "<init>" => Value::Null,
             "getLastLocation" | "getCurrentLocation" => location_task(vm)?,
@@ -5366,6 +5388,26 @@ fn fit_instance(
     let Some(kind) = vm.fw.gms.fit_clients.get(&recv).cloned() else {
         return Ok(None);
     };
+    // Falha programada: a chamada conhecida falha com ApiException e não produz efeito.
+    if let Some(code) = vm.fw.gms.fit_failure {
+        let known = matches!(
+            (kind.as_str(), name),
+            (
+                "history",
+                "readData" | "insertData" | "updateData" | "deleteData"
+            ) | (
+                "history",
+                "readDailyTotal" | "readDailyTotalFromLocalDevice"
+            ) | (
+                "recording",
+                "subscribe" | "unsubscribe" | "listSubscriptions"
+            ) | ("sessions", "startSession" | "stopSession")
+        );
+        if known {
+            let msg = format!("Fitness API error ({code})");
+            return Ok(Some(Value::Obj(failed_task(vm, API_EXCEPTION, &msg)?)));
+        }
+    }
     Ok(Some(match (kind.as_str(), name) {
         ("history", "readData") => {
             let r = alloc(vm, DATA_READ_RESPONSE)?;
@@ -5660,6 +5702,15 @@ fn cast_nearby_integrity_instance(
     if vm.fw.gms.integrity_managers.contains(&recv) {
         return Ok(Some(match name {
             "requestIntegrityToken" => {
+                // Falha programada: o pedido nunca chega ao serviço, então o nonce não é registrado.
+                if let Some(code) = vm.fw.gms.integrity_failure {
+                    let msg = format!("Integrity API error ({code})");
+                    return Ok(Some(Value::Obj(failed_task(
+                        vm,
+                        INTEGRITY_SERVICE_EXCEPTION,
+                        &msg,
+                    )?)));
+                }
                 let nonce = oarg(args, 0)
                     .and_then(|r| vm.fw.gms.integrity_requests.get(&r).cloned())
                     .unwrap_or_default();
@@ -6186,6 +6237,16 @@ impl Engine {
         });
     }
 
+    /// Programa a falha do Fused Location (leitura, disponibilidade e registro de atualizações).
+    pub fn gms_location_set_failure(&mut self, code: i32) {
+        self.fw.gms.location_failure = Some(code);
+    }
+
+    /// Remove a falha programada do Fused Location.
+    pub fn gms_location_clear_failure(&mut self) {
+        self.fw.gms.location_failure = None;
+    }
+
     /// Remove o fix (getLastLocation volta a concluir com null).
     pub fn gms_clear_location_fix(&mut self) {
         self.fw.gms.location_fix = None;
@@ -6503,6 +6564,16 @@ impl Engine {
         self.fw.gms.fit_steps = steps;
     }
 
+    /// Programa a falha das chamadas Fit (leitura, escrita, gravação e sessões).
+    pub fn gms_fit_set_failure(&mut self, code: i32) {
+        self.fw.gms.fit_failure = Some(code);
+    }
+
+    /// Remove a falha programada do Fit.
+    pub fn gms_fit_clear_failure(&mut self) {
+        self.fw.gms.fit_failure = None;
+    }
+
     /// Liga uma sessão Cast programada (getCastState → CONNECTED).
     pub fn gms_cast_connect(&mut self, device_name: &str) {
         let before = cast_state_of(&self.fw.gms);
@@ -6554,6 +6625,17 @@ impl Engine {
     /// Define o token de integridade determinístico.
     pub fn gms_set_integrity_token(&mut self, token: &str) {
         self.fw.gms.integrity_token = token.to_string();
+    }
+
+    /// Programa a falha de `requestIntegrityToken` com um código de `IntegrityErrorCode`
+    /// (ex.: -1 API não disponível, -3 rede, -100 erro interno).
+    pub fn gms_set_integrity_failure(&mut self, code: i32) {
+        self.fw.gms.integrity_failure = Some(code);
+    }
+
+    /// Remove a falha programada: o próximo pedido volta a ter sucesso.
+    pub fn gms_clear_integrity_failure(&mut self) {
+        self.fw.gms.integrity_failure = None;
     }
 
     /// Define o JWS de atestação SafetyNet devolvido.
