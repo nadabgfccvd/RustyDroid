@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794176614225,
+  "lastUpdate": 1794177846188,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6191,6 +6191,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2765,
             "range": "± 35",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "51c310b7adc5a15da749197d7c7b7d3be0689253",
+          "message": "feat(jetpack): CameraX passa a partial (DEX real sobre Camera2, sem shim novo) (#612)",
+          "timestamp": "2026-11-08T19:43:36-03:00",
+          "tree_id": "0ec39cd728e05a63fd3bade2bce9485ffa96ef6f",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/51c310b7adc5a15da749197d7c7b7d3be0689253"
+        },
+        "date": 1794177845227,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3882,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3890,
+            "range": "± 24",
             "unit": "ns/iter"
           }
         ]
