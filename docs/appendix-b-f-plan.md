@@ -354,6 +354,12 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
 - 20 serviços `partial`. ML Kit `not_implemented` (extra, fora da tabela da spec) fica fora de
   escopo por decisão do usuário (2026-11-05).
 - Demais serviços: critério de shim programável com teste de sucesso, erro e ciclo de vida.
+- **Etapa 7 concluída (2026-11-08):** os 20 serviços `partial` têm teste de sucesso, de erro e de
+  ciclo de vida (ou o caminho de erro não existe no shim, anotado na tabela de `docs/appendix-d-e.md`).
+  Trabalho por PR: Integrity, Fit e Location (#597); Remote Config (#598); Cast (#599); Analytics (#600);
+  Crashlytics (#601); Maps (#602); Messaging (#603); RTDB (#604); SafetyNet (#605); sincronização da
+  tabela (#606). Google Ads e Google Sign-In já tinham erro e ciclo cobertos antes desta etapa.
+- Nota: a etapa 7 não promove nenhum serviço de `partial` para `complete`. Esse status não existe no ledger.
 
 ## 6. Decisões que dependem do usuário
 
