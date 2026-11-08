@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794168170065,
+  "lastUpdate": 1794169292064,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5939,6 +5939,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3319,
             "range": "± 30",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9e08e921a65998b098ffa49944894df27cc38c5c",
+          "message": "test(gms): falha programável no SafetyNet attest (E) (#605)\n\ngms_safetynet_set_failure(code): attest falha com ApiException, sem JWS e\nsem registrar nonce. gms_safetynet_clear_failure() recupera e o nonce volta\na ser registrado. Serviço dentro de gms-integrity.\n\nTeste: safetynet_failure_blocks_attestation_then_recovers\n(crates/rd-vm/tests/gms_erro_ciclo.rs). Mutação do guard derruba o teste.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T17:21:11-03:00",
+          "tree_id": "3e9fcea5398cdce5629f82748eddd162962fcc53",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9e08e921a65998b098ffa49944894df27cc38c5c"
+        },
+        "date": 1794169291334,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3267,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3304,
+            "range": "± 282",
             "unit": "ns/iter"
           }
         ]
