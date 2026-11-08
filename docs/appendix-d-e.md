@@ -453,8 +453,12 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
   NO_DEVICES); o erro fica em `gms_cast_last_error` e a tentativa seguinte bem-sucedida o limpa. Testes no mesmo arquivo.
 - **Nearby** (`gms-nearby`): critério já atendido por testes existentes em `tests/gms.rs` (ENDPOINT_UNKNOWN para
   endpoint não descoberto; ciclo de descoberta, conexão e encerramento). Nenhuma mudança de código.
+- **Analytics** (`firebase-analytics`): nome de evento (até 40), parâmetro (até 40) e propriedade de usuário (até 24)
+  inválidos pela regra documentada do Firebase são rejeitados e contados em `gms_analytics_rejected`. Parâmetro
+  inválido rejeita o evento inteiro (escolha de modelagem; a doc não especifica). Coleção desligada descarta sem
+  contar como rejeição. Testes em `gms_erro_ciclo.rs`; mutação do validador derruba o teste.
 
 Firebase Auth já cumpre o critério por testes existentes (`InvalidCredentials` como erro; `signOut` e listener de
 estado como ciclo). Serviços parciais ainda sem caminho de erro programável: Maps, Google Sign-In, Ads, SafetyNet
-(`attest`), Firebase (analytics, messaging, crashlytics, firestore, rtdb, storage) e Billing. Próximas entregas
+(`attest`), Firebase (messaging, crashlytics, firestore, rtdb, storage) e Billing. Próximas entregas
 desta etapa seguem essa ordem.

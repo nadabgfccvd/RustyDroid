@@ -581,6 +581,9 @@ pub struct GmsState {
     pub analytics_user_id: Option<String>,
     pub analytics_disabled: bool,
     pub analytics_defaults: Vec<(String, String)>,
+    /// Eventos e propriedades com nome inválido pela regra do Firebase
+    /// (rejeitados, não gravados).
+    pub analytics_rejected: usize,
     // Firebase Auth
     pub auth_obj: Option<ObjRef>,
     pub auth_users: Vec<AuthUserRec>,
@@ -2009,6 +2012,28 @@ fn firebase_core_instance(
 }
 
 // ── Analytics ───────────────────────────────────────────────────────────
+/// Limites documentados do Firebase Analytics: nome de evento com até 40
+/// caracteres, nome de parâmetro com até 40, nome de propriedade de usuário
+/// com até 24. Nomes começam com letra, usam só letras, dígitos e `_`, e não
+/// podem usar os prefixos reservados `firebase_`, `google_` e `ga_`.
+const ANALYTICS_EVENT_NAME_MAX: usize = 40;
+const ANALYTICS_PARAM_NAME_MAX: usize = 40;
+const ANALYTICS_USER_PROP_NAME_MAX: usize = 24;
+
+fn analytics_identifier_ok(name: &str, max: usize) -> bool {
+    let b = name.as_bytes();
+    if b.is_empty() || b.len() > max || !b[0].is_ascii_alphabetic() {
+        return false;
+    }
+    if !b.iter().all(|c| c.is_ascii_alphanumeric() || *c == b'_') {
+        return false;
+    }
+    let lower = name.to_ascii_lowercase();
+    !["firebase_", "google_", "ga_"]
+        .iter()
+        .any(|p| lower.starts_with(p))
+}
+
 fn analytics_instance(
     vm: &mut Engine,
     name: &str,
@@ -2025,7 +2050,13 @@ fn analytics_instance(
                     .collect(),
                 None => Vec::new(),
             };
-            if !vm.fw.gms.analytics_disabled {
+            if !analytics_identifier_ok(&ev, ANALYTICS_EVENT_NAME_MAX)
+                || params
+                    .iter()
+                    .any(|(k, _)| !analytics_identifier_ok(k, ANALYTICS_PARAM_NAME_MAX))
+            {
+                vm.fw.gms.analytics_rejected += 1;
+            } else if !vm.fw.gms.analytics_disabled {
                 let mut all = vm.fw.gms.analytics_defaults.clone();
                 for (k, v) in params {
                     upsert(&mut all, k, v);
@@ -2043,6 +2074,10 @@ fn analytics_instance(
         }
         "setUserProperty" => {
             if let (Some(k), v) = (sarg(vm, args, 0), sarg(vm, args, 1)) {
+                if !analytics_identifier_ok(&k, ANALYTICS_USER_PROP_NAME_MAX) {
+                    vm.fw.gms.analytics_rejected += 1;
+                    return Ok(Some(Value::Null));
+                }
                 match v {
                     Some(val) => upsert(&mut vm.fw.gms.analytics_user_properties, k, val),
                     None => vm
@@ -6346,6 +6381,11 @@ impl Engine {
     /// Eventos de Analytics capturados.
     pub fn gms_analytics_events(&self) -> &[AnalyticsEvent] {
         &self.fw.gms.analytics_events
+    }
+
+    /// Quantos eventos/propriedades foram rejeitados por nome inválido.
+    pub fn gms_analytics_rejected(&self) -> usize {
+        self.fw.gms.analytics_rejected
     }
 
     /// Propriedades de utilizador do Analytics.
