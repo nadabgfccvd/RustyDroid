@@ -115,11 +115,19 @@ impl Default for HttpResponseCfg {
 }
 #[derive(Debug, Clone)]
 pub struct WorkRecord {
+    /// UUID canônico do `WorkRequest` (`WorkRequest.getId()`).
     pub id: String,
     pub worker_class: String,
     pub state: String, // ENQUEUED | SUCCEEDED | CANCELLED
     pub tags: Vec<String>,
+    /// Nome de `enqueueUniqueWork` / `enqueueUniquePeriodicWork`.
+    pub unique_name: Option<String>,
 }
+/// Campo do builder e do `WorkRequest` com as tags, unidas por U+001F.
+const WORK_TAG_SEP: char = '\u{1f}';
+/// Campo do `WorkRequest` com o UUID gerado no `build()`.
+const WORK_ID_FIELD: &str = "m8_id";
+const WORK_TAGS_FIELD: &str = "m8_tags";
 #[derive(Debug, Default)]
 pub struct M8State {
     pub recyclers: HashMap<ObjRef, RecyclerState>,
@@ -540,7 +548,42 @@ fn call_m8_instance_rooted(
     if mref_class == ROOM_BUILDER || recv_class == ROOM_BUILDER {
         return room_builder(vm, name, sig, recv, args);
     }
+    // `WorkRequest.getId()` devolve o UUID gerado no `build()` do builder.
+    if name == "getId" && sig == "()Ljava/util/UUID;" && is_work_request_object(&recv_class) {
+        let text = work_str_field(vm, recv, WORK_ID_FIELD).unwrap_or_default();
+        if let Some(v) = crate::juuid::uuid_value(vm, &text)? {
+            return Ok(Some(v));
+        }
+    }
     if is_work_request_builder(mref_class) || is_work_request_builder(&recv_class) {
+        // `Builder(Class<? extends Worker>)`: guarda o descritor do worker, que
+        // o `build()` copia para o pedido (e o `enqueue` para o registro).
+        if name == "<init>" {
+            if let Some(Value::Obj(c)) = args.first() {
+                if vm.heap.class_of(*c).ok() == Some(crate::framework::CLASS) {
+                    if let Ok(Value::Obj(n)) = vm.heap.get_field(*c, "name") {
+                        let desc = vm.heap.as_str(n).unwrap_or_default().to_string();
+                        let ws = intrinsics::alloc_string(vm, desc)?;
+                        let _ = vm.heap.put_field(recv, "m8_worker", Value::Obj(ws));
+                    }
+                }
+            }
+            return Ok(Some(Value::Null));
+        }
+        // `addTag` acumula no builder; o `build()` copia as tags para o pedido.
+        if name == "addTag" {
+            if let Some(Value::Obj(tag)) = args.first() {
+                let tag = vm.heap.as_str(*tag).unwrap_or_default().to_string();
+                let mut tags = work_str_field(vm, recv, WORK_TAGS_FIELD).unwrap_or_default();
+                if !tags.is_empty() {
+                    tags.push(WORK_TAG_SEP);
+                }
+                tags.push_str(&tag);
+                let v = intrinsics::alloc_string(vm, tags)?;
+                let _ = vm.heap.put_field(recv, WORK_TAGS_FIELD, Value::Obj(v));
+            }
+            return Ok(Some(Value::Obj(recv)));
+        }
         // WorkRequest$Builder.build -> WorkRequest host com worker class do builder
         if name == "build" {
             let worker = vm
@@ -565,6 +608,13 @@ fn call_m8_instance_rooted(
             let r = alloc(vm, product)?;
             let ws = intrinsics::alloc_string(vm, worker)?;
             let _ = vm.heap.put_field(r, "m8_worker", Value::Obj(ws));
+            // Id único por pedido, como no construtor real do WorkRequest.
+            let id = crate::juuid::random_uuid_string(vm);
+            let id = intrinsics::alloc_string(vm, id)?;
+            let _ = vm.heap.put_field(r, WORK_ID_FIELD, Value::Obj(id));
+            let tags = work_str_field(vm, recv, WORK_TAGS_FIELD).unwrap_or_default();
+            let tags = intrinsics::alloc_string(vm, tags)?;
+            let _ = vm.heap.put_field(r, WORK_TAGS_FIELD, Value::Obj(tags));
             return Ok(Some(Value::Obj(r)));
         }
         // Setters fluentes (`setConstraints`, `addTag`, ...) devolvem o próprio
@@ -2634,41 +2684,87 @@ fn work_manager(
 ) -> Result<Option<Value>, VmExit> {
     match name {
         "enqueue" | "enqueueUniqueWork" | "enqueueUniquePeriodicWork" => {
-            // args podem ser WorkRequest, List ou (String, ExistingWorkPolicy, WorkRequest)
-            let mut worker = String::new();
+            // enqueue(WorkRequest) | enqueue(List<WorkRequest>) |
+            // enqueueUnique*(String, policy, WorkRequest...)
+            let unique_name = if name == "enqueue" {
+                None
+            } else {
+                match args.first() {
+                    Some(Value::Obj(s)) => vm.heap.as_str(*s).ok().map(str::to_string),
+                    _ => None,
+                }
+            };
+            let mut requests = Vec::new();
             for a in args {
-                if let Value::Obj(o) = a {
-                    if let Ok(Value::Obj(s)) = vm.heap.get_field(*o, "m8_worker") {
-                        if let Ok(t) = vm.heap.as_str(s) {
-                            worker = t.to_string();
-                        }
-                    }
+                let Value::Obj(o) = a else { continue };
+                if let Some(HostObj::List { elems }) = vm.fw.objects.get(o) {
+                    requests.extend(elems.iter().filter_map(|v| match v {
+                        Value::Obj(r) => Some(*r),
+                        _ => None,
+                    }));
+                } else if vm.heap.get_field(*o, "m8_worker").is_ok() {
+                    requests.push(*o);
                 }
             }
-            let id = format!("work-{}", vm.fw.m8.work.len() + 1);
-            vm.fw.m8.work.push(WorkRecord {
-                id: id.clone(),
-                worker_class: worker,
-                state: "ENQUEUED".into(),
-                tags: Vec::new(),
-            });
+            for req in requests {
+                let worker = work_str_field(vm, req, "m8_worker").unwrap_or_default();
+                let id = match work_str_field(vm, req, WORK_ID_FIELD) {
+                    Some(id) => id,
+                    None => crate::juuid::random_uuid_string(vm),
+                };
+                let tags = work_str_field(vm, req, WORK_TAGS_FIELD)
+                    .map(|t| {
+                        t.split(WORK_TAG_SEP)
+                            .filter(|t| !t.is_empty())
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                vm.fw.m8.work.push(WorkRecord {
+                    id,
+                    worker_class: worker,
+                    state: "ENQUEUED".into(),
+                    tags,
+                    unique_name: unique_name.clone(),
+                });
+            }
             let op = alloc(vm, OPERATION)?;
             let _ = recv;
             Ok(Some(Value::Obj(op)))
         }
-        "cancelWorkById" | "cancelAllWorkByTag" | "cancelUniqueWork" => {
-            for w in &mut vm.fw.m8.work {
-                if w.state == "ENQUEUED" {
-                    w.state = "CANCELLED".into();
-                }
+        // Cancelamento casa o alvo (id, tag ou nome único) e só cancela o que
+        // ainda está ENQUEUED. Antes cancelava todo ENQUEUED, sem casar nada.
+        "cancelWorkById" => {
+            let target = match args.first() {
+                Some(Value::Obj(u)) => crate::juuid::uuid_string_of(vm, *u),
+                _ => None,
+            };
+            cancel_enqueued(vm, |w| target.as_deref() == Some(w.id.as_str()));
+            let op = alloc(vm, OPERATION)?;
+            Ok(Some(Value::Obj(op)))
+        }
+        "cancelAllWorkByTag" | "cancelUniqueWork" => {
+            let target = match args.first() {
+                Some(Value::Obj(s)) => vm.heap.as_str(*s).ok().map(str::to_string),
+                _ => None,
+            };
+            if name == "cancelAllWorkByTag" {
+                cancel_enqueued(vm, |w| {
+                    target
+                        .as_deref()
+                        .is_some_and(|t| w.tags.iter().any(|x| x == t))
+                });
+            } else {
+                cancel_enqueued(vm, |w| {
+                    target.is_some() && w.unique_name.as_deref() == target.as_deref()
+                });
             }
             let op = alloc(vm, OPERATION)?;
             Ok(Some(Value::Obj(op)))
         }
-        "getWorkInfosByTag" | "getWorkInfosForUniqueWork" => {
-            let r = alloc(vm, "Lcom/google/common/util/concurrent/ListenableFuture;")?;
-            Ok(Some(Value::Obj(r)))
-        }
+        // `getWorkInfosByTag` / `getWorkInfosForUniqueWork` não são modelados
+        // (WorkInfo chega no próximo passo): sem arm, a chamada não é sequestrada
+        // e falha de forma explícita em vez de devolver um future sem valor.
         "beginWith" | "beginUniqueWork" => {
             let r = alloc(vm, "Landroidx/work/WorkContinuation;")?;
             Ok(Some(Value::Obj(r)))
@@ -2676,6 +2772,33 @@ fn work_manager(
         _ => Ok(None),
     }
 }
+/// Texto canônico do `UUID` devolvido por `WorkRequest.getId()`.
+pub fn work_request_id_text(vm: &Engine, id: ObjRef) -> Option<String> {
+    crate::juuid::uuid_string_of(vm, id)
+}
+
+/// Lê um campo `String` host de `r`, se existir.
+fn work_str_field(vm: &Engine, r: ObjRef, field: &str) -> Option<String> {
+    match vm.heap.get_field(r, field) {
+        Ok(Value::Obj(s)) => vm.heap.as_str(s).ok().map(str::to_string),
+        _ => None,
+    }
+}
+
+/// `WorkRequest` concreto (não o builder), como o host o aloca no `build()`.
+fn is_work_request_object(cls: &str) -> bool {
+    cls.starts_with("Landroidx/work/") && cls.contains("WorkRequest") && !cls.contains("$Builder")
+}
+
+/// Marca como `CANCELLED` só os pedidos `ENQUEUED` que casam com `matches`.
+fn cancel_enqueued(vm: &mut Engine, matches: impl Fn(&WorkRecord) -> bool) {
+    for w in &mut vm.fw.m8.work {
+        if w.state == "ENQUEUED" && matches(w) {
+            w.state = "CANCELLED".into();
+        }
+    }
+}
+
 /// ADR 025, etapa 1: classe de configuração do Room no DEX do app.
 const ROOM_CONFIG: &str = "Landroidx/room/DatabaseConfiguration;";
 /// Helper de framework que o `RoomDatabase.Builder` padrão usa.

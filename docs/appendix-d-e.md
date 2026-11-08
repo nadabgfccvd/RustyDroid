@@ -393,6 +393,21 @@ comportamento nesta rodada). Achados, por leitura do código:
   `getWorkInfosByTag` não teriam como casar.
 - `getWorkInfosByTag` e `getWorkInfosForUniqueWork` devolvem um `ListenableFuture` sem valor.
 
-Correção pendente (próxima rodada de D/work): modelar id UUID por `WorkRequest`, tags e
-unique work name no `WorkRecord`; cancelar só o que casa; `WorkInfo` com estados. Até lá,
-`work` segue `partial`, e a nota de `data/jetpack.toml` registra o gap.
+Correção (2026-11-08, branch `fix/workmanager-cancel-ids-20261108`):
+
+- Cada `WorkRequest` ganha id UUID v4 no `build()` (RNG por engine, determinístico com
+  `RD_UUID_SEED`); `WorkRequest.getId()` devolve o mesmo `java.util.UUID`, e `WorkRecord.id` usa esse texto.
+- `Builder(Class)` grava o worker (antes o `worker_class` saía sempre vazio); `addTag` acumula
+  as tags no builder e o `build()` as copia; `WorkRecord.tags` as recebe.
+- `enqueueUniqueWork` / `enqueueUniquePeriodicWork` gravam o nome em `WorkRecord.unique_name`.
+- `cancelWorkById`, `cancelAllWorkByTag` e `cancelUniqueWork` cancelam só os `ENQUEUED` que casam.
+- `getWorkInfosByTag` / `getWorkInfosForUniqueWork` deixaram de ser sequestrados. Sem `WorkInfo`
+  real, a chamada não devolve mais um future vazio: falha de forma explícita (não modelado).
+
+Testes: `crates/rd-vm/tests/m8.rs` (`m8_workmanager_*`, incluindo mutação do casamento que derruba
+os testes de cancelamento) e `crates/rd-vm/tests/m8_workmanager_dex.rs` (bytecode DEX em memória:
+builder, `getId`, `enqueue`, `cancelWorkById`).
+
+Ainda pendente (próximas etapas de `work`): `Constraints`, `WorkInfo` com estados, `ExistingWorkPolicy`
+(hoje o nome é gravado, a política é ignorada), `Worker.doWork()` em background. Por isso `work`
+segue `partial`.

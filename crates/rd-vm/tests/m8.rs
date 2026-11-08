@@ -602,6 +602,285 @@ fn m8_workmanager_enqueue_cancel() {
     assert_eq!(e.m8_work()[0].state, "SUCCEEDED");
 }
 
+// ── WorkManager: id, tags, unique name e cancelamento que casa o alvo ──
+const WM_SIG_ENQUEUE: &str = "(Landroidx/work/WorkRequest;)Landroidx/work/Operation;";
+const WM_SIG_UNIQUE: &str =
+    "(Ljava/lang/String;Landroidx/work/ExistingWorkPolicy;Landroidx/work/OneTimeWorkRequest;)Landroidx/work/Operation;";
+
+fn wm_instance(e: &mut Engine) -> u32 {
+    match call_m8_static(
+        e,
+        WORK_MANAGER,
+        "getInstance",
+        "(Landroid/content/Context;)Landroidx/work/WorkManager;",
+        &[Value::Null],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(w)) => w,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Constrói um `OneTimeWorkRequest` pelo builder do host (`addTag` + `build`).
+fn wm_request(e: &mut Engine, worker: &str, tags: &[&str]) -> u32 {
+    let builder = obj(e, "Landroidx/work/OneTimeWorkRequest$Builder;");
+    let ws = e.heap.alloc_string(worker.to_string()).unwrap();
+    e.heap
+        .put_field(builder, "m8_worker", Value::Obj(ws))
+        .unwrap();
+    for t in tags {
+        let tv = s(e, t);
+        call_m8_instance(
+            e,
+            "Landroidx/work/OneTimeWorkRequest$Builder;",
+            "addTag",
+            "(Ljava/lang/String;)Landroidx/work/WorkRequest$Builder;",
+            builder,
+            &[tv],
+        )
+        .unwrap();
+    }
+    match call_m8_instance(
+        e,
+        "Landroidx/work/OneTimeWorkRequest$Builder;",
+        "build",
+        "()Landroidx/work/OneTimeWorkRequest;",
+        builder,
+        &[],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(r)) => r,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn wm_request_id(e: &mut Engine, req: u32) -> u32 {
+    match call_m8_instance(
+        e,
+        "Landroidx/work/OneTimeWorkRequest;",
+        "getId",
+        "()Ljava/util/UUID;",
+        req,
+        &[],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(u)) => u,
+        other => panic!("WorkRequest.getId: {other:?}"),
+    }
+}
+
+fn wm_enqueue(e: &mut Engine, wm: u32, req: u32) {
+    call_m8_instance(
+        e,
+        WORK_MANAGER,
+        "enqueue",
+        WM_SIG_ENQUEUE,
+        wm,
+        &[Value::Obj(req)],
+    )
+    .unwrap();
+}
+
+fn wm_states(e: &Engine) -> Vec<String> {
+    e.m8_work().iter().map(|w| w.state.clone()).collect()
+}
+
+#[test]
+fn m8_workmanager_request_has_uuid_id_and_builder_tags() {
+    let mut e = engine();
+    let req = wm_request(&mut e, "Lcom/example/SyncWorker;", &["sync", "daily"]);
+    let id = wm_request_id(&mut e, req);
+    let id_text = work_request_id_text(&e, id).expect("getId devolve java.util.UUID");
+    assert_eq!(id_text.len(), 36, "UUID canônico: {id_text}");
+    assert_eq!(&id_text[14..15], "4", "versão 4: {id_text}");
+
+    let wm = wm_instance(&mut e);
+    wm_enqueue(&mut e, wm, req);
+    let rec = &e.m8_work()[0];
+    assert_eq!(rec.id, id_text, "o registro usa o mesmo id do WorkRequest");
+    assert_eq!(rec.tags, vec!["sync".to_string(), "daily".to_string()]);
+    assert_eq!(rec.unique_name, None);
+
+    // Dois pedidos nunca compartilham id.
+    let other = wm_request(&mut e, "Lcom/example/SyncWorker;", &[]);
+    let other_id = wm_request_id(&mut e, other);
+    assert_ne!(work_request_id_text(&e, other_id), Some(id_text));
+}
+
+#[test]
+fn m8_workmanager_builder_ctor_records_worker_class() {
+    // `new OneTimeWorkRequest.Builder(SyncWorker.class)`: o `<init>` recebe um
+    // objeto Class (campo `name` = descritor) e o registro guarda esse worker.
+    let mut e = engine();
+    let wm = wm_instance(&mut e);
+    let class = obj(&mut e, "Ljava/lang/Class;");
+    let desc = e
+        .heap
+        .alloc_string("Lcom/example/SyncWorker;".into())
+        .unwrap();
+    e.heap.put_field(class, "name", Value::Obj(desc)).unwrap();
+    let builder = obj(&mut e, "Landroidx/work/OneTimeWorkRequest$Builder;");
+    call_m8_instance(
+        &mut e,
+        "Landroidx/work/OneTimeWorkRequest$Builder;",
+        "<init>",
+        "(Ljava/lang/Class;)V",
+        builder,
+        &[Value::Obj(class)],
+    )
+    .unwrap();
+    let req = match call_m8_instance(
+        &mut e,
+        "Landroidx/work/OneTimeWorkRequest$Builder;",
+        "build",
+        "()Landroidx/work/OneTimeWorkRequest;",
+        builder,
+        &[],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(r)) => r,
+        other => panic!("{other:?}"),
+    };
+    wm_enqueue(&mut e, wm, req);
+    assert_eq!(e.m8_work()[0].worker_class, "Lcom/example/SyncWorker;");
+}
+
+#[test]
+fn m8_workmanager_cancel_by_id_touches_only_the_matching_request() {
+    let mut e = engine();
+    let wm = wm_instance(&mut e);
+    let a = wm_request(&mut e, "Lcom/example/A;", &[]);
+    let b = wm_request(&mut e, "Lcom/example/B;", &[]);
+    wm_enqueue(&mut e, wm, a);
+    wm_enqueue(&mut e, wm, b);
+    let id_a = wm_request_id(&mut e, a);
+    call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "cancelWorkById",
+        "(Ljava/util/UUID;)Landroidx/work/Operation;",
+        wm,
+        &[Value::Obj(id_a)],
+    )
+    .unwrap();
+    assert_eq!(wm_states(&e), vec!["CANCELLED", "ENQUEUED"]);
+}
+
+#[test]
+fn m8_workmanager_cancel_by_tag_and_unique_name_match_only_their_work() {
+    let mut e = engine();
+    let wm = wm_instance(&mut e);
+    let sync = wm_request(&mut e, "Lcom/example/A;", &["sync"]);
+    let both = wm_request(&mut e, "Lcom/example/B;", &["sync", "upload"]);
+    let other = wm_request(&mut e, "Lcom/example/C;", &["photos"]);
+    wm_enqueue(&mut e, wm, sync);
+    wm_enqueue(&mut e, wm, both);
+    wm_enqueue(&mut e, wm, other);
+
+    let tag = s(&mut e, "sync");
+    call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "cancelAllWorkByTag",
+        "(Ljava/lang/String;)Landroidx/work/Operation;",
+        wm,
+        &[tag],
+    )
+    .unwrap();
+    assert_eq!(wm_states(&e), vec!["CANCELLED", "CANCELLED", "ENQUEUED"]);
+
+    // Trabalho único com nome: cancelUniqueWork só toca o nome pedido.
+    let name = s(&mut e, "daily-sync");
+    let uniq = wm_request(&mut e, "Lcom/example/D;", &[]);
+    let policy = Value::Null;
+    call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "enqueueUniqueWork",
+        WM_SIG_UNIQUE,
+        wm,
+        &[name, policy, Value::Obj(uniq)],
+    )
+    .unwrap();
+    assert_eq!(e.m8_work()[3].unique_name.as_deref(), Some("daily-sync"));
+    let other_name = s(&mut e, "weekly");
+    call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "cancelUniqueWork",
+        "(Ljava/lang/String;)Landroidx/work/Operation;",
+        wm,
+        &[other_name],
+    )
+    .unwrap();
+    assert_eq!(
+        e.m8_work()[3].state,
+        "ENQUEUED",
+        "nome diferente não cancela"
+    );
+    let name = s(&mut e, "daily-sync");
+    call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "cancelUniqueWork",
+        "(Ljava/lang/String;)Landroidx/work/Operation;",
+        wm,
+        &[name],
+    )
+    .unwrap();
+    assert_eq!(
+        wm_states(&e),
+        vec!["CANCELLED", "CANCELLED", "ENQUEUED", "CANCELLED"]
+    );
+}
+
+#[test]
+fn m8_workmanager_cancel_never_revives_finished_work() {
+    let mut e = engine();
+    let wm = wm_instance(&mut e);
+    let req = wm_request(&mut e, "Lcom/example/A;", &["t"]);
+    wm_enqueue(&mut e, wm, req);
+    let id = e.m8_work()[0].id.clone();
+    e.m8_complete_work(&id);
+    let tag = s(&mut e, "t");
+    call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "cancelAllWorkByTag",
+        "(Ljava/lang/String;)Landroidx/work/Operation;",
+        wm,
+        &[tag],
+    )
+    .unwrap();
+    assert_eq!(wm_states(&e), vec!["SUCCEEDED"]);
+}
+
+#[test]
+fn m8_workmanager_work_infos_are_not_faked() {
+    // Sem WorkInfo real, o host não sequestra getWorkInfos*: a chamada não
+    // devolve um future vazio (Ok(None) = não modelado).
+    let mut e = engine();
+    let wm = wm_instance(&mut e);
+    let tag = s(&mut e, "sync");
+    let got = call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "getWorkInfosByTag",
+        "(Ljava/lang/String;)Lcom/google/common/util/concurrent/ListenableFuture;",
+        wm,
+        &[tag],
+    )
+    .unwrap();
+    assert!(
+        got.is_none(),
+        "getWorkInfosByTag não deve ser fingido: {got:?}"
+    );
+}
+
 // ── Fragments androidx ──────────────────────────────────────────────────
 #[test]
 fn m8_androidx_fragments() {

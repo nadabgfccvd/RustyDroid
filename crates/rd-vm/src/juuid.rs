@@ -96,6 +96,31 @@ pub(crate) fn parse_uuid(s: &str) -> Option<(i64, i64)> {
     Some((msb as i64, lsb as i64))
 }
 
+/// UUID v4 (RFC 4122) para ids de `WorkRequest`. Usa o mesmo RNG por engine de
+/// `UUID.randomUUID()`, então a sequência é determinística por `RD_UUID_SEED`.
+pub(crate) fn random_uuid_string(vm: &mut Engine) -> String {
+    let msb = (next_u64(vm) & !0xf000) | 0x4000;
+    let lsb = (next_u64(vm) & 0x3fff_ffff_ffff_ffff) | 0x8000_0000_0000_0000;
+    format_uuid(msb as i64, lsb as i64)
+}
+
+/// Texto canônico de um `java.util.UUID` host, ou `None` se não for UUID.
+pub(crate) fn uuid_string_of(vm: &Engine, r: ObjRef) -> Option<String> {
+    if vm.heap.class_of(r).ok()? != UUID {
+        return None;
+    }
+    let (msb, lsb) = bits(vm, r);
+    Some(format_uuid(msb, lsb))
+}
+
+/// Cria um `java.util.UUID` host a partir do texto canônico.
+pub(crate) fn uuid_value(vm: &mut Engine, text: &str) -> Result<Option<Value>, VmExit> {
+    match parse_uuid(text) {
+        Some((msb, lsb)) => new_uuid(vm, msb, lsb).map(Some),
+        None => Ok(None),
+    }
+}
+
 pub fn static_intrinsic(
     vm: &mut Engine,
     class: &str,
