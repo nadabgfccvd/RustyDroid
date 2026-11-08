@@ -483,6 +483,11 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   - "Tirar foto": `ImageCapture.takePicture` → `submitStillCaptureRequest` executa, com `FutureChain` e
     `Futures.transformAsync`. **A conclusão da captura não aparece no trace** (sem `onCaptureSuccess` nem
     `ImageSaver`), então o sucesso da captura não é afirmado.
+  - **Reteste (2026-11-08, 22:15, `rd-cli` de `main` 8c3e9f2)**: com `RD_TRACE_METHOD=Lbr/com/comprix/`, que
+    cobre os callbacks do app, nenhum `onCaptureSuccess`, `onError` ou `onImageSaved` aparece. O screenshot
+    pós-\"Tirar foto\" (`/home/user/comprix/cx_capture.png`, fora do repositório) ainda mostra a tela
+    \"Escanear preço\", sem a tela de confirmação do que o app leu. `last_error` = `null`. A captura continua
+    não confirmada.
 - **Por que o status não sobe**: `partial` exige implementação versionada e teste no repositório (`gap_id`,
   `module`, `code`, `evidence`). O APK do Comprix não é versionável, e o CI não o tem. O precedente do
   RxJava usa fixture DEX com exceção de ADR (036). Ficam em aberto: (a) fixture DEX do CameraX com ADR de
