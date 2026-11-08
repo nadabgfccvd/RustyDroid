@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794178296645,
+  "lastUpdate": 1794181355649,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6263,6 +6263,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3796,
             "range": "± 111",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a36af32498d9ca3a91eb2d0f5c871ed54cabbd29",
+          "message": "feat(security-crypto): persistência entre sessões no VFS (S20) (#614)\n\nEncryptedSharedPreferences e o AndroidKeyStore do host passam a sobreviver\nà Engine que os criou, desde que o VFS da sessão seja o mesmo:\n\n- arquivo cifrado em files/rd_encrypted/<nome em hex>.enc, regravado a cada\n  commit/apply e na criação; formato de texto RDENC1;\n- chave do AndroidKeyStore em files/rd_keystore/<alias em hex>.key, gravada\n  em generateKey e apagada em deleteEntry;\n- create, containsAlias, getKey, Cipher.init e doFinal recarregam a chave\n  do VFS quando ela não está em memória; leitura de valor não recarrega,\n  então chave removida da memória continua falhando fechado.\n\nFalhas tipadas: arquivo corrompido e chave ausente são GeneralSecurityException\n(arquivo corrompido não vira vazio, para não sobrescrever dados); byte alterado\nno ciphertext é SecurityException na sessão seguinte.\n\nDesvios declarados: chave em claro no VFS (sem TEE/StrongBox), formato\npróprio (não Tink), nomes em hex no VFS.\n\nTestes: 4 novos em security_crypto (sessão B lê o valor da sessão A; chave\nremovida não volta; byte alterado falha; arquivo corrompido é erro tipado).\nMutação: sem gravação no apply ou sem recarga no create derruba 2 testes de\nsessão cada. cargo test -p rd-vm completo passa; clippy -D warnings ok.\n\nDocs: jetpack.toml (notes), appendix-d-e.md (S20, tabela), jetpack.md.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T20:42:13-03:00",
+          "tree_id": "e96d64a23e99e6c99bba8023b487b78de91b64b0",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a36af32498d9ca3a91eb2d0f5c871ed54cabbd29"
+        },
+        "date": 1794181354343,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3761,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3752,
+            "range": "± 17",
             "unit": "ns/iter"
           }
         ]
