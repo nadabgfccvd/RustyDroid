@@ -419,6 +419,12 @@ Segunda rodada (mesma branch de correção, 2026-11-08): `WorkInfo` real.
   comparado com `sget` por identidade, `isFinished`). Limite: o teste não pega o cache de identidade
   quebrado em referências guardadas de uma chamada anterior (mutação aplicada e não detectada).
 
-Ainda pendente: `ExistingWorkPolicy` (o nome é gravado, a política é ignorada), tags/progresso/output
+Terceira rodada: `ExistingWorkPolicy` e `ExistingPeriodicWorkPolicy` são enums host (`host_static`).
+`KEEP` descarta o pedido novo quando já há trabalho `ENQUEUED` com o mesmo nome único; `REPLACE`
+cancela esse trabalho (só `ENQUEUED`, como o cancelamento) e enfileira o novo. Teste:
+`dex_unique_work_keep_and_replace_follow_existing_work_policy` (mutações de KEEP e REPLACE derrubam o teste).
+`APPEND`, `APPEND_OR_REPLACE` e `UPDATE` não são modeladas (encadeamento depende de execução).
+
+Ainda pendente: tags/progresso/output
 em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estados avançam pelo harness).
 `Constraints` são aceitas e não aplicadas. Por isso `work` segue `partial`.

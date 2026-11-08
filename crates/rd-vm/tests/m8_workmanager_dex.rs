@@ -293,3 +293,98 @@ fn dex_work_infos_expose_states_through_future_list_and_enum_identity() {
         .expect("firstIsFinished");
     assert_eq!(fin, Value::Int(1), "SUCCEEDED.isFinished() == true");
 }
+
+const EXISTING_POLICY: &str = "Landroidx/work/ExistingWorkPolicy;";
+
+/// Um `enqueueUniqueWork("daily", policy, Builder(SyncWorker).build())` em bytecode.
+/// Registros: v0 builder, v1 Class, v2 nome, v3 pedido, v4 WorkManager, v5 política,
+/// v6 Context (regs=7, ins=1).
+fn unique_enqueue_block(u: &mut Vec<u16>, ids: &UniqueIds, policy_field: u16, name_idx: u32) {
+    u.extend(op21c(0x22, 0, ids.t_builder)); // new-instance v0, Builder
+    u.extend(op21c(0x1c, 1, ids.t_worker)); // const-class v1, SyncWorker
+    u.extend(op35c(0x70, 2, ids.m_init, [0, 1, 0, 0, 0])); // invoke-direct {v0,v1} <init>
+    u.extend(op35c(0x6e, 1, ids.m_build, [0, 0, 0, 0, 0])); // invoke-virtual {v0} build
+    u.extend(op11x(0x0c, 3)); // move-result-object v3
+    u.extend(op21c(0x1a, 2, name_idx as u16)); // const-string v2, "daily"
+    u.extend(op21c(0x62, 5, policy_field)); // sget-object v5, ExistingWorkPolicy.X
+    u.extend(op35c(0x6e, 4, ids.m_uniq, [4, 2, 5, 3, 0])); // invoke-virtual {v4,v2,v5,v3}
+}
+
+struct UniqueIds {
+    t_builder: u16,
+    t_worker: u16,
+    m_init: u16,
+    m_build: u16,
+    m_uniq: u16,
+    m_get: u16,
+}
+
+#[test]
+fn dex_unique_work_keep_and_replace_follow_existing_work_policy() {
+    let mut b = DexBuilder::new();
+    let probe = b.class("LUniqueProbe;", "Ljava/lang/Object;");
+    let p_get = b.proto_idx(WM, vec!["Landroid/content/Context;".into()]);
+    let p_init = b.proto_idx("V", vec!["Ljava/lang/Class;".into()]);
+    let p_build = b.proto_idx(REQUEST, vec![]);
+    let p_uniq = b.proto_idx(
+        "Landroidx/work/Operation;",
+        vec![
+            "Ljava/lang/String;".into(),
+            EXISTING_POLICY.into(),
+            REQUEST.into(),
+        ],
+    );
+    let ids = UniqueIds {
+        t_builder: b.type_idx(BUILDER),
+        t_worker: b.type_idx(WORKER),
+        m_init: b.method_idx(BUILDER, p_init, "<init>"),
+        m_build: b.method_idx(BUILDER, p_build, "build"),
+        m_uniq: b.method_idx(WM, p_uniq, "enqueueUniqueWork"),
+        m_get: b.method_idx(WM, p_get, "getInstance"),
+    };
+    let f_keep = b.field_idx(EXISTING_POLICY, EXISTING_POLICY, "KEEP");
+    let f_replace = b.field_idx(EXISTING_POLICY, EXISTING_POLICY, "REPLACE");
+    let name_idx = b.intern("daily");
+
+    // run(ctx): KEEP, KEEP, REPLACE sobre o mesmo nome único.
+    let mut u = Vec::new();
+    u.extend(op35c(0x71, 1, ids.m_get, [6, 0, 0, 0, 0])); // invoke-static {v6} getInstance
+    u.extend(op11x(0x0c, 4)); // move-result-object v4
+    unique_enqueue_block(&mut u, &ids, f_keep, name_idx);
+    unique_enqueue_block(&mut u, &ids, f_keep, name_idx);
+    unique_enqueue_block(&mut u, &ids, f_replace, name_idx);
+    u.extend(op10x(0x0e)); // return-void
+    let code = b.code(7, 1, 3, u);
+    b.direct(
+        probe,
+        "run",
+        "V",
+        vec!["Landroid/content/Context;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(code),
+    );
+
+    let mut e = engine_of(&b);
+    e.invoke_static(
+        "LUniqueProbe;",
+        "run",
+        "(Landroid/content/Context;)V",
+        &[Value::Null],
+    )
+    .expect("run");
+
+    let work = e.m8_work();
+    assert_eq!(
+        work.len(),
+        2,
+        "KEEP descarta o segundo pedido; REPLACE entra com o terceiro"
+    );
+    assert_eq!(work[0].state, "CANCELLED", "REPLACE cancela o enfileirado");
+    assert_eq!(
+        work[1].state, "ENQUEUED",
+        "pedido do REPLACE fica enfileirado"
+    );
+    assert_eq!(work[0].unique_name.as_deref(), Some("daily"));
+    assert_eq!(work[1].unique_name.as_deref(), Some("daily"));
+    assert_ne!(work[0].id, work[1].id, "cada pedido tem o seu UUID");
+}
