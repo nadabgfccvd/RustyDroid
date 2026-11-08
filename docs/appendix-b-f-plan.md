@@ -317,6 +317,14 @@ Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada
   Maven Central (`repo1.maven.org`), com versões até `4.1.1.4` (API 4.1, sem nenhuma API 26+).
   Por isso APIs 26–36 vieram dos pacotes `platform-NN` oficiais (`dl.google.com/android/repository`),
   que é a fonte oficial do `android.jar`. Substituição de fonte registrada aqui para decisão do usuário.
+- **Reprodução em 2026-11-08:** os 11 `platform-NN` foram baixados de novo de `dl.google.com`
+  (HTTP 200) e o `android.jar` de cada um foi extraído. As contagens do SDK (classes e membros por API)
+  são idênticas às commitadas. A coluna de implementação (`rd-vm`) subiu porque o código avançou depois
+  da geração anterior: por exemplo `android.view.ScaleGestureDetector` (MEDIA-03) passou a `yes`. Os CSVs e o Markdown
+  foram regenerados com `scripts/appendix_c_inventory.py`; o `.gitattributes` normaliza o CRLF do gerador para LF.
+- **Maven Central, rechecado em 2026-11-08:** a busca por `com.google.android:android` retorna um único
+  artefato (4.1.1.4, sem API 26+). `org.robolectric:android-all` existe, mas são jars instrumentados, não o
+  `android.jar` oficial; não foram usados como fonte. Para C, a fonte oficial continua sendo `dl.google.com`.
 - **Próximo passo de C:** a lacuna é de implementação, não de inventário. Por domínio, com
   maior número de superfícies `partial` primeiro (`android-view`, `android-widget`,
   `android-os`, `android-content`, `android-graphics`), implementar ou marcar bloqueio por item.
