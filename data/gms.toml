@@ -251,9 +251,9 @@ module = "rd-vm/gms"
 code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
-programmable = "Nada a programar: eventos/user properties/user id são CAPTURADOS e consultáveis pelo agente."
-notes = "Eventos capturados localmente, nunca enviados: logEvent grava nome + parâmetros achatados do Bundle (Engine::gms_analytics_events), setUserProperty/setUserId consultáveis, setAnalyticsCollectionEnabled(false) larga eventos seguintes, resetAnalyticsData limpa. Sem upload, sem app-instance-id real."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+programmable = "Rejeição por nome inválido é determinística (regra documentada do Firebase), não programada pelo host; conta em Engine::gms_analytics_rejected."
+notes = "Eventos capturados localmente, nunca enviados: logEvent grava nome + parâmetros achatados do Bundle (Engine::gms_analytics_events), setUserProperty/setUserId consultáveis, setAnalyticsCollectionEnabled(false) larga eventos seguintes, resetAnalyticsData limpa. Nome de evento (até 40), parâmetro (até 40) e propriedade (até 24) inválidos pela regra documentada (letra inicial, só letras/dígitos/_, sem prefixos firebase_/google_/ga_) são rejeitados e contados; parâmetro inválido rejeita o evento inteiro. Sem upload, sem app-instance-id real."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-firebase-analytics"
 key_apis = ["com.google.firebase.analytics.FirebaseAnalytics.logEvent", "com.google.firebase.analytics.FirebaseAnalytics.setUserProperty"]
 

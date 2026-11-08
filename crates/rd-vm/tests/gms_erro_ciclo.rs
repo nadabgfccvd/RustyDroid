@@ -9,6 +9,7 @@
 mod common;
 
 use common::*;
+use rd_vm::framework::HostObj;
 use rd_vm::gms::*;
 use rd_vm::value::Value;
 use rd_vm::{Engine, VmConfig};
@@ -672,4 +673,115 @@ fn cast_failed_connect_creates_no_session_then_recovers() {
         None,
         "erro limpo pela tentativa bem-sucedida"
     );
+}
+
+// ── Analytics: nome inválido pela regra documentada é rejeitado e contado;
+// nomes válidos seguem gravando; coleção desligada não conta como rejeição.
+fn bundle_of(e: &mut Engine, entries: Vec<(String, Value)>) -> Value {
+    let r = obj(e, "Landroid/os/Bundle;");
+    e.fw.objects.insert(r, HostObj::Bundle { map: entries });
+    Value::Obj(r)
+}
+
+fn log_event(mut e: &mut Engine, an: u32, name: &str, params: Value) {
+    let n = s(e, name);
+    ci!(
+        e,
+        FIREBASE_ANALYTICS,
+        "logEvent",
+        "(Ljava/lang/String;Landroid/os/Bundle;)V",
+        an,
+        [n, params]
+    )
+    .unwrap();
+}
+
+#[test]
+fn analytics_invalid_names_are_rejected_then_valid_events_recorded() {
+    let mut e = engine();
+    let an = ov(cs!(
+        e,
+        FIREBASE_ANALYTICS,
+        "getInstance",
+        "(Landroid/content/Context;)Lcom/google/firebase/analytics/FirebaseAnalytics;",
+        [ctx(&mut e)]
+    )
+    .unwrap());
+
+    // Evento: começa com dígito, tem hífen, usa prefixo reservado, passa de 40.
+    log_event(&mut e, an, "1_inicio", Value::Null);
+    log_event(&mut e, an, "bad-name", Value::Null);
+    log_event(&mut e, an, "firebase_evento", Value::Null);
+    let longo = "a".repeat(41);
+    log_event(&mut e, an, &longo, Value::Null);
+    assert_eq!(e.gms_analytics_rejected(), 4);
+    assert!(e.gms_analytics_events().is_empty(), "nada gravado");
+
+    // Parâmetro inválido rejeita o evento inteiro.
+    let bad_param = {
+        let v = s(&mut e, "1");
+        bundle_of(&mut e, vec![("preço-x".to_string(), v)])
+    };
+    log_event(&mut e, an, "compra", bad_param);
+    assert_eq!(e.gms_analytics_rejected(), 5);
+    assert!(e.gms_analytics_events().is_empty());
+
+    // Propriedade de usuário com nome inválido (máximo 24).
+    let k = s(&mut e, "1plano");
+    let v = s(&mut e, "pro");
+    ci!(
+        e,
+        FIREBASE_ANALYTICS,
+        "setUserProperty",
+        "(Ljava/lang/String;Ljava/lang/String;)V",
+        an,
+        [k, v]
+    )
+    .unwrap();
+    assert_eq!(e.gms_analytics_rejected(), 6);
+    assert!(e.gms_analytics_user_props().is_empty());
+
+    // Nomes válidos (inclusive com 40 caracteres) são gravados.
+    let item = {
+        let v = s(&mut e, "banana");
+        bundle_of(&mut e, vec![("item".to_string(), v)])
+    };
+    log_event(&mut e, an, "compra_ok", item);
+    let limite = "b".repeat(40);
+    log_event(&mut e, an, &limite, Value::Null);
+    assert_eq!(e.gms_analytics_rejected(), 6, "válidos não contam");
+    let nomes: Vec<&str> = e
+        .gms_analytics_events()
+        .iter()
+        .map(|ev| ev.name.as_str())
+        .collect();
+    assert_eq!(nomes, vec!["compra_ok", limite.as_str()]);
+
+    // Ciclo: coleção desligada descarta sem contar como rejeição.
+    ci!(
+        e,
+        FIREBASE_ANALYTICS,
+        "setAnalyticsCollectionEnabled",
+        "(Z)V",
+        an,
+        [Value::Int(0)]
+    )
+    .unwrap();
+    log_event(&mut e, an, "oculto", Value::Null);
+    assert_eq!(e.gms_analytics_events().len(), 2);
+    assert_eq!(e.gms_analytics_rejected(), 6);
+
+    // Religar a coleta volta a gravar.
+    ci!(
+        e,
+        FIREBASE_ANALYTICS,
+        "setAnalyticsCollectionEnabled",
+        "(Z)V",
+        an,
+        [Value::Int(1)]
+    )
+    .unwrap();
+    log_event(&mut e, an, "volta", Value::Null);
+    assert_eq!(e.gms_analytics_events().len(), 3);
+    assert_eq!(e.gms_analytics_events()[2].name, "volta");
 }
