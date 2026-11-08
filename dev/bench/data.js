@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794175994493,
+  "lastUpdate": 1794176614225,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6155,6 +6155,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3496,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e57cf5be2a53c82784ed9079d2eb1a89ba5a454a",
+          "message": "docs(jetpack): reteste da captura do CameraX (S19), sem confirmação de sucesso (#611)",
+          "timestamp": "2026-11-08T19:23:16-03:00",
+          "tree_id": "d444715a8195a4ace18bc3dd482b965679e81842",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e57cf5be2a53c82784ed9079d2eb1a89ba5a454a"
+        },
+        "date": 1794176613534,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2783,
+            "range": "± 116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2765,
+            "range": "± 35",
             "unit": "ns/iter"
           }
         ]
