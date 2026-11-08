@@ -107,7 +107,7 @@ mínimas documentadas no PR.
     | compose | host-native | UI-05 experimental/longo prazo; segue `not_implemented` |
     | emoji2 | dex-passthrough | Fora do escopo desta rodada (fontes de emoji) |
     | media3 | dex-passthrough | Depende de MEDIA-01/02 (pipeline de mídia) |
-    | camerax | host-shim | Depende de MEDIA-03 (câmera virtual) |
+    | camerax | host-shim → DEX real | **S19:** o CameraX real roda sobre a Camera2 virtual (evidência local). Segue `not_implemented`: falta teste no repositório (fixture ou APK) |
     | security-crypto | host-shim | **Partial (S17).** Depende de AndroidKeyStore (ST-04), já disponível |
     | credentials | host-shim | **Partial (S18).** Sem provedor fake (decisão de produto), só as falhas tipadas e `clear` |
     | photopicker | host-shim | Depende de URI programável para `PickVisualMedia` |
@@ -467,6 +467,28 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   e as variantes `suspend`.
 - **Pendente**: o caminho de sucesso de get/create só fica testável com um provedor fake. Isso depende de
   decisão de produto, então não entrou nesta rodada.
+
+### S19 — Apêndice D: CameraX, validação ponta a ponta do DEX real (2026-11-08)
+
+- **Decisão do usuário (2026-11-08)**: primeiro, escrever um shim host do ponto de entrada do CameraX. Depois
+  da evidência abaixo, o usuário escolheu validar o DEX real. Esta rodada não tem shim novo; o plano
+  "host-shim" para camerax fica substituído por esta decisão.
+- **Evidência (local, build `rd-cli` debug de `main` 9399bf3, APK `comprix-v1.6.0-x86_64-release.apk`)**:
+  - Rota até o Scanner: `Pular` → `Nova lista` → `Compra do Mês` → `Criar e adicionar itens` →
+    `Escanear um produto`, com permissão de câmera concedida. `last_error` = `null`. A tela "Escanear preço"
+    mostra o preview sem injeção de frames (`/home/user/comprix/cx_run1.png`, fora do repositório).
+  - Trace com `RD_TRACE_METHOD=Landroidx/camera`: `ProcessCameraProvider.getInstance` →
+    `getOrCreateCameraXInstance`, criação do `PreviewView`, binding de use cases, `SurfaceRequest` e
+    `AndroidImageReaderProxy`. Todo o pipeline interno do CameraX roda no DEX sobre a Camera2 virtual (`m10`).
+  - "Tirar foto": `ImageCapture.takePicture` → `submitStillCaptureRequest` executa, com `FutureChain` e
+    `Futures.transformAsync`. **A conclusão da captura não aparece no trace** (sem `onCaptureSuccess` nem
+    `ImageSaver`), então o sucesso da captura não é afirmado.
+- **Por que o status não sobe**: `partial` exige implementação versionada e teste no repositório (`gap_id`,
+  `module`, `code`, `evidence`). O APK do Comprix não é versionável, e o CI não o tem. O precedente do
+  RxJava usa fixture DEX com exceção de ADR (036). Ficam em aberto: (a) fixture DEX do CameraX com ADR de
+  exceção, ou (b) aceitar evidência local como prova. Esta é uma decisão do usuário.
+- **Limites da evidência**: o preview foi verificado visualmente (screenshot). Não foi medido frame a frame, e a
+  captura não foi confirmada. `ImageAnalysis` (modo Código) não foi exercitado.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 
