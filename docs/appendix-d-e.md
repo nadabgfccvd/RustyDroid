@@ -378,3 +378,21 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
 - Os 3 testes continuam `#[ignore]`, para que `cargo test --workspace` não dependa do DEX.
 - Status de `room` segue `partial` (ver S13: não modelados `fallbackToDestructiveMigrationFrom`/`OnDowngrade`,
   auto-migrations, observers do InvalidationTracker e coroutines/Flow).
+
+### S16 — Apêndice D: lacunas conhecidas de WorkManager (2026-11-08)
+
+Auditoria do modelo host de `androidx.work` em `crates/rd-vm/src/m8.rs` (sem mudança de
+comportamento nesta rodada). Achados, por leitura do código:
+
+- `cancelWorkById`, `cancelAllWorkByTag` e `cancelUniqueWork` percorrem `vm.fw.m8.work` e
+  marcam **todo** registro `ENQUEUED` como `CANCELLED`. Não casam id, tag nem nome único.
+  Efeito: cancelar um trabalho cancela os outros. Isso é um erro, não só uma lacuna.
+- `WorkRecord` guarda `id` no formato `work-N`, não um UUID. Não há `getId()`, então o app
+  não tem como relacionar um `WorkRequest` ao registro.
+- `tags` é sempre `Vec::new()`: `addTag` não é gravado. Por isso `cancelAllWorkByTag` e
+  `getWorkInfosByTag` não teriam como casar.
+- `getWorkInfosByTag` e `getWorkInfosForUniqueWork` devolvem um `ListenableFuture` sem valor.
+
+Correção pendente (próxima rodada de D/work): modelar id UUID por `WorkRequest`, tags e
+unique work name no `WorkRecord`; cancelar só o que casa; `WorkInfo` com estados. Até lá,
+`work` segue `partial`, e a nota de `data/jetpack.toml` registra o gap.
