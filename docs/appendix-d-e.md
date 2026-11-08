@@ -345,3 +345,23 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
     (triggers) e coroutines/Flow. Por isso o status é `partial`, não `supported`.
   - Observado no trace: cada abertura em conexão nova reexecuta o `onOpen` do Room
     (`CREATE TEMP TABLE`), e agora ele não falha. Sem erro de SQL nos três cenários.
+
+### S14 — Apêndice D: navigation, desempilhar a raiz como o AOSP (2026-11-08)
+
+- **S14 (rodada 6 de D, branch `fix/navigation-root-pop-20261108`)**: `popBackStack()` e
+  `popBackStack(id, inclusive)` no host de `NavController` passam a seguir o AOSP.
+  - Fonte: `NavController.java` (AOSP `platform/frameworks/support`): `popBackStack()` é
+    `popBackStack(atual, true)`; o retorno é `popped && dispatchOnDestinationChanged()`, e
+    o dispatch não ocorre com a pilha vazia. A doc oficial de back stack diz que, quando
+    o retorno é false, `getCurrentDestination()` é nulo (o último destino saiu da pilha).
+  - Antes: a raiz era mantida em qualquer caso, e `popBackStack(raiz, true)` retornava 1.
+    Agora desempilhar a raiz esvazia a pilha e retorna 0.
+  - `navigateUp()` não muda: o AOSP também não desempilha a raiz nesse caso (retorna false).
+  - Decisão do usuário (2026-11-08, "pesquise e escolha a melhor solução"): alinhar ao
+    Android. A mudança afeta apps que desempilham a raiz; apps que tratam o retorno/destino
+    nulo se comportam como no Android.
+  - Teste: `dex_navigation_root_pop_empties_stack_like_android` (`crates/rd-vm/tests/androidx.rs`).
+    Mutação (retorno `popped` sem checar pilha vazia) derruba o teste.
+  - Não modelado: `navigate()` com pilha vazia (o AOSP exige o destino atual),
+    `popUpTo`/`saveState`/`restoreState`, e validação de destino desconhecido ao navegar.
+    Por isso o status segue `partial`.
