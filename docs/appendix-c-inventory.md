@@ -13,17 +13,17 @@ counted item not implemented and tested is an open blocker.
 
 | API | public classes (incl. nested) | public members (ctor+method+field) | `android.*` classes with an `rd-vm` descriptor literal |
 |---:|---:|---:|---:|
-| 26 | 4172 | 63081 | 782 |
-| 27 | 4192 | 63269 | 790 |
-| 28 | 4330 | 65342 | 834 |
-| 29 | 4526 | 68487 | 861 |
-| 30 | 4742 | 71996 | 873 |
-| 31 | 5065 | 75599 | 904 |
-| 32 | 5071 | 75691 | 904 |
-| 33 | 5272 | 79105 | 922 |
-| 34 | 5716 | 84026 | 950 |
-| 35 | 5976 | 86994 | 950 |
-| 36 | 6222 | 89916 | 950 |
+| 26 | 4172 | 63081 | 789 |
+| 27 | 4192 | 63269 | 797 |
+| 28 | 4330 | 65342 | 841 |
+| 29 | 4526 | 68487 | 868 |
+| 30 | 4742 | 71996 | 880 |
+| 31 | 5065 | 75599 | 911 |
+| 32 | 5071 | 75691 | 911 |
+| 33 | 5272 | 79105 | 929 |
+| 34 | 5716 | 84026 | 957 |
+| 35 | 5976 | 86994 | 957 |
+| 36 | 6222 | 89916 | 957 |
 
 ## Registered surfaces (`data/api-coverage.toml`)
 
@@ -34,10 +34,10 @@ counted item not implemented and tested is an open blocker.
 | `android-app-admin` | `android.app.admin` | partial | 10 cls / 377 mem | 10 cls / 377 mem | 11 cls / 478 mem | 12 cls / 526 mem | 13 cls / 562 mem | 14 cls / 606 mem | 14 cls / 606 mem | 18 cls / 668 mem | 24 cls / 760 mem | 24 cls / 773 mem | 24 cls / 791 mem | 3 / 24 |
 | `android-app-backup` | `android.app.backup` | partial | 11 cls / 47 mem | 11 cls / 47 mem | 11 cls / 58 mem | 11 cls / 57 mem | 11 cls / 57 mem | 11 cls / 57 mem | 11 cls / 57 mem | 11 cls / 57 mem | 11 cls / 57 mem | 11 cls / 57 mem | 11 cls / 57 mem | 3 / 11 |
 | `android-app-slice` | `android.app.slice` | partial | 0 cls / 0 mem | 0 cls / 0 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 6 cls / 107 mem | 4 / 6 |
-| `android-content` | `android.content` | partial | 48 cls / 1439 mem | 48 cls / 1441 mem | 48 cls / 1455 mem | 49 cls / 1506 mem | 49 cls / 1564 mem | 51 cls / 1624 mem | 51 cls / 1624 mem | 51 cls / 1648 mem | 51 cls / 1700 mem | 53 cls / 1747 mem | 53 cls / 1756 mem | 18 / 53 |
+| `android-content` | `android.content` | partial | 48 cls / 1439 mem | 48 cls / 1441 mem | 48 cls / 1455 mem | 49 cls / 1506 mem | 49 cls / 1564 mem | 51 cls / 1624 mem | 51 cls / 1624 mem | 51 cls / 1648 mem | 51 cls / 1700 mem | 53 cls / 1747 mem | 53 cls / 1756 mem | 19 / 53 |
 | `android-content-pm` | `android.content.pm` | partial | 27 cls / 800 mem | 27 cls / 806 mem | 29 cls / 850 mem | 30 cls / 907 mem | 31 cls / 955 mem | 34 cls / 1037 mem | 34 cls / 1037 mem | 36 cls / 1109 mem | 36 cls / 1139 mem | 39 cls / 1207 mem | 40 cls / 1225 mem | 14 / 40 |
 | `android-content-res` | `android.content.res` | partial | 9 cls / 258 mem | 9 cls / 258 mem | 9 cls / 259 mem | 9 cls / 263 mem | 9 cls / 266 mem | 9 cls / 270 mem | 9 cls / 270 mem | 9 cls / 271 mem | 9 cls / 276 mem | 10 cls / 281 mem | 10 cls / 281 mem | 7 / 10 |
-| `android-view` | `android.view` | partial | 63 cls / 2537 mem | 63 cls / 2543 mem | 64 cls / 2589 mem | 65 cls / 2679 mem | 74 cls / 2809 mem | 81 cls / 2924 mem | 81 cls / 2936 mem | 81 cls / 2967 mem | 83 cls / 3071 mem | 85 cls / 3138 mem | 85 cls / 3179 mem | 35 / 85 |
+| `android-view` | `android.view` | partial | 63 cls / 2537 mem | 63 cls / 2543 mem | 64 cls / 2589 mem | 65 cls / 2679 mem | 74 cls / 2809 mem | 81 cls / 2924 mem | 81 cls / 2936 mem | 81 cls / 2967 mem | 83 cls / 3071 mem | 85 cls / 3138 mem | 85 cls / 3179 mem | 37 / 85 |
 | `android-view-accessibility` | `android.view.accessibility` | partial | 8 cls / 333 mem | 9 cls / 340 mem | 9 cls / 367 mem | 9 cls / 375 mem | 9 cls / 394 mem | 9 cls / 397 mem | 9 cls / 400 mem | 9 cls / 433 mem | 9 cls / 454 mem | 9 cls / 457 mem | 9 cls / 485 mem | 4 / 9 |
 | `android-view-inputmethod` | `android.view.inputmethod` | partial | 16 cls / 325 mem | 16 cls / 325 mem | 16 cls / 326 mem | 16 cls / 326 mem | 20 cls / 373 mem | 21 cls / 394 mem | 21 cls / 394 mem | 24 cls / 430 mem | 37 cls / 583 mem | 38 cls / 598 mem | 38 cls / 607 mem | 8 / 38 |
 | `android-view-animation` | `android.view.animation` | partial | 22 cls / 214 mem | 22 cls / 214 mem | 22 cls / 214 mem | 22 cls / 214 mem | 22 cls / 214 mem | 22 cls / 214 mem | 22 cls / 214 mem | 22 cls / 218 mem | 22 cls / 218 mem | 22 cls / 218 mem | 22 cls / 218 mem | 11 / 22 |
@@ -55,7 +55,7 @@ counted item not implemented and tested is an open blocker.
 | `android-text-method` | `android.text.method` | partial | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 217 mem | 24 cls / 221 mem | 24 cls / 221 mem | 24 cls / 221 mem | 3 / 24 |
 | `android-text-style` | `android.text.style` | partial | 37 cls / 309 mem | 37 cls / 309 mem | 37 cls / 321 mem | 37 cls / 333 mem | 37 cls / 335 mem | 37 cls / 336 mem | 37 cls / 336 mem | 38 cls / 346 mem | 38 cls / 373 mem | 39 cls / 384 mem | 40 cls / 392 mem | 5 / 40 |
 | `android-text-util` | `android.text.util` | partial | 3 cls / 36 mem | 3 cls / 36 mem | 3 cls / 36 mem | 3 cls / 38 mem | 3 cls / 38 mem | 3 cls / 38 mem | 3 cls / 38 mem | 3 cls / 38 mem | 3 cls / 38 mem | 3 cls / 38 mem | 3 cls / 38 mem | 2 / 3 |
-| `android-os` | `android.os` | partial | 57 cls / 954 mem | 58 cls / 964 mem | 58 cls / 996 mem | 59 cls / 1058 mem | 61 cls / 1108 mem | 66 cls / 1138 mem | 66 cls / 1138 mem | 66 cls / 1197 mem | 66 cls / 1217 mem | 72 cls / 1280 mem | 75 cls / 1342 mem | 34 / 75 |
+| `android-os` | `android.os` | partial | 57 cls / 954 mem | 58 cls / 964 mem | 58 cls / 996 mem | 59 cls / 1058 mem | 61 cls / 1108 mem | 66 cls / 1138 mem | 66 cls / 1138 mem | 66 cls / 1197 mem | 66 cls / 1217 mem | 72 cls / 1280 mem | 75 cls / 1342 mem | 35 / 75 |
 | `android-os-bundle` | `android.os.Bundle` | supported | 1 cls / 68 mem | 1 cls / 68 mem | 1 cls / 68 mem | 1 cls / 68 mem | 1 cls / 68 mem | 1 cls / 68 mem | 1 cls / 68 mem | 1 cls / 73 mem | 1 cls / 73 mem | 1 cls / 73 mem | 1 cls / 73 mem | 1 / 1 |
 | `android-os-build` | `android.os.Build` | supported | 3 cls / 64 mem | 3 cls / 65 mem | 3 cls / 66 mem | 4 cls / 74 mem | 4 cls / 76 mem | 4 cls / 82 mem | 4 cls / 83 mem | 4 cls / 85 mem | 4 cls / 86 mem | 4 cls / 87 mem | 5 cls / 127 mem | 2 / 5 |
 | `android-os-binder` | `android.os.Binder` | partial | 1 cls / 21 mem | 1 cls / 21 mem | 1 cls / 20 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 cls / 26 mem | 1 / 1 |
@@ -73,7 +73,7 @@ counted item not implemented and tested is an open blocker.
 | `android-net-nsd` | `android.net.nsd` | partial | 2 cls / 29 mem | 2 cls / 29 mem | 2 cls / 29 mem | 2 cls / 29 mem | 2 cls / 29 mem | 2 cls / 29 mem | 2 cls / 29 mem | 2 cls / 35 mem | 2 cls / 42 mem | 3 cls / 54 mem | 4 cls / 65 mem | 2 / 4 |
 | `android-net-sip` | `android.net.sip` | partial | 7 cls / 92 mem | 7 cls / 92 mem | 7 cls / 92 mem | 7 cls / 92 mem | 7 cls / 93 mem | 7 cls / 93 mem | 7 cls / 93 mem | 7 cls / 93 mem | 7 cls / 93 mem | 7 cls / 93 mem | 7 cls / 93 mem | 6 / 7 |
 | `android-net-ipsec-ike` | `android.net.ipsec.ike` | partial | 0 cls / 0 mem | 0 cls / 0 mem | 0 cls / 0 mem | 0 cls / 0 mem | 0 cls / 0 mem | 22 cls / 140 mem | 22 cls / 140 mem | 22 cls / 142 mem | 22 cls / 142 mem | 22 cls / 145 mem | 22 cls / 145 mem | 12 / 22 |
-| `android-media` | `android.media` | partial | 69 cls / 1639 mem | 69 cls / 1641 mem | 72 cls / 1795 mem | 81 cls / 1984 mem | 90 cls / 2217 mem | 96 cls / 2359 mem | 97 cls / 2395 mem | 97 cls / 2463 mem | 100 cls / 2549 mem | 101 cls / 2589 mem | 101 cls / 2623 mem | 16 / 101 |
+| `android-media` | `android.media` | partial | 69 cls / 1639 mem | 69 cls / 1641 mem | 72 cls / 1795 mem | 81 cls / 1984 mem | 90 cls / 2217 mem | 96 cls / 2359 mem | 97 cls / 2395 mem | 97 cls / 2463 mem | 100 cls / 2549 mem | 101 cls / 2589 mem | 101 cls / 2623 mem | 17 / 101 |
 | `android-media-session` | `android.media.session` | partial | 4 cls / 91 mem | 4 cls / 91 mem | 4 cls / 93 mem | 4 cls / 100 mem | 4 cls / 101 mem | 4 cls / 104 mem | 4 cls / 104 mem | 4 cls / 108 mem | 4 cls / 108 mem | 4 cls / 108 mem | 4 cls / 108 mem | 4 / 4 |
 | `android-media-browse` | `android.media.browse` | partial | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 cls / 15 mem | 1 / 1 |
 | `android-media-projection` | `android.media.projection` | partial | 2 cls / 6 mem | 2 cls / 6 mem | 2 cls / 6 mem | 2 cls / 6 mem | 2 cls / 6 mem | 2 cls / 6 mem | 2 cls / 6 mem | 2 cls / 6 mem | 3 cls / 15 mem | 3 cls / 15 mem | 3 cls / 15 mem | 2 / 3 |
