@@ -5795,6 +5795,53 @@ mod tests {
             .is_some_and(|a| a.perms.is_instant()));
     }
 
+    /// Apêndice B `softRestriction` (2a) via MCP: WRITE_EXTERNAL_STORAGE é soft
+    /// restricted. Sem allowlist, abaixo de Q (target < 29) o grant é recusado;
+    /// com targetSdk 29 a forma completa vale e o grant é concedido.
+    #[test]
+    fn soft_restricted_storage_grant_follows_target_sdk_via_mcp() {
+        use rd_framework::fd_permissions::GrantState;
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let write = "android.permission.WRITE_EXTERNAL_STORAGE";
+        let apk_for = |target: i32| {
+            let (arsc, layout, dex) = fixture_parts();
+            fixture_apk_write(rd_testsupport::apkfix::build_apk_sdk_perms(
+                "com.test.mcp",
+                "com.test.mcp.Main",
+                arsc,
+                vec![
+                    ("res/layout/activity_main.xml", layout),
+                    ("classes.dex", dex),
+                ],
+                26,
+                target,
+                &[write],
+            ))
+        };
+        let grant_write = |apk: String| {
+            let mut s = AgentSession::new();
+            install_ok(&mut s, &apk);
+            let (v, err) = call(
+                &mut s,
+                "permissions_grant",
+                serde_json::json!({"permission": write}),
+            );
+            assert!(!err, "permissions_grant: {v}");
+            s.find_installed("com.test.mcp")
+                .and_then(|a| a.perms.state(write))
+        };
+        assert_eq!(
+            grant_write(apk_for(28)),
+            Some(GrantState::RuntimePending),
+            "target 28 sem allowlist: grant recusado"
+        );
+        assert_eq!(
+            grant_write(apk_for(29)),
+            Some(GrantState::Granted),
+            "target 29: forma completa, grant concedido"
+        );
+    }
+
     /// ADR 022: a classe de um split de feature de XAPK entra no classpath da
     /// execução. Antes, só o DEX do base era montado.
     #[test]

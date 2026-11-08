@@ -69,6 +69,24 @@ A pesquisa original (fontes e pré-requisitos) continua abaixo, como registro.
 | `revokeWhenRequested` (2b) | Aprovado: ciclo de update de pacote e conjunto de permissões implícitas por versão | `[[split]]` em `data/permissions.toml` (tabela do `platform.xml`); `implicit_permissions`, `apply_implicit` no `install`; `PermissionEngine::update`; `grant` limpa a flag (#582) | `implicit_grant_is_revoked_when_updated_app_requests_it_explicitly`; `implicit_grant_is_kept_while_app_still_does_not_request_it`; `revoke_when_requested` |
 | `instant` (2c) | Aprovado: modelo de app instantâneo, opt-in por instalação (default falso) | Flag `instant` em 26 permissões do `core/res` do AOSP; `PermissionEngine::set_instant`; permissão sem a flag vira `DeniedSystem`; `grant`, `set_role`, `grant_partial_media` e `update` respeitam; `isInstantApp` lê `Engine::instant_app` (#583) | `instant_app_cannot_be_granted_non_instant_permission`; `instant_app_keeps_only_instant_capable_grants`; `instant_app_cannot_receive_non_instant_role_permissions`; `instant_flag_in_table_matches_framework_manifest`; `instant_rule_applies_to_permissions_requested_by_update` |
 
+### Validação prática de 2a–2c (2026-11-08)
+
+Cada flag foi exercitada ponta a ponta pelo `rd mcp` (stdio JSON-RPC), com APKs
+de teste gerados pelo `rd-testsupport::apkfix` e sem alteração de código de
+produto. Os testes MCP abaixo repetem os cenários da validação:
+
+| Flag | Cenário | Resultado observado | Teste automatizado |
+|---|---|---|---|
+| 2a `softRestriction` | target 28 pede WRITE; `permissions_grant` | `runtime-pending` (recusado) | `soft_restricted_storage_grant_follows_target_sdk_via_mcp` |
+| 2a | target 29 pede WRITE; `permissions_grant` | `granted` | idem |
+| 2a | target 28 pede READ; `permissions_grant` | `runtime-pending` (grant recusado, como WRITE); forma fraca `MediaCollectionsOnly` via `soft_weak_form` | `soft_restricted_storage_is_refused_below_q_without_allowlist` (framework) |
+| 2b `revokeWhenRequested` | v1 target 22 pede WRITE → READ implícita `granted`; update v2 target 23 pede READ | install devolve `revoked_on_update: [READ]`; READ vai a `runtime-pending` | `reinstall_is_an_update_that_revokes_implicit_grant_now_requested` |
+| 2c `instant` | `install` com `instant=true`; grant CAMERA (tem flag) e WRITE (sem flag) | CAMERA `granted`; WRITE `denied-system`. Controle sem `instant`: WRITE `granted` | `install_as_instant_app_limits_grants_and_fixes_mode` |
+
+Limitação conhecida: o MCP e o CLI mostram só o estado do grant. A forma fraca de
+READ (só coleções de mídia) existe no motor (`soft_weak_form`), mas não aparece
+na saída de `permissions_list`/`permissions_grant`.
+
 Desvio conhecido: `isInstantApp` só muda quando o VM é configurado como app instantâneo;
 o padrão continua `false`, então apps existentes não mudam de comportamento.
 
