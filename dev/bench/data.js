@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794156401340,
+  "lastUpdate": 1794157459313,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5543,6 +5543,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2771,
             "range": "± 48",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5dd8b1aaea12f38b61deb824af2df03cf28446e6",
+          "message": "fix(m8): WorkManager com id UUID, tags, unique name e cancelamento que casa (S16) (#594)\n\n- Cada WorkRequest recebe id UUID v4 no build() (RNG por engine, determinístico);\n  WorkRequest.getId() devolve o mesmo java.util.UUID; WorkRecord.id usa esse texto.\n- Builder(Class) grava o worker (antes worker_class saía vazio). addTag acumula\n  as tags no builder; build() copia para o pedido; WorkRecord.tags as recebe.\n- enqueueUniqueWork/enqueueUniquePeriodicWork gravam o nome em unique_name.\n- cancelWorkById, cancelAllWorkByTag e cancelUniqueWork cancelam só os ENQUEUED\n  que casam. Antes marcavam todo ENQUEUED como CANCELLED.\n- getWorkInfosByTag/getWorkInfosForUniqueWork deixam de ser sequestrados: sem\n  WorkInfo real a chamada não devolve mais um future vazio.\n\nTestes: m8.rs (m8_workmanager_*; mutação do casamento derruba os testes de\ncancelamento) e m8_workmanager_dex.rs (bytecode DEX em memória).\n\nMuda comportamento de apps que cancelam trabalho: cancelar agora é seletivo.\nAguarda aprovação do usuário antes do merge (regra de semântica).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T14:04:01-03:00",
+          "tree_id": "762e3cb36afa3fa0159928e4f7f8abee9329be9d",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5dd8b1aaea12f38b61deb824af2df03cf28446e6"
+        },
+        "date": 1794157458564,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1751,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1726,
+            "range": "± 23",
             "unit": "ns/iter"
           }
         ]
