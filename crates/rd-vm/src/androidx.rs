@@ -2349,13 +2349,15 @@ fn navigation(
                 .nav
                 .get_mut(&recv)
                 .ok_or_else(|| npe("nav"))?;
-            if args.is_empty() {
-                if h.stack.len() > 1 {
-                    h.stack.pop();
-                    Value::Int(1)
-                } else {
-                    Value::Int(0)
-                }
+            // AOSP `NavController`: `popBackStack()` é `popBackStack(atual, true)`
+            // (desempilha a raiz se ela for o atual). O retorno é
+            // `popped && dispatchOnDestinationChanged()`, e o dispatch não
+            // acontece com pilha vazia: então esvaziar a pilha retorna false
+            // e deixa `getCurrentDestination()` nulo, como na doc oficial.
+            let popped = if args.is_empty() {
+                let had = !h.stack.is_empty();
+                h.stack.pop();
+                had
             } else {
                 let target = iarg(args, 0);
                 let inclusive = iarg(args, 1) != 0;
@@ -2363,12 +2365,13 @@ fn navigation(
                     Some(pos) => {
                         let new_len = if inclusive { pos } else { pos + 1 };
                         let changed = new_len < h.stack.len();
-                        h.stack.truncate(new_len.max(1.min(h.stack.len())));
-                        Value::Int(changed as i32)
+                        h.stack.truncate(new_len);
+                        changed
                     }
-                    None => Value::Int(0),
+                    None => false,
                 }
-            }
+            };
+            Value::Int((popped && !h.stack.is_empty()) as i32)
         }
         "navigateUp" => {
             let h = vm

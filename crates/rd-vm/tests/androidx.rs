@@ -1063,6 +1063,111 @@ fn dex_navigation_stack_model() {
     assert_eq!(e.androidx_last_nav_controller(), Some(nav));
 }
 
+/// AOSP `NavController` (popBackStack/navigateUp): desempilhar a raiz esvazia a
+/// pilha, `getCurrentDestination()` vira nulo e o retorno é false. `navigateUp()`
+/// na raiz não desempilha. Pop de destino fora da pilha não muda nada.
+#[test]
+fn dex_navigation_root_pop_empties_stack_like_android() {
+    let mut e = engine();
+    let nav = obj(&mut e, NAV_CONTROLLER);
+    ci!(
+        e,
+        NAV_CONTROLLER,
+        "<init>",
+        "(Landroid/content/Context;)V",
+        nav,
+        [Value::Null]
+    )
+    .unwrap();
+    ci!(e, NAV_CONTROLLER, "setGraph", "(I)V", nav, [Value::Int(7)]).unwrap();
+    ci!(e, NAV_CONTROLLER, "navigate", "(I)V", nav, [Value::Int(11)]).unwrap();
+    // pop até um destino não-raiz: a raiz fica, retorno true.
+    assert_eq!(
+        iv(ci!(
+            e,
+            NAV_CONTROLLER,
+            "popBackStack",
+            "(IZ)Z",
+            nav,
+            [Value::Int(7), Value::Int(0)]
+        )
+        .unwrap()),
+        1
+    );
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7]));
+    // nada a desempilhar acima da raiz: false, sem mudança.
+    assert_eq!(
+        iv(ci!(
+            e,
+            NAV_CONTROLLER,
+            "popBackStack",
+            "(IZ)Z",
+            nav,
+            [Value::Int(7), Value::Int(0)]
+        )
+        .unwrap()),
+        0
+    );
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7]));
+    // pop inclusivo da raiz: a pilha esvazia e o retorno é false.
+    assert_eq!(
+        iv(ci!(
+            e,
+            NAV_CONTROLLER,
+            "popBackStack",
+            "(IZ)Z",
+            nav,
+            [Value::Int(7), Value::Int(1)]
+        )
+        .unwrap()),
+        0,
+        "pilha esvaziada: retorno false"
+    );
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![]));
+    let cur = ci!(
+        e,
+        NAV_CONTROLLER,
+        "getCurrentDestination",
+        "()Landroidx/navigation/NavDestination;",
+        nav,
+        []
+    )
+    .unwrap();
+    assert!(matches!(cur, Some(Value::Null)), "{cur:?}");
+    // destino que não está na pilha vazia: false, sem efeito.
+    assert_eq!(
+        iv(ci!(
+            e,
+            NAV_CONTROLLER,
+            "popBackStack",
+            "(IZ)Z",
+            nav,
+            [Value::Int(7), Value::Int(1)]
+        )
+        .unwrap()),
+        0
+    );
+    // popBackStack() sem argumento na pilha vazia: false.
+    assert_eq!(
+        iv(ci!(e, NAV_CONTROLLER, "popBackStack", "()Z", nav, []).unwrap()),
+        0
+    );
+    // popBackStack() sem argumento na raiz: esvazia a pilha e retorna false.
+    ci!(e, NAV_CONTROLLER, "setGraph", "(I)V", nav, [Value::Int(7)]).unwrap();
+    assert_eq!(
+        iv(ci!(e, NAV_CONTROLLER, "popBackStack", "()Z", nav, []).unwrap()),
+        0
+    );
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![]));
+    // navigateUp() na raiz (uma entrada) não desempilha: segue false.
+    ci!(e, NAV_CONTROLLER, "setGraph", "(I)V", nav, [Value::Int(7)]).unwrap();
+    assert_eq!(
+        iv(ci!(e, NAV_CONTROLLER, "navigateUp", "()Z", nav, []).unwrap()),
+        0
+    );
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7]));
+}
+
 #[test]
 fn dex_startup_multidex_fileprovider_permissions_cancellation() {
     let mut e = engine();
