@@ -337,8 +337,8 @@ code = ["crates/rd-vm/src/gms.rs"]
 milestone = "appendix-e"
 network = "none"
 programmable = "Árvore local record/replay (NET-03): valores semeados; ValueEventListeners disparam nas escritas locais."
-notes = "Store local por caminho: getReference/child/push, setValue substitui subárvores e dispara ValueEventListeners (addValueEventListener/addListenerForSingleValueEvent), DataSnapshot com getValue/child/exists; semeadura por Engine::gms_rtdb_seed. Sem regras de segurança, sem presença nem backend (NET-03 fora desta ronda)."
-evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs"]
+notes = "Store local por caminho: getReference/child/push, setValue substitui subárvores e dispara ValueEventListeners (addValueEventListener/addListenerForSingleValueEvent), DataSnapshot com getValue/child/exists; semeadura por Engine::gms_rtdb_seed. Sem regras de segurança, sem presença nem backend (NET-03 fora desta ronda). Negação de acesso programável (Engine::gms_rtdb_set_permission_denied): listeners recebem onCancelled(DatabaseError) e não ficam registrados; setValue não grava (CompletionListener recebe o erro); removeValue, updateChildren e get falham. Sem o código numérico de DatabaseError (não modelado)."
+evidence = ["docs/appendix-d-e.md", "docs/gms.md", "crates/rd-vm/tests/gms.rs", "crates/rd-vm/tests/gms_erro_ciclo.rs"]
 gap_id = "gap-firebase-rtdb"
 key_apis = ["com.google.firebase.database.FirebaseDatabase.getReference", "com.google.firebase.database.DatabaseReference.setValue"]
 
