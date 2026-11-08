@@ -490,6 +490,10 @@ fn call_static_rooted(
         {
             crate::security_crypto::create(vm, sig, args).map(Some)
         }
+        // Apêndice D (credentials): CredentialManager.create sem provedor.
+        (crate::credentials::CREDENTIAL_MANAGER, _) => {
+            crate::credentials::call_static(vm, class, name, sig, args)
+        }
         (MULTIDEX, "install") => {
             vm.fw.androidx.multidex_installs += 1;
             Ok(Some(Value::Null))
@@ -2889,6 +2893,9 @@ fn call_instance_rooted(
         || recv_class == crate::security_crypto::ENCRYPTED_EDITOR
     {
         return crate::security_crypto::call_instance(vm, &recv_class, name, sig, recv, args);
+    }
+    if crate::credentials::is_manager(&recv_class) {
+        return crate::credentials::call_instance(vm, name, sig, recv, args);
     }
     // Snapshot the tracking flags first so the immutable borrow ends
     // before the &mut family calls below.

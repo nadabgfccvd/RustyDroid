@@ -111,14 +111,14 @@ Regras, dependências e limites em [engine-registry.md](engine-registry.md); fon
 
 ## AndroidX/Jetpack (Apêndice D — registro por módulo, não execução)
 
-**46 bibliotecas em 6 categorias** (supported 0, partial 26, stub 3, not_implemented 17). Fonte executável: `data/jetpack.toml`; relatório completo em [jetpack.md](jetpack.md), ledger em [appendix-d-e.md](appendix-d-e.md), consulta via `rd jetpack`. Cada módulo declara estratégia (`dex-passthrough`/`host-shim`/`host-native`); `supported` é só o subconjunto documentado — nunca a biblioteca inteira.
+**46 bibliotecas em 6 categorias** (supported 0, partial 27, stub 3, not_implemented 16). Fonte executável: `data/jetpack.toml`; relatório completo em [jetpack.md](jetpack.md), ledger em [appendix-d-e.md](appendix-d-e.md), consulta via `rd jetpack`. Cada módulo declara estratégia (`dex-passthrough`/`host-shim`/`host-native`); `supported` é só o subconjunto documentado — nunca a biblioteca inteira.
 
 | Categoria | Bibliotecas (implementação nativa ou shim) | Status das bibliotecas | Módulos |
 |---|---|---|---|
 | Foundation | appcompat, core-ktx, activity, annotation, multidex, startup | partial 4 · not_implemented 2 | `none`, `rd-vm/androidx`, `rd-vm/classpath+inflate`, `rd-vm/m9` |
 | Architecture | lifecycle-runtime, lifecycle-livedata, lifecycle-viewmodel, lifecycle-savedstate, room, paging 3, work, navigation, datastore, collection, palette | partial 9 · not_implemented 2 | `none`, `rd-vm/androidx`, `rd-vm/m8` |
 | UI | compose, recyclerview, viewpager2, constraintlayout, coordinatorlayout, drawerlayout, swiperefreshlayout, cardview, fragment, browser (custom tabs), emoji2, material (extra além da tabela da spec) | partial 7 · stub 3 · not_implemented 2 | `none`, `rd-vm/androidx`, `rd-vm/androidx-widgets`, `rd-vm/classpath+inflate`, `rd-vm/m8` |
-| Behavior | media3/ExoPlayer, cameraX, biometric, security-crypto, credential-manager, photo-picker (privacy) | partial 3 · not_implemented 3 | `none`, `rd-vm/androidx`, `rd-vm/photopicker`, `rd-vm/security_crypto` |
+| Behavior | media3/ExoPlayer, cameraX, biometric, security-crypto, credential-manager, photo-picker (privacy) | partial 4 · not_implemented 2 | `none`, `rd-vm/androidx`, `rd-vm/credentials`, `rd-vm/photopicker`, `rd-vm/security_crypto` |
 | DI/async | hilt/dagger, kotlinx-coroutines/flow, rxjava bridge | partial 1 · not_implemented 2 | `none`, `rd-vm/dex-passthrough` |
 | 3rd-party comuns | okhttp, retrofit, moshi, gson, coil, glide, picasso, guava ListenableFuture (extra — base de work/camera) | partial 2 · not_implemented 6 | `none`, `rd-vm/androidx`, `rd-vm/m8` |
 
