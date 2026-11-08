@@ -495,6 +495,17 @@ fn ensure_loaded(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
     Ok(())
 }
 
+/// Fecha a conexão do backend de um banco persistente. O estado já está na
+/// imagem do VFS (`persist_db`); `loaded` é limpo para que a próxima operação
+/// recarregue essa imagem em uma conexão nova.
+fn release_connection(vm: &mut Engine, db: &str) {
+    if !persistent_db(db) {
+        return;
+    }
+    let _ = send(vm, &json!({"op": "close", "db": db}));
+    vm.fw.m8.sqlx.loaded.remove(db);
+}
+
 fn persist_db(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
     if !persistent_db(db) {
         return Ok(());
@@ -1199,10 +1210,18 @@ fn db_intrinsic(
         }
         "getPath" => jstring(vm, db.to_string())?,
         "isOpen" => Value::Int(1),
-        "close" | "releaseReference" | "acquireReference" | "releaseReferenceFromContainer" => {
-            // Reference-count/close calls are a safe durability point; the
-            // object model stays usable (existing RustyDroid deviation), but
-            // committed named-database state is flushed to the VFS image.
+        "close" => {
+            // Durability point, then release of the backend connection: as on
+            // Android, temp tables (Room's invalidation log) die with the
+            // connection. The object model stays usable: the next SQL op
+            // reloads the persisted image (see `release_connection`).
+            persist_db(vm, db)?;
+            release_connection(vm, db);
+            Value::Null
+        }
+        "releaseReference" | "acquireReference" | "releaseReferenceFromContainer" => {
+            // Reference-count calls are a durability point only; the connection
+            // stays open while the database is still in use.
             persist_db(vm, db)?;
             Value::Null
         }
@@ -1867,6 +1886,15 @@ pub fn instance_intrinsic(
                     .get_field(recv, "rd_sqlx_version")
                     .is_ok_and(|v| v != Value::Null) =>
             {
+                // Fecha o banco aberto pelo helper: persiste e libera a conexão
+                // (temp tables morrem com ela, como no Android). Sem isso, o
+                // próximo open reencontra a TEMP table do invalidation tracker.
+                if let Ok(Value::Obj(d)) = vm.heap.get_field(recv, "rd_sqlx_db") {
+                    if let Some(db) = db_name(vm, d) {
+                        persist_db(vm, &db)?;
+                        release_connection(vm, &db);
+                    }
+                }
                 let _ = vm.heap.put_field(recv, "rd_sqlx_db", Value::Null);
                 return Ok(Some(Value::Null));
             }
