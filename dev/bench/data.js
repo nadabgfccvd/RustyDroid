@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794153552566,
+  "lastUpdate": 1794154188036,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -5435,6 +5435,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3496,
             "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "92ad5544cce54685d074f26580f1bea400ba3a90",
+          "message": "ci(vm): job room-fixture gera o DEX do Room no CI e roda os testes do Room (Apêndice D, S15) (#591)\n\nDecisão do usuário (2026-11-08): gerar no CI em vez de abrir exceção de política.\nNenhum .dex é versionado (ADR 036 inalterada). O job roda scripts/gen-room-fixture.sh\ne depois cargo test -p rd-vm --test jetpack_room -- --ignored.\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T13:09:20-03:00",
+          "tree_id": "175836304c4a668407b2264924216773dd877792",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/92ad5544cce54685d074f26580f1bea400ba3a90"
+        },
+        "date": 1794154187196,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1881,
+            "range": "± 66",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1842,
+            "range": "± 38",
             "unit": "ns/iter"
           }
         ]
