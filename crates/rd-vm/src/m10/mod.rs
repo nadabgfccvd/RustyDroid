@@ -34,6 +34,8 @@ pub use sysconfig::{BatteryState, PowerState, SystemConfigState, WakeLockEntry};
 pub struct State {
     pub virtual_hardware_enabled: bool,
     pub monotonic_ns: i64,
+    /// Timestamp do último frame enfileirado em um ImageReader (CameraX casa imagem e resultado por ele).
+    pub last_frame_ts_ns: i64,
     pub wall_clock_ms: i64,
     pub sensors: BTreeMap<i32, VirtualSensor>,
     pub sensor_listeners: Vec<SensorListenerReg>,
@@ -77,6 +79,7 @@ impl Default for State {
         Self {
             virtual_hardware_enabled: false,
             monotonic_ns: 1_000_000_000,
+            last_frame_ts_ns: 0,
             wall_clock_ms: 1_792_886_400_000, // 2026-10-25T00:00:00Z deterministic base
             sensors: sensors::default_sensors(),
             sensor_listeners: Vec::new(),
