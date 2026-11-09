@@ -640,6 +640,25 @@ aplicadas contra o estado simulado do dispositivo (ver S24). Por isso `work` seg
 - **Continua pendente**: o runtime real do WorkManager (`WorkerParameters`/`Context` são modelos host),
   chains (`beginWith`/`then`) e `PeriodicWorkRequest` com constraints. Por isso `work` segue `partial`.
 
+### S25 — Apêndice D: navegação com ações e argumentos (safe-args, UI-04, 2026-11-09)
+
+- **Lacuna fechada** (fallback do `NavController`): ações do grafo. `Engine::androidx_nav_declare_action`
+  declara `<action id, from, to>`. `navigate(actionId)` e `navigate(actionId, Bundle)` saem do destino
+  atual: ação declarada a partir dele leva ao destino `to`; ação declarada de outro destino lança
+  `IllegalArgumentException` e não muda a pilha, como no AOSP.
+- **Safe-args**: `navigate(NavDirections)` lê `getActionId()` e `getArguments()` do objeto gerado pelo
+  app (método DEX real). Ação fora do grafo lança `IllegalArgumentException`.
+- **Argumentos**: o `Bundle` fica na entrada empilhada (`args` paralelo à pilha) e volta por
+  `NavBackStackEntry.getArguments()`. As referências são raízes do GC (`gc_host_ephemerons`).
+- **Testes** (`crates/rd-vm/tests/androidx.rs`, +2): resolução de ação a partir do destino atual com
+  argumentos e GC; `NavDirections` com DEX real e ação não declarada.
+- **Mutação**: remover a checagem de origem da ação derruba o teste de ação; não guardar o Bundle derruba
+  o teste de argumentos; remover a raiz do GC derruba o teste de sobrevivência. Arquivos restaurados
+  e conferidos por checksum.
+- **Continua pendente** (por isso `navigation` segue `partial`): o grafo é declarado pelo harness e não
+  lido de `res/navigation/*.xml` compilado no APK; não há `NavOptions`/`popUpTo`; o fallback de
+  Fragment (back stack e lifecycle) continua do DEX real. UI-04 segue aberto no roadmap.
+
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 
 Critério por serviço parcial: além do caminho de sucesso, o shim tem um caminho de erro programável
