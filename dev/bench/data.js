@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794185876416,
+  "lastUpdate": 1794186819182,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6443,6 +6443,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2760,
             "range": "± 12",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "779672e9fdc9c0d1cc43343363116292070f66ec",
+          "message": "feat(work): Constraints aplicadas pelo harness (S24) (#619)\n\nConstraints.Builder vira host (setRequiredNetworkType com NetworkType,\nsetRequiresCharging, setRequiresBatteryNotLow, setRequiresStorageNotLow,\nsetRequiresDeviceIdle, build). WorkRequest.Builder.setConstraints copia as\nconstraints ao pedido, e WorkRecord as guarda.\n\nm8_run_work consulta constraints_met contra DeviceConditions (estado simulado\ndo dispositivo, Engine::m8_device / m8_set_device). Pedido não atendido fica\nENQUEUED e o doWork não roda, como no WorkManager. Padrão: Wi-Fi, fora da\ntomada, não ocioso.\n\nAproximações documentadas: NOT_ROAMING ~ CONNECTED; TEMPORARILY_UNMETERED ~\nUNMETERED.\n\nTestes (m8_workmanager_run.rs, 15): constraints chegam ao pedido; sem\nconstraints roda offline; charging bloqueia até carregar (sem progresso\nenquanto bloqueado); CONNECTED bloqueia offline e aceita rede medida;\nUNMETERED recusa rede medida; idle espera ocioso.\nMutação (checagem desligada) derruba 4 testes de bloqueio.\n\nContinua pendente: runtime real do WorkManager, chains, PeriodicWorkRequest\ncom constraints. work segue partial.\n\nValidação: fmt --check, clippy -D warnings, cargo test -p rd-vm --\n--include-ignored (129 blocos ok), cargo test -p rd-agent, xtask, links (165 ok).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T22:13:20-03:00",
+          "tree_id": "a5b9c63e8d1675b1c9b5f0542b8b3d30955a87d3",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/779672e9fdc9c0d1cc43343363116292070f66ec"
+        },
+        "date": 1794186818520,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1736,
+            "range": "± 58",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1701,
+            "range": "± 8",
             "unit": "ns/iter"
           }
         ]
