@@ -2254,62 +2254,9 @@ fn executors_factory(name: &str, sig: &str) -> bool {
 
 /// (name, sig) de ExecutorService host suportados (M8).
 fn exec_supported(name: &str, sig: &str) -> bool {
-    // ThreadPoolExecutor / ScheduledThreadPoolExecutor direct ctors and
-    // the state queries apps probe (pool is inline: sizes are 0/1).
-    if name == "<init>" {
-        return true;
-    }
-    if matches!(
-        (name, sig),
-        ("getPoolSize", "()I")
-            | ("getActiveCount", "()I")
-            | ("getCorePoolSize", "()I")
-            | ("getMaximumPoolSize", "()I")
-            | ("prestartAllCoreThreads", "()I")
-            | ("prestartCoreThread", "()Z")
-            | ("allowsCoreThreadTimeOut", "()Z")
-            | ("getKeepAliveTime", "(Ljava/util/concurrent/TimeUnit;)J")
-            | ("getQueue", "()Ljava/util/concurrent/BlockingQueue;")
-            | ("getTaskCount", "()J")
-            | ("getCompletedTaskCount", "()J")
-            | ("getLargestPoolSize", "()I")
-            | ("remove", "(Ljava/lang/Runnable;)Z")
-            | ("purge", "()V")
-    ) {
-        return true;
-    }
-    if name.starts_with("set") || name.starts_with("allow") {
-        return sig.ends_with(")V");
-    }
     matches!(
         (name, sig),
         ("execute", "(Ljava/lang/Runnable;)V")
-            | (
-                "schedule",
-                "(Ljava/lang/Runnable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
-            )
-            | (
-                "schedule",
-                "(Ljava/util/concurrent/Callable;JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
-            )
-            | (
-                "scheduleAtFixedRate",
-                "(Ljava/lang/Runnable;JJLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
-            )
-            | (
-                "scheduleWithFixedDelay",
-                "(Ljava/lang/Runnable;JJLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/ScheduledFuture;"
-            )
-            | ("invokeAll", "(Ljava/util/Collection;)Ljava/util/List;")
-            | (
-                "invokeAll",
-                "(Ljava/util/Collection;JLjava/util/concurrent/TimeUnit;)Ljava/util/List;"
-            )
-            | ("invokeAny", "(Ljava/util/Collection;)Ljava/lang/Object;")
-            | (
-                "invokeAny",
-                "(Ljava/util/Collection;JLjava/util/concurrent/TimeUnit;)Ljava/lang/Object;"
-            )
             | (
                 "submit",
                 "(Ljava/lang/Runnable;)Ljava/util/concurrent/Future;"
@@ -2491,22 +2438,6 @@ fn exec_intrinsic(
                 None => Ok(Some(Value::Null)),
             }
         }
-        ("getQueue", _) => Ok(Some(
-            vm.heap.get_field(recv, "exec_queue").unwrap_or(Value::Null),
-        )),
-        ("getPoolSize", _)
-        | ("getCorePoolSize", _)
-        | ("getMaximumPoolSize", _)
-        | ("getLargestPoolSize", _) => Ok(Some(Value::Int(1))),
-        ("getActiveCount", _) | ("prestartAllCoreThreads", _) => Ok(Some(Value::Int(0))),
-        ("getTaskCount", _) | ("getCompletedTaskCount", _) | ("getKeepAliveTime", _) => {
-            Ok(Some(Value::Long(0)))
-        }
-        ("prestartCoreThread", _) | ("allowsCoreThreadTimeOut", _) | ("remove", _) => {
-            Ok(Some(Value::Int(0)))
-        }
-        ("purge", _) => Ok(Some(Value::Null)),
-        (n, _) if n.starts_with("set") || n.starts_with("allow") => Ok(Some(Value::Null)),
         ("execute", _) => {
             let Some(r) = args[0].as_ref()? else {
                 return Err(exec_npe("execute sem runnable"));
@@ -5217,7 +5148,9 @@ fn instance_intrinsic_dispatch_full(
     // PackageManager backed by the manifest, plus the install sessions it
     // hands out (android_pm.rs)
     if name == "getPackageManager"
-        || (name == "getApplicationInfo" && args.is_empty())
+        || (name == "getApplicationInfo"
+            && args.is_empty()
+            && vm.cp.is_subtype(recv_class, "Landroid/content/Context;"))
         || recv_class == crate::android_pm::APM
         || recv_class == "Landroid/content/pm/PackageInfo;"
         || recv_class == "Landroid/content/pm/PackageInstaller;"

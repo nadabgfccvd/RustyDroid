@@ -600,7 +600,26 @@ pub(crate) fn instance_intrinsic(
                     return Err(exc("Ljava/lang/NullPointerException;", "put(null)"));
                 };
                 let (soff, n) = if sig.contains("II") {
-                    (int_arg(args, 1), int_arg(args, 2))
+                    // ByteBuffer.put(byte[], off, len): Objects.checkFromIndexSize
+                    // contra o array de origem, e BufferOverflowException se não
+                    // couber no restante do buffer (como o JDK).
+                    let arr_len = vm
+                        .heap
+                        .as_array_elems(src)
+                        .map(|(e, _)| e.len() as i64)
+                        .unwrap_or(0);
+                    let (o, l) = (i64::from(int_arg(args, 1)), i64::from(int_arg(args, 2)));
+                    if o < 0 || l < 0 || o + l > arr_len {
+                        return Err(exc(
+                            "Ljava/lang/IndexOutOfBoundsException;",
+                            "Objects.checkFromIndexSize",
+                        ));
+                    }
+                    let lim_now = geti(vm, recv, "bb_lim", 0);
+                    if i64::from(pos) + l > i64::from(lim_now) {
+                        return Err(exc("Ljava/nio/BufferOverflowException;", "put"));
+                    }
+                    (o as i32, l as i32)
                 } else {
                     (
                         0,

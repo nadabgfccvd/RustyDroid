@@ -2882,11 +2882,10 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             Some(&["Landroid/graphics/Shader;", "Ljava/lang/Object;"])
         }
         // javax.crypto / java.security host classes (jcrypto.rs), restantes
-        "Ljavax/crypto/Mac;"
-        | "Ljava/security/MessageDigest;"
-        | "Ljava/security/SecureRandom;" => Some(OBJECT),
-        "Ljavax/crypto/spec/SecretKeySpec;"
-        | "Ljavax/crypto/spec/IvParameterSpec;" => Some(OBJECT),
+        "Ljavax/crypto/Mac;" | "Ljava/security/MessageDigest;" | "Ljava/security/SecureRandom;" => {
+            Some(OBJECT)
+        }
+        "Ljavax/crypto/spec/SecretKeySpec;" | "Ljavax/crypto/spec/IvParameterSpec;" => Some(OBJECT),
         // org.json host classes (jjson.rs)
         "Lorg/json/JSONObject;" | "Lorg/json/JSONArray;" => Some(OBJECT),
         // java.nio host classes (jnio.rs)

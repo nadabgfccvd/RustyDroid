@@ -625,7 +625,10 @@ pub fn instance_intrinsic(
 ) -> Result<Option<Value>, VmExit> {
     // Context.getApplicationInfo() (no-arg Context method, distinct from
     // PackageManager.getApplicationInfo(String, int) below).
-    if name == "getApplicationInfo" && args.is_empty() {
+    if name == "getApplicationInfo"
+        && args.is_empty()
+        && vm.cp.is_subtype(recv_class, "Landroid/content/Context;")
+    {
         return Ok(Some(Value::Obj(app_info(vm)?)));
     }
     if name == "getPackageManager" {

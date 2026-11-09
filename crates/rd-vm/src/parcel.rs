@@ -4094,9 +4094,13 @@ fn binder_instance(
             if code == DUMP_TRANSACTION {
                 return Ok(Some(Value::Int(0)));
             }
+            // Classe dinâmica do receptor: o despacho simétrico de host-mref
+            // (call_instance_intrinsic_mref_rooted) pode entrar aqui com
+            // `recv_class` = Binder, e o override `onTransact` do DEX não seria visto.
+            let obj_class = vm.heap.class_of(recv)?.to_string();
             if vm
                 .cp
-                .resolve_method(recv_class, "onTransact", ON_TRANSACT_SIG)
+                .resolve_method(&obj_class, "onTransact", ON_TRANSACT_SIG)
                 .is_some()
             {
                 let r = vm.invoke_instance(recv, "onTransact", ON_TRANSACT_SIG, args)?;
