@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794191495724,
+  "lastUpdate": 1794258286926,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6551,6 +6551,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1825,
             "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f4f4e85e40ef545cfdf2348a4871ea226a7ce806",
+          "message": "fix(camerax): captura salva a foto (JPEG válido, ByteBuffer tipado, InputStream) (#625)\n\nRestaura no main as correções de captura do CameraX que se perderam:\n\n- m10/camera: frame JPEG sintético agora é um JPEG baseline válido\n  (SOI/APP0/DQT/SOF0/DHT/SOS/EOI) com a tag num segmento COM. O texto solto\n  antes gerava IOException \"Invalid marker\" no ExifInterface.save().\n- m10/camera: SENSOR_TIMESTAMP do resultado reflete o timestamp do frame\n  enfileirado (CameraX casa imagem e resultado por ele).\n- m10/camera: ByteBuffer respeita order() (default BIG_ENDIAN) e tem\n  putInt/putShort/putDouble/getInt/getShort com endianness correta.\n- m10/camera: CaptureRequest.get(Key) não é mais sombreado por Null; cai no\n  getter do stub.\n- jio_chars: BufferedInputStream sobre InputStream de DEX; defaults de\n  InputStream.read(byte[]) / read(byte[],int,int); DataInputStream com\n  readUTF/skipBytes/available/read/mark/reset/skip; close() base.\n- jtime: SimpleDateFormat.parse(String) para padrões numéricos (y M d H m s S).\n\nResultado: onImageSaved é alcançado e JpegBytes2Disk.write executa. Resta\nMediaStore.Images.Media.getBitmap (não implementado), que faz o app acusar\nonFailure após o salvamento. Fica para PR seguinte.\n\nTestes: cargo test -p rd-vm (1112 passed, 0 failed).",
+          "timestamp": "2026-11-09T18:04:23-03:00",
+          "tree_id": "ee86801ff51a21a9184f84bcbcf34abf967e3751",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f4f4e85e40ef545cfdf2348a4871ea226a7ce806"
+        },
+        "date": 1794258286068,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3199,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3187,
+            "range": "± 15",
             "unit": "ns/iter"
           }
         ]
