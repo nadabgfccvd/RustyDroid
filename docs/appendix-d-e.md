@@ -187,8 +187,8 @@ um teste. Testes em `crates/rd-vm/tests/gms.rs` e `crates/rd-vm/tests/gms_erro_c
 
 Na etapa 7, cada célula "sem caminho de erro" ganhou uma falha programável opt-in
 (sem falha programada, o comportamento é o de antes), com teste que falha sem ela.
-As células que ainda dizem "sem caminho de erro no shim" são as que continuam sem
-falha programável (Messaging, RTDB), e entram nas próximas entregas da etapa 7.
+Messaging e RTDB têm falha programável e teste próprio nesta tabela (#603 e #604). A etapa 7
+está fechada (ver o fechamento abaixo).
 
 Mudanças de comportamento nesta rodada (cada uma com teste que falha sem ela):
 - **gms-cast**: `onCastStateChanged(int)` agora dispara em transição real de
@@ -511,6 +511,23 @@ aplicadas contra o estado simulado do dispositivo (ver S24). Por isso `work` seg
     pós-"Tirar foto" (`/home/user/comprix/cx_capture.png`, fora do repositório) ainda mostra a tela
     "Escanear preço", sem a tela de confirmação do que o app leu. `last_error` = `null`. A captura continua
     não confirmada.
+- **Reteste (2026-11-09, `rd` de `main` 07cc7c5, 4 execuções)**: o fluxo foi refeito por `rd mcp`
+  (`install` → `permissions_grant CAMERA` → `launch` → `tap_text` até "Escanear um produto" → `tap_text`
+  "Tirar foto"). O toque é aceito (`listener_acionado`), e a tela continua "Escanear preço", sem
+  confirmação da captura (`last_error` = `null`).
+  - Com `RD_TRACE_METHOD=Landroidx/camera`: `takePicture` → `takePictureInternal` →
+    `submitStillCaptureRequests` executam. Depois disso o trace para na espera do CameraX
+    (`Camera2CameraControlImpl.waitForSessionUpdateId` / `isSessionUpdated`). Não há chamada de
+    `capture` ou `captureBurst` no Camera2 (com `RD_TRACE_METHOD=Landroid/hardware/camera2`).
+  - Causa provável (não corrigida): o Camera2 virtual (`crates/rd-vm/src/m10/camera.rs`, ~1109–1130)
+    chama `onCaptureCompleted` uma vez por `capture`/`setRepeatingRequest`, de forma síncrona. Não
+    entrega resultados por frame. Na sessão inteira do trace só aparece um `onCaptureCompleted` de
+    atualização de sessão. O CameraX espera por um resultado posterior a essa atualização, e ele não
+    chega. Tags de request (`setTag`/`getTag`) estão implementadas e não explicam o bloqueio.
+  - Sem correção nesta rodada. Entregar resultados por frame muda a semântica da Camera2 virtual e
+    precisa de PR próprio com testes de `camera_305.rs` e `m10.rs`.
+  - Evidência fora do repositório: `/home/user/appc/val/cx_r1.*`, `cx_r2.*`, `cx_r3.*`
+    (transcrição JSON, trace em stderr, screenshot).
 - **Decisão de status (2026-11-08, usuário)**: o usuário aceitou a evidência local e pediu que o CameraX vire
   `partial`. Registro: `module = "rd-vm/m10"`, `code` = `m10/camera.rs` e `m10/preview.rs`, `gap_id` mantido.
   Os testes no repositório cobrem a camada Camera2 que o CameraX usa: `camera_305.rs`, `m10.rs` e
