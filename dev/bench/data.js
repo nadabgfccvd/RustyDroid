@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794189070575,
+  "lastUpdate": 1794191495724,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6515,6 +6515,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2837,
             "range": "± 160",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f15a322a750847ef7a8f18e5871abda3bac2ef02",
+          "message": "docs(camerax,gms): reteste da captura (2026-11-09) e limpeza da etapa 7 (#621)\n\n- CameraX: reteste por rd mcp em main 07cc7c5. O toque em 'Tirar foto' é aceito,\n  mas a captura não conclui. O trace para em waitForSessionUpdateId; o Camera2\n  virtual entrega onCaptureCompleted só nas submissões. Sem correção nesta\n  rodada; status partial mantido.\n- GMS: remove o parágrafo desatualizado que dizia que Messaging/RTDB ainda\n  estavam sem falha programável. A etapa 7 segue fechada.\n\nCo-authored-by: RustyDroid Agent <agent@rustydroid.local>",
+          "timestamp": "2026-11-08T23:31:09-03:00",
+          "tree_id": "5fbdd03835a007c4cef1fec0d6141831f3604c8b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f15a322a750847ef7a8f18e5871abda3bac2ef02"
+        },
+        "date": 1794191495005,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1858,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1825,
+            "range": "± 23",
             "unit": "ns/iter"
           }
         ]
