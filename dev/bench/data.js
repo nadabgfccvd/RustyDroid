@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794186819182,
+  "lastUpdate": 1794189070575,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6479,6 +6479,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1701,
             "range": "± 8",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "07cc7c5b9498c35fcc50c4f6984fb45c385e62dd",
+          "message": "feat(navigation): ações do grafo e safe-args no NavController (S25) (#620)\n\n- NavController (fallback host): `androidx_nav_declare_action` declara as\n  ações do grafo; `navigate(actionId)` e `navigate(actionId, Bundle)` saem\n  do destino atual e lançam IllegalArgumentException se a ação não sai dele.\n- `navigate(NavDirections)`: lê getActionId/getArguments do objeto DEX\n  gerado pelo safe-args; ação fora do grafo lança IllegalArgumentException.\n- Argumentos (Bundle) ficam na entrada da pilha e voltam por\n  NavBackStackEntry.getArguments; são raízes do GC.\n- Testes: 2 em crates/rd-vm/tests/androidx.rs (ação com args + GC; safe-args\n  com DEX real e ação não declarada). navigation segue partial: o grafo é\n  declarado pelo harness, não lido do XML compilado.\n\nCo-authored-by: RustyDroid Agent <agent@rustydroid.local>",
+          "timestamp": "2026-11-08T22:50:48-03:00",
+          "tree_id": "c54332f9f6d13cab181308ed511b91233f689861",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/07cc7c5b9498c35fcc50c4f6984fb45c385e62dd"
+        },
+        "date": 1794189069601,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2770,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2837,
+            "range": "± 160",
             "unit": "ns/iter"
           }
         ]
