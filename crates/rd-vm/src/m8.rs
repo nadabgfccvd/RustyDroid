@@ -61,6 +61,22 @@ pub const WORK_MANAGER: &str = "Landroidx/work/WorkManager;";
 pub const WORKER_BASE: &str = "Landroidx/work/Worker;";
 /// `ListenableWorker.Result` (retorno de `doWork`).
 pub const WORKER_RESULT: &str = "Landroidx/work/ListenableWorker$Result;";
+/// `Constraints.Builder` (constraints do pedido).
+pub const CONSTRAINTS_BUILDER: &str = "Landroidx/work/Constraints$Builder;";
+/// `Constraints` (resultado de `build()`).
+pub const CONSTRAINTS: &str = "Landroidx/work/Constraints;";
+/// `androidx.work.NetworkType`, enum com as constantes de rede.
+pub const NETWORK_TYPE: &str = "Landroidx/work/NetworkType;";
+const NETWORK_TYPE_NAMES: [&str; 6] = [
+    "NOT_REQUIRED",
+    "CONNECTED",
+    "UNMETERED",
+    "NOT_ROAMING",
+    "METERED",
+    "TEMPORARILY_UNMETERED",
+];
+/// Campos das constraints nos objetos builder/request/constraints.
+const CONSTRAINT_FIELDS: [&str; 5] = ["m8_c_net", "m8_c_chg", "m8_c_bat", "m8_c_sto", "m8_c_idle"];
 /// `WorkerParameters` passado ao construtor do Worker.
 pub const WORKER_PARAMS: &str = "Landroidx/work/WorkerParameters;";
 pub const OPERATION: &str = "Landroidx/work/Operation;";
@@ -133,6 +149,69 @@ pub struct WorkRecord {
     pub progress: Option<ObjRef>,
     /// `Data` de saída do `Result.success(Data)` / `failure(Data)`; `None` = vazio.
     pub output: Option<ObjRef>,
+    /// Constraints do pedido; só `m8_run_work` as consulta.
+    pub constraints: WorkConstraints,
+}
+
+/// Constraints de um pedido (`Constraints.Builder`), copiadas para o `WorkRequest`.
+/// `network = None` significa `NOT_REQUIRED`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkConstraints {
+    pub network: Option<String>,
+    pub charging: bool,
+    pub battery_not_low: bool,
+    pub storage_not_low: bool,
+    pub idle: bool,
+}
+
+/// Tipo de rede do dispositivo simulado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkCondition {
+    None,
+    Metered,
+    Unmetered,
+}
+
+/// Estado do dispositivo simulado que decide se um pedido pode rodar.
+/// O padrão é Wi-Fi sem cobrança, bateria e armazenamento OK, na tomada: não
+/// (desligado) e ocioso: não. O harness muda com `Engine::m8_set_device`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeviceConditions {
+    pub network: NetworkCondition,
+    pub charging: bool,
+    pub battery_ok: bool,
+    pub storage_ok: bool,
+    pub idle: bool,
+}
+
+impl Default for DeviceConditions {
+    fn default() -> Self {
+        Self {
+            network: NetworkCondition::Unmetered,
+            charging: false,
+            battery_ok: true,
+            storage_ok: true,
+            idle: false,
+        }
+    }
+}
+
+/// `true` quando o dispositivo atende às constraints (`WorkManager` só roda o
+/// pedido nesse caso). Aproximações documentadas: `NOT_ROAMING` vale como
+/// `CONNECTED` e `TEMPORARILY_UNMETERED` como `UNMETERED` (não há modelo de
+/// roaming nem de cota temporária).
+pub fn constraints_met(c: &WorkConstraints, d: &DeviceConditions) -> bool {
+    let net_ok = match c.network.as_deref().unwrap_or("NOT_REQUIRED") {
+        "CONNECTED" | "NOT_ROAMING" => d.network != NetworkCondition::None,
+        "UNMETERED" | "TEMPORARILY_UNMETERED" => d.network == NetworkCondition::Unmetered,
+        "METERED" => d.network == NetworkCondition::Metered,
+        _ => true,
+    };
+    net_ok
+        && (!c.charging || d.charging)
+        && (!c.battery_not_low || d.battery_ok)
+        && (!c.storage_not_low || d.storage_ok)
+        && (!c.idle || d.idle)
 }
 
 /// Worker em execução no harness (`m8_run_work`): alvo de `setProgressAsync`,
@@ -192,6 +271,7 @@ pub struct M8State {
     pub http_requests: Vec<String>, // urls, em ordem
     pub work: Vec<WorkRecord>,
     pub running_work: Option<RunningWork>,
+    pub device: DeviceConditions,
     pub work_manager: Option<ObjRef>,
     pub scheduled_jobs: Vec<i32>,
     /// Named `SharedPreferences` stores, keyed by the guest-visible file
@@ -321,6 +401,14 @@ impl Engine {
             }
         }
     }
+    /// Condições simuladas do dispositivo (rede, tomada, bateria, armazenamento,
+    /// ocioso). Pedidos com constraints não atendidas não rodam.
+    pub fn m8_device(&self) -> DeviceConditions {
+        self.fw.m8.device
+    }
+    pub fn m8_set_device(&mut self, d: DeviceConditions) {
+        self.fw.m8.device = d;
+    }
     /// Executa `Worker.doWork()` do pedido `id`, síncrono (sem threads): cria o
     /// Worker com `(Context, WorkerParameters)` e chama `doWork()`. Mapeia o
     /// `Result`: success → SUCCEEDED (com output), failure → FAILED (com output),
@@ -344,10 +432,20 @@ impl Engine {
                 .map(|w| w.state.clone())
                 .unwrap_or_default());
         };
-        let (rec_id, worker_class, tags) = {
+        let (rec_id, worker_class, tags, constraints) = {
             let w = &self.fw.m8.work[idx];
-            (w.id.clone(), w.worker_class.clone(), w.tags.clone())
+            (
+                w.id.clone(),
+                w.worker_class.clone(),
+                w.tags.clone(),
+                w.constraints.clone(),
+            )
         };
+        // Constraints não atendidas: o WorkManager não roda o pedido e ele continua
+        // ENQUEUED (sem doWork, sem mudança de estado).
+        if !constraints_met(&constraints, &self.fw.m8.device) {
+            return Ok("ENQUEUED".into());
+        }
         self.fw.m8.work[idx].state = "RUNNING".into();
         let outcome = self.with_host_roots(|vm| run_worker(vm, &rec_id, &worker_class, &tags));
         let (state, output) = match outcome {
@@ -686,6 +784,11 @@ fn call_m8_instance_rooted(
             return Ok(Some(v));
         }
     }
+    if mref_class == CONSTRAINTS_BUILDER || recv_class == CONSTRAINTS_BUILDER {
+        if let Some(v) = constraints_builder(vm, name, recv, args)? {
+            return Ok(Some(v));
+        }
+    }
     if is_work_request_builder(mref_class) || is_work_request_builder(&recv_class) {
         // `Builder(Class<? extends Worker>)`: guarda o descritor do worker, que
         // o `build()` copia para o pedido (e o `enqueue` para o registro).
@@ -712,6 +815,13 @@ fn call_m8_instance_rooted(
                 tags.push_str(&tag);
                 let v = intrinsics::alloc_string(vm, tags)?;
                 let _ = vm.heap.put_field(recv, WORK_TAGS_FIELD, Value::Obj(v));
+            }
+            return Ok(Some(Value::Obj(recv)));
+        }
+        // `setConstraints(c)`: copia as constraints para o builder (o `build()` as leva ao pedido).
+        if name == "setConstraints" {
+            if let Some(Value::Obj(c)) = args.first() {
+                copy_constraint_fields(vm, *c, recv);
             }
             return Ok(Some(Value::Obj(recv)));
         }
@@ -746,6 +856,7 @@ fn call_m8_instance_rooted(
             let tags = work_str_field(vm, recv, WORK_TAGS_FIELD).unwrap_or_default();
             let tags = intrinsics::alloc_string(vm, tags)?;
             let _ = vm.heap.put_field(r, WORK_TAGS_FIELD, Value::Obj(tags));
+            copy_constraint_fields(vm, recv, r);
             return Ok(Some(Value::Obj(r)));
         }
         // Setters fluentes (`setConstraints`, `addTag`, ...) devolvem o próprio
@@ -2883,6 +2994,7 @@ fn work_manager(
                     unique_name: unique_name.clone(),
                     progress: None,
                     output: None,
+                    constraints: read_constraints(vm, req),
                 });
             }
             let op = alloc(vm, OPERATION)?;
@@ -3024,6 +3136,7 @@ pub(crate) fn host_static(
         WORK_INFO_STATE => &WORK_STATE_NAMES,
         EXISTING_WORK_POLICY => &EXISTING_WORK_POLICY_NAMES,
         EXISTING_PERIODIC_POLICY => &EXISTING_PERIODIC_POLICY_NAMES,
+        NETWORK_TYPE => &NETWORK_TYPE_NAMES,
         _ => return Ok(None),
     };
     if !names.contains(&field) {
@@ -3075,6 +3188,63 @@ fn new_work_data(vm: &mut Engine, entries: Vec<(String, Value)>) -> Result<ObjRe
     let r = alloc(vm, crate::androidx::WORK_DATA)?;
     vm.fw.androidx.work_data.insert(r, entries);
     Ok(r)
+}
+
+/// Lê as constraints gravadas no `WorkRequest` pelo `build()`.
+fn read_constraints(vm: &Engine, r: ObjRef) -> WorkConstraints {
+    let flag = |f: &str| matches!(vm.heap.get_field(r, f), Ok(Value::Int(v)) if v != 0);
+    WorkConstraints {
+        network: work_str_field(vm, r, "m8_c_net"),
+        charging: flag("m8_c_chg"),
+        battery_not_low: flag("m8_c_bat"),
+        storage_not_low: flag("m8_c_sto"),
+        idle: flag("m8_c_idle"),
+    }
+}
+
+/// Copia os campos de constraints de `from` para `to` (builder → request, etc.).
+fn copy_constraint_fields(vm: &mut Engine, from: ObjRef, to: ObjRef) {
+    for f in CONSTRAINT_FIELDS {
+        if let Ok(v) = vm.heap.get_field(from, f) {
+            let _ = vm.heap.put_field(to, f, v);
+        }
+    }
+}
+
+/// `Constraints.Builder`: guarda cada constraint no próprio builder; `build()`
+/// devolve um `Constraints` com esses campos.
+fn constraints_builder(
+    vm: &mut Engine,
+    name: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let flag = matches!(args.first(), Some(Value::Int(v)) if *v != 0);
+    let field = match name {
+        "<init>" => return Ok(Some(Value::Null)),
+        "setRequiredNetworkType" => {
+            let net = match args.first() {
+                Some(Value::Obj(e)) => work_str_field(vm, *e, "rd_name"),
+                _ => None,
+            }
+            .unwrap_or_else(|| "NOT_REQUIRED".to_string());
+            let v = intrinsics::alloc_string(vm, net)?;
+            let _ = vm.heap.put_field(recv, "m8_c_net", Value::Obj(v));
+            return Ok(Some(Value::Obj(recv)));
+        }
+        "setRequiresCharging" => "m8_c_chg",
+        "setRequiresBatteryNotLow" => "m8_c_bat",
+        "setRequiresStorageNotLow" => "m8_c_sto",
+        "setRequiresDeviceIdle" => "m8_c_idle",
+        "build" => {
+            let c = alloc(vm, CONSTRAINTS)?;
+            copy_constraint_fields(vm, recv, c);
+            return Ok(Some(Value::Obj(c)));
+        }
+        _ => return Ok(None),
+    };
+    let _ = vm.heap.put_field(recv, field, Value::Int(flag as i32));
+    Ok(Some(Value::Obj(recv)))
 }
 
 /// Executa o Worker de `worker_class` e devolve (estado, output).

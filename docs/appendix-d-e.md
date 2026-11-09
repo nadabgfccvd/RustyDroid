@@ -426,8 +426,9 @@ cancela esse trabalho (só `ENQUEUED`, como o cancelamento) e enfileira o novo. 
 `APPEND`, `APPEND_OR_REPLACE` e `UPDATE` não são modeladas (encadeamento depende de execução).
 
 Fechado em S22: tags. Fechado em S23: `doWork()` sob demanda
-(`m8_run_work`) e progresso/output em `WorkInfo` (ver S23). Ainda pendente: `Constraints`
-são aceitas e não aplicadas. Por isso `work` segue `partial`.
+(`m8_run_work`) e progresso/output em `WorkInfo` (ver S23). Fechado em S24: `Constraints`
+aplicadas contra o estado simulado do dispositivo (ver S24). Por isso `work` segue `partial`
+(sem o runtime real do WorkManager e sem chains).
 
 ### S17 — Apêndice D: security-crypto sobre o AndroidKeyStore (ST-04) (2026-11-08)
 
@@ -616,6 +617,28 @@ são aceitas e não aplicadas. Por isso `work` segue `partial`.
   (progresso, output, getters e retry). Arquivo restaurado e conferido por checksum.
 - **Continua pendente**: `Constraints` (não aplicadas), e o runtime real do WorkManager (`WorkerParameters`
   e `Context` são modelos host). Quando o APK traz o `work-runtime` real, o DEX real manda nos métodos que ele define.
+
+### S24 — Apêndice D: Constraints do WorkManager (2026-11-09)
+
+- **Lacuna fechada**: as constraints deixam de ser só aceitas. `Constraints.Builder` é host
+  (`setRequiredNetworkType(NetworkType)`, `setRequiresCharging`, `setRequiresBatteryNotLow`,
+  `setRequiresStorageNotLow`, `setRequiresDeviceIdle`, `build()`), e `WorkRequest.Builder.setConstraints(c)`
+  copia as constraints para o pedido. `NetworkType` é enum host (`NOT_REQUIRED`, `CONNECTED`, `UNMETERED`,
+  `NOT_ROAMING`, `METERED`, `TEMPORARILY_UNMETERED`).
+- **Aplicação**: `m8_run_work` consulta `constraints_met(constraints, DeviceConditions)`. Não atendida: o
+  pedido **fica ENQUEUED e o doWork não roda** (como no WorkManager).
+- **Estado do dispositivo simulado**: `Engine::m8_device` / `m8_set_device`. Padrão: rede Wi-Fi (`UNMETERED`),
+  fora da tomada, bateria e armazenamento OK, não ocioso. O harness muda esse estado.
+- **Aproximações** (documentadas): `NOT_ROAMING` vale como `CONNECTED`; `TEMPORARILY_UNMETERED` como
+  `UNMETERED`. Não há modelo de roaming nem de cota temporária.
+- **Testes** (`crates/rd-vm/tests/m8_workmanager_run.rs`, 15 no total): constraints chegam ao pedido;
+  sem constraints roda offline; `setRequiresCharging` bloqueia até carregar (sem progresso enquanto bloqueado);
+  `CONNECTED` bloqueia offline e aceita rede medida; `UNMETERED` recusa rede medida; ocioso espera o
+  dispositivo ficar ocioso.
+- **Mutação**: desligar a checagem em `m8_run_work` derruba 4 testes de bloqueio. Arquivo restaurado e
+  conferido por checksum.
+- **Continua pendente**: o runtime real do WorkManager (`WorkerParameters`/`Context` são modelos host),
+  chains (`beginWith`/`then`) e `PeriodicWorkRequest` com constraints. Por isso `work` segue `partial`.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 
