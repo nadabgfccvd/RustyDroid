@@ -374,7 +374,7 @@ pub(crate) fn sha1(data: &[u8]) -> [u8; 20] {
         msg.push(0);
     }
     msg.extend_from_slice(&ml.to_be_bytes());
-    for block in msg.chunks_exact(64) {
+    for block in msg.as_chunks::<64>().0 {
         let mut w = [0u32; 80];
         for i in 0..16 {
             w[i] = u32::from_be_bytes([
@@ -452,7 +452,7 @@ fn sha256_core(data: &[u8], h_init: [u32; 8]) -> [u8; 32] {
         msg.push(0);
     }
     msg.extend_from_slice(&ml.to_be_bytes());
-    for block in msg.chunks_exact(64) {
+    for block in msg.as_chunks::<64>().0 {
         let mut w = [0u32; 64];
         for i in 0..16 {
             w[i] = u32::from_be_bytes([
@@ -600,7 +600,7 @@ fn sha512_core(data: &[u8], h0: [u64; 8]) -> [u8; 64] {
         msg.push(0);
     }
     msg.extend_from_slice(&ml.to_be_bytes());
-    for block in msg.chunks_exact(128) {
+    for block in msg.as_chunks::<128>().0 {
         let mut w = [0u64; 80];
         for i in 0..16 {
             w[i] = u64::from_be_bytes(block[8 * i..8 * i + 8].try_into().unwrap());
@@ -828,8 +828,8 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
             let mut out = Vec::with_capacity(data.len());
             let mut prev = iv.clone();
             if encrypt {
-                for chunk in data.chunks_exact(16) {
-                    let mut block: [u8; 16] = chunk.try_into().unwrap();
+                for chunk in data.as_chunks::<16>().0 {
+                    let mut block: [u8; 16] = *chunk;
                     if tr.mode == "CBC" {
                         xor16(&mut block, &prev);
                     }
@@ -841,8 +841,8 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
                 }
                 Ok(out)
             } else {
-                for chunk in data.chunks_exact(16) {
-                    let block: [u8; 16] = chunk.try_into().unwrap();
+                for chunk in data.as_chunks::<16>().0 {
+                    let block: [u8; 16] = *chunk;
                     let plain0 = aes_block(&key, &block, false);
                     let mut plain = plain0;
                     if tr.mode == "CBC" {
