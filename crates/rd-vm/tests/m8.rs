@@ -894,6 +894,66 @@ fn m8_workmanager_work_infos_return_real_values() {
     );
 }
 
+/// `WorkInfo.getTags()` (S22): o conjunto traz as tags do pedido, não só o `getWorkInfosByTag`.
+#[test]
+fn m8_workmanager_work_info_exposes_tags() {
+    let mut e = engine();
+    let wm = wm_instance(&mut e);
+    let req = wm_request(&mut e, "Lcom/example/A;", &["sync", "daily"]);
+    wm_enqueue(&mut e, wm, req);
+    let tag = s(&mut e, "sync");
+    let fut = match call_m8_instance(
+        &mut e,
+        WORK_MANAGER,
+        "getWorkInfosByTag",
+        "(Ljava/lang/String;)Lcom/google/common/util/concurrent/ListenableFuture;",
+        wm,
+        &[tag],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(f)) => f,
+        other => panic!("future: {other:?}"),
+    };
+    // O future já vem completo: o resultado é a lista host de WorkInfo.
+    let list = match e.fw.androidx.futures.get(&fut).map(|f| f.result.clone()) {
+        Some(Value::Obj(l)) => l,
+        other => panic!("future sem lista: {other:?}"),
+    };
+    let info = match e.fw.objects.get(&list) {
+        Some(rd_vm::framework::HostObj::List { elems }) => match elems.first() {
+            Some(Value::Obj(i)) => *i,
+            other => panic!("WorkInfo: {other:?}"),
+        },
+        other => panic!("lista host: {other:?}"),
+    };
+    let tags = match call_m8_instance(
+        &mut e,
+        "Landroidx/work/WorkInfo;",
+        "getTags",
+        "()Ljava/util/Set;",
+        info,
+        &[],
+    )
+    .unwrap()
+    {
+        Some(Value::Obj(t)) => t,
+        other => panic!("getTags: {other:?}"),
+    };
+    let Some(rd_vm::framework::HostObj::List { elems }) = e.fw.objects.get(&tags) else {
+        panic!("getTags não é um conjunto host");
+    };
+    let mut got: Vec<String> = elems
+        .iter()
+        .map(|v| match v {
+            Value::Obj(o) => e.heap.as_str(*o).unwrap().to_string(),
+            other => panic!("tag não é String: {other:?}"),
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, vec!["daily".to_string(), "sync".to_string()]);
+}
+
 // ── Fragments androidx ──────────────────────────────────────────────────
 #[test]
 fn m8_androidx_fragments() {
