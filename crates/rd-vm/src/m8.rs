@@ -16,9 +16,10 @@
 //!   determinístico (enqueue/execute são síncronos), SQLite named databases
 //!   persistem no VFS mas o fallback subset continua documentalmente limitado, OkHttp
 //!   NÃO faz rede (shim offline; rede real é M9+ via socket do host),
-//!   WorkManager executa o nome do pedido no registro mas não roda o
-//!   `Worker.doWork()` em background (sem threads) — o trabalho fica
-//!   `ENQUEUED`→`SUCCEEDED` apenas via `m8_complete_work` do harness.
+//!   WorkManager registra o pedido; `Worker.doWork()` roda sob demanda pelo
+//!   harness (`m8_run_work`), síncrono e sem threads (S23). Progresso,
+//!   output e `Result` (success/failure/retry) são mapeados; `m8_complete_work`
+//!   continua disponível para marcar sem executar.
 //! - Métodos fora da lista explícita retornam `None` no dispatch → o
 //!   interpretador segue para o DEX real da biblioteca (androidx/okhttp
 //!   viajam no APK). Host só sequestra o que implementa de verdade.
@@ -56,6 +57,12 @@ pub const OK_CALL: &str = "Lokhttp3/Call;";
 pub const OK_RESPONSE: &str = "Lokhttp3/Response;";
 pub const OK_BODY: &str = "Lokhttp3/ResponseBody;";
 pub const WORK_MANAGER: &str = "Landroidx/work/WorkManager;";
+/// Superclasse dos Workers do app (`Worker.doWork()` em background, S22+).
+pub const WORKER_BASE: &str = "Landroidx/work/Worker;";
+/// `ListenableWorker.Result` (retorno de `doWork`).
+pub const WORKER_RESULT: &str = "Landroidx/work/ListenableWorker$Result;";
+/// `WorkerParameters` passado ao construtor do Worker.
+pub const WORKER_PARAMS: &str = "Landroidx/work/WorkerParameters;";
 pub const OPERATION: &str = "Landroidx/work/Operation;";
 pub const ROOM: &str = "Landroidx/room/Room;";
 pub const ROOM_BUILDER: &str = "Landroidx/room/RoomDatabase$Builder;";
@@ -118,10 +125,24 @@ pub struct WorkRecord {
     /// UUID canônico do `WorkRequest` (`WorkRequest.getId()`).
     pub id: String,
     pub worker_class: String,
-    pub state: String, // ENQUEUED | SUCCEEDED | CANCELLED
+    pub state: String, // ENQUEUED | RUNNING | SUCCEEDED | FAILED | CANCELLED
     pub tags: Vec<String>,
     /// Nome de `enqueueUniqueWork` / `enqueueUniquePeriodicWork`.
     pub unique_name: Option<String>,
+    /// `Data` de progresso (`Worker.setProgressAsync`); `None` = vazio.
+    pub progress: Option<ObjRef>,
+    /// `Data` de saída do `Result.success(Data)` / `failure(Data)`; `None` = vazio.
+    pub output: Option<ObjRef>,
+}
+
+/// Worker em execução no harness (`m8_run_work`): alvo de `setProgressAsync`,
+/// `getInputData`, `getId` e `getTags`. Raiz forte do GC enquanto dura.
+#[derive(Debug, Clone)]
+pub struct RunningWork {
+    pub id: String,
+    pub worker: ObjRef,
+    pub params: ObjRef,
+    pub context: Option<ObjRef>,
 }
 /// Políticas de `enqueueUniqueWork` / `enqueueUniquePeriodicWork` (ordem da AndroidX).
 /// Só `KEEP` e `REPLACE` são modeladas; as demais são aceitas e enfileiram como antes.
@@ -170,6 +191,7 @@ pub struct M8State {
     pub http: HttpResponseCfg,
     pub http_requests: Vec<String>, // urls, em ordem
     pub work: Vec<WorkRecord>,
+    pub running_work: Option<RunningWork>,
     pub work_manager: Option<ObjRef>,
     pub scheduled_jobs: Vec<i32>,
     /// Named `SharedPreferences` stores, keyed by the guest-visible file
@@ -299,6 +321,51 @@ impl Engine {
             }
         }
     }
+    /// Executa `Worker.doWork()` do pedido `id`, síncrono (sem threads): cria o
+    /// Worker com `(Context, WorkerParameters)` e chama `doWork()`. Mapeia o
+    /// `Result`: success → SUCCEEDED (com output), failure → FAILED (com output),
+    /// retry → volta a ENQUEUED. Exceção não capturada em `doWork` → FAILED,
+    /// como o WorkManager. Erro interno da VM propaga e o pedido volta a
+    /// ENQUEUED. Só roda pedidos ENQUEUED; devolve o estado final.
+    pub fn m8_run_work(&mut self, id: &str) -> Result<String, VmExit> {
+        let Some(idx) = self
+            .fw
+            .m8
+            .work
+            .iter()
+            .position(|w| w.id == id && w.state == "ENQUEUED")
+        else {
+            return Ok(self
+                .fw
+                .m8
+                .work
+                .iter()
+                .find(|w| w.id == id)
+                .map(|w| w.state.clone())
+                .unwrap_or_default());
+        };
+        let (rec_id, worker_class, tags) = {
+            let w = &self.fw.m8.work[idx];
+            (w.id.clone(), w.worker_class.clone(), w.tags.clone())
+        };
+        self.fw.m8.work[idx].state = "RUNNING".into();
+        let outcome = self.with_host_roots(|vm| run_worker(vm, &rec_id, &worker_class, &tags));
+        let (state, output) = match outcome {
+            Ok(o) => o,
+            Err(e) => {
+                self.fw.m8.running_work = None;
+                if let Some(w) = self.fw.m8.work.iter_mut().find(|w| w.id == rec_id) {
+                    w.state = "ENQUEUED".into();
+                }
+                return Err(e);
+            }
+        };
+        if let Some(w) = self.fw.m8.work.iter_mut().find(|w| w.id == rec_id) {
+            w.state = state.into();
+            w.output = output;
+        }
+        Ok(state.into())
+    }
     /// Use the built-in SQL subset instead of the real SQLite backend
     /// (`jsqlite`) for this engine — same as `RD_SQLITE=subset`, without
     /// touching the process environment. Tests that inspect
@@ -338,6 +405,30 @@ fn call_m8_static_rooted(
     _sig: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    // ListenableWorker.Result.success()/failure()/retry() (com ou sem Data).
+    if class == WORKER_RESULT {
+        let kind = match name {
+            "success" => "SUCCESS",
+            "failure" => "FAILURE",
+            "retry" => "RETRY",
+            _ => "",
+        };
+        if !kind.is_empty() {
+            let kind_s = intrinsics::alloc_string(vm, kind.to_string())?;
+            let output = args.first().cloned().unwrap_or(Value::Null);
+            let r = vm
+                .heap
+                .alloc_instance(
+                    WORKER_RESULT.to_string(),
+                    vec![
+                        ("rd_kind".into(), Value::Obj(kind_s)),
+                        ("rd_output".into(), output),
+                    ],
+                )
+                .map_err(crate::err::oom_throwable)?;
+            return Ok(Some(Value::Obj(r)));
+        }
+    }
     if let Some(v) = crate::android_drawable::static_intrinsic(vm, class, name, args)? {
         return Ok(Some(v));
     }
@@ -479,6 +570,12 @@ fn call_m8_instance_rooted(
         vm.fw.m8.ax_fragment_manager = Some(r);
         return Ok(Some(Value::Obj(r)));
     }
+    // ── WorkManager Worker (superclasse do app) ─────────────────────────
+    if mref_class == WORKER_BASE || vm.cp.is_subtype(&recv_class, WORKER_BASE) {
+        if let Some(v) = worker_base(vm, mref_class, name, sig, recv, args)? {
+            return Ok(Some(v));
+        }
+    }
     // ── RecyclerView ────────────────────────────────────────────────────
     if mref_class == RECYCLER || recv_class == RECYCLER {
         return recycler(vm, name, sig, recv, args);
@@ -570,6 +667,8 @@ fn call_m8_instance_rooted(
             "getId" => return Ok(Some(get_field_value(vm, recv, "rd_id"))),
             "getState" => return Ok(Some(get_field_value(vm, recv, "rd_state"))),
             "getTags" => return Ok(Some(get_field_value(vm, recv, "rd_tags"))),
+            "getProgress" => return Ok(Some(get_field_value(vm, recv, "rd_progress"))),
+            "getOutputData" => return Ok(Some(get_field_value(vm, recv, "rd_output"))),
             _ => {}
         }
     }
@@ -2782,6 +2881,8 @@ fn work_manager(
                     state: "ENQUEUED".into(),
                     tags,
                     unique_name: unique_name.clone(),
+                    progress: None,
+                    output: None,
                 });
             }
             let op = alloc(vm, OPERATION)?;
@@ -2945,6 +3046,16 @@ fn new_work_info(vm: &mut Engine, rec: &WorkRecord) -> Result<ObjRef, VmExit> {
         tag_values.push(Value::Obj(intrinsics::alloc_string(vm, tag.clone())?));
     }
     let tags = crate::collections::new_list(vm, "Ljava/util/HashSet;", tag_values)?;
+    // `getProgress()` / `getOutputData()` devolvem `Data`; sem valor, o real
+    // devolve `Data.EMPTY`, aqui um `Data` vazio novo.
+    let progress = match rec.progress {
+        Some(d) => d,
+        None => new_work_data(vm, Vec::new())?,
+    };
+    let output = match rec.output {
+        Some(d) => d,
+        None => new_work_data(vm, Vec::new())?,
+    };
     vm.heap
         .alloc_instance(
             WORK_INFO.to_string(),
@@ -2952,9 +3063,139 @@ fn new_work_info(vm: &mut Engine, rec: &WorkRecord) -> Result<ObjRef, VmExit> {
                 ("rd_id".into(), id),
                 ("rd_state".into(), state),
                 ("rd_tags".into(), tags),
+                ("rd_progress".into(), Value::Obj(progress)),
+                ("rd_output".into(), Value::Obj(output)),
             ],
         )
         .map_err(crate::err::oom_throwable)
+}
+
+/// `Data` host com as entradas dadas (vazio = `Data.EMPTY`).
+fn new_work_data(vm: &mut Engine, entries: Vec<(String, Value)>) -> Result<ObjRef, VmExit> {
+    let r = alloc(vm, crate::androidx::WORK_DATA)?;
+    vm.fw.androidx.work_data.insert(r, entries);
+    Ok(r)
+}
+
+/// Executa o Worker de `worker_class` e devolve (estado, output).
+fn run_worker(
+    vm: &mut Engine,
+    id: &str,
+    worker_class: &str,
+    tags: &[String],
+) -> Result<(&'static str, Option<ObjRef>), VmExit> {
+    let input = new_work_data(vm, Vec::new())?;
+    let mut tag_values = Vec::with_capacity(tags.len());
+    for tag in tags {
+        tag_values.push(Value::Obj(intrinsics::alloc_string(vm, tag.clone())?));
+    }
+    let tag_list = crate::collections::new_list(vm, "Ljava/util/HashSet;", tag_values)?;
+    let uuid = crate::juuid::uuid_value(vm, id)?.unwrap_or(Value::Null);
+    let params = vm
+        .heap
+        .alloc_instance(
+            WORKER_PARAMS.to_string(),
+            vec![
+                ("rd_id".into(), uuid),
+                ("rd_input".into(), Value::Obj(input)),
+                ("rd_tags".into(), tag_list),
+            ],
+        )
+        .map_err(crate::err::oom_throwable)?;
+    let worker = alloc(vm, worker_class)?;
+    vm.fw.m8.running_work = Some(RunningWork {
+        id: id.to_string(),
+        worker,
+        params,
+        context: None,
+    });
+    let ctor = vm.invoke_instance(
+        worker,
+        "<init>",
+        "(Landroid/content/Context;Landroidx/work/WorkerParameters;)V",
+        &[Value::Null, Value::Obj(params)],
+    );
+    let res = match ctor {
+        Ok(_) => vm.invoke_instance(
+            worker,
+            "doWork",
+            "()Landroidx/work/ListenableWorker$Result;",
+            &[],
+        ),
+        Err(e) => Err(e),
+    };
+    vm.fw.m8.running_work = None;
+    match res {
+        Ok(Value::Obj(r)) => {
+            let kind = work_str_field(vm, r, "rd_kind").unwrap_or_default();
+            let out = match get_field_value(vm, r, "rd_output") {
+                Value::Obj(d) => Some(d),
+                _ => None,
+            };
+            Ok(match kind.as_str() {
+                "SUCCESS" => ("SUCCEEDED", out),
+                "FAILURE" => ("FAILED", out),
+                "RETRY" => ("ENQUEUED", None),
+                _ => ("FAILED", None),
+            })
+        }
+        // doWork() devolveu null: o WorkManager trata como falha.
+        Ok(_) => Ok(("FAILED", None)),
+        // Exceção não capturada em doWork ou no construtor: FAILED.
+        Err(VmExit::Exception(_)) => Ok(("FAILED", None)),
+        Err(e) => Err(e),
+    }
+}
+
+/// Métodos da superclasse `Worker` do app. Só responde quando o DEX não define
+/// o método (o código real do app sempre manda).
+fn worker_base(
+    vm: &mut Engine,
+    mref_class: &str,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if name == "<init>" {
+        // `super(context, params)` do construtor do app. O estado vem do harness.
+        if mref_class == WORKER_BASE && vm.cp.resolve_method(WORKER_BASE, name, sig).is_none() {
+            return Ok(Some(Value::Null));
+        }
+        return Ok(None);
+    }
+    let recv_class = vm.heap.class_of(recv).unwrap_or("").to_string();
+    if vm.cp.resolve_method(&recv_class, name, sig).is_some() {
+        return Ok(None);
+    }
+    let Some(run) = vm.fw.m8.running_work.clone() else {
+        return Ok(None);
+    };
+    match name {
+        "getApplicationContext" => Ok(Some(match run.context {
+            Some(c) => Value::Obj(c),
+            None => Value::Null,
+        })),
+        "getId" => Ok(Some(get_field_value(vm, run.params, "rd_id"))),
+        "getInputData" => Ok(Some(get_field_value(vm, run.params, "rd_input"))),
+        "getTags" => Ok(Some(get_field_value(vm, run.params, "rd_tags"))),
+        "getRunAttemptCount" => Ok(Some(Value::Int(0))),
+        "isStopped" => Ok(Some(Value::Int(0))),
+        "setProgressAsync" => {
+            let data = match args.first() {
+                Some(Value::Obj(d)) => Some(*d),
+                _ => None,
+            };
+            if let Some(w) = vm.fw.m8.work.iter_mut().find(|w| w.id == run.id) {
+                w.progress = data;
+            }
+            // Future já concluído (o executor é inline, como nas demais futures).
+            let f = vm.androidx_new_future()?;
+            vm.androidx_complete_future(f, Value::Null)?;
+            Ok(Some(Value::Obj(f)))
+        }
+        _ => Ok(None),
+    }
 }
 
 /// Texto canônico do `UUID` devolvido por `WorkRequest.getId()`.
