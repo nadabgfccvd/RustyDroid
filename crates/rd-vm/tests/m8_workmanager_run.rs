@@ -395,3 +395,257 @@ fn progress_and_output_survive_garbage_collection() {
         "raiz do GC mantém o Data de progresso"
     );
 }
+
+// ── Constraints (S24) ───────────────────────────────────────────────────
+
+/// `Constraints.Builder()` com as constraints pedidas, `WorkRequest.Builder(worker)
+/// .setConstraints(c).addTag("sync").build()` e `enqueue`, num método `name(Context)`.
+fn add_constrained_enqueue(
+    b: &mut DexBuilder,
+    probe: usize,
+    name: &str,
+    worker_desc: &str,
+    net: Option<&str>,
+    charging: bool,
+    idle: bool,
+) {
+    let t_cb = b.type_idx(CONSTRAINTS_BUILDER);
+    let p_cb_init = b.proto_idx("V", vec![]);
+    let m_cb_init = b.method_idx(CONSTRAINTS_BUILDER, p_cb_init, "<init>");
+    let p_net = b.proto_idx(CONSTRAINTS_BUILDER, vec![NETWORK_TYPE.into()]);
+    let m_net = b.method_idx(CONSTRAINTS_BUILDER, p_net, "setRequiredNetworkType");
+    let p_bool = b.proto_idx(CONSTRAINTS_BUILDER, vec!["Z".into()]);
+    let m_chg = b.method_idx(CONSTRAINTS_BUILDER, p_bool, "setRequiresCharging");
+    let m_idle = b.method_idx(CONSTRAINTS_BUILDER, p_bool, "setRequiresDeviceIdle");
+    let p_cbuild = b.proto_idx(CONSTRAINTS, vec![]);
+    let m_cbuild = b.method_idx(CONSTRAINTS_BUILDER, p_cbuild, "build");
+    let p_setc = b.proto_idx(
+        "Landroidx/work/WorkRequest$Builder;",
+        vec![CONSTRAINTS.into()],
+    );
+    let m_setc = b.method_idx(BUILDER, p_setc, "setConstraints");
+
+    let t_builder = b.type_idx(BUILDER);
+    let t_worker = b.type_idx(worker_desc);
+    let s_tag = b.intern("sync");
+    let p_init = b.proto_idx("V", vec!["Ljava/lang/Class;".into()]);
+    let m_init = b.method_idx(BUILDER, p_init, "<init>");
+    let p_tag = b.proto_idx(
+        "Landroidx/work/WorkRequest$Builder;",
+        vec!["Ljava/lang/String;".into()],
+    );
+    let m_tag = b.method_idx(BUILDER, p_tag, "addTag");
+    let p_build = b.proto_idx(REQUEST, vec![]);
+    let m_wbuild = b.method_idx(BUILDER, p_build, "build");
+    let p_get = b.proto_idx(WM, vec!["Landroid/content/Context;".into()]);
+    let m_get = b.method_idx(WM, p_get, "getInstance");
+    let p_enq = b.proto_idx(
+        "Landroidx/work/Operation;",
+        vec!["Landroidx/work/WorkRequest;".into()],
+    );
+    let m_enq = b.method_idx(WM, p_enq, "enqueue");
+
+    // regs=10, ins=1 → Context em v9.
+    let mut u = Vec::new();
+    u.extend(op21c(0x22, 0, t_cb)); // new-instance v0, Constraints.Builder
+    u.extend(op35c(0x70, 1, m_cb_init, [0, 0, 0, 0, 0])); // <init>()
+    if let Some(net) = net {
+        let f = b.field_idx(NETWORK_TYPE, NETWORK_TYPE, net);
+        u.extend(op21c(0x62, 1, f)); // sget-object v1, NetworkType.<net>
+        u.extend(op35c(0x6e, 2, m_net, [0, 1, 0, 0, 0])); // setRequiredNetworkType
+    }
+    if charging {
+        u.extend(op11n(0x12, 1, 1)); // const/4 v1, 1
+        u.extend(op35c(0x6e, 2, m_chg, [0, 1, 0, 0, 0])); // setRequiresCharging(true)
+    }
+    if idle {
+        u.extend(op11n(0x12, 1, 1));
+        u.extend(op35c(0x6e, 2, m_idle, [0, 1, 0, 0, 0])); // setRequiresDeviceIdle(true)
+    }
+    u.extend(op35c(0x6e, 1, m_cbuild, [0, 0, 0, 0, 0])); // build()
+    u.extend(op11x(0x0c, 2)); // move-result-object v2 (Constraints)
+    u.extend(op21c(0x22, 3, t_builder)); // new-instance v3, OneTimeWorkRequest.Builder
+    u.extend(op21c(0x1c, 4, t_worker)); // const-class v4, worker
+    u.extend(op35c(0x70, 2, m_init, [3, 4, 0, 0, 0])); // <init>(Class)
+    u.extend(op35c(0x6e, 2, m_setc, [3, 2, 0, 0, 0])); // setConstraints(v2)
+    u.extend(op21c(0x1a, 5, s_tag as u16)); // const-string v5, "sync"
+    u.extend(op35c(0x6e, 2, m_tag, [3, 5, 0, 0, 0])); // addTag
+    u.extend(op35c(0x6e, 1, m_wbuild, [3, 0, 0, 0, 0])); // build()
+    u.extend(op11x(0x0c, 6)); // move-result-object v6 (pedido)
+    u.extend(op35c(0x71, 1, m_get, [9, 0, 0, 0, 0])); // getInstance(ctx)
+    u.extend(op11x(0x0c, 7)); // move-result-object v7
+    u.extend(op35c(0x6e, 2, m_enq, [7, 6, 0, 0, 0])); // enqueue
+    u.extend(op10x(0x0e)); // return-void
+    let code = b.code(10, 1, 3, u);
+    b.direct(
+        probe,
+        name,
+        "V",
+        vec!["Landroid/content/Context;"],
+        ACC_PUBLIC | ACC_STATIC,
+        Some(code),
+    );
+}
+
+/// Engine com RunWorker/ProgressWorker e probes com constraints.
+fn engine_with_constraints() -> Engine {
+    let mut b = DexBuilder::new();
+    let probe = b.class(PROBE, "Ljava/lang/Object;");
+    add_worker(&mut b, "Lcom/example/RunWorker;", Body::Success);
+    add_worker(&mut b, "Lcom/example/ProgressWorker;", Body::Progress);
+    add_constrained_enqueue(
+        &mut b,
+        probe,
+        "enqueueNone",
+        "Lcom/example/RunWorker;",
+        None,
+        false,
+        false,
+    );
+    add_constrained_enqueue(
+        &mut b,
+        probe,
+        "enqueueCharging",
+        "Lcom/example/ProgressWorker;",
+        None,
+        true,
+        false,
+    );
+    add_constrained_enqueue(
+        &mut b,
+        probe,
+        "enqueueConnected",
+        "Lcom/example/RunWorker;",
+        Some("CONNECTED"),
+        false,
+        false,
+    );
+    add_constrained_enqueue(
+        &mut b,
+        probe,
+        "enqueueUnmetered",
+        "Lcom/example/RunWorker;",
+        Some("UNMETERED"),
+        false,
+        false,
+    );
+    add_constrained_enqueue(
+        &mut b,
+        probe,
+        "enqueueIdle",
+        "Lcom/example/RunWorker;",
+        None,
+        false,
+        true,
+    );
+    engine_of(&b)
+}
+
+#[test]
+fn constraints_reach_the_work_record() {
+    let mut e = engine_with_constraints();
+    let id = enqueue(&mut e, "enqueueCharging");
+    let rec = e.m8_work().iter().find(|w| w.id == id).unwrap().clone();
+    assert_eq!(
+        rec.constraints,
+        WorkConstraints {
+            network: None,
+            charging: true,
+            ..Default::default()
+        },
+        "setConstraints/build levam as constraints ao pedido"
+    );
+}
+
+#[test]
+fn without_constraints_runs_even_offline() {
+    let mut e = engine_with_constraints();
+    e.m8_set_device(DeviceConditions {
+        network: NetworkCondition::None,
+        ..Default::default()
+    });
+    let id = enqueue(&mut e, "enqueueNone");
+    assert_eq!(e.m8_run_work(&id).unwrap(), "SUCCEEDED");
+}
+
+#[test]
+fn charging_constraint_blocks_until_plugged_in() {
+    let mut e = engine_with_constraints();
+    let id = enqueue(&mut e, "enqueueCharging");
+    // Não está na tomada: fica ENQUEUED e o doWork não roda (sem progresso).
+    assert_eq!(e.m8_run_work(&id).unwrap(), "ENQUEUED");
+    assert_eq!(state_of(&e, &id), "ENQUEUED");
+    assert!(
+        e.m8_work()
+            .iter()
+            .find(|w| w.id == id)
+            .unwrap()
+            .progress
+            .is_none(),
+        "doWork não roda com constraint não atendida"
+    );
+    e.m8_set_device(DeviceConditions {
+        charging: true,
+        ..Default::default()
+    });
+    assert_eq!(e.m8_run_work(&id).unwrap(), "SUCCEEDED");
+    assert!(e
+        .m8_work()
+        .iter()
+        .find(|w| w.id == id)
+        .unwrap()
+        .progress
+        .is_some());
+}
+
+#[test]
+fn connected_constraint_blocks_when_offline() {
+    let mut e = engine_with_constraints();
+    e.m8_set_device(DeviceConditions {
+        network: NetworkCondition::None,
+        ..Default::default()
+    });
+    let id = enqueue(&mut e, "enqueueConnected");
+    assert_eq!(e.m8_run_work(&id).unwrap(), "ENQUEUED");
+    e.m8_set_device(DeviceConditions {
+        network: NetworkCondition::Metered,
+        ..Default::default()
+    });
+    assert_eq!(
+        e.m8_run_work(&id).unwrap(),
+        "SUCCEEDED",
+        "CONNECTED aceita rede medida"
+    );
+}
+
+#[test]
+fn unmetered_constraint_rejects_metered_network() {
+    let mut e = engine_with_constraints();
+    e.m8_set_device(DeviceConditions {
+        network: NetworkCondition::Metered,
+        ..Default::default()
+    });
+    let id = enqueue(&mut e, "enqueueUnmetered");
+    assert_eq!(
+        e.m8_run_work(&id).unwrap(),
+        "ENQUEUED",
+        "UNMETERED recusa rede medida"
+    );
+    e.m8_set_device(DeviceConditions {
+        network: NetworkCondition::Unmetered,
+        ..Default::default()
+    });
+    assert_eq!(e.m8_run_work(&id).unwrap(), "SUCCEEDED");
+}
+
+#[test]
+fn idle_constraint_waits_for_idle_device() {
+    let mut e = engine_with_constraints();
+    let id = enqueue(&mut e, "enqueueIdle");
+    assert_eq!(e.m8_run_work(&id).unwrap(), "ENQUEUED");
+    e.m8_set_device(DeviceConditions {
+        idle: true,
+        ..Default::default()
+    });
+    assert_eq!(e.m8_run_work(&id).unwrap(), "SUCCEEDED");
+}
