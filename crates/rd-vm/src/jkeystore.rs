@@ -194,22 +194,22 @@ fn alloc(vm: &mut Engine, class: &str, fields: Vec<(String, Value)>) -> Result<V
 /// AES-GCM. Devolve `ciphertext || tag`. `None` se a chave ou o IV têm tamanho
 /// inválido (já validados antes; aqui é defesa).
 pub(crate) fn gcm_seal(key: &[u8], iv: &[u8], aad: &[u8], msg: &[u8]) -> Option<Vec<u8>> {
-    let nonce = Nonce::from_slice(iv);
+    let nonce = Nonce::try_from(iv).ok()?;
     let p = Payload { msg, aad };
     match key.len() {
-        16 => Aes128Gcm::new_from_slice(key).ok()?.encrypt(nonce, p).ok(),
-        32 => Aes256Gcm::new_from_slice(key).ok()?.encrypt(nonce, p).ok(),
+        16 => Aes128Gcm::new_from_slice(key).ok()?.encrypt(&nonce, p).ok(),
+        32 => Aes256Gcm::new_from_slice(key).ok()?.encrypt(&nonce, p).ok(),
         _ => None,
     }
 }
 
 /// Inverso de `gcm_seal`. `None` = tag não confere (AEADBadTagException).
 pub(crate) fn gcm_open(key: &[u8], iv: &[u8], aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
-    let nonce = Nonce::from_slice(iv);
+    let nonce = Nonce::try_from(iv).ok()?;
     let p = Payload { msg: sealed, aad };
     match key.len() {
-        16 => Aes128Gcm::new_from_slice(key).ok()?.decrypt(nonce, p).ok(),
-        32 => Aes256Gcm::new_from_slice(key).ok()?.decrypt(nonce, p).ok(),
+        16 => Aes128Gcm::new_from_slice(key).ok()?.decrypt(&nonce, p).ok(),
+        32 => Aes256Gcm::new_from_slice(key).ok()?.decrypt(&nonce, p).ok(),
         _ => None,
     }
 }
