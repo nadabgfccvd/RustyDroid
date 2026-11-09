@@ -569,6 +569,7 @@ fn call_m8_instance_rooted(
         match name {
             "getId" => return Ok(Some(get_field_value(vm, recv, "rd_id"))),
             "getState" => return Ok(Some(get_field_value(vm, recv, "rd_state"))),
+            "getTags" => return Ok(Some(get_field_value(vm, recv, "rd_tags"))),
             _ => {}
         }
     }
@@ -2938,10 +2939,20 @@ fn get_field_value(vm: &Engine, r: ObjRef, field: &str) -> Value {
 fn new_work_info(vm: &mut Engine, rec: &WorkRecord) -> Result<ObjRef, VmExit> {
     let id = crate::juuid::uuid_value(vm, &rec.id)?.unwrap_or(Value::Null);
     let state = work_state_enum(vm, &rec.state)?;
+    // `getTags()` devolve um `Set<String>` com as tags do pedido, como o real.
+    let mut tag_values = Vec::with_capacity(rec.tags.len());
+    for tag in &rec.tags {
+        tag_values.push(Value::Obj(intrinsics::alloc_string(vm, tag.clone())?));
+    }
+    let tags = crate::collections::new_list(vm, "Ljava/util/HashSet;", tag_values)?;
     vm.heap
         .alloc_instance(
             WORK_INFO.to_string(),
-            vec![("rd_id".into(), id), ("rd_state".into(), state)],
+            vec![
+                ("rd_id".into(), id),
+                ("rd_state".into(), state),
+                ("rd_tags".into(), tags),
+            ],
         )
         .map_err(crate::err::oom_throwable)
 }

@@ -425,7 +425,7 @@ cancela esse trabalho (só `ENQUEUED`, como o cancelamento) e enfileira o novo. 
 `dex_unique_work_keep_and_replace_follow_existing_work_policy` (mutações de KEEP e REPLACE derrubam o teste).
 `APPEND`, `APPEND_OR_REPLACE` e `UPDATE` não são modeladas (encadeamento depende de execução).
 
-Ainda pendente: tags/progresso/output
+Ainda pendente (tags fechadas em S22): progresso/output
 em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estados avançam pelo harness).
 `Constraints` são aceitas e não aplicadas. Por isso `work` segue `partial`.
 
@@ -577,6 +577,21 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   fixo em 0 derruba `downgrade_with_fallback_recreates_the_table`. O arquivo foi restaurado e conferido por checksum.
 - **Limite**: o fixture só tem os pares 1→2 e 2→1. Versões de origem diferentes de 1 não têm cenário próprio.
   Não há auto-migrations, observers do InvalidationTracker, nem coroutines/Flow. Status segue `partial`.
+
+### S22 — Apêndice D: WorkInfo.getTags (WorkManager, 2026-11-08)
+
+- **Lacuna fechada** (pendência do S16: "tags/progresso/output em `WorkInfo`"): só as tags. `WorkInfo`
+  agora devolve `getTags()` com um `Set<String>` das tags do pedido, como o real. Antes, `WorkInfo` só tinha
+  `getId()` e `getState()`.
+- **Implementação** (`crates/rd-vm/src/m8.rs`): `new_work_info` monta `rd_tags` a partir do `WorkRecord.tags`
+  (que já vinha do `addTag` desde o S16), e o despacho de `WorkInfo.getTags` lê esse campo.
+- **Teste** (`crates/rd-vm/tests/m8.rs`, `m8_workmanager_work_info_exposes_tags`): enfileira um pedido com
+  `sync` e `daily`, pega o `WorkInfo` por `getWorkInfosByTag("sync")` (o future já completo) e confere
+  `getTags()` = {`daily`, `sync`}. Os 8 testes de `workmanager` passam.
+- **Mutação**: `WorkInfo` com o conjunto de tags vazio derruba o teste (`left == right`). Arquivo restaurado e
+  conferido por checksum.
+- **Continua pendente**: progresso e output em `WorkInfo`, `Worker.doWork()` em background, e a aplicação de
+  constraints. Por isso `work` segue `partial`.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 
