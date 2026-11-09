@@ -2985,6 +2985,11 @@ const ROOM_MIGRATIONS_FIELD: &str = "m8_room_migrations";
 const ROOM_MIGRATION_CONTAINER: &str = "Landroidx/room/RoomDatabase$MigrationContainer;";
 /// `fallbackToDestructiveMigration()` chamado no builder (`Int(1)`).
 const ROOM_DESTRUCTIVE_FIELD: &str = "m8_room_destructive";
+/// `fallbackToDestructiveMigrationFrom(int...)`: versões de origem sem migração
+/// (`HashSet<Integer>`, o `migrationNotRequiredFrom` do `DatabaseConfiguration`).
+const ROOM_FALLBACK_FROM_FIELD: &str = "m8_room_fallback_from";
+/// `fallbackToDestructiveMigrationOnDowngrade()` chamado no builder (`Int(1)`).
+const ROOM_DOWNGRADE_FIELD: &str = "m8_room_downgrade";
 
 /// Container de migrações do builder: criado na primeira `addMigrations`.
 fn room_migration_container(vm: &mut Engine, builder: ObjRef) -> Result<ObjRef, VmExit> {
@@ -2994,6 +2999,24 @@ fn room_migration_container(vm: &mut Engine, builder: ObjRef) -> Result<ObjRef, 
     let c = vm.new_dex_instance_pub(ROOM_MIGRATION_CONTAINER)?;
     room_set(vm, builder, ROOM_MIGRATIONS_FIELD, Value::Obj(c))?;
     Ok(c)
+}
+
+/// Conjunto de versões de origem do builder; criado vazio na primeira chamada.
+fn room_from_set(vm: &mut Engine, builder: ObjRef) -> Result<ObjRef, VmExit> {
+    if let Ok(Value::Obj(s)) = vm.heap.get_field(builder, ROOM_FALLBACK_FROM_FIELD) {
+        return Ok(s);
+    }
+    let set = match crate::collections::new_list(vm, "Ljava/util/HashSet;", Vec::new())? {
+        Value::Obj(o) => o,
+        _ => {
+            return Err(throw(
+                "Ljava/lang/IllegalStateException;",
+                "conjunto do Room",
+            ))
+        }
+    };
+    room_set(vm, builder, ROOM_FALLBACK_FROM_FIELD, Value::Obj(set))?;
+    Ok(set)
 }
 
 fn room_set(vm: &mut Engine, obj: ObjRef, field: &str, v: Value) -> Result<(), VmExit> {
@@ -3029,8 +3052,18 @@ fn room_init(vm: &mut Engine, db: ObjRef, builder: ObjRef, name: &str) -> Result
         let list = crate::collections::new_list(vm, "Ljava/util/ArrayList;", Vec::new())?;
         room_set(vm, cfg, field, list)?;
     }
-    let not_required = crate::collections::new_list(vm, "Ljava/util/HashSet;", Vec::new())?;
+    let not_required = Value::Obj(room_from_set(vm, builder)?);
     room_set(vm, cfg, "migrationNotRequiredFrom", not_required)?;
+    let downgrade = matches!(
+        vm.heap.get_field(builder, ROOM_DOWNGRADE_FIELD),
+        Ok(Value::Int(1))
+    );
+    room_set(
+        vm,
+        cfg,
+        "allowDestructiveMigrationOnDowngrade",
+        Value::Int(downgrade as i32),
+    )?;
     // Migrações do builder (`addMigrations`) e modo destrutivo, como no Room real:
     // sem `fallbackToDestructiveMigration`, uma versão sem caminho de migração
     // lança IllegalStateException em vez de recriar as tabelas.
@@ -3134,6 +3167,41 @@ fn room_builder(
         }
         "fallbackToDestructiveMigration" => {
             room_set(vm, recv, ROOM_DESTRUCTIVE_FIELD, Value::Int(1))?;
+            Ok(Some(Value::Obj(recv)))
+        }
+        // `fallbackToDestructiveMigrationFrom(int...)`: as versões listadas
+        // dispensam migração (o Room real checa `migrationNotRequiredFrom`).
+        "fallbackToDestructiveMigrationFrom" => {
+            let versions: Vec<i32> = match args.first() {
+                Some(Value::Obj(arr)) => {
+                    let (elems, _) = vm.heap.as_array_elems(*arr).map_err(|e| {
+                        throw(
+                            "Ljava/lang/IllegalStateException;",
+                            format!("int[] do Room: {e}"),
+                        )
+                    })?;
+                    elems
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Int(i) => Some(*i),
+                            _ => None,
+                        })
+                        .collect()
+                }
+                _ => Vec::new(),
+            };
+            let set = room_from_set(vm, recv)?;
+            for v in versions {
+                let boxed = crate::boxes::box_value(vm, "Ljava/lang/Integer;", Value::Int(v))?;
+                if let Some(HostObj::List { elems }) = vm.fw.objects.get_mut(&set) {
+                    elems.push(Value::Obj(boxed));
+                }
+            }
+            Ok(Some(Value::Obj(recv)))
+        }
+        // `fallbackToDestructiveMigrationOnDowngrade()`: downgrade recria o banco.
+        "fallbackToDestructiveMigrationOnDowngrade" => {
+            room_set(vm, recv, ROOM_DOWNGRADE_FIELD, Value::Int(1))?;
             Ok(Some(Value::Obj(recv)))
         }
         // builder fluente: tudo devolve this

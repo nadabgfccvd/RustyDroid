@@ -13,6 +13,9 @@
 //!   `IllegalStateException` ("A migration from 1 to 2 was required but not found").
 //! - um banco aberto, fechado e reaberto no mesmo processo não reclama da tabela
 //!   TEMP do invalidation tracker (o `close` libera a conexão, como no Android).
+//! - `fallbackToDestructiveMigrationFrom(1)`: sem migração 1→2, recria a tabela.
+//! - `fallbackToDestructiveMigrationOnDowngrade()`: downgrade 2→1 recria a tabela.
+//! - downgrade 2→1 sem fallback: recusa a abertura com `IllegalStateException`.
 
 use rd_vm::engine::VmConfig;
 use rd_vm::value::Value;
@@ -103,4 +106,57 @@ fn fresh_database_reopens_in_same_process() {
             "reabrir após close não reclama da TEMP table"
         );
     }
+}
+
+fn seed_v2(e: &mut Engine, db: &str) {
+    let ctx = context(e);
+    let n = name(e, db);
+    let r = e
+        .invoke_static(V2, "seed", SEED_SIG, &[ctx, n])
+        .expect("seed v2");
+    assert_eq!(r, Value::Int(1), "v2 gravou a linha");
+}
+
+#[test]
+#[ignore = "exige RD_ROOM_FIXTURE_DEX (scripts/gen-room-fixture.sh)"]
+fn fallback_from_listed_version_recreates_the_table() {
+    let mut e = engine();
+    seed_v1(&mut e, "f.db");
+    let ctx = context(&mut e);
+    let n = name(&mut e, "f.db");
+    let got = call_string(&mut e, V2, "withFallbackFrom", &[ctx, n]);
+    assert_eq!(
+        got, "count=0",
+        "fallbackToDestructiveMigrationFrom(1) dispensa a migração 1→2 e recria a tabela vazia"
+    );
+}
+
+#[test]
+#[ignore = "exige RD_ROOM_FIXTURE_DEX (scripts/gen-room-fixture.sh)"]
+fn downgrade_with_fallback_recreates_the_table() {
+    let mut e = engine();
+    seed_v2(&mut e, "g.db");
+    let ctx = context(&mut e);
+    let n = name(&mut e, "g.db");
+    let got = call_string(&mut e, V1, "openOverV2", &[ctx, n]);
+    assert_eq!(
+        got, "count=0",
+        "fallbackToDestructiveMigrationOnDowngrade recria a tabela da v1 sem as linhas da v2"
+    );
+}
+
+#[test]
+#[ignore = "exige RD_ROOM_FIXTURE_DEX (scripts/gen-room-fixture.sh)"]
+fn downgrade_without_fallback_refuses_to_open_like_room() {
+    let mut e = engine();
+    seed_v2(&mut e, "h.db");
+    let ctx = context(&mut e);
+    let n = name(&mut e, "h.db");
+    let got = call_string(&mut e, V1, "openOverV2WithoutFallback", &[ctx, n]);
+    assert!(
+        got.starts_with(
+            "error:java.lang.IllegalStateException:A migration from 2 to 1 was required but not found"
+        ),
+        "sem fallback de downgrade, o Room recusa a abertura: {got}"
+    );
 }

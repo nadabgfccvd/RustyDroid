@@ -340,9 +340,8 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
     Os três passam com a correção. No VM original (`main`) os três falham.
   - Regressão: `cargo test -p rd-vm -- --include-ignored` com o DEX presente: todos
     os blocos `test result: ok`, zero falhas.
-  - Não modelado: `fallbackToDestructiveMigrationFrom`/`OnDowngrade` (o builder real
-    roda, mas o config não recebe o conjunto de versões: é mais estrito que o Room,
-    nunca mais permissivo), auto-migrations, observers do InvalidationTracker
+  - (Superado pelo S21) `fallbackToDestructiveMigrationFrom`/`OnDowngrade` não eram gravados no config.
+  - Não modelado: auto-migrations, observers do InvalidationTracker
     (triggers) e coroutines/Flow. Por isso o status é `partial`, não `supported`.
   - Observado no trace: cada abertura em conexão nova reexecuta o `onOpen` do Room
     (`CREATE TEMP TABLE`), e agora ele não falha. Sem erro de SQL nos três cenários.
@@ -377,8 +376,8 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
 - Validado localmente com os mesmos comandos: SHA-256 do DEX `134e9ab7…` (igual ao da S13),
   3 testes do Room passam.
 - Os 3 testes continuam `#[ignore]`, para que `cargo test --workspace` não dependa do DEX.
-- Status de `room` segue `partial` (ver S13: não modelados `fallbackToDestructiveMigrationFrom`/`OnDowngrade`,
-  auto-migrations, observers do InvalidationTracker e coroutines/Flow).
+- Status de `room` segue `partial` (ver S13 e S21: não modelados auto-migrations, observers do
+  InvalidationTracker e coroutines/Flow).
 
 ### S16 — Apêndice D: lacunas conhecidas de WorkManager (2026-11-08)
 
@@ -552,6 +551,32 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   ok; `cargo fmt --all -- --check` ok.
 - **Fora deste passo**: DataStore (fica para depois, depende de coroutines e de persistência em disco);
   AES256_SIV para nomes de chave; EncryptedFile; o caminho Tink do DEX.
+
+### S21 — Apêndice D: Room, fallbackToDestructiveMigrationFrom e OnDowngrade (2026-11-08)
+
+- **Lacuna fechada**: o builder aceitava `fallbackToDestructiveMigrationFrom(int...)` e
+  `fallbackToDestructiveMigrationOnDowngrade()` sem gravar nada. O config recebia `migrationNotRequiredFrom`
+  vazio e `allowDestructiveMigrationOnDowngrade` no padrão, então o Room recusava aberturas que o app real
+  aceitaria. Isso era mais estrito que o Room, nunca mais permissivo (S13).
+- **Implementação** (`crates/rd-vm/src/m8.rs`): o builder grava as versões num `HashSet<Integer>` (boxed) e o
+  flag de downgrade. `room_init` passa o conjunto para `migrationNotRequiredFrom` e o flag para
+  `allowDestructiveMigrationOnDowngrade`. A decisão de `isMigrationRequired` continua no Room real (DEX), não no host.
+- **API conferida no jar** (`javap` em `room-runtime-2.6.1.jar`): `fallbackToDestructiveMigrationFrom(int...)`
+  (só a forma varargs) e `fallbackToDestructiveMigrationOnDowngrade()`. A bytecode de `isMigrationRequired`
+  confirma que o conjunto e o flag são os campos consultados.
+- **Fixture**: `V2.java` ganha `seed` e `withFallbackFrom`; `V1.java` ganha `openOverV2`,
+  `openOverV2WithoutFallback` e `count` no DAO. O DEX foi regenerado por `scripts/gen-room-fixture.sh`
+  (javac com o processador do Room 2.6.1, depois D8), sem erro.
+- **Testes** (`crates/rd-vm/tests/jetpack_room.rs`, `#[ignore]`; a CI roda com o DEX):
+  - `fallback_from_listed_version_recreates_the_table`: `count=0`;
+  - `downgrade_with_fallback_recreates_the_table`: `count=0`;
+  - `downgrade_without_fallback_refuses_to_open_like_room`: `IllegalStateException`
+    ("A migration from 2 to 1 was required but not found");
+  - os 3 testes anteriores seguem passando. Total: 6/6 com `--ignored`.
+- **Mutação**: conjunto sempre vazio derruba `fallback_from_listed_version_recreates_the_table`; flag de downgrade
+  fixo em 0 derruba `downgrade_with_fallback_recreates_the_table`. O arquivo foi restaurado e conferido por checksum.
+- **Limite**: o fixture só tem os pares 1→2 e 2→1. Versões de origem diferentes de 1 não têm cenário próprio.
+  Não há auto-migrations, observers do InvalidationTracker, nem coroutines/Flow. Status segue `partial`.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 

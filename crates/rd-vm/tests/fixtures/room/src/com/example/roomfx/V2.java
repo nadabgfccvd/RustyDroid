@@ -75,4 +75,31 @@ public class V2 {
             db.close();
         }
     }
+
+    /** Semeia o banco na v2 com uma linha (cenário de downgrade). */
+    public static int seed(Context ctx, String name) {
+        AppDbV2 db = Room.databaseBuilder(ctx, AppDbV2.class, name).allowMainThreadQueries().build();
+        try {
+            db.getOpenHelper().getWritableDatabase()
+                    .execSQL("INSERT INTO item (id, name, qty) VALUES (1, 'beta', 5)");
+        } finally {
+            db.close();
+        }
+        return 1;
+    }
+
+    /** Sem migração 1→2, mas com fallbackToDestructiveMigrationFrom(1): recria a tabela. */
+    public static String withFallbackFrom(Context ctx, String name) {
+        AppDbV2 db = Room.databaseBuilder(ctx, AppDbV2.class, name)
+                .fallbackToDestructiveMigrationFrom(1)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            return "count=" + db.items().count();
+        } catch (RuntimeException e) {
+            return "error:" + e.getClass().getName() + ":" + e.getMessage();
+        } finally {
+            db.close();
+        }
+    }
 }
