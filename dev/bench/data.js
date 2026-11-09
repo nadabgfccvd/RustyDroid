@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794182816410,
+  "lastUpdate": 1794183712766,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6371,6 +6371,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1806,
             "range": "± 14",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "02879e991d8a13c25122f477603bcf523bcbdc45",
+          "message": "feat(work): WorkInfo.getTags (WorkManager, S22) (#617)\n\nWorkInfo só tinha getId() e getState(). A pendência do S16 incluía as tags:\nagora WorkInfo.getTags() devolve um Set<String> com as tags do pedido, como\no real. As tags já eram gravadas pelo addTag desde o S16; faltava expô-las.\n\n- m8.rs: new_work_info monta rd_tags a partir de WorkRecord.tags; o despacho\n  de WorkInfo.getTags lê o campo.\n- Teste m8_workmanager_work_info_exposes_tags: enfileira com sync e daily,\n  pega o WorkInfo por getWorkInfosByTag(\"sync\") e confere getTags().\n- Mutação: conjunto de tags vazio derruba o teste.\n\nContinua pendente: progresso e output, doWork em background, constraints.\nwork segue partial.\n\nValidação: cargo fmt --check, clippy -D warnings, cargo test -p rd-vm\n-- --include-ignored (todos os blocos ok, DEX do Room presente), cargo test\n-p xtask, check_md_links (165 ok).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T21:21:22-03:00",
+          "tree_id": "dc345af28d2d2003925b34a46d87de62722c19dc",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/02879e991d8a13c25122f477603bcf523bcbdc45"
+        },
+        "date": 1794183712086,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3885,
+            "range": "± 141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3852,
+            "range": "± 11",
             "unit": "ns/iter"
           }
         ]
