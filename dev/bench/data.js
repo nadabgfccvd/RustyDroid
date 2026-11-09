@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794181884868,
+  "lastUpdate": 1794182816410,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6335,6 +6335,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2761,
             "range": "± 11",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "63c349eb5c3249f99980bfe291164076c8c3a9b0",
+          "message": "feat(room): fallbackToDestructiveMigrationFrom e OnDowngrade (S21) (#616)\n\nO builder aceitava fallbackToDestructiveMigrationFrom(int...) e\nfallbackToDestructiveMigrationOnDowngrade() sem gravar nada, então o\nDatabaseConfiguration recebia migrationNotRequiredFrom vazio e\nallowDestructiveMigrationOnDowngrade no padrão. O Room recusava aberturas\nque o Room real aceitaria.\n\n- m8.rs: o builder grava as versões num HashSet<Integer> e o flag de\n  downgrade; room_init passa os dois para o DatabaseConfiguration. A decisão\n  de isMigrationRequired fica no Room real (DEX).\n- API conferida por javap em room-runtime-2.6.1: só a forma varargs de\n  ...From(int...), e ...OnDowngrade().\n- Fixture: V2 ganha seed e withFallbackFrom; V1 ganha openOverV2,\n  openOverV2WithoutFallback e count no DAO. DEX regenerado com\n  scripts/gen-room-fixture.sh (javac + Room 2.6.1 + D8).\n- Testes (ignored, a CI roda com o DEX): fallback de 1→2 recria a tabela;\n  downgrade 2→1 com fallback recria; sem fallback, recusa com\n  IllegalStateException. Total 6/6 com --include-ignored.\n- Mutação: conjunto vazio derruba o teste de From; flag de downgrade fixo\n  em 0 derruba o teste de downgrade.\n\nDocs: S21 em appendix-d-e.md, notes do room em jetpack.toml, S13 marcado\ncomo superado. Status de room segue partial (auto-migrations, observers do\nInvalidationTracker e coroutines/Flow continuam fora).\n\nValidação local: cargo fmt --check, clippy -D warnings, cargo test -p\nrd-vm -- --include-ignored (128 blocos ok), cargo test -p xtask,\ncheck_md_links (165 ok).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T21:06:38-03:00",
+          "tree_id": "630b9d5abe3fc352c578434f3f8b9f6655f23590",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/63c349eb5c3249f99980bfe291164076c8c3a9b0"
+        },
+        "date": 1794182815599,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1831,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1806,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
