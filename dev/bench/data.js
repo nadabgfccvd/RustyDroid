@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794258286926,
+  "lastUpdate": 1794262273912,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6587,6 +6587,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3187,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fa4b367ce1eb0103da39e408c6768fd31e3c87ed",
+          "message": "Merge pull request #622 from nadabgfccvd/dependabot/cargo/main/cargo-minor-and-patch-dbeece9def\n\nchore(deps)(deps): bump flate2 from 1.1.10 to 1.1.11 in the cargo-minor-and-patch group",
+          "timestamp": "2026-11-09T19:10:31-03:00",
+          "tree_id": "00b5de03056168ad61fa26bc1e41d17b1928b66e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/fa4b367ce1eb0103da39e408c6768fd31e3c87ed"
+        },
+        "date": 1794262273453,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3282,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3283,
+            "range": "± 10",
             "unit": "ns/iter"
           }
         ]
