@@ -154,6 +154,12 @@ pub(super) fn collect_strong_roots(fw: &HostState, out: &mut Vec<ObjRef>) {
             .filter(|r| *r != 0),
     );
     push_opt(ax.last_nav_controller, out);
+    // Argumentos (Bundle) das entradas da pilha de navegação são raízes do host.
+    for h in ax.nav.values() {
+        for a in h.args.iter().flatten() {
+            push_opt(Some(*a), out);
+        }
+    }
     push_opt(ax.app_initializer, out);
     for v in ax.startup_instances.values() {
         push_val(v, out);

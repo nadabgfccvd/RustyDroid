@@ -147,10 +147,40 @@ pub struct LruHost {
     pub eviction_count: i32,
 }
 
+/// Ação declarada no grafo (`<action>` do safe-args): sai de `from` e leva a `to`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NavAction {
+    pub id: i32,
+    pub from: i32,
+    pub to: i32,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NavHost {
     pub stack: Vec<i32>,
+    /// Argumentos (Bundle) de cada entrada da pilha; paralelo a `stack`.
+    pub args: Vec<Option<ObjRef>>,
+    pub actions: Vec<NavAction>,
     pub graph_id: i32,
+}
+
+impl NavHost {
+    fn push(&mut self, dest: i32, args: Option<ObjRef>) {
+        self.stack.push(dest);
+        self.args.push(args);
+    }
+    fn pop(&mut self) -> Option<i32> {
+        self.args.pop();
+        self.stack.pop()
+    }
+    fn truncate(&mut self, len: usize) {
+        self.stack.truncate(len);
+        self.args.truncate(len);
+    }
+    fn clear(&mut self) {
+        self.stack.clear();
+        self.args.clear();
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -374,6 +404,20 @@ impl Engine {
     }
     pub fn androidx_work_data(&self, r: ObjRef) -> Option<Vec<(String, Value)>> {
         self.fw.androidx.work_data.get(&r).cloned()
+    }
+    /// Declara uma ação do grafo do NavController (`<action android:id=.. app:destination=..>`
+    /// dentro do destino `from`). O harness declara o grafo; não é lido do XML compilado.
+    pub fn androidx_nav_declare_action(&mut self, controller: ObjRef, id: i32, from: i32, to: i32) {
+        if let Some(h) = self.fw.androidx.nav.get_mut(&controller) {
+            h.actions.push(NavAction { id, from, to });
+        }
+    }
+    pub fn androidx_nav_args(&self, controller: ObjRef) -> Option<Option<ObjRef>> {
+        self.fw
+            .androidx
+            .nav
+            .get(&controller)
+            .and_then(|n| n.args.last().copied())
     }
     pub fn androidx_nav_stack(&self, controller: ObjRef) -> Option<Vec<i32>> {
         self.fw
@@ -2315,6 +2359,7 @@ fn navigation(
         return Ok(Some(match name {
             "getId" => Value::Int(id),
             "getLabel" => Value::Null,
+            "getArguments" => vm.heap.get_field(recv, "arguments").unwrap_or(Value::Null),
             _ => return Ok(None),
         }));
     }
@@ -2339,9 +2384,9 @@ fn navigation(
                 .get_mut(&recv)
                 .ok_or_else(|| npe("nav"))?;
             h.graph_id = graph;
-            h.stack.clear();
+            h.clear();
             if graph != 0 {
-                h.stack.push(graph);
+                h.push(graph, None);
             }
             vm.fw.androidx.last_nav_controller = Some(recv);
             Value::Null
@@ -2360,14 +2405,60 @@ fn navigation(
             Value::Obj(r)
         }
         "navigate" => {
-            let dest = iarg(args, 0);
+            // Safe-args: `navigate(NavDirections)` lê `getActionId()`/`getArguments()`
+            // do objeto gerado pelo app (DEX real) e segue o mesmo caminho de ação.
+            let (id, bundle, strict) = if sig.starts_with("(Landroidx/navigation/NavDirections;") {
+                let dir = match args.first() {
+                    Some(Value::Obj(r)) => *r,
+                    _ => return Err(npe("navDirections")),
+                };
+                let id = vm.invoke_instance(dir, "getActionId", "()I", &[])?;
+                let bundle =
+                    match vm.invoke_instance(dir, "getArguments", "()Landroid/os/Bundle;", &[])? {
+                        Value::Obj(r) => Some(r),
+                        _ => None,
+                    };
+                (iarg(&[id], 0), bundle, true)
+            } else {
+                let bundle = match args.get(1) {
+                    Some(Value::Obj(r)) => Some(*r),
+                    _ => None,
+                };
+                (iarg(args, 0), bundle, false)
+            };
+            let h = vm.fw.androidx.nav.get(&recv).ok_or_else(|| npe("nav"))?;
+            let cur = h.stack.last().copied();
+            let declared = h.actions.iter().find(|a| a.id == id).copied();
+            let dest = match declared {
+                // Ação conhecida: precisa sair do destino atual (AOSP).
+                Some(a) if Some(a.from) == cur => a.to,
+                Some(a) => {
+                    return Err(throw(
+                        "Ljava/lang/IllegalArgumentException;",
+                        format!(
+                            "Navigation action/destination {} cannot be found from the current destination {}",
+                            a.id,
+                            cur.unwrap_or(0)
+                        ),
+                    ))
+                }
+                // NavDirections sempre vem de uma ação do grafo.
+                None if strict => {
+                    return Err(throw(
+                        "Ljava/lang/IllegalArgumentException;",
+                        format!("Navigation action {id} is not declared in this graph"),
+                    ))
+                }
+                // Destino direto (modelo do host sem lista de destinos): empilha o id.
+                None => id,
+            };
             let h = vm
                 .fw
                 .androidx
                 .nav
                 .get_mut(&recv)
                 .ok_or_else(|| npe("nav"))?;
-            h.stack.push(dest);
+            h.push(dest, bundle);
             vm.fw.androidx.last_nav_controller = Some(recv);
             Value::Null
         }
@@ -2385,7 +2476,7 @@ fn navigation(
             // e deixa `getCurrentDestination()` nulo, como na doc oficial.
             let popped = if args.is_empty() {
                 let had = !h.stack.is_empty();
-                h.stack.pop();
+                h.pop();
                 had
             } else {
                 let target = iarg(args, 0);
@@ -2394,7 +2485,7 @@ fn navigation(
                     Some(pos) => {
                         let new_len = if inclusive { pos } else { pos + 1 };
                         let changed = new_len < h.stack.len();
-                        h.stack.truncate(new_len);
+                        h.truncate(new_len);
                         changed
                     }
                     None => false,
@@ -2410,7 +2501,7 @@ fn navigation(
                 .get_mut(&recv)
                 .ok_or_else(|| npe("nav"))?;
             if h.stack.len() > 1 {
-                h.stack.pop();
+                h.pop();
                 Value::Int(1)
             } else {
                 Value::Int(0)
@@ -2431,6 +2522,12 @@ fn navigation(
                     vm.fw.androidx.nav_dest_ids.insert(r, id);
                     let dest = nav_destination_obj(vm, id)?;
                     let _ = vm.heap.put_field(r, "destination", dest);
+                    let bundle = vm.fw.androidx.nav[&recv].args.last().copied().flatten();
+                    let _ = vm.heap.put_field(
+                        r,
+                        "arguments",
+                        bundle.map(Value::Obj).unwrap_or(Value::Null),
+                    );
                     Value::Obj(r)
                 }
                 None => Value::Null,

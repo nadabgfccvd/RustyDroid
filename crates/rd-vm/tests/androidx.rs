@@ -1567,3 +1567,212 @@ fn livedata_observer_setting_value_in_callback_is_bounded() {
     assert!(calls > 1, "houve re-despacho iterativo (calls={calls})");
     assert!(calls <= 256, "rondas limitadas pelo teto (calls={calls})");
 }
+
+/// Safe-args (UI-04): ações do grafo saem do destino atual (AOSP). `navigate`
+/// com ação declarada leva ao destino; Bundle de argumentos fica na entrada
+/// empilhada (`NavBackStackEntry.getArguments`). Ação fora do destino atual
+/// lança IllegalArgumentException e não altera a pilha.
+#[test]
+fn dex_navigation_actions_resolve_from_current_destination_with_args() {
+    let mut e = engine();
+    let nav = obj(&mut e, NAV_CONTROLLER);
+    ci!(
+        e,
+        NAV_CONTROLLER,
+        "<init>",
+        "(Landroid/content/Context;)V",
+        nav,
+        [Value::Null]
+    )
+    .unwrap();
+    ci!(e, NAV_CONTROLLER, "setGraph", "(I)V", nav, [Value::Int(7)]).unwrap();
+    e.androidx_nav_declare_action(nav, 101, 7, 11);
+    e.androidx_nav_declare_action(nav, 102, 11, 12);
+    let bundle = obj(&mut e, "Landroid/os/Bundle;");
+
+    // (I)V com ação declarada a partir do destino atual.
+    ci!(
+        e,
+        NAV_CONTROLLER,
+        "navigate",
+        "(I)V",
+        nav,
+        [Value::Int(101)]
+    )
+    .unwrap();
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7, 11]));
+    // (ILandroid/os/Bundle;)V: argumentos ficam na entrada de destino 12.
+    ci!(
+        e,
+        NAV_CONTROLLER,
+        "navigate",
+        "(ILandroid/os/Bundle;)V",
+        nav,
+        [Value::Int(102), Value::Obj(bundle)]
+    )
+    .unwrap();
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7, 11, 12]));
+    assert_eq!(e.androidx_nav_args(nav), Some(Some(bundle)));
+    let entry = ov(ci!(
+        e,
+        NAV_CONTROLLER,
+        "getCurrentBackStackEntry",
+        "()Landroidx/navigation/NavBackStackEntry;",
+        nav,
+        []
+    )
+    .unwrap());
+    let got = ov(ci!(
+        e,
+        "Landroidx/navigation/NavBackStackEntry;",
+        "getArguments",
+        "()Landroid/os/Bundle;",
+        entry,
+        []
+    )
+    .unwrap());
+    assert_eq!(got, bundle, "argumentos da entrada atual");
+    // Os argumentos são raízes do host: sobrevivem ao GC mesmo sem referência DEX.
+    e.gc();
+    assert_ne!(
+        e.heap.class_of(bundle).unwrap(),
+        rd_vm::gc::FREED_CLASS,
+        "Bundle de argumentos deve sobreviver ao GC"
+    );
+    assert_eq!(e.androidx_nav_args(nav), Some(Some(bundle)));
+
+    // Ação 101 sai de 7, mas o atual é 12: IllegalArgumentException, pilha intacta.
+    let err = ci!(
+        e,
+        NAV_CONTROLLER,
+        "navigate",
+        "(ILandroid/os/Bundle;)V",
+        nav,
+        [Value::Int(101), Value::Null]
+    )
+    .unwrap_err();
+    assert_eq!(
+        exception_class(&err),
+        "Ljava/lang/IllegalArgumentException;"
+    );
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7, 11, 12]));
+}
+
+/// `navigate(NavDirections)` (safe-args): o objeto gerado pelo app é um método
+/// DEX real. O host lê `getActionId()` e `getArguments()` dele. Ação não declarada
+/// no grafo lança IllegalArgumentException e não altera a pilha.
+#[test]
+fn dex_navigation_directions_safe_args_use_dex_action_id() {
+    let mut b = DexBuilder::new();
+    let cls = b.class("Lapp/nav/ActionDirections;", "Ljava/lang/Object;");
+    let id_units = {
+        let mut u = op21s(0x13, 0, 101); // const/16 v0, 101
+        u.extend(op11x(0x0F, 0)); // return v0
+        u
+    };
+    b.r#virtual(
+        cls,
+        "getActionId",
+        "I",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, id_units)),
+    );
+    let args_units = {
+        let mut u = op11n(0x12, 0, 0); // const/4 v0, 0 (null)
+        u.extend(op11x(0x11, 0)); // return-object v0
+        u
+    };
+    b.r#virtual(
+        cls,
+        "getArguments",
+        "Landroid/os/Bundle;",
+        vec![],
+        ACC_PUBLIC,
+        Some(b.code(1, 1, 0, args_units)),
+    );
+    let mut e = engine_of(&b);
+    let nav = obj(&mut e, NAV_CONTROLLER);
+    ci!(
+        e,
+        NAV_CONTROLLER,
+        "<init>",
+        "(Landroid/content/Context;)V",
+        nav,
+        [Value::Null]
+    )
+    .unwrap();
+    ci!(e, NAV_CONTROLLER, "setGraph", "(I)V", nav, [Value::Int(7)]).unwrap();
+    e.androidx_nav_declare_action(nav, 101, 7, 11);
+    let dir = obj(&mut e, "Lapp/nav/ActionDirections;");
+    ci!(
+        e,
+        NAV_CONTROLLER,
+        "navigate",
+        "(Landroidx/navigation/NavDirections;)V",
+        nav,
+        [Value::Obj(dir)]
+    )
+    .unwrap();
+    assert_eq!(e.androidx_nav_stack(nav), Some(vec![7, 11]));
+    assert_eq!(e.androidx_nav_args(nav), Some(None), "getArguments() nulo");
+
+    // Direções de uma ação não declarada no grafo: não navega.
+    let mut b2 = DexBuilder::new();
+    let cls2 = b2.class("Lapp/nav/UnknownDirections;", "Ljava/lang/Object;");
+    let mut u = op21s(0x13, 0, 999);
+    u.extend(op11x(0x0F, 0));
+    b2.r#virtual(
+        cls2,
+        "getActionId",
+        "I",
+        vec![],
+        ACC_PUBLIC,
+        Some(b2.code(1, 1, 0, u)),
+    );
+    let mut u = op11n(0x12, 0, 0);
+    u.extend(op11x(0x11, 0));
+    b2.r#virtual(
+        cls2,
+        "getArguments",
+        "Landroid/os/Bundle;",
+        vec![],
+        ACC_PUBLIC,
+        Some(b2.code(1, 1, 0, u)),
+    );
+    let mut e2 = engine_of(&b2);
+    let nav2 = obj(&mut e2, NAV_CONTROLLER);
+    ci!(
+        e2,
+        NAV_CONTROLLER,
+        "<init>",
+        "(Landroid/content/Context;)V",
+        nav2,
+        [Value::Null]
+    )
+    .unwrap();
+    ci!(
+        e2,
+        NAV_CONTROLLER,
+        "setGraph",
+        "(I)V",
+        nav2,
+        [Value::Int(7)]
+    )
+    .unwrap();
+    let dir2 = obj(&mut e2, "Lapp/nav/UnknownDirections;");
+    let err = ci!(
+        e2,
+        NAV_CONTROLLER,
+        "navigate",
+        "(Landroidx/navigation/NavDirections;)V",
+        nav2,
+        [Value::Obj(dir2)]
+    )
+    .unwrap_err();
+    assert_eq!(
+        exception_class(&err),
+        "Ljava/lang/IllegalArgumentException;"
+    );
+    assert_eq!(e2.androidx_nav_stack(nav2), Some(vec![7]));
+}
