@@ -53,6 +53,8 @@ const INPUT_STREAM: &str = "Ljava/io/InputStream;";
 const FILTER_OS: &str = "Ljava/io/FilterOutputStream;";
 const BOS: &str = "Ljava/io/BufferedOutputStream;";
 const BAIS: &str = "Ljava/io/ByteArrayInputStream;";
+const BIS: &str = "Ljava/io/BufferedInputStream;";
+const BIS_FIELD: &str = "rd$buffered_in_bytes";
 
 const WRITERS: [&str; 6] = [SW, OSW, BW, PW, PS, FW];
 const READERS: [&str; 4] = [SR, ISR, BR, FR];
@@ -1211,6 +1213,53 @@ fn dex_base(
 ) -> Result<Option<Value>, VmExit> {
     match (mref_class, name, sig) {
         (WRITER | READER | OUTPUT_STREAM | INPUT_STREAM, "<init>", _) => Ok(Some(Value::Null)),
+        // `close()` base de Reader/Writer/InputStream/OutputStream é no-op no JDK;
+        // alcança subclasses DEX sem override via o fallback de herança.
+        (WRITER | READER | OUTPUT_STREAM | INPUT_STREAM, "close", "()V") => Ok(Some(Value::Null)),
+        // Defaults de InputStream.read(byte[]) / read(byte[],int,int): lê byte a
+        // byte via read() do receptor (subclasses DEX que só sobrescrevem read()).
+        (INPUT_STREAM, "read", "([B)I") => {
+            let Some(Value::Obj(arr)) = args.first().cloned() else {
+                return Err(exc("Ljava/lang/NullPointerException;", ""));
+            };
+            let len = vm.heap.as_array_elems(arr)?.0.len() as i32;
+            Ok(Some(vm.invoke_instance(
+                recv,
+                "read",
+                "([BII)I",
+                &[Value::Obj(arr), Value::Int(0), Value::Int(len)],
+            )?))
+        }
+        (INPUT_STREAM, "read", "([BII)I") => {
+            let Some(Value::Obj(arr)) = args.first().cloned() else {
+                return Err(exc("Ljava/lang/NullPointerException;", ""));
+            };
+            let off = match args.get(1) {
+                Some(Value::Int(v)) => *v,
+                _ => 0,
+            };
+            let len = match args.get(2) {
+                Some(Value::Int(v)) => *v,
+                _ => 0,
+            };
+            if len == 0 {
+                return Ok(Some(Value::Int(0)));
+            }
+            let mut n = 0i32;
+            while n < len {
+                match vm.invoke_instance(recv, "read", "()I", &[])? {
+                    Value::Int(b) if b >= 0 => {
+                        let elems = vm.heap.array_elems_mut(arr)?;
+                        if let Some(slot) = elems.get_mut((off + n) as usize) {
+                            *slot = Value::Int(i32::from(b as u8 as i8));
+                        }
+                        n += 1;
+                    }
+                    _ => break,
+                }
+            }
+            Ok(Some(Value::Int(if n == 0 { -1 } else { n })))
+        }
         (FILTER_OS, "<init>", "(Ljava/io/OutputStream;)V") => {
             if let Some(out) = args.first() {
                 let _ = vm.heap.put_field(recv, "out", out.clone());
@@ -1459,6 +1508,55 @@ fn data_input(
         ("readLong", "()J") => Value::Long(data_in_bytes(vm, recv, 8)? as i64),
         ("readFloat", "()F") => Value::Float(f32::from_bits(data_in_bytes(vm, recv, 4)? as u32)),
         ("readDouble", "()D") => Value::Double(f64::from_bits(data_in_bytes(vm, recv, 8)?)),
+        ("available", "()I")
+        | ("read", "([B)I")
+        | ("read", "([BII)I")
+        | ("mark", "(I)V")
+        | ("reset", "()V")
+        | ("markSupported", "()Z")
+        | ("skip", "(J)J") => {
+            let inner = match vm.heap.get_field(recv, DATA_IN_FIELD) {
+                Ok(Value::Obj(r)) => r,
+                _ => return Err(exc("Ljava/lang/NullPointerException;", "")),
+            };
+            vm.invoke_instance(inner, name, sig, args)?
+        }
+        ("skipBytes", "(I)I") => {
+            // Como DataInputStream.skipBytes: pula até n bytes, parando no EOF.
+            let n = match args.first() {
+                Some(Value::Int(n)) => (*n).max(0) as usize,
+                _ => 0,
+            };
+            let inner = match vm.heap.get_field(recv, DATA_IN_FIELD) {
+                Ok(Value::Obj(r)) => r,
+                _ => return Err(exc("Ljava/lang/NullPointerException;", "")),
+            };
+            let mut skipped = 0i32;
+            while (skipped as usize) < n {
+                match vm.invoke_instance(inner, "read", "()I", &[])? {
+                    Value::Int(b) if b >= 0 => skipped += 1,
+                    _ => break,
+                }
+            }
+            Value::Int(skipped)
+        }
+        ("readUTF", "()Ljava/lang/String;") => {
+            // Formato UTF do DataInput: u2 de comprimento + bytes (modified UTF-8).
+            let len = data_in_bytes(vm, recv, 2)? as usize;
+            let inner = match vm.heap.get_field(recv, DATA_IN_FIELD) {
+                Ok(Value::Obj(r)) => r,
+                _ => return Err(exc("Ljava/lang/NullPointerException;", "")),
+            };
+            let mut buf = Vec::with_capacity(len);
+            for _ in 0..len {
+                match vm.invoke_instance(inner, "read", "()I", &[])? {
+                    Value::Int(b) if b >= 0 => buf.push(b as u8),
+                    _ => return Err(exc("Ljava/io/EOFException;", "")),
+                }
+            }
+            let text = String::from_utf8_lossy(&buf).into_owned();
+            Value::Obj(crate::intrinsics::alloc_string(vm, text)?)
+        }
         ("close", "()V") => {
             if let Ok(Value::Obj(inner)) = vm.heap.get_field(recv, DATA_IN_FIELD) {
                 vm.invoke_instance(inner, "close", "()V", &[])?;
@@ -1468,6 +1566,49 @@ fn data_input(
         _ => return Ok(None),
     };
     Ok(Some(out))
+}
+
+/// `java.io.BufferedInputStream` sobre um `InputStream` qualquer. O stream de
+/// origem é drenado uma vez no construtor (limitado por `MAX_STREAM_UNITS`) e
+/// guardado como `ByteArrayInputStream` interno; `mark`/`reset`/`skip`/`read`
+/// delegam a ele, o que dá o mesmo comportamento de posicionamento do JDK para
+/// os streams finitos usados pelo app (ex.: `ExifInterface` lendo JPEG).
+fn buffered_input(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if name == "<init>" {
+        if sig != "(Ljava/io/InputStream;I)V" && sig != "(Ljava/io/InputStream;)V" {
+            return Ok(None);
+        }
+        let Some(Value::Obj(inner)) = args.first().cloned() else {
+            return Err(exc("Ljava/lang/NullPointerException;", ""));
+        };
+        let mut bytes: Vec<u8> = Vec::new();
+        while bytes.len() < MAX_STREAM_UNITS {
+            match vm.invoke_instance(inner, "read", "()I", &[])? {
+                Value::Int(b) if b >= 0 => bytes.push(b as u8),
+                _ => break,
+            }
+        }
+        let bais = new_byte_input_stream(vm, bytes)?;
+        crate::err::put_field_result(vm.heap.put_field(recv, BIS_FIELD, bais))?;
+        return Ok(Some(Value::Null));
+    }
+    let bais = match vm.heap.get_field(recv, BIS_FIELD) {
+        Ok(Value::Obj(r)) => r,
+        _ => return Err(exc("Ljava/lang/NullPointerException;", "")),
+    };
+    match name {
+        "close" => Ok(Some(Value::Null)),
+        "markSupported" | "mark" | "reset" | "skip" | "read" | "available" => {
+            Ok(Some(vm.invoke_instance(bais, name, sig, args)?))
+        }
+        _ => Ok(None),
+    }
 }
 
 pub fn instance_intrinsic(
@@ -1493,6 +1634,9 @@ pub fn instance_intrinsic(
     }
     if recv_class == DATA_IN {
         return data_input(vm, name, sig, recv, args);
+    }
+    if recv_class == BIS {
+        return buffered_input(vm, name, sig, recv, args);
     }
     // Base-class templates apply when the DEX receiver does not override.
     if matches!(

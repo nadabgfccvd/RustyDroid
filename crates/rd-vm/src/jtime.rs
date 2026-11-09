@@ -1233,6 +1233,90 @@ fn set_field(vm: &mut Engine, recv: ObjRef, field: &str, value: Value) -> Result
     Ok(())
 }
 
+/// Parser dirigido pelo padrão de `SimpleDateFormat.parse` para campos numéricos
+/// (`y M d H h m s S`) e literais, em UTC (zona do dispositivo emulado). Padrões
+/// com outros campos (texto, zonas) devolvem `None` (ParseException).
+fn parse_pattern_ms(pattern: &str, text: &str) -> Option<i64> {
+    let pat: Vec<char> = pattern.chars().collect();
+    let txt: Vec<char> = text.chars().collect();
+    let (mut y, mut mo, mut d, mut h, mut mi, mut sec, mut milli) =
+        (1970i64, 1i64, 1i64, 0i64, 0i64, 0i64, 0i64);
+    let mut ti = 0usize;
+    let mut pi = 0usize;
+    while pi < pat.len() {
+        let c = pat[pi];
+        if c == '\'' {
+            // literal entre aspas; '' é um apóstrofo
+            pi += 1;
+            while pi < pat.len() {
+                if pat[pi] == '\'' {
+                    if pi + 1 < pat.len() && pat[pi + 1] == '\'' {
+                        if txt.get(ti) != Some(&'\'') {
+                            return None;
+                        }
+                        ti += 1;
+                        pi += 2;
+                        continue;
+                    }
+                    break;
+                }
+                if txt.get(ti) != Some(&pat[pi]) {
+                    return None;
+                }
+                ti += 1;
+                pi += 1;
+            }
+            pi += 1;
+            continue;
+        }
+        if c.is_ascii_alphabetic() {
+            let mut run = 0usize;
+            while pi < pat.len() && pat[pi] == c {
+                run += 1;
+                pi += 1;
+            }
+            let field = match c {
+                'y' | 'M' | 'd' | 'H' | 'h' | 'm' | 's' | 'S' => c,
+                _ => return None,
+            };
+            let start = ti;
+            while ti < txt.len() && txt[ti].is_ascii_digit() && ti - start < 9 {
+                ti += 1;
+            }
+            if ti == start {
+                return None;
+            }
+            let v: i64 = txt[start..ti].iter().collect::<String>().parse().ok()?;
+            match field {
+                'y' => {
+                    y = if run <= 2 && ti - start <= 2 {
+                        2000 + v
+                    } else {
+                        v
+                    }
+                }
+                'M' => mo = v,
+                'd' => d = v,
+                'H' | 'h' => h = v,
+                'm' => mi = v,
+                's' => sec = v,
+                _ => milli = v,
+            }
+            continue;
+        }
+        if txt.get(ti) != Some(&c) {
+            return None;
+        }
+        ti += 1;
+        pi += 1;
+    }
+    if ti != txt.len() {
+        return None;
+    }
+    let days = days_from_civil(y, mo, d);
+    Some(days * 86_400_000 + h * 3_600_000 + mi * 60_000 + sec * 1_000 + milli)
+}
+
 fn simple_date_format_intrinsic(
     vm: &mut Engine,
     name: &str,
@@ -1282,6 +1366,23 @@ fn simple_date_format_intrinsic(
         .map(|v| str_arg(vm, &v))
         .unwrap_or_else(|| "en".to_string());
     match (name, sig) {
+        ("parse", "(Ljava/lang/String;)Ljava/util/Date;") => {
+            let text = match args.first() {
+                Some(Value::Obj(r)) => vm.heap.as_str(*r).map(str::to_string).ok(),
+                _ => None,
+            };
+            let Some(text) = text else {
+                return Err(null_pointer_exception("text == null"));
+            };
+            match parse_pattern_ms(&pattern, &text) {
+                Some(ms) => Ok(Some(ms_obj(vm, DATE, ms)?)),
+                None => Err(crate::err::Throwable::new(
+                    "Ljava/text/ParseException;",
+                    format!("Unparseable date: \"{text}\""),
+                )
+                .into()),
+            }
+        }
         ("format", "(Ljava/util/Date;)Ljava/lang/String;")
         | ("format", "(Ljava/lang/Object;)Ljava/lang/String;") => {
             let date_only = sig.starts_with("(Ljava/util/Date;");

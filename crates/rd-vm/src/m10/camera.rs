@@ -209,6 +209,51 @@ fn preview_pattern(width: i32, height: i32, seq: i32) -> Vec<u8> {
     out
 }
 
+/// JPEG 8x8 baseline JFIF válido (gerado com PIL, q=75), base do frame JPEG
+/// sintético: `synthetic_frame_bytes` insere a tag como segmento COM.
+const SYNTH_JPEG_BASE: &[u8] = &[
+    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
+    0x07, 0x07, 0x07, 0x09, 0x09, 0x08, 0x0A, 0x0C, 0x14, 0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12,
+    0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A, 0x1C, 0x1C, 0x20, 0x24, 0x2E, 0x27, 0x20,
+    0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29, 0x2C, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27,
+    0x39, 0x3D, 0x38, 0x32, 0x3C, 0x2E, 0x33, 0x34, 0x32, 0xFF, 0xDB, 0x00, 0x43, 0x01, 0x09, 0x09,
+    0x09, 0x0C, 0x0B, 0x0C, 0x18, 0x0D, 0x0D, 0x18, 0x32, 0x21, 0x1C, 0x21, 0x32, 0x32, 0x32, 0x32,
+    0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32,
+    0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32,
+    0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0xFF, 0xC0,
+    0x00, 0x11, 0x08, 0x00, 0x08, 0x00, 0x08, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11,
+    0x01, 0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+    0x0A, 0x0B, 0xFF, 0xC4, 0x00, 0xB5, 0x10, 0x00, 0x02, 0x01, 0x03, 0x03, 0x02, 0x04, 0x03, 0x05,
+    0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7D, 0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21,
+    0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08, 0x23,
+    0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0, 0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0A, 0x16, 0x17,
+    0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A,
+    0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
+    0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A,
+    0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99,
+    0x9A, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7,
+    0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xD2, 0xD3, 0xD4, 0xD5,
+    0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF1,
+    0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFF, 0xC4, 0x00, 0x1F, 0x01, 0x00, 0x03,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0xFF, 0xC4, 0x00, 0xB5, 0x11, 0x00,
+    0x02, 0x01, 0x02, 0x04, 0x04, 0x03, 0x04, 0x07, 0x05, 0x04, 0x04, 0x00, 0x01, 0x02, 0x77, 0x00,
+    0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71, 0x13,
+    0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xA1, 0xB1, 0xC1, 0x09, 0x23, 0x33, 0x52, 0xF0, 0x15,
+    0x62, 0x72, 0xD1, 0x0A, 0x16, 0x24, 0x34, 0xE1, 0x25, 0xF1, 0x17, 0x18, 0x19, 0x1A, 0x26, 0x27,
+    0x28, 0x29, 0x2A, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49,
+    0x4A, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+    0x6A, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88,
+    0x89, 0x8A, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6,
+    0xA7, 0xA8, 0xA9, 0xAA, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4,
+    0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xE2,
+    0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9,
+    0xFA, 0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00, 0xD9,
+    0xA2, 0x8A, 0x2B, 0xD8, 0x3C, 0xB3, 0xFF, 0xD9,
+];
+
 fn synthetic_frame_bytes(
     camera_id: &str,
     width: i32,
@@ -219,14 +264,19 @@ fn synthetic_frame_bytes(
     let w = width.clamp(1, 1920) as usize;
     let h = height.clamp(1, 1080) as usize;
     if format == 256 {
-        // ImageFormat.JPEG (0x100): valid minimal JFIF/JPEG header + deterministic payload + EOI
-        let mut jpg = vec![
-            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00,
-            0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
-        ];
+        // ImageFormat.JPEG (0x100): JPEG baseline válido (SOI, APP0, DQT, SOF0,
+        // DHT, SOS, EOI) gerado a partir de `SYNTH_JPEG_BASE`. A tag do frame
+        // entra num segmento COM (0xFFFE) logo após o SOI: o parser de EXIF do
+        // CameraX exige marcadores bem formados (texto solto gera "Invalid marker").
         let tag = format!("RD-CAM{camera_id}-{w}x{h}-#{seq}");
-        jpg.extend_from_slice(tag.as_bytes());
-        jpg.extend_from_slice(&[0xFF, 0xD9]);
+        let body = tag.as_bytes();
+        let seg_len = (body.len() + 2).min(0xFFFF) as u16;
+        let mut jpg = Vec::with_capacity(SYNTH_JPEG_BASE.len() + body.len() + 4);
+        jpg.extend_from_slice(&SYNTH_JPEG_BASE[..2]);
+        jpg.extend_from_slice(&[0xFF, 0xFE]);
+        jpg.extend_from_slice(&seg_len.to_be_bytes());
+        jpg.extend_from_slice(&body[..seg_len as usize - 2]);
+        jpg.extend_from_slice(&SYNTH_JPEG_BASE[2..]);
         return jpg;
     }
     // RGBA_8888 (1) or YUV_420_888 (35): cap synthetic buffer for large preview sizes so VM heap stays fast
@@ -277,6 +327,7 @@ pub(crate) fn enqueue_frame_to_surface(
         reader_meta.format
     };
     let ts = vm.fw.vdev.next_timestamp_ns();
+    vm.fw.vdev.last_frame_ts_ns = ts;
 
     let bb = new_byte_buffer_from_bytes(vm, bytes)?;
     let pixel_stride = if fmt == 1 { 4 } else { 1 };
@@ -537,6 +588,124 @@ pub(super) fn static_call(
             Ok(Some(Value::Obj(r)))
         }
         _ => Ok(None),
+    }
+}
+
+/// Submete um CaptureRequest à câmera virtual: entrega os frames aos alvos e
+/// chama `onCaptureCompleted` do callback (quando não nulo). Devolve o número de
+/// sequência da captura. Usado por capture/setRepeatingRequest e pelas variantes
+/// de burst.
+fn session_submit_request(
+    vm: &mut Engine,
+    recv: ObjRef,
+    req: ObjRef,
+    cb: Option<ObjRef>,
+    repeating: bool,
+) -> Result<i32, VmExit> {
+    let (cam_id, seq, default_surfaces) = {
+        let Some(sess) = vm.fw.vdev.camera_sessions.get_mut(&recv) else {
+            return Err(illegal_state("CameraCaptureSession is closed"));
+        };
+        if sess.closed {
+            return Err(illegal_state("CameraCaptureSession is closed"));
+        }
+        sess.repeating = repeating;
+        sess.sequence_id += 1;
+        (
+            sess.camera_id.clone(),
+            sess.sequence_id,
+            sess.surfaces.clone(),
+        )
+    };
+    let mut targets = Vec::new();
+    if let Some(Value::Obj(list_ref)) = get_field(vm, req, "rd_targets") {
+        if let Some(crate::framework::HostObj::List { elems }) =
+            vm.fw.objects.get(&list_ref).cloned()
+        {
+            for e in elems {
+                if let Value::Obj(s) = e {
+                    targets.push(s);
+                }
+            }
+        }
+    }
+    if targets.is_empty() {
+        targets = default_surfaces;
+    }
+    let injected = vm.fw.vdev.injected_camera_frames.get(&cam_id).cloned();
+    let cam_dims = vm
+        .fw
+        .vdev
+        .cameras
+        .get(&cam_id)
+        .map(|c| (c.width, c.height))
+        .unwrap_or((1280, 720));
+
+    for surf in targets {
+        let reader_fmt = vm
+            .fw
+            .vdev
+            .surface_to_reader
+            .get(&surf)
+            .and_then(|r| vm.fw.vdev.image_readers.get(r))
+            .map(|ir| (ir.width, ir.height, ir.format));
+        let is_preview = !vm.fw.vdev.surface_to_reader.contains_key(&surf)
+            && vm.fw.vdev.preview.surface_to_view.contains_key(&surf);
+        let (w, h, fmt, data) = if let Some(spec) = &injected {
+            (spec.width, spec.height, spec.format, spec.bytes.clone())
+        } else if is_preview {
+            let (pw, ph) = cam_dims;
+            (pw, ph, 35, preview_pattern(pw, ph, seq))
+        } else {
+            let (rw, rh, rfmt) = reader_fmt.unwrap_or((cam_dims.0, cam_dims.1, 256));
+            (
+                rw,
+                rh,
+                rfmt,
+                synthetic_frame_bytes(&cam_id, rw, rh, rfmt, seq),
+            )
+        };
+        let _ = enqueue_frame_to_surface(vm, surf, w, h, fmt, &data)?;
+    }
+
+    // Invoke CaptureCallback.onCaptureCompleted if non-null
+    if let Some(cb) = cb {
+        // CaptureResult.getRequest() devolve o request que gerou o
+        // resultado (CameraX lê getRequest().getTag() sem checar nulo).
+        let total_res = alloc_with(
+            vm,
+            TOTAL_CAPTURE_RESULT,
+            vec![
+                ("rd_seq".into(), Value::Int(seq)),
+                ("rd_request".into(), Value::Obj(req)),
+                ("rd_ts".into(), Value::Long(vm.fw.vdev.last_frame_ts_ns)),
+            ],
+        )?;
+        let _ = call_dex(
+            vm,
+            cb,
+            "onCaptureCompleted",
+            "(Landroid/hardware/camera2/CameraCaptureSession;Landroid/hardware/camera2/CaptureRequest;Landroid/hardware/camera2/TotalCaptureResult;)V",
+            vec![Value::Obj(recv), Value::Obj(req), Value::Obj(total_res)],
+        )?;
+    }
+    Ok(seq)
+}
+
+/// Lê os CaptureRequests de uma `List` passada como primeiro argumento.
+fn burst_request_list(vm: &Engine, args: &[Value]) -> Vec<ObjRef> {
+    let Some(list_ref) = obj_arg(args, 0) else {
+        return Vec::new();
+    };
+    match vm.fw.objects.get(&list_ref) {
+        Some(crate::framework::HostObj::List { elems }) => elems
+            .iter()
+            .filter_map(|e| match e {
+                Value::Obj(r) => Some(*r),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -1002,25 +1171,35 @@ pub(super) fn instance_call(
                 }
                 Ok(Some(Value::Null))
             }
+            // CameraX marca cada request com um TagBundle (CameraControlSessionUpdateId)
+            // e depois lê `result.getRequest().getTag()` em isSessionUpdated. Sem
+            // guardar a tag aqui, o resultado da captura nunca satisfaz a espera de
+            // waitForSessionUpdateId e a captura de foto fica presa (MEDIA-03).
+            "setTag" => {
+                let tag = args.first().cloned().unwrap_or(Value::Null);
+                put_field(vm, recv, "rd_tag", tag)?;
+                Ok(Some(Value::Null))
+            }
             "build" => {
                 let targets = get_field(vm, recv, "rd_targets").unwrap_or(Value::Null);
                 let tmpl = get_int_field(vm, recv, "rd_template", 1);
+                let tag = get_field(vm, recv, "rd_tag").unwrap_or(Value::Null);
                 let req = alloc_with(
                     vm,
                     CAPTURE_REQUEST,
                     vec![
                         ("rd_template".into(), Value::Int(tmpl)),
                         ("rd_targets".into(), targets),
+                        ("rd_tag".into(), tag),
                     ],
                 )?;
                 Ok(Some(Value::Obj(req)))
             }
             _ => Ok(None),
         },
-        CAPTURE_REQUEST => match name {
-            "get" => Ok(Some(Value::Null)),
-            _ => Ok(None),
-        },
+        // `CaptureRequest.get(Key)` não é mais sombreado aqui (devolvia Null para
+        // qualquer chave); cai no getter do stub, que responde por chave.
+        CAPTURE_REQUEST => Ok(None),
         CAPTURE_SESSION => match name {
             "getDevice" => {
                 let dev = vm
@@ -1040,98 +1219,43 @@ pub(super) fn instance_call(
                 let Some(req) = obj_arg(args, 0) else {
                     return Err(illegal("CaptureRequest is null"));
                 };
-                let (cam_id, seq, default_surfaces) = {
-                    let Some(sess) = vm.fw.vdev.camera_sessions.get_mut(&recv) else {
-                        return Err(illegal_state("CameraCaptureSession is closed"));
-                    };
-                    if sess.closed {
-                        return Err(illegal_state("CameraCaptureSession is closed"));
-                    }
-                    sess.repeating = repeating;
-                    sess.sequence_id += 1;
-                    (
-                        sess.camera_id.clone(),
-                        sess.sequence_id,
-                        sess.surfaces.clone(),
-                    )
-                };
-                let mut targets = Vec::new();
-                if let Some(Value::Obj(list_ref)) = get_field(vm, req, "rd_targets") {
-                    if let Some(crate::framework::HostObj::List { elems }) =
-                        vm.fw.objects.get(&list_ref).cloned()
-                    {
-                        for e in elems {
-                            if let Value::Obj(s) = e {
-                                targets.push(s);
-                            }
-                        }
-                    }
-                }
-                if targets.is_empty() {
-                    targets = default_surfaces;
-                }
-                let injected = vm.fw.vdev.injected_camera_frames.get(&cam_id).cloned();
-                let cam_dims = vm
-                    .fw
-                    .vdev
-                    .cameras
-                    .get(&cam_id)
-                    .map(|c| (c.width, c.height))
-                    .unwrap_or((1280, 720));
-
-                for surf in targets {
-                    let reader_fmt = vm
-                        .fw
-                        .vdev
-                        .surface_to_reader
-                        .get(&surf)
-                        .and_then(|r| vm.fw.vdev.image_readers.get(r))
-                        .map(|ir| (ir.width, ir.height, ir.format));
-                    let is_preview = !vm.fw.vdev.surface_to_reader.contains_key(&surf)
-                        && vm.fw.vdev.preview.surface_to_view.contains_key(&surf);
-                    let (w, h, fmt, data) = if let Some(spec) = &injected {
-                        (spec.width, spec.height, spec.format, spec.bytes.clone())
-                    } else if is_preview {
-                        let (pw, ph) = cam_dims;
-                        (pw, ph, 35, preview_pattern(pw, ph, seq))
-                    } else {
-                        let (rw, rh, rfmt) = reader_fmt.unwrap_or((cam_dims.0, cam_dims.1, 256));
-                        (
-                            rw,
-                            rh,
-                            rfmt,
-                            synthetic_frame_bytes(&cam_id, rw, rh, rfmt, seq),
-                        )
-                    };
-                    let _ = enqueue_frame_to_surface(vm, surf, w, h, fmt, &data)?;
-                }
-
-                // Invoke CaptureCallback.onCaptureCompleted if non-null
-                let cap_cb = if name.contains("Single") {
+                let cb = if name.contains("Single") {
                     obj_arg(args, 2)
                 } else {
                     obj_arg(args, 1)
                 };
-                if let Some(cb) = cap_cb {
-                    // CaptureResult.getRequest() devolve o request que gerou o
-                    // resultado (CameraX lê getRequest().getTag() sem checar nulo).
-                    let total_res = alloc_with(
-                        vm,
-                        TOTAL_CAPTURE_RESULT,
-                        vec![
-                            ("rd_seq".into(), Value::Int(seq)),
-                            ("rd_request".into(), Value::Obj(req)),
-                        ],
-                    )?;
+                Ok(Some(Value::Int(session_submit_request(
+                    vm, recv, req, cb, repeating,
+                )?)))
+            }
+            // captureBurstRequests(List, Executor, CaptureCallback) e
+            // captureBurst(List, CaptureCallback, Handler): caminho de still capture
+            // do CameraX (Camera2CapturePipeline.submitStillCaptures). Cada request é
+            // entregue como captura única; ao final há onCaptureSequenceCompleted.
+            "captureBurstRequests" | "captureBurst" => {
+                let cb = if name == "captureBurstRequests" {
+                    obj_arg(args, 2)
+                } else {
+                    obj_arg(args, 1)
+                };
+                let reqs = burst_request_list(vm, args);
+                if reqs.is_empty() {
+                    return Err(illegal("CaptureRequest list is empty"));
+                }
+                let mut last_seq = 0;
+                for req in reqs {
+                    last_seq = session_submit_request(vm, recv, req, cb, false)?;
+                }
+                if let Some(cb_ref) = cb {
                     let _ = call_dex(
                         vm,
-                        cb,
-                        "onCaptureCompleted",
-                        "(Landroid/hardware/camera2/CameraCaptureSession;Landroid/hardware/camera2/CaptureRequest;Landroid/hardware/camera2/TotalCaptureResult;)V",
-                        vec![Value::Obj(recv), Value::Obj(req), Value::Obj(total_res)],
+                        cb_ref,
+                        "onCaptureSequenceCompleted",
+                        "(Landroid/hardware/camera2/CameraCaptureSession;IJ)V",
+                        vec![Value::Obj(recv), Value::Int(last_seq), Value::Long(0)],
                     )?;
                 }
-                Ok(Some(Value::Int(seq)))
+                Ok(Some(Value::Int(last_seq)))
             }
             "stopRepeating" | "abortCaptures" => {
                 if let Some(sess) = vm.fw.vdev.camera_sessions.get_mut(&recv) {
@@ -1162,7 +1286,31 @@ pub(super) fn instance_call(
                 vm, recv, "rd_seq", 1,
             ))))),
             "getSequenceId" => Ok(Some(Value::Int(get_int_field(vm, recv, "rd_seq", 1)))),
-            "get" => Ok(Some(boxed_int(vm, 4)?)), // CONTROL_AF_STATE_FOCUSED_LOCKED
+            // Chaves de resultado do tipo Long (ex.: SENSOR_TIMESTAMP) precisam
+            // devolver java.lang.Long: CameraX faz checkcast Long e falharia com
+            // ClassCastException, derrubando a captura de still.
+            "get" => {
+                let key_name = obj_arg(args, 0).and_then(|k| get_str_field(vm, k, "rd_key"));
+                match key_name.as_deref() {
+                    Some("SENSOR_TIMESTAMP") => {
+                        // Mesmo timestamp do frame da imagem (MetadataImageReader.matchImages)
+                        let ts = match get_field(vm, recv, "rd_ts") {
+                            Some(Value::Long(v)) => v,
+                            _ => 0,
+                        };
+                        let boxed =
+                            crate::boxes::box_value(vm, "Ljava/lang/Long;", Value::Long(ts))?;
+                        Ok(Some(Value::Obj(boxed)))
+                    }
+                    Some("SENSOR_EXPOSURE_TIME" | "SENSOR_FRAME_DURATION") => {
+                        let boxed =
+                            crate::boxes::box_value(vm, "Ljava/lang/Long;", Value::Long(0))?;
+                        Ok(Some(Value::Obj(boxed)))
+                    }
+                    // CONTROL_AF_STATE_FOCUSED_LOCKED para as demais chaves
+                    _ => Ok(Some(boxed_int(vm, 4)?)),
+                }
+            }
             _ => Ok(None),
         },
         IMAGE_READER => match name {
@@ -1290,6 +1438,53 @@ pub(super) fn instance_call(
     }
 }
 
+/// Ordem de bytes do ByteBuffer (default do JDK: BIG_ENDIAN).
+fn buf_is_big(vm: &Engine, recv: ObjRef) -> bool {
+    get_int_field(vm, recv, "rd_big", 1) != 0
+}
+
+/// Escreve `bytes` em `rd_pos` (checando `rd_limit`) e avança a posição.
+fn buf_put_bytes(vm: &mut Engine, recv: ObjRef, arr: ObjRef, bytes: &[u8]) -> Result<(), VmExit> {
+    let pos = get_int_field(vm, recv, "rd_pos", 0);
+    let limit = get_int_field(vm, recv, "rd_limit", 0);
+    let n = bytes.len() as i64;
+    if pos < 0 || i64::from(pos) + n > i64::from(limit) {
+        return Err(super::error(
+            "Ljava/nio/BufferOverflowException;",
+            "overflow",
+        ));
+    }
+    let start = pos as usize;
+    let dst = vm.heap.array_elems_mut(arr)?;
+    for (slot, b) in dst[start..start + bytes.len()].iter_mut().zip(bytes) {
+        *slot = Value::Int(i32::from(*b as i8));
+    }
+    put_field(vm, recv, "rd_pos", Value::Int(pos + bytes.len() as i32))?;
+    Ok(())
+}
+
+/// Lê `n` bytes em `rd_pos` (checando `rd_limit`) e avança a posição.
+fn buf_get_bytes(vm: &mut Engine, recv: ObjRef, arr: ObjRef, n: usize) -> Result<Vec<u8>, VmExit> {
+    let pos = get_int_field(vm, recv, "rd_pos", 0);
+    let limit = get_int_field(vm, recv, "rd_limit", 0);
+    if pos < 0 || i64::from(pos) + n as i64 > i64::from(limit) {
+        return Err(super::error(
+            "Ljava/nio/BufferUnderflowException;",
+            "underflow",
+        ));
+    }
+    let start = pos as usize;
+    let out: Vec<u8> = {
+        let (src, _) = vm.heap.as_array_elems(arr)?;
+        src[start..start + n]
+            .iter()
+            .map(|v| v.as_int().unwrap_or(0) as u8)
+            .collect()
+    };
+    put_field(vm, recv, "rd_pos", Value::Int(pos + n as i32))?;
+    Ok(out)
+}
+
 fn byte_buffer_instance(
     vm: &mut Engine,
     name: &str,
@@ -1358,10 +1553,20 @@ fn byte_buffer_instance(
         "isDirect" => Ok(Some(Value::Int(0))),
         "order" => {
             if args.is_empty() {
-                let s = str_val(vm, "LITTLE_ENDIAN")?;
+                let name = if buf_is_big(vm, recv) {
+                    "BIG_ENDIAN"
+                } else {
+                    "LITTLE_ENDIAN"
+                };
+                let s = str_val(vm, name)?;
                 let r = alloc_with(vm, BYTE_ORDER, vec![("rd_order".into(), s)])?;
                 Ok(Some(Value::Obj(r)))
             } else {
+                // ByteBuffer.order(ByteOrder): guarda a ordem (default do JDK é BIG_ENDIAN).
+                let big = obj_arg(args, 0)
+                    .and_then(|bo| get_str_field(vm, bo, "rd_order"))
+                    .is_none_or(|n| n == "BIG_ENDIAN");
+                put_field(vm, recv, "rd_big", Value::Int(i32::from(big)))?;
                 Ok(Some(Value::Obj(recv)))
             }
         }
@@ -1451,6 +1656,70 @@ fn byte_buffer_instance(
                     .and_then(|v| v.as_int().ok())
                     .unwrap_or(0);
                 Ok(Some(Value::Int(b)))
+            }
+        }
+        "putInt" | "putShort" | "putDouble" if args.len() == 1 => {
+            let big = buf_is_big(vm, recv);
+            let bytes: Vec<u8> = match name {
+                "putInt" => {
+                    let v = int_arg(args, 0);
+                    if big {
+                        v.to_be_bytes().to_vec()
+                    } else {
+                        v.to_le_bytes().to_vec()
+                    }
+                }
+                "putShort" => {
+                    let v = int_arg(args, 0) as i16;
+                    if big {
+                        v.to_be_bytes().to_vec()
+                    } else {
+                        v.to_le_bytes().to_vec()
+                    }
+                }
+                _ => {
+                    let d = match args.first() {
+                        Some(Value::Double(d)) => *d,
+                        _ => 0.0,
+                    };
+                    if big {
+                        d.to_be_bytes().to_vec()
+                    } else {
+                        d.to_le_bytes().to_vec()
+                    }
+                }
+            };
+            let Some(arr) = buf_ref else {
+                return Err(illegal_state("ByteBuffer has no backing array"));
+            };
+            buf_put_bytes(vm, recv, arr, &bytes)?;
+            Ok(Some(Value::Obj(recv)))
+        }
+        "getInt" | "getShort" if args.is_empty() => {
+            let big = buf_is_big(vm, recv);
+            let Some(arr) = buf_ref else {
+                return Err(illegal_state("ByteBuffer has no backing array"));
+            };
+            if name == "getInt" {
+                let a: [u8; 4] = buf_get_bytes(vm, recv, arr, 4)?
+                    .try_into()
+                    .unwrap_or([0; 4]);
+                let v = if big {
+                    i32::from_be_bytes(a)
+                } else {
+                    i32::from_le_bytes(a)
+                };
+                Ok(Some(Value::Int(v)))
+            } else {
+                let a: [u8; 2] = buf_get_bytes(vm, recv, arr, 2)?
+                    .try_into()
+                    .unwrap_or([0; 2]);
+                let v = if big {
+                    i16::from_be_bytes(a)
+                } else {
+                    i16::from_le_bytes(a)
+                };
+                Ok(Some(Value::Int(i32::from(v))))
             }
         }
         "put" => {
