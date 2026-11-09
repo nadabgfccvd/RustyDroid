@@ -143,7 +143,7 @@ fn expand_key(key: &[u8], s: &[u8; 256]) -> Vec<u8> {
             w[w.len() - 2],
             w[w.len() - 1],
         ];
-        if i % nk == 0 {
+        if i.is_multiple_of(nk) {
             t = [
                 s[t[1] as usize] ^ RCON[i / nk - 1],
                 s[t[2] as usize],
@@ -244,7 +244,7 @@ fn xor16(a: &mut [u8], b: &[u8]) {
 fn pkcs7_pad(data: &[u8]) -> Vec<u8> {
     let pad = 16 - (data.len() % 16);
     let mut out = data.to_vec();
-    out.extend(std::iter::repeat(pad as u8).take(pad));
+    out.extend(std::iter::repeat_n(pad as u8, pad));
     out
 }
 
@@ -313,7 +313,7 @@ fn gcm_j0(iv: &[u8], h: &[u8; 16]) -> [u8; 16] {
         j
     } else {
         let mut d = iv.to_vec();
-        while d.len() % 16 != 0 {
+        while !d.len().is_multiple_of(16) {
             d.push(0);
         }
         let mut lens = [0u8; 16];
@@ -817,7 +817,7 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
             let data = if encrypt && tr.padding_pkcs5 {
                 pkcs7_pad(input)
             } else {
-                if input.len() % 16 != 0 {
+                if !input.len().is_multiple_of(16) {
                     return Err(exc(
                         "Ljavax/crypto/IllegalBlockSizeException;",
                         "comprimento não é múltiplo do bloco",
