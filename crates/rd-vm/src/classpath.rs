@@ -1629,6 +1629,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroidx/work/WorkManager;" => Some(OBJECT),
         "Landroidx/work/Operation;" => Some(OBJECT),
         "Landroidx/work/WorkRequest;" => Some(OBJECT),
+        "Landroidx/work/Worker;" => Some(OBJECT),
+        "Landroidx/work/ListenableWorker$Result;" => Some(OBJECT),
+        "Landroidx/work/WorkerParameters;" => Some(OBJECT),
         "Landroidx/room/RoomDatabase;" => Some(OBJECT),
         "Landroidx/room/RoomDatabase$Builder;" => Some(OBJECT),
         // ── S7 (Apêndice D): hierarquias AndroidX/Material conhecidas ────

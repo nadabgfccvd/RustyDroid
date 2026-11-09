@@ -76,6 +76,16 @@ pub(super) fn collect_strong_roots(fw: &HostState, out: &mut Vec<ObjRef>) {
     }
     out.extend(m8.receivers.iter().copied().filter(|r| *r != 0));
     push_opt(m8.work_manager, out);
+    // WorkManager: Data de progresso/saída e o worker em execução.
+    for w in &m8.work {
+        push_opt(w.progress, out);
+        push_opt(w.output, out);
+    }
+    if let Some(run) = &m8.running_work {
+        out.push(run.worker);
+        out.push(run.params);
+        push_opt(run.context, out);
+    }
     out.extend(m8.prefs_objs.values().copied().filter(|r| *r != 0));
     for (frag, _, _) in &m8.ax_fragments {
         if *frag != 0 {

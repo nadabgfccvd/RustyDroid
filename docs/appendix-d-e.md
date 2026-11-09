@@ -425,9 +425,9 @@ cancela esse trabalho (só `ENQUEUED`, como o cancelamento) e enfileira o novo. 
 `dex_unique_work_keep_and_replace_follow_existing_work_policy` (mutações de KEEP e REPLACE derrubam o teste).
 `APPEND`, `APPEND_OR_REPLACE` e `UPDATE` não são modeladas (encadeamento depende de execução).
 
-Ainda pendente (tags fechadas em S22): progresso/output
-em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estados avançam pelo harness).
-`Constraints` são aceitas e não aplicadas. Por isso `work` segue `partial`.
+Fechado em S22: tags. Fechado em S23: `doWork()` sob demanda
+(`m8_run_work`) e progresso/output em `WorkInfo` (ver S23). Ainda pendente: `Constraints`
+são aceitas e não aplicadas. Por isso `work` segue `partial`.
 
 ### S17 — Apêndice D: security-crypto sobre o AndroidKeyStore (ST-04) (2026-11-08)
 
@@ -592,6 +592,30 @@ em `WorkInfo`, `Worker.doWork()` em background (não roda: single-thread, estado
   conferido por checksum.
 - **Continua pendente**: progresso e output em `WorkInfo`, `Worker.doWork()` em background, e a aplicação de
   constraints. Por isso `work` segue `partial`.
+
+### S23 — Apêndice D: doWork sob demanda, progresso e output (WorkManager, 2026-11-09)
+
+- **Lacuna fechada** (pendência do S22): `Worker.doWork()` agora roda. O harness
+  `Engine::m8_run_work(id)` cria o Worker do DEX com o construtor real
+  `(Context, WorkerParameters)`, chama `doWork()` e mapeia o `Result`:
+  `success` → `SUCCEEDED`, `failure` → `FAILED`, `retry` → volta a `ENQUEUED`, `null` → `FAILED`.
+  Exceção não capturada no construtor ou em `doWork` vira `FAILED`, como no WorkManager. Erro interno
+  da VM propaga e o pedido volta a `ENQUEUED`.
+- **Progresso e output**: `Worker.setProgressAsync(Data)` grava o progresso no pedido; `Result.success(Data)`
+  e `failure(Data)` gravam o output. `WorkInfo.getProgress()` e `getOutputData()` devolvem esses `Data`;
+  sem valor, um `Data` vazio (como `Data.EMPTY`).
+- **Modelo host**: a superclasse `Landroidx/work/Worker;` é host (como `RecyclerView.Adapter`). Métodos do
+  app que o DEX define mandam; os da base (`getInputData`, `getId`, `getTags`, `getApplicationContext`,
+  `getRunAttemptCount`, `isStopped`, `setProgressAsync`) são respondidos pelo host. `WorkerParameters` é um
+  objeto host com id, input vazio e tags. `getApplicationContext()` devolve `null` (sem contexto do app).
+- **GC**: `Data` de progresso e de output, e o worker em execução, são raízes fortes.
+- **Testes** (`crates/rd-vm/tests/m8_workmanager_run.rs`, 9 testes): success, failure, retry (reagendado
+  e executável de novo), `null`, só roda o que está ENQUEUED, progresso e output, getters de `WorkInfo`
+  pelo despacho real, `WorkInfo` vazio antes de rodar, e sobrevivência a `gc()`.
+- **Mutações**: (A) `setProgressAsync` sem gravar e (B) `retry()` virando `FAILED` derrubam 4 testes
+  (progresso, output, getters e retry). Arquivo restaurado e conferido por checksum.
+- **Continua pendente**: `Constraints` (não aplicadas), e o runtime real do WorkManager (`WorkerParameters`
+  e `Context` são modelos host). Quando o APK traz o `work-runtime` real, o DEX real manda nos métodos que ele define.
 
 ## Critério de erro e ciclo de vida (Apêndice E, etapa 6)
 
