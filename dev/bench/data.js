@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794183712766,
+  "lastUpdate": 1794185876416,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6407,6 +6407,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3852,
             "range": "± 11",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2868f3a5d15cbffb120c9b79be3378385144bdf4",
+          "message": "feat(work): doWork sob demanda pelo harness, progresso e output (S23) (#618)\n\nWorker.doWork() passa a rodar. Engine::m8_run_work(id) cria o Worker do DEX\ncom o construtor real (Context, WorkerParameters), chama doWork() e mapeia o\nResult: success -> SUCCEEDED, failure -> FAILED, retry -> ENQUEUED, null ->\nFAILED. Exceção não capturada vira FAILED, como no WorkManager.\n\n- Superclasse Landroidx/work/Worker é host (como RecyclerView.Adapter). Os\n  métodos do app que o DEX define mandam; os da base (getInputData, getId,\n  getTags, getApplicationContext, setProgressAsync, ...) são do host.\n- setProgressAsync(Data) grava o progresso; Result.success/failure(Data) grava\n  o output. WorkInfo.getProgress() e getOutputData() devolvem esses Data (vazio\n  sem valor).\n- Data de progresso/output e o worker em execução são raízes do GC.\n- ListenableWorker.Result: success/failure/retry estáticos no host.\n\nTestes (crates/rd-vm/tests/m8_workmanager_run.rs, 9): success, failure, retry\n(reagenda e executa de novo), null, só roda ENQUEUED, progresso e output,\ngetters de WorkInfo pelo despacho, vazio antes de rodar, sobrevive a gc().\nMutações (setProgressAsync sem gravar; retry virando FAILED) derrubam 4 testes.\n\nContinua pendente: Constraints (não aplicadas) e o runtime real do WorkManager\n(WorkerParameters e Context são modelos host). work segue partial.\n\nValidação: cargo fmt --check, clippy -D warnings (rd-vm lib+tests),\ncargo test -p rd-vm -- --include-ignored (129 blocos ok), cargo test -p rd-agent,\nxtask (report/spec), check_md_links (165 ok).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-08T21:57:29-03:00",
+          "tree_id": "a675e643ad0afa660a7aea1e9cf0b99527127c16",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/2868f3a5d15cbffb120c9b79be3378385144bdf4"
+        },
+        "date": 1794185875934,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2757,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2760,
+            "range": "± 12",
             "unit": "ns/iter"
           }
         ]
