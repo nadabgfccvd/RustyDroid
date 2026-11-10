@@ -20,6 +20,7 @@ pub(crate) const MAC: &str = "Ljavax/crypto/Mac;";
 pub(crate) const KEY_GENERATOR: &str = "Ljavax/crypto/KeyGenerator;";
 pub(crate) const SECRET_KEY_SPEC: &str = "Ljavax/crypto/spec/SecretKeySpec;";
 pub(crate) const MESSAGE_DIGEST: &str = "Ljava/security/MessageDigest;";
+pub(crate) const SECURE_RANDOM: &str = "Ljava/security/SecureRandom;";
 
 fn put(vm: &mut Engine, r: ObjRef, f: &str, v: Value) -> Result<(), VmExit> {
     crate::err::put_field_result(vm.heap.put_field(r, f, v))
@@ -912,6 +913,28 @@ fn key_bytes_of(vm: &Engine, key_obj: &Value) -> Vec<u8> {
     }
 }
 
+/// Bytes aleatórios do SO (`/dev/urandom`). `SecureRandom` não tem estado
+/// próprio aqui: a saída é a do sistema, sem semente falsa.
+fn os_random(n: usize) -> Result<Vec<u8>, VmExit> {
+    use std::io::Read;
+    let mut buf = vec![0u8; n];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .map_err(|e| {
+            exc(
+                "Ljava/lang/InternalError;",
+                format!("sem entropia do SO: {e}"),
+            )
+        })?;
+    Ok(buf)
+}
+
+/// Um `u32` aleatório do SO.
+fn os_u32(_vm: &mut Engine) -> Result<u32, VmExit> {
+    let b = os_random(4)?;
+    Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+}
+
 pub(crate) fn static_intrinsic(
     vm: &mut Engine,
     class: &str,
@@ -988,6 +1011,13 @@ pub(crate) fn static_intrinsic(
             put(vm, o, "jc_alg", Value::Obj(s))?;
             Value::Obj(o)
         }
+        (SECURE_RANDOM, "getInstance") | (SECURE_RANDOM, "getInstanceStrong") => {
+            let o = vm
+                .heap
+                .alloc_instance(SECURE_RANDOM.to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            Value::Obj(o)
+        }
         (MESSAGE_DIGEST, "isEqual") => {
             let a = args.first().map(|v| bytes_of(vm, v)).unwrap_or_default();
             let b = args.get(1).map(|v| bytes_of(vm, v)).unwrap_or_default();
@@ -1036,6 +1066,71 @@ pub(crate) fn instance_intrinsic(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match recv_class {
+        SECURE_RANDOM => Ok(Some(match name {
+            // Sem semente no estado: o construtor (com ou sem seed) não altera
+            // a saída, que é sempre a do SO.
+            "<init>" | "setSeed" => Value::Null,
+            "nextBytes" => {
+                let arr = match args.first() {
+                    Some(Value::Obj(a)) => *a,
+                    _ => return Err(exc("Ljava/lang/NullPointerException;", "bytes")),
+                };
+                let n = vm
+                    .heap
+                    .as_array_elems(arr)
+                    .map(|(e, _)| e.len())
+                    .unwrap_or(0);
+                let rnd = os_random(n)?;
+                if let Ok(elems) = vm.heap.array_elems_mut(arr) {
+                    for (slot, b) in elems.iter_mut().zip(rnd.iter()) {
+                        *slot = Value::Int(*b as i8 as i32);
+                    }
+                }
+                Value::Null
+            }
+            "generateSeed" => {
+                let n = args
+                    .first()
+                    .and_then(|v| v.as_int().ok())
+                    .unwrap_or(0)
+                    .max(0) as usize;
+                byte_array(vm, &os_random(n)?)?
+            }
+            // Métodos herdados de java.util.Random, sobre bytes do SO.
+            "nextInt" if sig == "()I" => Value::Int(os_u32(vm)? as i32),
+            "nextInt" if sig == "(I)I" => {
+                let bound = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+                if bound <= 0 {
+                    return Err(exc(
+                        "Ljava/lang/IllegalArgumentException;",
+                        "bound must be positive",
+                    ));
+                }
+                // Rejeição (como Random.nextInt(bound)): sem viés de módulo.
+                let bound = bound as u32;
+                let limit = u32::MAX - (u32::MAX % bound);
+                loop {
+                    let r = os_u32(vm)?;
+                    if r < limit {
+                        break Value::Int((r % bound) as i32);
+                    }
+                }
+            }
+            "nextLong" => {
+                let hi = os_u32(vm)? as u64;
+                let lo = os_u32(vm)? as u64;
+                Value::Long(((hi << 32) | lo) as i64)
+            }
+            "nextBoolean" => Value::Int((os_u32(vm)? & 1) as i32),
+            "nextDouble" => {
+                // Mesma construção de Random.nextDouble: 53 bits / 2^53.
+                let hi = (os_u32(vm)? >> 5) as u64; // 27 bits
+                let lo = (os_u32(vm)? >> 6) as u64; // 26 bits
+                let v = ((hi << 26) + lo) as f64 * (1.0 / (1u64 << 53) as f64);
+                Value::Double(v)
+            }
+            _ => return Ok(None),
+        })),
         SECRET_KEY_SPEC => Ok(Some(match name {
             "<init>" => {
                 let key = args.first().cloned().unwrap_or(Value::Null);

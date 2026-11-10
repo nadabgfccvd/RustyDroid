@@ -1015,6 +1015,13 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/view/View;",
         "Ljava/lang/Object;",
     ];
+    // android.widget.Chronometer extends TextView (ver TextView acima).
+    const CHRONOMETER: &[&str] = &[
+        "Landroid/widget/Chronometer;",
+        "Landroid/widget/TextView;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
     const PROGRESSBAR: &[&str] = &[
         "Landroid/widget/ProgressBar;",
         "Landroid/view/View;",
@@ -1529,6 +1536,8 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/io/Reader;"
         | "Ljava/io/OutputStream;"
         | "Ljava/io/InputStream;" => Some(OBJECT),
+        "Ljava/io/RandomAccessFile;" => Some(OBJECT),
+        "Ljava/util/Timer;" | "Ljava/util/TimerTask;" => Some(OBJECT),
         "Ljava/io/FilterOutputStream;" => Some(&["Ljava/io/OutputStream;", "Ljava/lang/Object;"]),
         "Ljava/io/BufferedOutputStream;" => Some(&[
             "Ljava/io/FilterOutputStream;",
@@ -1889,6 +1898,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/widget/ImageView;" => Some(IMAGEVIEW),
         "Landroid/view/SurfaceView;" => Some(SURFACEVIEW),
         "Landroid/widget/ImageButton;" => Some(IMAGEBUTTON),
+        "Landroid/widget/Chronometer;" => Some(CHRONOMETER),
         "Landroid/widget/ProgressBar;" => Some(PROGRESSBAR),
         "Landroid/widget/CompoundButton;" => Some(COMPOUND_BUTTON),
         "Landroid/widget/RadioButton;" => Some(RADIO_BUTTON),
@@ -3000,6 +3010,13 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/lang/Cloneable;",
             "Ljava/lang/Comparable;",
         ]),
+        "Ljava/util/TimerTask;" => Some(&["Ljava/lang/Runnable;"]),
+        "Ljava/io/RandomAccessFile;" => Some(&[
+            "Ljava/io/DataOutput;",
+            "Ljava/io/DataInput;",
+            "Ljava/io/Closeable;",
+            "Ljava/lang/AutoCloseable;",
+        ]),
         "Ljava/io/Writer;" => Some(&[
             "Ljava/lang/Appendable;",
             "Ljava/io/Closeable;",
@@ -3695,7 +3712,10 @@ pub fn unresolved_method(class: &str, name: &str, proto: &str) -> RdError {
 /// so here the platform (host) class wins too.
 fn is_shadowed_platform_stub(descriptor: &str, access_flags: u32) -> bool {
     const ACC_SYNTHETIC: u32 = 0x1000;
+    // `android.support.*` não é pacote de plataforma: é biblioteca embutida
+    // no APK (ex.: support v4 do Zoom, com utilitários R8 `synthetic`).
     access_flags & ACC_SYNTHETIC != 0
+        && !descriptor.starts_with("Landroid/support/")
         && ["Landroid/", "Ljava/", "Ljavax/", "Ldalvik/"]
             .iter()
             .any(|p| descriptor.starts_with(p))

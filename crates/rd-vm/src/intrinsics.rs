@@ -4831,6 +4831,29 @@ fn call_instance_intrinsic_mref_rooted(
         {
             return Ok(Some(v));
         }
+        // A referência pode ser uma superclasse abstrata (ex.: protobuf
+        // `MapFieldLite` chama `AbstractMap.isEmpty` e estende
+        // `LinkedHashMap`): os braços gateiam pela classe concreta que tem
+        // o estado host. Sobe a cadeia DEX do receptor até a primeira classe
+        // de plataforma e despacha como ela (mesmo critério do braço
+        // "herdado" abaixo, que não cobre referência de plataforma).
+        let mut c = recv_class.to_string();
+        for _ in 0..64 {
+            let Some(sup) = vm.cp.superclass_of(&c) else {
+                break;
+            };
+            if sup == c || sup == OBJECT {
+                break;
+            }
+            if vm.cp.find_class(&sup).is_none() {
+                if let Some(v) = instance_intrinsic_dispatch(vm, &sup, &sup, name, sig, recv, args)?
+                {
+                    return Ok(Some(v));
+                }
+                break;
+            }
+            c = sup;
+        }
     }
     // Inherited platform method named through a DEX subclass (e.g.
     // `invoke-virtual LApp/MyRef;->get()` on `class MyRef extends
@@ -5309,6 +5332,12 @@ fn instance_intrinsic_dispatch_full(
         return Ok(Some(v));
     }
     if let Some(v) = crate::jregex::instance_intrinsic(vm, recv_class, name, recv, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jtimer::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jraf::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
     if let Some(v) = crate::jfile::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {

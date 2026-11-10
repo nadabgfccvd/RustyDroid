@@ -75,6 +75,7 @@ pub(crate) mod jnet;
 pub(crate) mod jnio;
 pub(crate) mod jnormalizer;
 pub(crate) mod jpriorityqueue;
+pub mod jraf;
 pub(crate) mod jrandom;
 pub(crate) mod jregex;
 pub(crate) mod jresources;
@@ -86,6 +87,7 @@ pub(crate) mod jstring_tokenizer;
 pub(crate) mod jtext_collator;
 pub(crate) mod jtext_format;
 pub(crate) mod jtime;
+pub(crate) mod jtimer;
 pub(crate) mod juuid;
 pub(crate) mod jxml;
 #[cfg(feature = "virtual-devices")]

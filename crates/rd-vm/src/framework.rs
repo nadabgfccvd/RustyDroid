@@ -2738,6 +2738,10 @@ impl Engine {
         }
         let rclass = self.heap.class_of(msg.runnable)?.to_string();
         let Some((d, def, m)) = self.cp.resolve_method(&rclass, "run", "()V") else {
+            // Runnable host sem `run()` DEX (tick do java.util.Timer).
+            if rclass == crate::jtimer::TIMER_TICK {
+                return crate::jtimer::run_tick(self, msg.runnable);
+            }
             return Err(crate::classpath::unresolved_method(&rclass, "run", "()V").into());
         };
         self.call(d, def, &m, vec![Value::Obj(msg.runnable)])?;
@@ -3869,9 +3873,11 @@ fn call_host_instance_rooted(
             let name = activity_preference_name(vm, recv);
             Ok(Some(Value::Obj(vm.shared_prefs_named_obj(&name)?)))
         }
+        // `Application`/`ContextWrapper` também têm SharedPreferences nomeadas
+        // (ex.: storage do Zoom em `VideoBoxApplication`): não exige activity.
         (CONTEXT, "getSharedPreferences")
             if sig == "(Ljava/lang/String;I)Landroid/content/SharedPreferences;"
-                && is_activity(vm) =>
+                && (is_activity(vm) || vm.cp.is_subtype(&recv_class, CONTEXT)) =>
         {
             let name = match args.first() {
                 Some(Value::Obj(r)) => vm.heap.as_str(*r)?.to_string(),
@@ -3884,7 +3890,11 @@ fn call_host_instance_rooted(
             };
             Ok(Some(Value::Obj(vm.shared_prefs_named_obj(&name)?)))
         }
-        (ACTIVITY, "getPackageName") | (CONTEXT, "getPackageName") if is_activity(vm) => {
+        // getPackageName vale para qualquer Context do app (inclui ContextWrapper
+        // como `f` do Zoom, que não é Application).
+        (ACTIVITY, "getPackageName") | (CONTEXT, "getPackageName")
+            if is_activity(vm) || vm.cp.is_subtype(&recv_class, CONTEXT) =>
+        {
             let s = vm.fw.package_name.clone();
             Ok(Some(Value::Obj(intrinsics::alloc_string(vm, s)?)))
         }
@@ -4533,6 +4543,68 @@ fn call_host_instance_rooted(
             Ok(Some(
                 vm.heap
                     .get_field(recv, "movementMethod")
+                    .unwrap_or(Value::Null),
+            ))
+        }
+        // Guarda o TransformationMethod (padrão null, como no Android). A
+        // transformação ainda NÃO é aplicada à exibição (lacuna conhecida).
+        (TEXTVIEW, "setTransformationMethod")
+            if sig == "(Landroid/text/method/TransformationMethod;)V" && is_view(vm) =>
+        {
+            let method = match args.first() {
+                Some(Value::Null | Value::Int(0)) | None => Value::Null,
+                Some(value) => value.clone(),
+            };
+            crate::err::put_field_result(vm.heap.put_field(recv, "transformationMethod", method))?;
+            Ok(Some(Value::Null))
+        }
+        // TextView.setTextSize(int unit, float size) e setTextSize(float sp).
+        // Converte para px (densidade do host). Guardado; a medida/desenho ainda
+        // não usam este tamanho (lacuna de fidelidade).
+        (TEXTVIEW, "setTextSize") if is_view(vm) && (sig == "(IF)V" || sig == "(F)V") => {
+            let (unit, value) = if sig == "(F)V" {
+                (
+                    2,
+                    args.first()
+                        .map(|v| v.as_float())
+                        .transpose()?
+                        .unwrap_or(0.0),
+                )
+            } else {
+                (
+                    args.first().map(|v| v.as_int()).transpose()?.unwrap_or(2),
+                    args.get(1)
+                        .map(|v| v.as_float())
+                        .transpose()?
+                        .unwrap_or(0.0),
+                )
+            };
+            let d = crate::view_layout::density();
+            let px = match unit {
+                0 => value,                    // COMPLEX_UNIT_PX
+                1 | 2 => value * d,            // DIP / SP (fontScale 1.0)
+                3 => value * d * 72.0 / 160.0, // PT (160 dpi base)
+                4 => value * d * 160.0,        // IN
+                5 => value * d * 160.0 / 25.4, // MM
+                _ => value * d,
+            };
+            crate::err::put_field_result(vm.heap.put_field(recv, "textSizePx", Value::Float(px)))?;
+            Ok(Some(Value::Null))
+        }
+        (TEXTVIEW, "getTextSize") if is_view(vm) && sig == "()F" => {
+            let d = crate::view_layout::density();
+            let px = match vm.heap.get_field(recv, "textSizePx") {
+                Ok(Value::Float(f)) => f,
+                _ => 14.0 * d, // padrão do TextView: 14sp
+            };
+            Ok(Some(Value::Float(px)))
+        }
+        (TEXTVIEW, "getTransformationMethod")
+            if sig == "()Landroid/text/method/TransformationMethod;" && is_view(vm) =>
+        {
+            Ok(Some(
+                vm.heap
+                    .get_field(recv, "transformationMethod")
                     .unwrap_or(Value::Null),
             ))
         }

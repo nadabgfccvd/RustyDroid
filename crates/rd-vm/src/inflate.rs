@@ -548,6 +548,12 @@ fn inflate_element_depth(
             ))
         })?;
     vm.attach_host_state(&desc, r)?;
+    if desc == VIEW_STUB {
+        // ViewStub começa GONE (como no Android); o XML pode sobrescrever.
+        if let Some(framework::HostObj::View { vis, .. }) = vm.fw.objects.get_mut(&r) {
+            *vis = framework::Vis::Gone;
+        }
+    }
     construct_inflated_view(vm, &desc, r, context)?;
     apply_attrs(vm, r, el, caps)?;
     let child_caps = caps_for_desc(vm, &desc, caps);
@@ -665,6 +671,9 @@ fn inflate_children(
 /// Nome de elemento AXML → descritor de classe host.
 /// Shorthand do Android (`<LinearLayout>`) OU caminho completo
 /// (`<android.widget.LinearLayout>`).
+/// `android.view.ViewStub`: placeholder que infla um layout sob demanda.
+pub(crate) const VIEW_STUB: &str = "Landroid/view/ViewStub;";
+
 fn view_desc_of(name: &str) -> Result<String, VmExit> {
     let known = match name {
         "View" => framework::VIEW,
@@ -676,6 +685,8 @@ fn view_desc_of(name: &str) -> Result<String, VmExit> {
         "androidx.recyclerview.widget.RecyclerView" => crate::m8::RECYCLER,
         "RecyclerView" => crate::m8::RECYCLER,
         "FrameLayout" => framework::FRAMELAYOUT,
+        "ViewStub" => VIEW_STUB,
+        "Chronometer" => "Landroid/widget/Chronometer;",
         "ProgressBar" => "Landroid/widget/ProgressBar;",
         "RadioButton" => "Landroid/widget/RadioButton;",
         "RadioGroup" => "Landroid/widget/RadioGroup;",
@@ -710,6 +721,25 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement, caps: AxisCaps) -> R
                     {
                         *slot = id as i32;
                     }
+                }
+            }
+            // ViewStub: layout a inflar e id da view inflada.
+            "layout" if vm.heap.class_of(r).map(|c| c == VIEW_STUB).unwrap_or(false) => {
+                if let Some(id) = resid_of(a) {
+                    crate::err::put_field_result(vm.heap.put_field(
+                        r,
+                        "rd_stub_layout",
+                        Value::Int(id as i32),
+                    ))?;
+                }
+            }
+            "inflatedId" if vm.heap.class_of(r).map(|c| c == VIEW_STUB).unwrap_or(false) => {
+                if let Some(id) = resid_of(a) {
+                    crate::err::put_field_result(vm.heap.put_field(
+                        r,
+                        "rd_stub_inflated_id",
+                        Value::Int(id as i32),
+                    ))?;
                 }
             }
             "text" => {

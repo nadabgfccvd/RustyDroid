@@ -753,7 +753,8 @@ pub(crate) fn concurrent_intrinsic(
             }
             Value::Null
         }
-        "getCount" => Value::Int(latch_count(vm, recv).max(0)),
+        // JDK: `long getCount()`.
+        "getCount" => Value::Long(latch_count(vm, recv).max(0) as i64),
         "await" => {
             latch_await(vm, recv)?;
             if name == "await" && !args.is_empty() {
