@@ -353,6 +353,7 @@ pub(crate) fn instance_intrinsic(
             | "toUpperCase"
             | "trim"
             | "strip"
+            | "toCharArray"
             | "stripLeading"
             | "stripTrailing"
             | "isBlank"
@@ -524,6 +525,19 @@ pub(crate) fn instance_intrinsic(
             }
         }
         ("strip", "()Ljava/lang/String;") => new_str(vm, this.trim().to_string())?,
+        ("toCharArray", "()[C") => {
+            // UTF-16 code units, como String.toCharArray() no JDK.
+            let units: Vec<u16> = this.encode_utf16().collect();
+            let arr = vm
+                .heap
+                .alloc_array_zeroed(ElemKind::Int, units.len(), "[C")
+                .map_err(crate::err::oom_throwable)?;
+            let elems = vm.heap.array_elems_mut(arr)?;
+            for (slot, u) in elems.iter_mut().zip(&units) {
+                *slot = Value::Int(i32::from(*u));
+            }
+            Value::Obj(arr)
+        }
         ("stripLeading", "()Ljava/lang/String;") => new_str(vm, this.trim_start().to_string())?,
         ("stripTrailing", "()Ljava/lang/String;") => new_str(vm, this.trim_end().to_string())?,
         ("isBlank", "()Z") => b(this.trim().is_empty()),

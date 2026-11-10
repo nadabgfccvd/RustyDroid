@@ -542,6 +542,9 @@ fn call_m8_static_rooted(
         ("Landroid/os/Process;", "myUid") => Ok(Some(Value::Int(10000))),
         ("Landroid/os/Process;", "myTid") => Ok(Some(Value::Int(10000))),
         ("Landroid/os/Process;", "is64Bit") => Ok(Some(Value::Int(1))),
+        // Prioridade de thread não tem efeito no sandbox (um thread de guest).
+        ("Landroid/os/Process;", "setThreadPriority") => Ok(Some(Value::Null)),
+        ("Landroid/os/Process;", "getThreadPriority") => Ok(Some(Value::Int(0))),
         (URI, "parse") => {
             let Some(s) = sarg(vm, args, 0)? else {
                 return Err(npe("Uri.parse(null)"));

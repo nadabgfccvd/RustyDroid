@@ -1971,7 +1971,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Ljava/lang/Object;",
         ]),
         "Ljava/util/ArrayDeque;" => Some(&["Ljava/util/AbstractCollection;", "Ljava/lang/Object;"]),
-        "Ljava/util/PriorityQueue;" => Some(&[
+        "Ljava/util/PriorityQueue;" | "Ljava/util/concurrent/PriorityBlockingQueue;" => Some(&[
             "Ljava/util/AbstractQueue;",
             "Ljava/util/AbstractCollection;",
             "Ljava/lang/Object;",
@@ -3234,6 +3234,13 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/lang/Iterable;",
         ]),
         "Ljava/util/PriorityQueue;" => Some(&[
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
+        "Ljava/util/concurrent/PriorityBlockingQueue;" => Some(&[
+            "Ljava/util/concurrent/BlockingQueue;",
             "Ljava/util/Queue;",
             "Ljava/util/Collection;",
             "Ljava/lang/Iterable;",
