@@ -1075,6 +1075,8 @@ pub struct HostState {
     pub cookie_jar: crate::webkit_cookies::CookieJar,
     /// Instância canônica do `CookieManager` (getInstance devolve sempre a mesma).
     pub cookie_manager: Option<ObjRef>,
+    /// Instância canônica do `CookieSyncManager` (API 28 ainda o expõe; o Zoom o usa).
+    pub cookie_sync_manager: Option<ObjRef>,
 }
 
 impl HostState {

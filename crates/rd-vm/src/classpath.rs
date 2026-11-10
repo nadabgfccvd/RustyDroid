@@ -1961,6 +1961,10 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // WebView: o CookieManager é um serviço único do processo (ver
         // `webkit_cookies.rs`), sem relação com a hierarquia de View.
         "Landroid/webkit/CookieManager;" => Some(OBJECT),
+        "Landroid/webkit/CookieSyncManager;" => Some(OBJECT),
+        // Authenticator é base de app (construtor protegido, sem estado de rede
+        // no sandbox): só precisa existir na hierarquia para os apps estenderem.
+        "Ljava/net/Authenticator;" => Some(OBJECT),
         "Ljava/util/EnumSet;" => Some(&[
             "Ljava/util/AbstractSet;",
             "Ljava/util/AbstractCollection;",

@@ -1849,6 +1849,11 @@ fn resolve_or_run_host_invoke(
     if mref.class == "Ljava/lang/Object;" && mref.name == "<init>" {
         return Ok(InvokeTarget::Value(Value::Null));
     }
+    // Construtor protegido da base abstrata `java.net.Authenticator`: sem estado
+    // de rede no sandbox, então a subclasse do app só precisa dele existir.
+    if mref.class == "Ljava/net/Authenticator;" && mref.name == "<init>" {
+        return Ok(InvokeTarget::Value(Value::Null));
+    }
     // issue #25: construtores são “ação ativa” (JLS 12.4.2) — normalmente já
     // inicializada pelo new-instance imediatamente anterior (no-op aqui)
     if is_direct && mref.name == "<init>" {

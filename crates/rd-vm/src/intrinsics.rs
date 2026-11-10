@@ -346,6 +346,18 @@ fn call_static_intrinsic_rooted(
             return Ok(Some(value));
         }
     }
+    if class == crate::webkit_cookies::COOKIE_SYNC_MANAGER {
+        if let Some(value) = crate::webkit_cookies::sync_manager_static(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
+    if class == "Ljava/net/Authenticator;"
+        && name == "setDefault"
+        && sig == "(Ljava/net/Authenticator;)V"
+    {
+        // Sem rede de verdade no sandbox: o autenticador padrão é só guardado (no-op).
+        return Ok(Some(Value::Null));
+    }
     if class == crate::java_util_logging::LOGGER {
         if let Some(value) = crate::java_util_logging::static_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -4993,6 +5005,11 @@ fn instance_intrinsic_dispatch_full(
     }
     if mref_class == crate::webkit_cookies::COOKIE_MANAGER {
         if let Some(value) = crate::webkit_cookies::instance_intrinsic(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
+    if mref_class == crate::webkit_cookies::COOKIE_SYNC_MANAGER {
+        if let Some(value) = crate::webkit_cookies::sync_manager_instance(name, sig) {
             return Ok(Some(value));
         }
     }

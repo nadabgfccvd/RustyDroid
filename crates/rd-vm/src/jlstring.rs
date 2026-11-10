@@ -740,6 +740,19 @@ pub(crate) fn static_intrinsic(
             }
             Ok(Some(new_str(vm, parts.join(&d))?))
         }
+        // String.join(delim, CharSequence[]): a variante Iterable já está acima.
+        ("join", "(Ljava/lang/CharSequence;[Ljava/lang/CharSequence;)Ljava/lang/String;") => {
+            let delim = charseq(vm, &args[0])?;
+            let elems = obj_array(vm, args.get(1))?;
+            let mut parts = Vec::with_capacity(elems.len());
+            for e in &elems {
+                parts.push(match e {
+                    Value::Null => "null".to_string(),
+                    other => charseq(vm, other)?,
+                });
+            }
+            Ok(Some(new_str(vm, parts.join(&delim))?))
+        }
         _ => Ok(None),
     }
 }

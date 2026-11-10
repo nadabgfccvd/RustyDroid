@@ -36,6 +36,8 @@ pub(crate) struct LibcState {
     utc_zone: Option<u64>,
     self_handle: Option<u64>,
     sems: BTreeMap<u64, u32>,
+    /// Endereço da string "C" devolvida por setlocale (0 = ainda não alocada).
+    c_locale: u64,
 }
 
 /// Campos de `struct tm` (bionic/glibc), já no formato C.
@@ -489,7 +491,7 @@ impl Runtime {
                 int_ret(count.min(a[2]) as i64)
             }
             "iswspace" => int_ret(i64::from(matches!(a[0] as u32, 9..=13 | 32))),
-            "strtol" => {
+            "strtol" | "strtoll" => {
                 // (const char *s, char **end, int base)
                 let base = a[2] as u32 as i32;
                 if base != 0 && !(2..=36).contains(&base) {
@@ -749,6 +751,383 @@ impl Runtime {
                 self.set_errno(9)?;
                 int_ret(-1)
             }
+            "__ctype_get_mb_cur_max" => int_ret(1),
+            // Destrutores TLS não rodam neste shim (um único thread de guest).
+            "__cxa_thread_atexit_impl" => int_ret(0),
+            "pthread_attr_init" => {
+                if a[0] != 0 {
+                    self.write(a[0], &[0u8; 64])?;
+                }
+                int_ret(0)
+            }
+            "pthread_attr_destroy"
+            | "pthread_attr_setdetachstate"
+            | "pthread_attr_setstacksize"
+            | "pthread_condattr_init"
+            | "pthread_condattr_destroy"
+            | "pthread_condattr_setclock" => int_ret(0),
+            "sigemptyset" => {
+                self.write(a[0], &0u64.to_le_bytes())?;
+                int_ret(0)
+            }
+            "sigfillset" => {
+                self.write(a[0], &u64::MAX.to_le_bytes())?;
+                int_ret(0)
+            }
+            "sigaddset" | "sigdelset" | "sigismember" => {
+                // sigset_t de 64 bits; sinais válidos 1..=64.
+                let sig = a[1] as u32;
+                if !(1..=64).contains(&sig) {
+                    self.set_errno(EINVAL)?;
+                    return Ok(int_ret(-1));
+                }
+                let bit = 1u64 << (sig - 1);
+                let set_bytes = self.read(a[0], 8)?;
+                let mut set = u64::from_le_bytes(set_bytes.try_into().unwrap_or([0; 8]));
+                match name {
+                    "sigaddset" => {
+                        set |= bit;
+                        self.write(a[0], &set.to_le_bytes())?;
+                        int_ret(0)
+                    }
+                    "sigdelset" => {
+                        set &= !bit;
+                        self.write(a[0], &set.to_le_bytes())?;
+                        int_ret(0)
+                    }
+                    _ => int_ret(i64::from(set & bit != 0)),
+                }
+            }
+            "sigprocmask" | "pthread_sigmask" => {
+                // (how, set, oldset): nenhum sinal é bloqueado de fato.
+                if a[2] != 0 {
+                    self.write(a[2], &0u64.to_le_bytes())?;
+                }
+                int_ret(0)
+            }
+            "sigaction" => {
+                // struct sigaction de 32 bytes (bionic, arm64/x86_64). Sem tratador instalado.
+                if a[2] != 0 {
+                    self.write(a[2], &[0u8; 32])?;
+                }
+                int_ret(0)
+            }
+            "getuid" | "geteuid" | "getgid" | "getegid" => int_ret(1000),
+            "getppid" => int_ret(1),
+            "sysconf" => {
+                // Valores Linux: _SC_CLK_TCK=2, _SC_OPEN_MAX=4, _SC_PAGESIZE=30, _SC_NPROCESSORS_CONF=83, _SC_NPROCESSORS_ONLN=84.
+                let v = match a[0] {
+                    2 => 100,
+                    4 => 1024,
+                    30 => 4096,
+                    83 | 84 => 1,
+                    _ => -1,
+                };
+                int_ret(v)
+            }
+            "uname" => {
+                // struct utsname: 6 campos de 65 bytes.
+                let machine = match self.abi {
+                    crate::elf::Abi::X86_64 => "x86_64",
+                    crate::elf::Abi::Arm64 => "aarch64",
+                    crate::elf::Abi::Arm => "armv8l",
+                };
+                let fields = ["Linux", "localhost", "5.10.0", "#1", machine, "(none)"];
+                let mut buf = vec![0u8; 65 * 6];
+                for (i, f) in fields.iter().enumerate() {
+                    buf[i * 65..i * 65 + f.len()].copy_from_slice(f.as_bytes());
+                }
+                self.write(a[0], &buf)?;
+                int_ret(0)
+            }
+            "gettimeofday" => {
+                if a[0] != 0 {
+                    let d = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|_| ioerr("relógio anterior a 1970"))?;
+                    self.write(a[0], &(d.as_secs() as i64).to_le_bytes())?;
+                    self.write(a[0] + 8, &i64::from(d.subsec_micros()).to_le_bytes())?;
+                }
+                int_ret(0)
+            }
+            "clock_gettime" => {
+                // (clockid, timespec*): CLOCK_REALTIME e MONOTONIC usam o mesmo relógio aqui.
+                let d = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_err(|_| ioerr("relógio anterior a 1970"))?;
+                self.write(a[1], &(d.as_secs() as i64).to_le_bytes())?;
+                self.write(a[1] + 8, &i64::from(d.subsec_nanos()).to_le_bytes())?;
+                int_ret(0)
+            }
+            "getentropy" => {
+                // (buf, len): len máximo 256, como a libc.
+                if a[1] > 256 {
+                    self.set_errno(EINVAL)?;
+                    return Ok(int_ret(-1));
+                }
+                let mut buf = vec![0u8; a[1] as usize];
+                std::io::Read::read_exact(
+                    &mut std::fs::File::open("/dev/urandom").map_err(ioerr)?,
+                    &mut buf,
+                )
+                .map_err(ioerr)?;
+                self.write(a[0], &buf)?;
+                int_ret(0)
+            }
+            "setlocale" => {
+                // Só o locale C/POSIX existe. "" resolve para C.
+                if a[1] != 0 {
+                    let req = self.c_string(a[1])?;
+                    if !(req.is_empty() || req == b"C" || req == b"POSIX") {
+                        return Ok(int_ret(0));
+                    }
+                }
+                if self.libc.c_locale == 0 {
+                    self.libc.c_locale = self.alloc_bytes(b"C\0")?;
+                }
+                int_ret(self.libc.c_locale as i64)
+            }
+            "strtod" => {
+                // (const char *s, char **end)
+                let s = self.c_string(a[0])?;
+                let (v, used) = parse_double_prefix(&s);
+                if a[1] != 0 {
+                    self.write_word(a[1], a[0] + used as u64)?;
+                }
+                Some(Return {
+                    bits: 0,
+                    fp_bits: Some(v.to_bits()),
+                })
+            }
+            "strtoul" | "strtoull" => {
+                // Sem sinal: overflow satura em ULONG_MAX; "-x" já vem como complemento.
+                let base = a[2] as u32 as i32;
+                if base != 0 && !(2..=36).contains(&base) {
+                    self.set_errno(EINVAL)?;
+                    return Ok(int_ret(0));
+                }
+                let s = self.c_string(a[0])?;
+                let p = parse_long(&s, base);
+                if p.overflow {
+                    self.set_errno(ERANGE)?;
+                }
+                if a[1] != 0 {
+                    let end = if p.end == 0 {
+                        a[0]
+                    } else {
+                        a[0] + p.end as u64
+                    };
+                    self.write_word(a[1], end)?;
+                }
+                let v = if p.overflow { u64::MAX } else { p.value as u64 };
+                Some(Return {
+                    bits: v,
+                    fp_bits: None,
+                })
+            }
+            "strcasecmp" | "strncasecmp" => {
+                let limit = if name == "strncasecmp" {
+                    a[2] as usize
+                } else {
+                    usize::MAX
+                };
+                let x = self.c_string(a[0])?;
+                let y = self.c_string(a[1])?;
+                let mut diff = 0i64;
+                for i in 0..limit {
+                    let cx = x.get(i).copied().unwrap_or(0).to_ascii_lowercase();
+                    let cy = y.get(i).copied().unwrap_or(0).to_ascii_lowercase();
+                    if cx != cy || cx == 0 {
+                        diff = i64::from(cx) - i64::from(cy);
+                        break;
+                    }
+                }
+                int_ret(diff)
+            }
+            "strnlen" => {
+                let s = self.c_string_bounded(a[0], a[1] as usize)?;
+                int_ret(s.len() as i64)
+            }
+            "strcspn" | "strspn" | "strpbrk" => {
+                let s = self.c_string(a[0])?;
+                let set = self.c_string(a[1])?;
+                let hit = |c: &u8| set.contains(c);
+                match name {
+                    "strcspn" => int_ret(s.iter().position(hit).unwrap_or(s.len()) as i64),
+                    "strspn" => int_ret(s.iter().position(|c| !hit(c)).unwrap_or(s.len()) as i64),
+                    _ => match s.iter().position(hit) {
+                        Some(i) => Some(Return {
+                            bits: a[0] + i as u64,
+                            fp_bits: None,
+                        }),
+                        None => int_ret(0),
+                    },
+                }
+            }
+            "memrchr" => {
+                // (const void *s, int c, size_t n)
+                let n = a[2] as usize;
+                let bytes = self.read(a[0], n)?;
+                let c = a[1] as u8;
+                match bytes.iter().rposition(|&b| b == c) {
+                    Some(i) => Some(Return {
+                        bits: a[0] + i as u64,
+                        fp_bits: None,
+                    }),
+                    None => int_ret(0),
+                }
+            }
+            "strlcpy" => {
+                // (char *dst, const char *src, size_t size): devolve strlen(src).
+                let src = self.c_string(a[1])?;
+                if a[2] > 0 {
+                    let n = src.len().min(a[2] as usize - 1);
+                    let mut out = src[..n].to_vec();
+                    out.push(0);
+                    self.write(a[0], &out)?;
+                }
+                int_ret(src.len() as i64)
+            }
+            "strcat" | "__strcat_chk" => {
+                // (char *dst, const char *src[, size_t dstlen]); a verificação de tamanho do _chk não é feita.
+                let dst_len = self.c_string(a[0])?.len() as u64;
+                let mut src = self.c_string(a[1])?;
+                src.push(0);
+                self.write(a[0] + dst_len, &src)?;
+                Some(Return {
+                    bits: a[0],
+                    fp_bits: None,
+                })
+            }
+            "strncat" => {
+                // (char *dst, const char *src, size_t n)
+                let dst_len = self.c_string(a[0])?.len() as u64;
+                let src = self.c_string(a[1])?;
+                let n = src.len().min(a[2] as usize);
+                let mut out = src[..n].to_vec();
+                out.push(0);
+                self.write(a[0] + dst_len, &out)?;
+                Some(Return {
+                    bits: a[0],
+                    fp_bits: None,
+                })
+            }
+            "__strncpy_chk" | "__strncpy_chk2" => {
+                // (dst, src, n, dstlen[, srclen]): strncpy com checagem de tamanho do destino.
+                let n = a[2];
+                if n > a[3] {
+                    return Err(RdError::new("NATIVE_ABORT", format!("{name}: n > dstlen")));
+                }
+                let src = self.c_string_bounded(a[1], n as usize)?;
+                if n > 0 {
+                    let mut out = vec![0u8; n as usize];
+                    out[..src.len()].copy_from_slice(&src);
+                    self.write(a[0], &out)?;
+                }
+                Some(Return {
+                    bits: a[0],
+                    fp_bits: None,
+                })
+            }
+            "__strcpy_chk" => {
+                // (dst, src, dstlen)
+                let src = self.c_string(a[1])?;
+                if src.len() as u64 + 1 > a[2] {
+                    return Err(RdError::new("NATIVE_ABORT", "__strcpy_chk: dstlen"));
+                }
+                let mut out = src;
+                out.push(0);
+                self.write(a[0], &out)?;
+                Some(Return {
+                    bits: a[0],
+                    fp_bits: None,
+                })
+            }
+            "__strlcpy_chk" => {
+                // (dst, src, size, dstlen)
+                if a[2] > a[3] {
+                    return Err(RdError::new("NATIVE_ABORT", "__strlcpy_chk: size > dstlen"));
+                }
+                let src = self.c_string(a[1])?;
+                if a[2] > 0 {
+                    let n = src.len().min(a[2] as usize - 1);
+                    let mut out = src[..n].to_vec();
+                    out.push(0);
+                    self.write(a[0], &out)?;
+                }
+                int_ret(src.len() as i64)
+            }
+            "__strncat_chk" => {
+                // (dst, src, n, dstlen)
+                let dst_len = self.c_string(a[0])?.len() as u64;
+                let src = self.c_string_bounded(a[1], a[2] as usize)?;
+                if dst_len + src.len() as u64 + 1 > a[3] {
+                    return Err(RdError::new("NATIVE_ABORT", "__strncat_chk: dstlen"));
+                }
+                let mut out = src;
+                out.push(0);
+                self.write(a[0] + dst_len, &out)?;
+                Some(Return {
+                    bits: a[0],
+                    fp_bits: None,
+                })
+            }
+            "__strrchr_chk" => {
+                // (s, c, slen): como strrchr; c == 0 aponta para o NUL final.
+                let s = self.c_string(a[0])?;
+                let c = a[1] as u8;
+                let at = if c == 0 {
+                    Some(s.len())
+                } else {
+                    s.iter().rposition(|&b| b == c)
+                };
+                match at {
+                    Some(i) => Some(Return {
+                        bits: a[0] + i as u64,
+                        fp_bits: None,
+                    }),
+                    None => int_ret(0),
+                }
+            }
+            "__FD_SET_chk" | "__FD_CLR_chk" | "__FD_ISSET_chk" => {
+                // (fd, set, setsize): fd_set é um bitmap; setsize é o tamanho em bytes.
+                let fd = a[0];
+                if fd >= a[2] * 8 {
+                    return Err(RdError::new(
+                        "NATIVE_ABORT",
+                        format!("{name}: fd fora do fd_set"),
+                    ));
+                }
+                let addr = a[1] + fd / 8;
+                let bit = 1u8 << (fd % 8);
+                let cur = self.read(addr, 1)?[0];
+                match name {
+                    "__FD_SET_chk" => {
+                        self.write(addr, &[cur | bit])?;
+                        int_ret(0)
+                    }
+                    "__FD_CLR_chk" => {
+                        self.write(addr, &[cur & !bit])?;
+                        int_ret(0)
+                    }
+                    _ => int_ret(i64::from(cur & bit != 0)),
+                }
+            }
+            "__sched_cpucount" => {
+                // (setsize, cpuset): contagem de bits.
+                let bytes = self.read(a[1], a[0] as usize)?;
+                let n: u32 = bytes.iter().map(|b| b.count_ones()).sum();
+                int_ret(i64::from(n))
+            }
+            "__libc_current_sigrtmin" => int_ret(32),
+            "__pread_chk" => {
+                // Mesmo resultado de `pread` sem tabela de fds: EBADF.
+                if a[2] > a[4] {
+                    return Err(RdError::new("NATIVE_ABORT", "__pread_chk: count > bufsize"));
+                }
+                self.set_errno(9)?;
+                int_ret(-1)
+            }
             _ => None,
         };
         Ok(r)
@@ -966,5 +1345,39 @@ mod tests {
         let buf = rt.allocate(8).unwrap();
         assert_eq!(call(&mut rt, "getcwd", &[buf, 8]).bits, buf);
         assert_eq!(rt.c_string(buf).unwrap(), b"/".to_vec());
+    }
+
+    #[test]
+    fn sigset_bits_and_membership() {
+        let mut rt = rt();
+        let set = rt.allocate(8).unwrap();
+        call(&mut rt, "sigemptyset", &[set]);
+        call(&mut rt, "sigaddset", &[set, 2]);
+        assert_eq!(call(&mut rt, "sigismember", &[set, 2]).bits, 1);
+        assert_eq!(call(&mut rt, "sigismember", &[set, 3]).bits, 0);
+        call(&mut rt, "sigdelset", &[set, 2]);
+        assert_eq!(call(&mut rt, "sigismember", &[set, 2]).bits, 0);
+        assert_eq!(call(&mut rt, "sigaddset", &[set, 99]).bits as i64, -1);
+        call(&mut rt, "sigfillset", &[set]);
+        assert_eq!(call(&mut rt, "sigismember", &[set, 64]).bits, 1);
+    }
+
+    #[test]
+    fn string_helpers_c_semantics() {
+        let mut rt = rt();
+        let buf = rt.allocate(16).unwrap();
+        let hello = cstr(&mut rt, b"abc");
+        rt.write(buf, b"ab\0").unwrap();
+        call(&mut rt, "strcat", &[buf, hello]);
+        assert_eq!(rt.c_string(buf).unwrap(), b"ababc".to_vec());
+        let x = cstr(&mut rt, b"HeLLo");
+        let y = cstr(&mut rt, b"hello");
+        assert_eq!(call(&mut rt, "strcasecmp", &[x, y]).bits, 0);
+        let short = cstr(&mut rt, b"hEl");
+        assert_eq!(call(&mut rt, "strncasecmp", &[x, short, 3]).bits, 0);
+        assert_eq!(call(&mut rt, "strnlen", &[x, 3]).bits, 3);
+        let dst = rt.allocate(4).unwrap();
+        assert_eq!(call(&mut rt, "strlcpy", &[dst, x, 4]).bits, 5);
+        assert_eq!(rt.c_string(dst).unwrap(), b"HeL".to_vec());
     }
 }

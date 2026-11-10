@@ -739,6 +739,12 @@ fn audio_manager_call(
             Ok(Some(Value::Null))
         }
         "isVolumeFixed" => Ok(Some(Value::Int(0))),
+        // Estado padrão dos periféricos virtuais: sem Bluetooth, sem fone com fio, sem mudo.
+        "isBluetoothScoAvailableOffCall" | "isBluetoothScoOn" | "isBluetoothA2dpOn" => {
+            Ok(Some(Value::Int(0)))
+        }
+        "isWiredHeadsetOn" | "isStreamMute" => Ok(Some(Value::Int(0))),
+        "startBluetoothSco" | "stopBluetoothSco" | "setBluetoothScoOn" => Ok(Some(Value::Null)),
         "getRingerMode" => Ok(Some(Value::Int(vm.fw.vdev.audio.ringer_mode))),
         "setRingerMode" => {
             vm.fw.vdev.audio.ringer_mode = int_arg(args, 0).clamp(0, 2);
