@@ -45,6 +45,8 @@ struct Library {
     elf: Elf,
 }
 pub struct Runtime {
+    /// Estado de libc_more (fuso UTC, semáforos, handle de pthread_self).
+    libc: libc_more::LibcState,
     child: Child,
     input: ChildStdin,
     output: Receiver<std::result::Result<Value, String>>,
@@ -79,6 +81,8 @@ impl Drop for Runtime {
         let _ = self.child.wait();
     }
 }
+mod libc_more;
+
 fn ioerr(e: impl std::fmt::Display) -> RdError {
     RdError::new("NATIVE_WORKER", e.to_string())
 }
@@ -180,6 +184,7 @@ impl Runtime {
             errno: 0,
             tls_keys: BTreeMap::new(),
             missing_imports: BTreeSet::new(),
+            libc: libc_more::LibcState::default(),
         };
         let hello = r.request(json!({"op":"init","abi":abi.android_name()}))?;
         if hello["version"] != 1 {
@@ -709,6 +714,9 @@ impl Runtime {
         let mut a = Vec::new();
         for i in 0..6 {
             a.push(self.raw_argument(t, i)?);
+        }
+        if let Some(r) = self.libc_more(name, &a)? {
+            return Ok(r);
         }
         let value = match name {
             "malloc" => {
@@ -1735,6 +1743,33 @@ fn builtin_import(n: &str) -> bool {
     matches!(
         n,
         "malloc"
+            | "mbtowc"
+            | "mbstowcs"
+            | "wcstombs"
+            | "iswspace"
+            | "strtol"
+            | "atof"
+            | "time"
+            | "gmtime_r"
+            | "localtime_r"
+            | "strftime"
+            | "usleep"
+            | "getcwd"
+            | "inet_pton"
+            | "pthread_self"
+            | "pthread_mutexattr_init"
+            | "pthread_mutexattr_destroy"
+            | "pthread_mutexattr_settype"
+            | "pthread_rwlock_tryrdlock"
+            | "pthread_rwlock_trywrlock"
+            | "sem_init"
+            | "sem_destroy"
+            | "sem_post"
+            | "sem_wait"
+            | "sem_trywait"
+            | "sem_timedwait"
+            | "sem_getvalue"
+            | "__read_chk"
             | "calloc"
             | "free"
             | "realloc"
@@ -1908,7 +1943,7 @@ mod float_format_tests {
 }
 
 #[cfg(test)]
-mod p0_242_255_tests {
+pub(super) mod p0_242_255_tests {
     use super::*;
 
     const MOCK_WORKER: &str = r#"
@@ -1964,7 +1999,7 @@ for raw in sys.stdin:
             send({"event": "ok", "hex": out.hex()})
 "#;
 
-    fn mock_runtime(abi: Abi) -> Result<Runtime> {
+    pub(super) fn mock_runtime(abi: Abi) -> Result<Runtime> {
         let mut child = Command::new("python3")
             .arg("-u")
             .arg("-c")
@@ -2021,6 +2056,7 @@ for raw in sys.stdin:
             errno: 0,
             tls_keys: BTreeMap::new(),
             missing_imports: BTreeSet::new(),
+            libc: libc_more::LibcState::default(),
         };
         let hello = rt.request(json!({"op":"init","abi":abi.android_name()}))?;
         assert_eq!(hello["version"], 1);
