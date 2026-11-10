@@ -131,8 +131,13 @@ pub(crate) fn instance_intrinsic(
             None => Value::Null,
         },
         ("getModifiers", "()I") => {
+            // Classe membro: as flags do InnerClass (com `static`) valem; senão,
+            // as flags da própria classe, como antes.
             const CLASS_MODIFIER_MASK: u32 = 0x0000_761f;
-            Value::Int((access_flags(vm, &d).unwrap_or(0) & CLASS_MODIFIER_MASK) as i32)
+            let flags = crate::jannotations::inner_class_access_flags(vm, &d)
+                .or_else(|| access_flags(vm, &d))
+                .unwrap_or(0);
+            Value::Int((flags & CLASS_MODIFIER_MASK) as i32)
         }
         ("isInterface", "()Z") => b(access_flags(vm, &d).is_some_and(|f| f & ACC_INTERFACE != 0)
             || (crate::classpath::host_class_known(&d)

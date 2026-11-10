@@ -130,6 +130,11 @@ pub(crate) fn instance_intrinsic(
         return Ok(None);
     }
     let v = match (name, sig) {
+        ("getContext", "()Landroid/content/Context;") => vm
+            .view_props
+            .get(&(recv, "win:context".to_string()))
+            .cloned()
+            .unwrap_or(Value::Null),
         ("getCallback", "()Landroid/view/Window$Callback;") => vm
             .view_props
             .get(&(recv, "win:callback".to_string()))

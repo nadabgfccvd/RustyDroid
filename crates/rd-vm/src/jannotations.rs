@@ -72,6 +72,26 @@ fn class_annotations(
         .collect()
 }
 
+/// Flags de acesso de uma classe membro segundo `dalvik.annotation.InnerClass`
+/// (`accessFlags`, que inclui `static`). As flags da própria classe não trazem
+/// `static`, então `getModifiers()` precisa desta anotação. `None` sem ela.
+pub(crate) fn inner_class_access_flags(vm: &Engine, desc: &str) -> Option<u32> {
+    for (di, ann) in class_annotations(vm, desc, Visibility::System) {
+        if vm.cp.dexes[di].type_str(ann.type_idx) != "Ldalvik/annotation/InnerClass;" {
+            continue;
+        }
+        for el in &ann.elements {
+            if vm.cp.dexes[di].string(el.name_idx) != "accessFlags" {
+                continue;
+            }
+            if let EncodedValue::Int(f) = el.value {
+                return Some(f as u32);
+            }
+        }
+    }
+    None
+}
+
 /// Assinatura genérica de uma classe DEX (`dalvik.annotation.Signature`,
 /// visibilidade SYSTEM). `None` quando a classe não tem o atributo.
 pub(crate) fn class_generic_signature(vm: &Engine, desc: &str) -> Option<String> {

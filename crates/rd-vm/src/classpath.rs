@@ -2016,6 +2016,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         ]),
         // CopyOnWrite*: na JDK real NÃO estendem Abstract* (implementam direto)
         "Ljava/util/concurrent/CopyOnWriteArrayList;" => Some(OBJECT),
+        "Ljava/util/concurrent/ConcurrentLinkedQueue;" => Some(&[
+            "Ljava/util/AbstractQueue;",
+            "Ljava/util/AbstractCollection;",
+            "Ljava/lang/Object;",
+        ]),
         "Ljava/util/concurrent/LinkedBlockingQueue;" => Some(&[
             "Ljava/util/AbstractQueue;",
             "Ljava/util/AbstractCollection;",
@@ -2108,6 +2113,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             Some(&["Ljava/lang/ref/Reference;", "Ljava/lang/Object;"])
         }
         "Ljava/lang/ref/ReferenceQueue;" => Some(OBJECT),
+        // StrictMode.{Thread,Vm}Policy.Builder: ver intrinsics (builders fluentes).
+        "Landroid/os/StrictMode$ThreadPolicy$Builder;"
+        | "Landroid/os/StrictMode$VmPolicy$Builder;" => Some(OBJECT),
         // Appendix C stub surfaces promoted to bounded partial slices.
         "Landroid/webkit/WebSettings;"
         | "Landroid/provider/DocumentsContract;"
@@ -3219,6 +3227,14 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/util/Deque;",
             "Ljava/util/Queue;",
             "Ljava/lang/Cloneable;",
+            "Ljava/io/Serializable;",
+        ]),
+        // Class implementa java.lang.reflect.Type (TypeToken do Gson faz o cast).
+        "Ljava/lang/Class;" => Some(&["Ljava/lang/reflect/Type;"]),
+        "Ljava/util/concurrent/ConcurrentLinkedQueue;" => Some(&[
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
             "Ljava/io/Serializable;",
         ]),
         "Ljava/util/concurrent/LinkedBlockingQueue;" => Some(&[

@@ -1291,16 +1291,34 @@ pub(crate) fn instance_intrinsic(
             let value = value_of(vm, id)?;
             match value {
                 ResolvedValue::Str(path) if path.starts_with("res/") => {
-                    return Err(crate::err::with_suggestion(
-                        crate::err::vm_error(
-                            "NOT_IMPLEMENTED",
-                            format!(
-                                "drawable 0x{id:08x} ({path}) não é rasterizado: Drawable de arquivo (vetor/PNG) fora do modelo"
-                            ),
-                        ),
-                        "o modelo tem ColorDrawable e ColorStateList; vetores exigem um renderizador de vetores",
-                    )
-                    .into())
+                    // Desvio documentado (ver docs/compat-desvios.md): o drawable
+                    // de arquivo (vetor/PNG) vira um `Drawable` base sem pixels,
+                    // com tamanho intrínseco −1 (contrato do modelo base em
+                    // android_drawable.rs). Ele não pinta nada; o caminho do
+                    // recurso fica em `rd_res` para diagnóstico. Rasterizar
+                    // vetores exige um renderizador próprio, ainda não existe.
+                    // Vetor XML (raiz `<vector>`) vira `VectorDrawable`: o AppCompat
+                    // confere isso no drawable de teste ao iniciar (checkVectorDrawableSetup).
+                    let is_vector = path.ends_with(".xml")
+                        && crate::jresources::read_resource(vm, &path)?
+                            .is_some_and(|b| crate::jresources::root_is_vector(&b));
+                    let class = if is_vector {
+                        "Landroid/graphics/drawable/VectorDrawable;"
+                    } else {
+                        "Landroid/graphics/drawable/Drawable;"
+                    };
+                    let d = vm
+                        .heap
+                        .alloc_instance(class.to_string(), Vec::new())
+                        .map_err(crate::err::oom_throwable)?;
+                    let p = vm
+                        .heap
+                        .alloc_string(path.clone())
+                        .map_err(crate::err::oom_throwable)?;
+                    put(vm, d, "rd_res", Value::Obj(p))?;
+                    put(vm, d, "rd_alpha", Value::Int(255))?;
+                    put(vm, d, "rd_visible", Value::Int(1))?;
+                    Value::Obj(d)
                 }
                 ResolvedValue::Integer(color) => {
                     let d = vm

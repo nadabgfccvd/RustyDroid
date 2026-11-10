@@ -2763,6 +2763,7 @@ impl Engine {
         // deferred gesture callbacks due in virtual time (view_gesture.rs:
         // long press, single-tap-confirmed after the double-tap window)
         ran += crate::view_gesture::deliver_pending(self)?;
+        let mut idled = false;
         loop {
             // Menor deadline entre todas as filas devidas: principal primeiro
             // em empate, depois as HandlerThread (ordem de criação), depois
@@ -2787,6 +2788,13 @@ impl Engine {
                 }
             }
             let Some((_, _, idx, owner)) = best else {
+                // Looper ocioso: os idle handlers rodam uma vez por ociosidade.
+                // Se postarem mensagem, o laço volta a procurar.
+                if !idled {
+                    idled = true;
+                    run_main_idle_handlers(self)?;
+                    continue;
+                }
                 break;
             };
             let msg = match self.fw.objects.get_mut(&owner) {
@@ -3589,6 +3597,43 @@ fn call_host_instance_rooted(
         }
         // ── M8: Looper.getThread — thread "main" sintética (VM single-threaded).
         // Métodos de Ljava/lang/Thread; despacham via intrinsics (não Landroid/).
+        // Looper.getQueue(): a fila de mensagens é um singleton por VM (a da
+        // thread principal). Sem idle handlers: o drenado do Looper não os chama.
+        (LOOPER, "getQueue") => {
+            let k = (
+                "Landroid/os/MessageQueue;".to_string(),
+                "rd_queue".to_string(),
+            );
+            let q = match vm.statics.get(&k) {
+                Some(Value::Obj(q)) => *q,
+                _ => {
+                    let q = vm
+                        .heap
+                        .alloc_instance("Landroid/os/MessageQueue;".to_string(), Vec::new())?;
+                    vm.statics.insert(k, Value::Obj(q));
+                    q
+                }
+            };
+            Ok(Some(Value::Obj(q)))
+        }
+        // MessageQueue.addIdleHandler/removeIdleHandler: os handlers ficam num
+        // array no campo `rd_idle` da fila principal e rodam quando o Looper
+        // fica ocioso (ver `run_main_idle_handlers`).
+        (MESSAGE_QUEUE, "addIdleHandler" | "removeIdleHandler")
+            if sig == "(Landroid/os/MessageQueue$IdleHandler;)V" =>
+        {
+            let Some(h) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {
+                return Err(crate::err::vm_error("INVALID_ARG", "IdleHandler nulo").into());
+            };
+            let mut hs = idle_handlers(vm, recv)?;
+            if name == "addIdleHandler" {
+                hs.push(h);
+            } else {
+                hs.retain(|x| *x != h);
+            }
+            set_idle_handlers(vm, recv, &hs)?;
+            Ok(Some(Value::Null))
+        }
         (LOOPER, "getThread") => {
             let owner = vm
                 .fw
@@ -4024,6 +4069,14 @@ fn call_host_instance_rooted(
                 vm.find_view_by_id(content, want)
                     .map_or(Value::Null, Value::Obj),
             ))
+        }
+        // Activity.isFinishing(): verdadeiro depois de finish() (mesmo flag).
+        (ACTIVITY, "isFinishing") if sig == "()Z" => {
+            let finished = matches!(
+                vm.fw.get(recv),
+                Some(HostObj::Activity { finished: true, .. })
+            );
+            Ok(Some(Value::Int(finished as i32)))
         }
         (ACTIVITY, "finish") => {
             vm.finish_activity(recv)?;
@@ -5451,6 +5504,9 @@ pub(crate) fn ensure_window(vm: &mut Engine, activity: ObjRef) -> Result<ObjRef,
     // PhoneWindow starts with its owning Activity as the Window.Callback.
     vm.view_props
         .insert((w, "win:callback".to_string()), Value::Obj(activity));
+    // Window.getContext(): o contexto em que a janela foi criada (a Activity).
+    vm.view_props
+        .insert((w, "win:context".to_string()), Value::Obj(activity));
     if let Some(HostObj::Activity { window, .. }) = vm.fw.objects.get_mut(&activity) {
         *window = Some(w);
     }
@@ -6005,6 +6061,68 @@ impl Engine {
             children,
         }
     }
+}
+
+/// `MessageQueue` (fila principal) é um singleton de VM guardado em statics.
+const MESSAGE_QUEUE: &str = "Landroid/os/MessageQueue;";
+
+fn main_message_queue(vm: &Engine) -> Option<ObjRef> {
+    match vm
+        .statics
+        .get(&(MESSAGE_QUEUE.to_string(), "rd_queue".to_string()))
+    {
+        Some(Value::Obj(q)) => Some(*q),
+        _ => None,
+    }
+}
+
+/// Idle handlers registrados em `q` (campo `rd_idle`, array de objetos).
+fn idle_handlers(vm: &mut Engine, q: ObjRef) -> Result<Vec<ObjRef>, VmExit> {
+    let arr = match vm.heap.get_field(q, "rd_idle") {
+        Ok(Value::Obj(a)) => a,
+        _ => return Ok(Vec::new()),
+    };
+    let (elems, _) = vm.heap.as_array_elems(arr)?;
+    Ok(elems
+        .iter()
+        .filter_map(|v| match v {
+            Value::Obj(o) => Some(*o),
+            _ => None,
+        })
+        .collect())
+}
+
+fn set_idle_handlers(vm: &mut Engine, q: ObjRef, hs: &[ObjRef]) -> Result<(), VmExit> {
+    let arr =
+        vm.heap
+            .alloc_array_exact(crate::heap::ElemKind::Obj, hs.len(), "[Ljava/lang/Object;")?;
+    *vm.heap.array_elems_mut(arr)? = hs.iter().map(|o| Value::Obj(*o)).collect();
+    crate::err::put_field_result(vm.heap.put_field(q, "rd_idle", Value::Obj(arr)))
+}
+
+/// Roda cada idle handler (`queueIdle()Z`). Os que devolvem `false` saem da
+/// lista, como no AOSP. Os demais ficam para a próxima ociosidade.
+fn run_main_idle_handlers(vm: &mut Engine) -> Result<(), VmExit> {
+    let Some(q) = main_message_queue(vm) else {
+        return Ok(());
+    };
+    let hs = idle_handlers(vm, q)?;
+    if hs.is_empty() {
+        return Ok(());
+    }
+    let mut done: Vec<ObjRef> = Vec::with_capacity(hs.len());
+    for h in &hs {
+        let again = vm.invoke_instance(*h, "queueIdle", "()Z", &[])?;
+        if matches!(again, Value::Int(0)) {
+            done.push(*h);
+        }
+    }
+    // Handlers adicionados durante queueIdle() permanecem na lista.
+    let kept: Vec<ObjRef> = idle_handlers(vm, q)?
+        .into_iter()
+        .filter(|c| !done.contains(c))
+        .collect();
+    set_idle_handlers(vm, q, &kept)
 }
 
 #[cfg(test)]

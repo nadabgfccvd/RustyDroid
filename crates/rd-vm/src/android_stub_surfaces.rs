@@ -2201,7 +2201,11 @@ fn webview_static(
             );
             Value::Null
         }
-        "enablePlatformNotifications" | "disablePlatformNotifications" => Value::Null,
+        // setDataDirectorySuffix: sufixo do diretório de dados do WebView; sem
+        // processo WebView separado no device virtual, não tem efeito observável.
+        "enablePlatformNotifications"
+        | "disablePlatformNotifications"
+        | "setDataDirectorySuffix" => Value::Null,
         "clearClientCertPreferences" => {
             if let Some(r) = oarg(args, 0) {
                 // The interface is java.lang.Runnable; a guest implementation

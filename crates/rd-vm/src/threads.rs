@@ -77,9 +77,20 @@ pub struct Threads {
     pub(crate) kill_handler: Option<ObjRef>,
     /// thread starts / resumptions, for runtime_health
     pub scheduled: u64,
+    /// Profundidade de tarefas de executor rodando inline (sem green thread):
+    /// um `ReferenceQueue.remove()` vazio nelas bloqueia o worker para sempre.
+    pub(crate) inline_worker: u32,
 }
 
 impl Threads {
+    /// `true` quando uma chamada bloqueante (sem timeout) deve parkear o
+    /// worker atual em vez de devolver `null`: green thread ou tarefa de
+    /// executor inline. A thread principal fora de worker mantém o retorno
+    /// não bloqueante.
+    pub(crate) fn worker_blocks(&self) -> bool {
+        self.current.is_some() || self.inline_worker > 0
+    }
+
     pub(crate) fn entry(&mut self, t: ObjRef) -> &mut GreenThread {
         if let std::collections::hash_map::Entry::Vacant(entry) = self.table.entry(t) {
             self.next_id += 1;

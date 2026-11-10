@@ -27,6 +27,7 @@ use crate::engine::Engine;
 use crate::err::{Throwable, VmExit};
 use crate::framework::HostObj;
 use crate::heap::{ElemKind, ObjRef};
+use crate::jregex::REGEX_NFA_LIMIT;
 use crate::value::Value;
 
 const STRING: &str = "Ljava/lang/String;";
@@ -300,8 +301,8 @@ fn string_matches(input: &str, pat: &str) -> Result<bool, VmExit> {
     let build = |s: &str| -> Result<fancy_regex::Regex, Box<fancy_regex::Error>> {
         fancy_regex::RegexBuilder::new(s)
             .backtrack_limit(100_000)
-            .delegate_size_limit(2 << 20)
-            .delegate_dfa_size_limit(2 << 20)
+            .delegate_size_limit(REGEX_NFA_LIMIT)
+            .delegate_dfa_size_limit(REGEX_NFA_LIMIT)
             .build()
             .map_err(Box::new)
     };
