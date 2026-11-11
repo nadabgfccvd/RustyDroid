@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-9adaf644.js";
+            window.path_to_searchindex_js = "searchindex-59f098dc.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -827,6 +827,35 @@ in the validation report when available; do not infer a completed soak here.</li
 <p>No physical camera/Scanner campaign, ARMv7 native JIT, Moto E5 latency or full
 Java/Android compatibility claim is made. Human review is required before merge
 by CONTRIBUTING.md.</p>
+<h2 id="validação-offline-do-scanner-com-rótulos-sintéticos-2026-11-11"><a class="header" href="#validação-offline-do-scanner-com-rótulos-sintéticos-2026-11-11">Validação offline do Scanner com rótulos sintéticos (2026-11-11)</a></h2>
+<p>Scripts em <code>tools/comprix/</code>:</p>
+<ul>
+<li><code>gerar_rotulos.py</code>: gera EAN-13 válidos (dígito verificador pela função <code>dv_ean13</code>, não digitado à mão), tabela nutricional, selo ALTO EM, etiqueta de preço e <code>gabarito.json</code>.</li>
+<li><code>validar_fixtures.py</code>: compara os rótulos com o gabarito. EAN via <code>zbarimg</code>; selo, tabela e preço via RapidOCR. Comparação sem acento e por palavra, porque a ordem de leitura do OCR não é garantida. Resultado em <code>validacao_fixtures.json</code>.</li>
+<li><code>probe_scanner.py</code>: sonda MCP do APK 1.6.0 (install → launch → Pular → Nova lista → Compra do Mês → Criar e adicionar itens → Escanear um produto).</li>
+</ul>
+<p>Resultado (rótulos sintéticos, fora do VM):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>Resultado</th></tr>
+</thead>
+<tbody>
+<tr><td>EAN-13 (3 códigos)</td><td>3/3 lidos por <code>zbarimg</code></td></tr>
+<tr><td>Selo ALTO EM</td><td>4/4 palavras (ALTO EM, AÇÚCAR ADICIONADO, GORDURA SATURADA, SÓDIO)</td></tr>
+<tr><td>Tabela nutricional</td><td>porção 30 g, energia 120 kcal, sódio 150 mg, gorduras saturadas 0,8 g: ok</td></tr>
+<tr><td>Tabela nutricional</td><td>açúcares adicionados 8 g: <strong>inconclusivo</strong> (OCR não leu o valor na linha)</td></tr>
+<tr><td>Etiqueta de preço</td><td>R$ 24,90 e código 7891000100103: ok</td></tr>
+</tbody>
+</table>
+</div>
+<p>Sondagem no APK 1.6.0 (MCP): a tela “Escanear preço” abre após “Escanear um produto”, com abas Foto, Vídeo 30 s e Código. O caminho até ela é: lista → “Criar e adicionar itens” → “Escanear um produto”.</p>
+<p>Limites desta validação:</p>
+<ul>
+<li>Não é teste ponta a ponta do Scanner no VM. A leitura de código de barras e de texto pelo ML Kit no VM é stub (<code>host_stub</code> em <code>interp.rs</code> devolve lista vazia, decisão do usuário; <code>gms.rs</code> marca ML Kit como <code>not_implemented</code>). Trocar esse comportamento exige confirmação explícita.</li>
+<li>O VM não injeta imagem PNG na câmera CameraX. <code>m10/camera.rs</code> cobre só Camera2 e frames sintéticos (<code>RD-CAM…</code>).</li>
+<li>RapidOCR e zbar não são o ML Kit real. Isso é um desvio de fidelidade e deve ser revisto antes de qualquer alegação de compatibilidade.</li>
+</ul>
 
                     </main>
 
