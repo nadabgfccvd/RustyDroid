@@ -17,6 +17,18 @@ visões não concordam sobre `../`:
 Corrigir os fontes quebraria a visão do repositório. Então a correção é feita
 onde ela é verdadeira: no HTML, depois do build.
 
+## O segundo problema (o `README.md` de uma subpasta)
+
+O mdBook renderiza `docs/arquivo/README.md` como `arquivo/index.html`, **não**
+como `arquivo/README.html`. Um link escrito `./archive/README.md` — correto na
+visão do repositório, onde o arquivo existe — vira `archive/README.html` no
+HTML e responde **404** no site. Foi assim que `docs/index.md` passou a linkar
+um 404 em `archive/README.html` (achado no crawl de 2026-11-10).
+
+Aqui também a correção é no HTML: se o alvo `.../README.html` não existe mas
+`.../index.html` existe, reescreve. Sem alvo nenhum, vira "leftover" e o script
+sai com 1, para o build falhar em vez de publicar link morto.
+
 ## O que faz
 
 Troca `href="../X"` por
@@ -37,6 +49,8 @@ import sys
 from pathlib import Path
 
 _HREF = re.compile(r'(?P<attr>\b(?:href|src))="(?P<target>\.\.(?:/[^"]*)?)"')
+# Alvo relativo terminando em `README.html`: no mdBook a página real é `index.html`.
+_README = re.compile(r'(?P<attr>\b(?:href|src))="(?P<target>(?![a-z]+:)[^"#]*README\.html)"')
 _SHALLOW = re.compile(r'^\.\./(?:(?:\.\./)+)?(?P<rest>.*)$')
 
 
@@ -79,6 +93,38 @@ def rewrite(html: str, page: Path, site: Path, blob: str) -> tuple[str, int, lis
     return _HREF.sub(repl, html), changed, missing
 
 
+def readme_to_index(html: str, page: Path, site: Path) -> tuple[str, int, list[str]]:
+    """Reescreve `X/README.html` -> `X/index.html` quando só o segundo existe.
+
+    Devolve `(html, reescritos, alvos_ausentes)`, com a mesma convenção de
+    `rewrite`: alvo ausente sem `index.html` substituto entra em `alvos_ausentes`
+    (o chamador transforma isso em falha).
+    """
+    site_abs = site.resolve()
+    changed = 0
+    missing: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        nonlocal changed
+        target = m.group("target")
+        if (page.parent / target).exists():
+            return m.group(0)
+        alt = target[: -len("README.html")] + "index.html"
+        alt_path = (page.parent / alt).resolve()
+        inside = True
+        try:
+            alt_path.relative_to(site_abs)
+        except ValueError:
+            inside = False
+        if inside and alt_path.exists():
+            changed += 1
+            return f'{m.group("attr")}="{alt}"'
+        missing.append(target)
+        return m.group(0)
+
+    return _README.sub(repl, html), changed, missing
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", required=True)
@@ -100,23 +146,26 @@ def main(argv: list[str] | None = None) -> int:
     for page in sorted(site.rglob("*.html")):
         html = page.read_text(encoding="utf-8")
         new, n, missing = rewrite(html, page, site, blob)
-        if n:
+        new, n2, missing2 = readme_to_index(new, page, site)
+        if n or n2:
             pages += 1
-            rewrites += n
+            rewrites += n + n2
             if not args.check:
                 page.write_text(new, encoding="utf-8")
         # Depois de reescrever (ou não, em --check), nenhum alvo pode continuar
         # ausente: é isso que quebra na visão do livro.
         _, _, still_missing = rewrite(new, page, site, blob)
-        if still_missing:
-            leftovers.append(f"{page.relative_to(site)} -> {', '.join(still_missing[:3])}")
+        _, _, still_missing2 = readme_to_index(new, page, site)
+        if still_missing or still_missing2:
+            alvos = still_missing[:3] + still_missing2[:3]
+            leftovers.append(f"{page.relative_to(site)} -> {', '.join(alvos)}")
 
     verb = "verificaria" if args.check else "reescreveu"
     print(f"book_links: {verb} {rewrites} link(s) em {pages} página(s) -> {blob}")
 
     if leftovers:
         print(
-            f"book_links: {len(leftovers)} página(s) ainda linkam acima da raiz: "
+            f"book_links: {len(leftovers)} página(s) ainda linkam para alvo inexistente: "
             + ", ".join(leftovers[:8]),
             file=sys.stderr,
         )

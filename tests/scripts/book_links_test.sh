@@ -83,6 +83,41 @@ else
   ko "wrong rewrite count: $(cat "$WORK/out2")"
 fi
 
+# ── mdBook renders `X/README.md` as `X/index.html` ────────────────────────
+# So a (repo-correct) link to `./archive/README.md` becomes `archive/README.html`
+# in the built site, which 404s. It must be rewritten to the page that exists.
+# Fixture isolado para não mexer na contagem de reescritas acima.
+SITE2="$WORK/site2"
+mkdir -p "$SITE2/archive"
+echo '<h1>arquivo</h1>' >"$SITE2/archive/index.html"
+cat >"$SITE2/page.html" <<'HTML'
+<a href="./archive/README.html">arquivo (README vira index)</a>
+<a href="https://example.com/README.html">link externo (não tocar)</a>
+HTML
+run 0 "README.html -> index.html quando o index existe" --site "$SITE2"
+grep -q 'href="./archive/index.html"' "$SITE2/page.html" \
+  && ok "README.html reescrito para index.html" \
+  || ko "README.html não foi reescrito"
+grep -q 'href="https://example.com/README.html"' "$SITE2/page.html" \
+  && ok "link externo para README.html preservado" \
+  || ko "link externo foi mexido"
+before2="$(cat "$SITE2/page.html")"
+run 0 "segunda passada do README é no-op" --site "$SITE2"
+[ "$before2" = "$(cat "$SITE2/page.html")" ] \
+  && ok "README.html: idempotente" \
+  || ko "README.html: segunda passada mexeu no arquivo"
+
+# Sem `index.html` substituto o link é alvo inexistente: o build tem de falhar,
+# não publicar um 404 silencioso.
+cat >"$SITE2/broken.html" <<'HTML'
+<a href="./nada/README.html">destino que não existe</a>
+HTML
+run 1 "README.html sem index é falha" --site "$SITE2"
+grep -q 'href="./nada/README.html"' "$SITE2/broken.html" \
+  && ok "alvo inexistente continua intacto (falha, não correção inventada)" \
+  || ko "alvo inexistente foi reescrito para algo arbitrário"
+rm "$SITE2/broken.html"
+
 echo
 if [ "$fails" -ne 0 ]; then echo "$fails check(s) failed" >&2; exit 1; fi
 echo "all checks passed"
