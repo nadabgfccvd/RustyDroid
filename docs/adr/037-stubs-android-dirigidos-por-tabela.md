@@ -1,6 +1,6 @@
 # ADR 037 — Stubs Android dirigidos por tabela, sem relocação e com erro delgado
 
-- **Status:** implementado no PR da Issue #227 · **Data:** 2026-11-10
+- **Status:** implementado (PRs da Issue #227) · **Data:** 2026-11-10
 - **Escopo:** `crates/rd-vm/src/android_stub_tables.rs` (novo),
   `crates/rd-vm/src/android_stub_surfaces.rs`, `crates/rd-vm/src/android_sysservices.rs`,
   `crates/rd-vm/src/lib.rs`
@@ -81,6 +81,35 @@ usado aqui.
 memória, `WebView` history, `Keystore` e os `Parcel` stateful continuam escritos à mão.
 São máquinas de estado com ordem de efeito observável; nenhuma tabela as substitui.
 
+### 6. Dobra de código idêntico no link (`--icf=all`)
+
+O último passo não é uma transformação em Rust: é o *Identical Code Folding* do
+`rust-lld`, habilitado em `.cargo/config.toml` **escopo `x86_64-unknown-linux-gnu`**
+(requer `rust-lld`, que é o linker padrão desse alvo desde o Rust 1.90; em alvos cujo
+linker não entende a flag o build continua funcionando).
+
+Depois de tudo acima, ainda existe código de máquina duplicado que nenhuma refatoração
+em Rust remove: corpos de função **distintos no fonte** que o LLVM compila para bytes
+idênticos — stubs de erro frios, adaptadores de `Result`, `drop_glue` de tipos
+monomorfizados e (o grosso) fusão em cascata, em que duas funções passam a ser idênticas
+porque os seus chamados já foram fundidos. Medido em `--all-features` sobre `c4099e0`:
+
+| Seção | sem ICF | com ICF | Δ |
+|---|---|---|---|
+| `.text` | 17 740 701 | 17 474 877 | −265 824 |
+| `.eh_frame` | 1 364 292 | 1 288 972 | −75 320 |
+| `.eh_frame_hdr` | 137 828 | 125 364 | −12 464 |
+| `.relro_padding` | 2 744 | 88 | −2 656 |
+| `.rela.dyn` | 572 472 | 572 424 | −48 |
+| **arquivo** | **23 586 896** | **23 233 200** | **−353 696** |
+
+Segurança: `--icf=all` funde dois corpos idênticos, o que só é observável se o código
+comparar **identidade de ponteiro de função**. O repositório não tem nenhuma ocorrência
+disso (`fn ... as usize`, `ptr::eq` sobre `fn`, `std::ptr::fn_addr_eq`) em `crates/`, e a
+suíte `gc_host_and_jni` (7 testes, incluindo `RegisterNatives` e ponteiros JNI) passa com
+o folding ativo. `cold26` não regride: mediana 12,28 ms sem ICF contra 12,33 ms com ICF em
+3×7 execuções, ambas muito abaixo do orçamento de 26 ms.
+
 ## Consequências
 
 Medições de `target/release/rd --all-features` (`lto = "thin"`), com `109/109` testes de
@@ -94,13 +123,32 @@ Medições de `target/release/rd --all-features` (`lto = "thin"`), com `109/109`
 | Pass 3 — `toString`/`equals`/`hashCode`/steps declarativos | 23 880 544 | −449 392 |
 | Pass 4 — `StubExit(Box<VmExit>)` + formatadores outlined | 23 611 344 | −718 592 |
 | Pass 5 — `varg` + `#[inline(never)]` nos auxiliares | 23 586 896 | −743 040 |
+| Pass 6 — `--icf=all` no `rust-lld` | **23 233 200** | **−1 096 736 (−1,046 MB)** |
 
-O arquivo-fonte caiu de 55 275 para ~49 700 linhas. O código restante é mais fácil de
+O arquivo-fonte caiu de 55 275 para ~51 300 linhas. O código restante é mais fácil de
 ler: um router é uma tabela mais um laço, não 300 braços de `match`.
+
+## Onde os bytes restantes estão (e por que parar aqui)
+
+`android_stub_surfaces` + `android_stub_tables` somam 1 843 169 B. A análise do mapa de
+linker e da fonte mostra que **o poço da conversão declarativa secou**:
+
+- **1 481 braços** restantes dentro de `match (name, sig)`, com **1 265 corpos distintos**
+  depois de normalizar literais e números; só 97 braços compartilham corpo com outro.
+- Em 1 285 funções, apenas **25** têm corpo idêntico após normalização e **13** pares são
+  quase-duplicados (Jaccard > 0,5). O que sobrou é comportamento genuinamente distinto.
+- Comparação de strings responde por **2,3%** do `.text` do módulo (3 123 `pcmpeqb` em
+  354 912 instruções), porque o LLVM já troca a maioria dos `match` por `cmp` imediato e
+  tabelas de salto. Trocar dispatch por hash `u64` renderia ~30–40 KB, não centenas.
+
+Por isso o passo final é de linker: o que sobra é duplicação que se forma **depois** da
+geração de código, não antes.
 
 ## Critérios de aceite
 
 1. `cargo test -p rd-vm --test android_stub_surfaces` verde (109/109).
+1b. Redução medida ≥ 1,0 MB no binário `target/release/rd --all-features`: **−1 096 736 B
+   (−1,046 MB)**.
 2. `cargo clippy --workspace --all-targets --all-features -- -D warnings` limpo.
 3. Zero `unsafe` fora de `rd-jni`/`rd-ndk`.
 4. `cold26` sem regressão (binário menor e com menos relocações só pode ajudar o
