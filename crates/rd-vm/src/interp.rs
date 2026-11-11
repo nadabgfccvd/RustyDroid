@@ -1768,8 +1768,10 @@ fn resolve_or_run_host_invoke(
         if let Some(v) = crate::gms::call_static(vm, &mref.class, &mref.name, &mref.proto, slots)? {
             return Ok(InvokeTarget::Value(v));
         }
-        // M3: classes android/* são HOST (framework.rs) — nunca estão no DEX
-        if mref.class.starts_with("Landroid/") {
+        // M3: classes android/* são HOST (framework.rs). Exceção: o APK pode
+        // embutir classes `android/support/*` próprias (ex.: support v4 do
+        // Zoom); essas existem no DEX e seguem para a resolução normal.
+        if mref.class.starts_with("Landroid/") && vm.cp.find_class(&mref.class).is_none() {
             return match crate::framework::call_host_static(
                 vm,
                 &mref.class,
@@ -1895,6 +1897,49 @@ fn resolve_or_run_host_invoke(
                 return Ok(InvokeTarget::Value(Value::Int(recv as i32)));
             }
             _ => {}
+        }
+    }
+
+    // `invoke-super` sobre método de plataforma com receptor DEX (ex.:
+    // protobuf `MapFieldLite.put` chama `super.put` de `LinkedHashMap`): o
+    // override DEX do próprio receptor não deve ser escolhido. Despacha
+    // direto como a classe de referência; se ela não tiver intrínseco para o
+    // método, segue o caminho normal abaixo.
+    // A classe da referência pode ser uma superclasse abstrata (ex.:
+    // `AbstractMap.put` com receptor `MapFieldLite -> LinkedHashMap`), por
+    // isso usa a primeira ancestral de plataforma do receptor, que é onde o
+    // estado host (e o intrínseco) mora.
+    if is_super
+        && vm.cp.find_class(&mref.class).is_none()
+        && vm.cp.find_class(&recv_class).is_some()
+    {
+        let mut anc: Option<String> = None;
+        let mut c = recv_class.to_string();
+        for _ in 0..64 {
+            let Some(sup) = vm.cp.superclass_of(&c) else {
+                break;
+            };
+            if sup == c || sup == "Ljava/lang/Object;" {
+                break;
+            }
+            if vm.cp.find_class(&sup).is_none() {
+                anc = Some(sup);
+                break;
+            }
+            c = sup;
+        }
+        if let Some(anc) = anc {
+            if let Some(v) = intrinsics::call_instance_intrinsic_mref(
+                vm,
+                &anc,
+                &anc,
+                &mref.name,
+                &mref.proto,
+                recv,
+                &slots[1..],
+            )? {
+                return Ok(InvokeTarget::Value(v));
+            }
         }
     }
 

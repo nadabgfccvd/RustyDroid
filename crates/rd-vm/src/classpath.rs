@@ -1015,6 +1015,13 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/view/View;",
         "Ljava/lang/Object;",
     ];
+    // android.widget.Chronometer extends TextView (ver TextView acima).
+    const CHRONOMETER: &[&str] = &[
+        "Landroid/widget/Chronometer;",
+        "Landroid/widget/TextView;",
+        "Landroid/view/View;",
+        "Ljava/lang/Object;",
+    ];
     const PROGRESSBAR: &[&str] = &[
         "Landroid/widget/ProgressBar;",
         "Landroid/view/View;",
@@ -1529,6 +1536,8 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Ljava/io/Reader;"
         | "Ljava/io/OutputStream;"
         | "Ljava/io/InputStream;" => Some(OBJECT),
+        "Ljava/io/RandomAccessFile;" => Some(OBJECT),
+        "Ljava/util/Timer;" | "Ljava/util/TimerTask;" => Some(OBJECT),
         "Ljava/io/FilterOutputStream;" => Some(&["Ljava/io/OutputStream;", "Ljava/lang/Object;"]),
         "Ljava/io/BufferedOutputStream;" => Some(&[
             "Ljava/io/FilterOutputStream;",
@@ -1875,6 +1884,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/os/Bundle;" => Some(OBJECT),
         "Landroid/os/Handler;" => Some(OBJECT),
         "Landroid/os/HandlerExecutor;" => Some(OBJECT),
+        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
         "Landroid/os/Looper;" => Some(OBJECT),
         "Landroid/view/Window;" => Some(OBJECT),
         "Landroid/view/ViewGroup$LayoutParams;" => Some(VIEWGROUP_LAYOUT_PARAMS),
@@ -1888,6 +1898,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Landroid/widget/ImageView;" => Some(IMAGEVIEW),
         "Landroid/view/SurfaceView;" => Some(SURFACEVIEW),
         "Landroid/widget/ImageButton;" => Some(IMAGEBUTTON),
+        "Landroid/widget/Chronometer;" => Some(CHRONOMETER),
         "Landroid/widget/ProgressBar;" => Some(PROGRESSBAR),
         "Landroid/widget/CompoundButton;" => Some(COMPOUND_BUTTON),
         "Landroid/widget/RadioButton;" => Some(RADIO_BUTTON),
@@ -2027,13 +2038,22 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
                 "Ljava/lang/Object;",
             ])
         }
+        "Ljava/util/concurrent/ScheduledThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ThreadPoolExecutor;",
+            "Ljava/util/concurrent/AbstractExecutorService;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/util/concurrent/SynchronousQueue;" => Some(&[
+            "Ljava/util/AbstractQueue;",
+            "Ljava/util/AbstractCollection;",
+            "Ljava/lang/Object;",
+        ]),
         "Landroid/text/method/BaseMovementMethod;" => Some(OBJECT),
         "Landroid/text/method/LinkMovementMethod;" => Some(&[
             "Landroid/text/method/BaseMovementMethod;",
             "Ljava/lang/Object;",
         ]),
         "Ljava/lang/Thread;" => Some(OBJECT),
-        "Landroid/os/HandlerThread;" => Some(&["Ljava/lang/Thread;", "Ljava/lang/Object;"]),
         "Ljava/util/logging/Logger;" => Some(OBJECT),
         "Ljava/lang/ThreadLocal;" => Some(OBJECT),
         "Ljava/lang/InheritableThreadLocal;" => {
@@ -2871,6 +2891,17 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Landroid/graphics/ComposeShader;" => {
             Some(&["Landroid/graphics/Shader;", "Ljava/lang/Object;"])
         }
+        // javax.crypto / java.security host classes (jcrypto.rs), restantes
+        "Ljavax/crypto/Mac;" | "Ljava/security/MessageDigest;" | "Ljava/security/SecureRandom;" => {
+            Some(OBJECT)
+        }
+        "Ljavax/crypto/spec/SecretKeySpec;" | "Ljavax/crypto/spec/IvParameterSpec;" => Some(OBJECT),
+        // org.json host classes (jjson.rs)
+        "Lorg/json/JSONObject;" | "Lorg/json/JSONArray;" => Some(OBJECT),
+        // java.nio host classes (jnio.rs)
+        "Ljava/nio/Buffer;" | "Ljava/nio/ByteOrder;" => Some(OBJECT),
+        "Ljava/nio/ByteBuffer;" => Some(&["Ljava/nio/Buffer;", "Ljava/lang/Object;"]),
+        "Ljava/util/BitSet;" => Some(OBJECT),
         _ => None,
     }
 }
@@ -2978,6 +3009,13 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Landroid/os/Parcelable;",
             "Ljava/lang/Cloneable;",
             "Ljava/lang/Comparable;",
+        ]),
+        "Ljava/util/TimerTask;" => Some(&["Ljava/lang/Runnable;"]),
+        "Ljava/io/RandomAccessFile;" => Some(&[
+            "Ljava/io/DataOutput;",
+            "Ljava/io/DataInput;",
+            "Ljava/io/Closeable;",
+            "Ljava/lang/AutoCloseable;",
         ]),
         "Ljava/io/Writer;" => Some(&[
             "Ljava/lang/Appendable;",
@@ -3240,6 +3278,27 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
         ]),
         "Ljava/util/concurrent/ExecutorService;" => Some(&["Ljava/util/concurrent/Executor;"]),
         "Landroid/os/HandlerExecutor;" => Some(&["Ljava/util/concurrent/Executor;"]),
+        "Ljava/util/concurrent/ScheduledExecutorService;" => Some(&[
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ScheduledThreadPoolExecutor;" => Some(&[
+            "Ljava/util/concurrent/ScheduledExecutorService;",
+            "Ljava/util/concurrent/ExecutorService;",
+            "Ljava/util/concurrent/Executor;",
+        ]),
+        "Ljava/util/concurrent/ScheduledFuture;" => Some(&[
+            "Ljava/util/concurrent/Future;",
+            "Ljava/util/concurrent/Delayed;",
+            "Ljava/lang/Comparable;",
+        ]),
+        "Ljava/util/concurrent/SynchronousQueue;" => Some(&[
+            "Ljava/util/concurrent/BlockingQueue;",
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
         "Ljava/util/ServiceLoader;" => Some(&["Ljava/lang/Iterable;"]),
         "Ljava/math/BigDecimal;" | "Ljava/math/BigInteger;" => {
             Some(&["Ljava/lang/Comparable;", "Ljava/io/Serializable;"])
@@ -3653,7 +3712,10 @@ pub fn unresolved_method(class: &str, name: &str, proto: &str) -> RdError {
 /// so here the platform (host) class wins too.
 fn is_shadowed_platform_stub(descriptor: &str, access_flags: u32) -> bool {
     const ACC_SYNTHETIC: u32 = 0x1000;
+    // `android.support.*` não é pacote de plataforma: é biblioteca embutida
+    // no APK (ex.: support v4 do Zoom, com utilitários R8 `synthetic`).
     access_flags & ACC_SYNTHETIC != 0
+        && !descriptor.starts_with("Landroid/support/")
         && ["Landroid/", "Ljava/", "Ljavax/", "Ldalvik/"]
             .iter()
             .any(|p| descriptor.starts_with(p))

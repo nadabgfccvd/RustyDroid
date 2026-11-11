@@ -57,6 +57,17 @@ pub(crate) fn instance_intrinsic(
                     vm.view_props
                         .insert((recv, "ctx:mBase".to_string()), base.clone());
                 }
+                // ContextThemeWrapper(context, themeResId): the theme is
+                // what getTheme()/obtainStyledAttributes must resolve
+                // against (theme_id_for_context reads rd_theme_override).
+                // Dropping it made Material's ThemeEnforcement reject
+                // wrapped contexts of apps with no application theme.
+                if sig == "(Landroid/content/Context;I)V" {
+                    if let Some(theme @ Value::Int(_)) = args.get(1) {
+                        vm.view_props
+                            .insert((recv, "rd_theme_override".to_string()), theme.clone());
+                    }
+                }
                 return Ok(Some(Value::Null));
             }
             ("getBaseContext", "()Landroid/content/Context;") => {

@@ -548,6 +548,12 @@ fn inflate_element_depth(
             ))
         })?;
     vm.attach_host_state(&desc, r)?;
+    if desc == VIEW_STUB {
+        // ViewStub começa GONE (como no Android); o XML pode sobrescrever.
+        if let Some(framework::HostObj::View { vis, .. }) = vm.fw.objects.get_mut(&r) {
+            *vis = framework::Vis::Gone;
+        }
+    }
     construct_inflated_view(vm, &desc, r, context)?;
     apply_attrs(vm, r, el, caps)?;
     let child_caps = caps_for_desc(vm, &desc, caps);
@@ -665,6 +671,9 @@ fn inflate_children(
 /// Nome de elemento AXML → descritor de classe host.
 /// Shorthand do Android (`<LinearLayout>`) OU caminho completo
 /// (`<android.widget.LinearLayout>`).
+/// `android.view.ViewStub`: placeholder que infla um layout sob demanda.
+pub(crate) const VIEW_STUB: &str = "Landroid/view/ViewStub;";
+
 fn view_desc_of(name: &str) -> Result<String, VmExit> {
     let known = match name {
         "View" => framework::VIEW,
@@ -676,6 +685,8 @@ fn view_desc_of(name: &str) -> Result<String, VmExit> {
         "androidx.recyclerview.widget.RecyclerView" => crate::m8::RECYCLER,
         "RecyclerView" => crate::m8::RECYCLER,
         "FrameLayout" => framework::FRAMELAYOUT,
+        "ViewStub" => VIEW_STUB,
+        "Chronometer" => "Landroid/widget/Chronometer;",
         "ProgressBar" => "Landroid/widget/ProgressBar;",
         "RadioButton" => "Landroid/widget/RadioButton;",
         "RadioGroup" => "Landroid/widget/RadioGroup;",
@@ -710,6 +721,25 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement, caps: AxisCaps) -> R
                     {
                         *slot = id as i32;
                     }
+                }
+            }
+            // ViewStub: layout a inflar e id da view inflada.
+            "layout" if vm.heap.class_of(r).map(|c| c == VIEW_STUB).unwrap_or(false) => {
+                if let Some(id) = resid_of(a) {
+                    crate::err::put_field_result(vm.heap.put_field(
+                        r,
+                        "rd_stub_layout",
+                        Value::Int(id as i32),
+                    ))?;
+                }
+            }
+            "inflatedId" if vm.heap.class_of(r).map(|c| c == VIEW_STUB).unwrap_or(false) => {
+                if let Some(id) = resid_of(a) {
+                    crate::err::put_field_result(vm.heap.put_field(
+                        r,
+                        "rd_stub_inflated_id",
+                        Value::Int(id as i32),
+                    ))?;
                 }
             }
             "text" => {
@@ -867,6 +897,12 @@ fn dimension_px(a: &XmlAttribute, cap: i32, eixo: &str) -> Result<Option<i32>, V
     match px {
         None => Ok(None),
         Some(f) if f >= 0.0 && f <= cap as f64 => Ok(Some(f as i32)),
+        // Margens negativas são legais no Android (sobreposição de layout, ex.:
+        // o teclado do Zoom usa marginTop de -8dp); limitadas pelo teto do eixo.
+        // Largura/altura negativas continuam sendo erro (validação do main).
+        Some(f) if f < 0.0 && eixo.contains("margin") && f >= -(cap as f64) => {
+            Ok(Some(f as i32))
+        }
         Some(f) => Err(inflate_error(format!(
             "dimensão de layout {f}px excede o viewport de {cap}px no eixo {eixo} (hostil ou bug do app)"
         ))),
@@ -897,7 +933,10 @@ fn ref_dimension_px(vm: &Engine, attr: &str, resid: u32, cap: i32) -> Result<i32
                     _ => framework::DENSITY, // dip/sp/pt/in/mm → escala do viewport
                 };
                 let f = ((value as f64) * (scale as f64)).round();
-                if f < 0.0 || f > cap as f64 {
+                // Margens podem ser negativas (sobreposição legal); demais
+                // dimensões mantêm a janela [0, cap].
+                let lower = if attr.contains("margin") { -(cap as f64) } else { 0.0 };
+                if f < lower || f > cap as f64 {
                     return Err(inflate_error(format!(
                         "android:{attr}=@0x{resid:08x}: dimensão {f}px excede o viewport de {cap}px no eixo (hostil ou bug do app)"
                     )));

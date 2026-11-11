@@ -429,10 +429,14 @@ fn call_run(vm: &mut Engine, r: ObjRef) -> Result<(), VmExit> {
     }
     let Some((d, def, m)) = vm.cp.resolve_method(&class, "run", "()V") else {
         // HandlerThread without a DEX run(): its body is the Looper drain
-        // (handler_thread.rs), so there is nothing to run here.
-        if vm
-            .cp
-            .is_subtype(&class, crate::handler_thread::HANDLER_THREAD)
+        // (handler_thread.rs), so there is nothing to run here. A platform
+        // Thread subclass with no DEX run() of its own (the Looper-drain
+        // threads above) terminates immediately, as Thread.run does with no target.
+        if vm.cp.find_class(&class).is_none()
+            || vm.cp.is_subtype(&class, THREAD)
+            || vm
+                .cp
+                .is_subtype(&class, crate::handler_thread::HANDLER_THREAD)
         {
             return Ok(());
         }
@@ -749,7 +753,8 @@ pub(crate) fn concurrent_intrinsic(
             }
             Value::Null
         }
-        "getCount" => Value::Int(latch_count(vm, recv).max(0)),
+        // JDK: `long getCount()`.
+        "getCount" => Value::Long(latch_count(vm, recv).max(0) as i64),
         "await" => {
             latch_await(vm, recv)?;
             if name == "await" && !args.is_empty() {

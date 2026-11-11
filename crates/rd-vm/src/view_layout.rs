@@ -224,6 +224,23 @@ pub(crate) fn static_intrinsic(
     name: &str,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    // View.inflate(Context, @LayoutRes int, ViewGroup): equivale a
+    // LayoutInflater.from(ctx).inflate(res, root); attachToRoot = (root != null).
+    if class == "Landroid/view/View;" && name == "inflate" && args.len() == 3 {
+        let context = match &args[0] {
+            Value::Obj(c) => Some(*c),
+            _ => None,
+        };
+        let resid = args[1].as_int()? as u32;
+        let root = match &args[2] {
+            Value::Obj(r) => Some(*r),
+            _ => None,
+        };
+        let attach = root.is_some();
+        let view =
+            crate::inflate::inflate_resource_into_with_context(vm, resid, root, attach, context)?;
+        return Ok(Some(Value::Obj(view)));
+    }
     if class == "Landroid/view/Gravity;" && name == "getAbsoluteGravity" && args.len() == 2 {
         return Ok(Some(Value::Int(absolute_gravity(
             args[0].as_int()?,
@@ -909,8 +926,71 @@ pub(crate) fn instance_intrinsic(
         };
         return Ok(Some(value));
     }
+    if mref_class == crate::inflate::VIEW_STUB {
+        return match (name, sig) {
+            ("inflate", "()Landroid/view/View;") => view_stub_inflate(vm, recv),
+            ("getInflatedId", "()I") => {
+                Ok(Some(Value::Int(stub_int(vm, recv, "rd_stub_inflated_id"))))
+            }
+            ("getLayoutResource", "()I") => {
+                Ok(Some(Value::Int(stub_int(vm, recv, "rd_stub_layout"))))
+            }
+            ("setInflatedId", "(I)V") | ("setLayoutResource", "(I)V") => {
+                let field = if name == "setInflatedId" {
+                    "rd_stub_inflated_id"
+                } else {
+                    "rd_stub_layout"
+                };
+                let id = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+                crate::err::put_field_result(vm.heap.put_field(recv, field, Value::Int(id)))?;
+                Ok(Some(Value::Null))
+            }
+            _ => Ok(None),
+        };
+    }
     if mref_class == LAYOUT_INFLATER {
         return match (name, sig) {
+            // `protected LayoutInflater(Context)`: subclasses (ex.: o
+            // AsyncLayoutInflatePlus do Zoom) chamam isto via invoke-direct.
+            ("<init>", "(Landroid/content/Context;)V") => {
+                let context = match args.first() {
+                    Some(Value::Obj(c)) => Value::Obj(*c),
+                    _ => Value::Null,
+                };
+                crate::err::put_field_result(vm.heap.put_field(recv, "mContext", context))?;
+                crate::err::put_field_result(vm.heap.put_field(recv, "mFactory", Value::Null))?;
+                crate::err::put_field_result(vm.heap.put_field(recv, "mFactory2", Value::Null))?;
+                Ok(Some(Value::Null))
+            }
+            // `protected LayoutInflater(LayoutInflater original, Context newContext)`:
+            // copia os factories do original e usa o novo contexto.
+            ("<init>", "(Landroid/view/LayoutInflater;Landroid/content/Context;)V") => {
+                let original = match args.first() {
+                    Some(Value::Obj(o)) => *o,
+                    _ => {
+                        return Err(VmExit::Exception(Throwable::new(
+                            "Ljava/lang/NullPointerException;",
+                            "LayoutInflater(original, context): original nulo",
+                        )))
+                    }
+                };
+                let context = match args.get(1) {
+                    Some(Value::Obj(c)) => Value::Obj(*c),
+                    _ => Value::Null,
+                };
+                let f1 = vm
+                    .heap
+                    .get_field(original, "mFactory")
+                    .unwrap_or(Value::Null);
+                let f2 = vm
+                    .heap
+                    .get_field(original, "mFactory2")
+                    .unwrap_or(Value::Null);
+                crate::err::put_field_result(vm.heap.put_field(recv, "mContext", context))?;
+                crate::err::put_field_result(vm.heap.put_field(recv, "mFactory", f1))?;
+                crate::err::put_field_result(vm.heap.put_field(recv, "mFactory2", f2))?;
+                Ok(Some(Value::Null))
+            }
             ("getFactory", "()Landroid/view/LayoutInflater$Factory;") => Ok(Some(
                 vm.heap.get_field(recv, "mFactory").unwrap_or(Value::Null),
             )),
@@ -2440,4 +2520,67 @@ fn host_dispatch_draw(vm: &mut Engine, recv: ObjRef, c: ObjRef) -> Result<(), Vm
     })();
     vm.fw.view_dispatch_depth = vm.fw.view_dispatch_depth.saturating_sub(1);
     res
+}
+
+fn stub_int(vm: &Engine, r: ObjRef, field: &str) -> i32 {
+    match vm.heap.get_field(r, field) {
+        Ok(Value::Int(i)) => i,
+        _ => 0,
+    }
+}
+
+/// `ViewStub.inflate()`: infla `android:layout` no lugar do stub, no mesmo
+/// índice do pai, com o `LayoutParams` do stub e o `inflatedId` aplicado.
+fn view_stub_inflate(vm: &mut Engine, stub: ObjRef) -> Result<Option<Value>, VmExit> {
+    if stub_int(vm, stub, "rd_stub_done") == 1 {
+        return Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/IllegalStateException;",
+            "ViewStub already inflated.",
+        )));
+    }
+    let parent = match vm.fw.get(stub) {
+        Some(HostObj::View {
+            parent: Some(p), ..
+        }) => *p,
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/IllegalStateException;",
+                "ViewStub must have a non null ViewGroup viewParent",
+            )))
+        }
+    };
+    let resid = stub_int(vm, stub, "rd_stub_layout");
+    if resid == 0 {
+        return Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/IllegalArgumentException;",
+            "ViewStub must have a valid layoutResource",
+        )));
+    }
+    let context = vm.fw.current_activity;
+    let inflated =
+        crate::inflate::inflate_resource_into_with_context(vm, resid as u32, None, false, context)?;
+    if let Ok(params @ Value::Obj(_)) = vm.heap.get_field(stub, "mLayoutParams") {
+        crate::err::put_field_result(vm.heap.put_field(inflated, "mLayoutParams", params))?;
+    }
+    let inflated_id = stub_int(vm, stub, "rd_stub_inflated_id");
+    if inflated_id != 0 {
+        if let Some(HostObj::View { id, .. }) = vm.fw.objects.get_mut(&inflated) {
+            *id = inflated_id;
+        }
+    }
+    // Troca na posição do stub: remove o stub e encaixa a view inflada no mesmo índice.
+    let index = match vm.fw.get(parent) {
+        Some(HostObj::View { children, .. }) => children.iter().position(|c| *c == stub),
+        _ => None,
+    };
+    if let Some(HostObj::View { children, .. }) = vm.fw.objects.get_mut(&parent) {
+        children.retain(|c| *c != stub);
+    }
+    if let Some(HostObj::View { parent: p, .. }) = vm.fw.objects.get_mut(&stub) {
+        *p = None;
+    }
+    let index = index.map(|i| i as i32).unwrap_or(-1);
+    crate::framework::attach_child_at(vm, parent, inflated, index)?;
+    crate::err::put_field_result(vm.heap.put_field(stub, "rd_stub_done", Value::Int(1)))?;
+    Ok(Some(Value::Obj(inflated)))
 }
