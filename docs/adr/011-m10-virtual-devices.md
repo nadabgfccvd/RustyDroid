@@ -1,5 +1,9 @@
 # ADR 011 — M10 virtual devices, sensors, media & deterministic agent controls
 
+- **Status:** aceito e implementado (M10 concluído em 2026-10-25, PR #201)
+- **Data:** 2026-10-25
+
+
 ## Context
 
 Milestone M10 in `RustyDroid.md` (PARTE 3 + PARTE 4) specifies virtual peripheral

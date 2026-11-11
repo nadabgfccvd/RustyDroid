@@ -1,28 +1,37 @@
 name: Docs site (mdBook)
 
 # Publishes docs/ as a static mdBook site on GitHub Pages (M12).
-# The book scaffold (docs/book.toml + docs/SUMMARY.md) is the one proposed in
-# the M12 governance PR; this workflow only builds and deploys it.
 #
-# Required one-time setting: Settings → Pages → Build and deployment →
-# Source: "GitHub Actions", plus the repository variable `PAGES_ENABLED=true`.
+# ## Why it deploys to `gh-pages` instead of using `deploy-pages`
 #
-# Until that is done, this workflow still BUILDS the book on every docs change
-# (that is the real regression gate for broken SUMMARY.md/paths and it must
-# stay green), but it does not try to publish: `configure-pages` fails with
-# "Get Pages site failed" when Pages is not enabled, which used to turn every
-# docs commit on `main` red for a repository *setting* nobody had flipped.
+# Pages for this repository is already enabled in **legacy** mode with
+# `source = gh-pages:/` (`GET /repos/:owner/:repo/pages` reports
+# `build_type: legacy`). That is normally a handicap, but here it is the
+# pragmatic path: publishing is a plain branch push, so the workflow needs only
+# `contents: write` and no maintainer has to flip a repository setting for the
+# site to come alive.
 #
-# Sentinel notes (RD Sentinel `_workflow_findings`):
-# this job requests `pages: write` / `id-token: write`, so every action is
-# pinned to a full commit SHA (an unpinned ref next to a write permission is a
-# P1 finding). No `${{ }}` expression appears inside a `run:` script.
+# The previous revision gated everything behind `vars.PAGES_ENABLED == 'true'`
+# and produced nothing while that variable was unset — the site 404'd at the
+# root for months. This revision always builds and, on `main`, always publishes.
+#
+# `gh-pages` is shared: `bench.yml` keeps its history at `dev/bench/` there, so
+# the deploy preserves everything except the site payload and takes only the
+# root. A push race with the bench job is handled by retrying the whole
+# fetch → merge → push cycle.
+#
+# ## RD Sentinel notes (`_workflow_findings`)
+# The deploy job requests `contents: write`, so every action is pinned to a full
+# commit SHA. No `${{ }}` expression appears inside a `run:` script; values
+# arrive through `env:`. The token is never written to a remote URL — it goes
+# into a per-repository `http.extraheader`, which git does not echo.
 
 on:
   push:
     branches: [main]
     paths:
       - "docs/**"
+      - "scripts/gen_adr_index.py"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -43,6 +52,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # The ADR index is generated from docs/adr/*.md; a stale copy means the
+      # published book silently omits decisions. Same gate shape as the
+      # generated compatibility scoreboard.
+      - name: ADR index is in sync with docs/adr/
+        run: python3 scripts/gen_adr_index.py
+
       - name: Install mdBook (pinned)
         run: cargo install mdbook --locked --version 0.5.4
 
@@ -52,34 +67,80 @@ jobs:
       - name: Fail if the book produced no index
         run: test -f target/mdbook/index.html
 
-      # Always: proof that the book builds, downloadable from the run.
+      # The ADR index must exist as a page, not just as a file on disk.
+      - name: Header exists in the published ADR index
+        # mdBook renders `adr/README.md` as `adr/index.html`, not `adr/README.html`.
+        run: grep -q "Índice de Architecture Decision Records" target/mdbook/adr/index.html
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mdbook-site
           path: target/mdbook
 
-      # Publish path only exists once a maintainer enables Pages and sets
-      # the `PAGES_ENABLED` repository variable. See the header comment.
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-        if: vars.PAGES_ENABLED == 'true'
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        if: vars.PAGES_ENABLED == 'true'
-        with:
-          path: target/mdbook
-
   deploy:
-    name: deploy
-    if: vars.PAGES_ENABLED == 'true'
+    name: deploy to gh-pages
     needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
-      pages: write
-      id-token: write
+      contents: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: https://nadabgfccvd.github.io/RustyDroid/
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b3a2a2f88c # v8.0.1
+        with:
+          name: mdbook-site
+          path: site
+
+      - name: Publish to gh-pages (preserving dev/bench)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          SITE: ${{ github.workspace }}/site
+        run: |-
+          set -euo pipefail
+          export GIT_AUTHOR_NAME="github-actions[bot]"
+          export GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          auth="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
+
+          publish() {
+            work="$(mktemp -d)"
+            cd "$work"
+            git init -q .
+            git remote add origin "https://github.com/${REPO}.git"
+            git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ${auth}"
+            git fetch --depth=1 origin gh-pages
+            git checkout -q -B gh-pages FETCH_HEAD
+
+            # Keep everything except the site payload (notably dev/bench/).
+            git rm -rq --cached . || true
+            find . -mindepth 1 -maxdepth 1 ! -name .git ! -name dev -exec rm -rf {} +
+
+            cp -R "${SITE}/." .
+            rm -rf dev/bench/.git 2>/dev/null || true
+            touch .nojekyll
+
+            git add -A
+            if git diff --cached --quiet; then
+              echo "::notice::gh-pages already up to date"
+              return 0
+            fi
+            git commit -q -m "docs: publish mdBook site for ${SHA:0:7}"
+            git push -q origin gh-pages
+          }
+
+          for attempt in 1 2 3; do
+            if publish; then
+              echo "::notice::published gh-pages on attempt ${attempt}"
+              exit 0
+            fi
+            echo "::warning::gh-pages publish attempt ${attempt} lost a race; retrying"
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not publish gh-pages after 3 attempts"
+          exit 1
