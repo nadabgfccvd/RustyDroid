@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794372820810,
+  "lastUpdate": 1794372851275,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7037,6 +7037,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3422,
             "range": "± 166",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c699acd33092751322903b094b013c63932f2947",
+          "message": "Merge PR #641 — feat(m12): compatibilidade viva publicada com o site\n\ndocs/compat-live.md + compat-badge.svg renderizados do artefato da última run noturna; docs.yml como único escritor na gh-pages, com schedule diário.",
+          "timestamp": "2026-11-11T01:53:03-03:00",
+          "tree_id": "a8c1bba89440fef4bb27f483df97d9240126a077",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/c699acd33092751322903b094b013c63932f2947"
+        },
+        "date": 1794372849868,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2953,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2955,
+            "range": "± 75",
             "unit": "ns/iter"
           }
         ]
