@@ -630,7 +630,7 @@ rustydroid/                    # monorepo Cargo (workspace)
 | ci.yml | PR/push | fmt, clippy `-D warnings`, test (unit+integration), MSRV check, cargo-deny (licenças/advisories), llvm-cov→Codecov |
 | fuzz.yml | nightly | cargo-fuzz nos parsers (dex/axml/arsc/zip/elf) + corpus persistido |
 | nightly-compat.yml | cron | roda golden APK suite → publica compat-matrix.md + métricas no GH Pages (badge viva) |
-| bench.yml | push main | criterion + github-action-benchmark (fail em regressão > 10%) |
+| bench.yml | push main | benchmark com calibração por runner + github-action-benchmark (fail em regressão > 10%; ADR 038) |
 | release.yml | tag v* | cargo-dist (bins linux), release-please (changelog/semver), publish crates.io (libs), docs deploy |
 
 ## 3.3 Governança & versões
