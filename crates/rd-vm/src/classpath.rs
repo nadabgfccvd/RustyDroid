@@ -536,7 +536,7 @@ impl Classpath {
     }
 
     /// (name, type) de um field_id (helper de `resolve_static_field`).
-    fn field_info(&self, dex_idx: usize, idx: u32) -> Option<(String, String, String)> {
+    pub(crate) fn field_info(&self, dex_idx: usize, idx: u32) -> Option<(String, String, String)> {
         let d = self.dexes.get(dex_idx)?;
         let f = d.field(idx).ok()?;
         Some((

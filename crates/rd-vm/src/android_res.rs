@@ -419,6 +419,26 @@ fn locale_list_items(vm: &Engine, r: ObjRef) -> Vec<Value> {
 
 // ── arsc-backed lookups ────────────────────────────────────────────────
 
+/// `Resources.getColorStateList`: cor simples vira `ColorStateList.valueOf`
+/// (um estado vazio). Seletor XML (`res/color/*.xml`) ainda não é modelado:
+/// falha visível com o caminho, não um `null` silencioso.
+fn color_state_list_of(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
+    match value_of(vm, id)? {
+        ResolvedValue::Color(c) => Ok(Value::Obj(crate::android_drawable::csl_new(
+            vm,
+            vec![Vec::new()],
+            vec![c],
+        )?)),
+        ResolvedValue::Str(path) if path.ends_with(".xml") => {
+            Err(VmExit::Error(crate::err::not_implemented(format!(
+                "Resources.getColorStateList(0x{:x}): seletor de cor {path} ainda não é modelado",
+                id as u32
+            ))))
+        }
+        _ => Err(not_found(id)),
+    }
+}
+
 fn not_found(id: i32) -> VmExit {
     exc(
         "Landroid/content/res/Resources$NotFoundException;",
@@ -445,7 +465,7 @@ fn framework_color(id: u32) -> Option<ResolvedValue> {
     FRAMEWORK_COLORS
         .iter()
         .find(|(rid, _)| *rid == id)
-        .map(|(_, argb)| ResolvedValue::Integer(*argb as i32))
+        .map(|(_, argb)| ResolvedValue::Color(*argb as i32))
 }
 
 fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
@@ -476,7 +496,7 @@ fn dimension_px(vm: &Engine, v: &ResolvedValue, id: i32) -> Result<f32, VmExit> 
             ComplexUnit::Mm => value * d.dpi as f32 / 25.4,
             _ => return Err(not_found(id)),
         },
-        ResolvedValue::Integer(i) => *i as f32,
+        ResolvedValue::Integer(i) | ResolvedValue::Color(i) => *i as f32,
         ResolvedValue::Float(f) => *f,
         _ => {
             let _ = vm;
@@ -538,6 +558,8 @@ fn fill_typed_value(vm: &mut Engine, tv: ObjRef, id: i32, v: &ResolvedValue) -> 
         ResolvedValue::Float(f) => (4, f.to_bits() as i32, None),
         ResolvedValue::Dimension { .. } => (5, dimension_px(vm, v, id)?.round() as i32, None),
         ResolvedValue::Integer(i) => (16, *i, None),
+        // TYPE_INT_COLOR_ARGB8 (TypedValue.TYPE_FIRST_COLOR_INT)
+        ResolvedValue::Color(i) => (28, *i, None),
         ResolvedValue::Boolean(b) => (18, *b as i32, None),
     };
     put(vm, tv, "type", Value::Int(ty))?;
@@ -800,7 +822,7 @@ pub(crate) fn instance_intrinsic(
                     // object (XML drawable rasterization is handled by
                     // the layout inflater path, not Resources).
                     match value_of(vm, int(0))? {
-                        ResolvedValue::Integer(i) => {
+                        ResolvedValue::Integer(i) | ResolvedValue::Color(i) => {
                             let d = vm.heap.alloc_instance(
                                 "Landroid/graphics/drawable/ColorDrawable;".to_string(),
                                 vec![("rd_color".to_string(), Value::Int(i))],
@@ -813,13 +835,20 @@ pub(crate) fn instance_intrinsic(
                         )?),
                     }
                 }
+                ("getColorStateList", "(I)Landroid/content/res/ColorStateList;")
+                | (
+                    "getColorStateList",
+                    "(ILandroid/content/res/Resources$Theme;)Landroid/content/res/ColorStateList;",
+                ) => color_state_list_of(vm, int(0))?,
                 ("getInteger", "(I)I") | ("getColor", _) => match value_of(vm, int(0))? {
-                    ResolvedValue::Integer(i) => Value::Int(i),
+                    ResolvedValue::Integer(i) | ResolvedValue::Color(i) => Value::Int(i),
                     _ => return Err(not_found(int(0))),
                 },
                 ("getBoolean", "(I)Z") => match value_of(vm, int(0))? {
                     ResolvedValue::Boolean(b) => Value::Int(b as i32),
-                    ResolvedValue::Integer(i) => Value::Int((i != 0) as i32),
+                    ResolvedValue::Integer(i) | ResolvedValue::Color(i) => {
+                        Value::Int((i != 0) as i32)
+                    }
                     _ => return Err(not_found(int(0))),
                 },
                 ("getFloat", "(I)F") => match value_of(vm, int(0))? {
@@ -1320,7 +1349,7 @@ pub(crate) fn instance_intrinsic(
                     put(vm, d, "rd_visible", Value::Int(1))?;
                     Value::Obj(d)
                 }
-                ResolvedValue::Integer(color) => {
+                ResolvedValue::Integer(color) | ResolvedValue::Color(color) => {
                     let d = vm
                         .heap
                         .alloc_instance(
@@ -1423,7 +1452,7 @@ pub(crate) fn instance_intrinsic(
             format_string(vm, t, &args[1])?
         }
         ("getColor", "(I)I") => match value_of(vm, int(0))? {
-            ResolvedValue::Integer(i) => Value::Int(i),
+            ResolvedValue::Integer(i) | ResolvedValue::Color(i) => Value::Int(i),
             _ => return Err(not_found(int(0))),
         },
         _ => return Ok(None),

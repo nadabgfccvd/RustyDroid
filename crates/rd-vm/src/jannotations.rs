@@ -114,7 +114,49 @@ pub(crate) fn class_generic_signature(vm: &Engine, desc: &str) -> Option<String>
     None
 }
 
-fn desc_of_class_obj(vm: &Engine, c: ObjRef) -> Option<String> {
+/// Assinatura genérica de um campo (`dalvik.annotation.Signature` no
+/// `annotations_directory` da classe declarante). `None` sem a anotação.
+pub(crate) fn field_generic_signature(vm: &Engine, desc: &str, field: &str) -> Option<String> {
+    let (di, def) = vm.cp.find_class(desc)?;
+    if def.annotations_off == 0 {
+        return None;
+    }
+    let dex = &vm.cp.dexes[di];
+    let dir = parse_annotations_directory(&dex.data, def.annotations_off).ok()?;
+    for (fidx, set_off) in &dir.field_annotations {
+        let Some((_, fname, _)) = vm.cp.field_info(di, *fidx) else {
+            continue;
+        };
+        if fname != field {
+            continue;
+        }
+        let offs = parse_annotation_set_item(&dex.data, *set_off).ok()?;
+        for o in offs {
+            let Ok(it) = parse_annotation_item(&dex.data, o) else {
+                continue;
+            };
+            if it.visibility != Visibility::System
+                || dex.type_str(it.annotation.type_idx) != "Ldalvik/annotation/Signature;"
+            {
+                continue;
+            }
+            for el in &it.annotation.elements {
+                if let EncodedValue::Array(items) = &el.value {
+                    let mut sig = String::new();
+                    for item in items {
+                        if let EncodedValue::String(idx) = item {
+                            sig.push_str(dex.string(*idx));
+                        }
+                    }
+                    return Some(sig);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn desc_of_class_obj(vm: &Engine, c: ObjRef) -> Option<String> {
     match vm.heap.get_field(c, "class_name") {
         Ok(Value::Obj(s)) => vm.heap.as_str(s).ok().map(str::to_string),
         _ => None,
@@ -246,7 +288,11 @@ fn to_value(vm: &mut Engine, di: usize, v: &EncodedValue) -> Result<Value, VmExi
 }
 
 /// Materializes an annotation instance (explicit values + defaults).
-fn instance(vm: &mut Engine, di: usize, a: &EncodedAnnotation) -> Result<ObjRef, VmExit> {
+pub(crate) fn instance(
+    vm: &mut Engine,
+    di: usize,
+    a: &EncodedAnnotation,
+) -> Result<ObjRef, VmExit> {
     let ty = vm.cp.dexes[di].type_str(a.type_idx).to_string();
     let mut fields: Vec<(String, Value)> = vec![("rd_annotation".into(), Value::Int(1))];
     // Defaults: @dalvik.annotation.AnnotationDefault on the annotation type.
@@ -390,6 +436,114 @@ pub(crate) fn method_intrinsic(
     };
     let annotations = method_annotations(vm, &decl, &method, &proto);
     let matching: Vec<(usize, EncodedAnnotation)> = annotations
+        .into_iter()
+        .filter(|(di, annotation)| {
+            want.as_deref()
+                .map(|wanted| wanted == vm.cp.dexes[*di].type_str(annotation.type_idx))
+                .unwrap_or(true)
+        })
+        .collect();
+    Ok(Some(match name {
+        "isAnnotationPresent" => Value::Int(!matching.is_empty() as i32),
+        "getAnnotation" | "getDeclaredAnnotation" => match matching.first() {
+            Some((di, annotation)) => Value::Obj(instance(vm, *di, annotation)?),
+            None => Value::Null,
+        },
+        _ => {
+            let mut values = Vec::with_capacity(matching.len());
+            for (di, annotation) in &matching {
+                values.push(Value::Obj(instance(vm, *di, annotation)?));
+            }
+            let array = vm
+                .heap
+                .alloc_array(
+                    ElemKind::Obj,
+                    values.len(),
+                    "[Ljava/lang/annotation/Annotation;",
+                )
+                .map_err(crate::err::oom_throwable)?;
+            *vm.heap
+                .array_elems_mut(array)
+                .map_err(|e| crate::err::vm_error("VM_TYPE_ERROR", e))? = values;
+            Value::Obj(array)
+        }
+    }))
+}
+
+/// Anotações de runtime de um campo declarado (`annotations_directory` da
+/// classe declarante), com o índice do DEX que as contém.
+fn field_runtime_annotations(
+    vm: &Engine,
+    desc: &str,
+    field: &str,
+) -> Vec<(usize, EncodedAnnotation)> {
+    let Some((di, def)) = vm.cp.find_class(desc) else {
+        return Vec::new();
+    };
+    if def.annotations_off == 0 {
+        return Vec::new();
+    }
+    let dex = &vm.cp.dexes[di];
+    let Ok(dir) = parse_annotations_directory(&dex.data, def.annotations_off) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (fidx, set_off) in &dir.field_annotations {
+        let Some((_, fname, _)) = vm.cp.field_info(di, *fidx) else {
+            continue;
+        };
+        if fname != field {
+            continue;
+        }
+        let Ok(offs) = parse_annotation_set_item(&dex.data, *set_off) else {
+            continue;
+        };
+        out.extend(
+            offs.into_iter()
+                .filter_map(|o| parse_annotation_item(&dex.data, o).ok())
+                .filter(|it| it.visibility == Visibility::Runtime)
+                .map(|it| (di, it.annotation)),
+        );
+    }
+    out
+}
+
+/// `Field.getAnnotation`/`getDeclaredAnnotation`/`isAnnotationPresent`/
+/// `getAnnotations`/`getDeclaredAnnotations` sobre campos declarados no DEX.
+/// `None` quando o nome não é uma dessas consultas.
+pub(crate) fn field_annotation_intrinsic(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    decl: &str,
+    field: &str,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let query = match (name, sig) {
+        ("getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;")
+        | ("getDeclaredAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;")
+        | ("isAnnotationPresent", "(Ljava/lang/Class;)Z") => true,
+        ("getAnnotations", "()[Ljava/lang/annotation/Annotation;")
+        | ("getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;") => false,
+        _ => return Ok(None),
+    };
+    let want = if query {
+        let Some(Value::Obj(class_obj)) = args.first() else {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "annotation type == null",
+            )));
+        };
+        Some(desc_of_class_obj(vm, *class_obj).ok_or_else(|| {
+            VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "annotation type has no class descriptor",
+            ))
+        })?)
+    } else {
+        None
+    };
+    let matching: Vec<(usize, EncodedAnnotation)> = field_runtime_annotations(vm, decl, field)
         .into_iter()
         .filter(|(di, annotation)| {
             want.as_deref()

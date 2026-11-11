@@ -71,7 +71,11 @@ fn new_int_array(vm: &mut Engine, v: &[i32]) -> Result<ObjRef, VmExit> {
 
 // ── ColorStateList ─────────────────────────────────────────────────────
 
-fn csl_new(vm: &mut Engine, states: Vec<Vec<i32>>, colors: Vec<i32>) -> Result<ObjRef, VmExit> {
+pub(crate) fn csl_new(
+    vm: &mut Engine,
+    states: Vec<Vec<i32>>,
+    colors: Vec<i32>,
+) -> Result<ObjRef, VmExit> {
     let r = vm.heap.alloc_instance(CSL.to_string(), Vec::new())?;
     csl_set(vm, r, states, colors)?;
     Ok(r)

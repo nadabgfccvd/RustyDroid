@@ -1025,6 +1025,10 @@ pub struct HostState {
     frag_txs: HashMap<ObjRef, FragTxState>,
     /// activity em execução (o app trivial M3 tem uma por vez)
     pub current_activity: Option<ObjRef>,
+    /// Activity cujo `onCreate` está rodando no lançamento. `finish()` nesse
+    /// intervalo só marca `finished`; o lançamento encerra a Activity depois
+    /// do pós-`onCreate` (como o ActivityThread), sem destruí-la no meio.
+    pub launching_activity: Option<ObjRef>,
     /// Paused activities in this bounded single-task model; GC roots via HostState.
     pub activity_stack: Vec<SuspendedActivity>,
     /// package do app (preenchido no launch_app; getPackageName)
@@ -1752,10 +1756,21 @@ impl Engine {
             }
             _ => return Ok(()),
         }
+        // Ainda em onCreate do próprio lançamento: a destruição fica para o
+        // fim do lançamento (ver `launch_activity_inner`).
+        if self.fw.launching_activity == Some(activity) {
+            return Ok(());
+        }
         let class = self.heap.class_of(activity)?.to_string();
         self.run_lifecycle_step(&class, activity, "onPause", "()V", Vec::new())?;
         self.run_lifecycle_step(&class, activity, "onStop", "()V", Vec::new())?;
         self.run_lifecycle_step(&class, activity, "onDestroy", "()V", Vec::new())?;
+        self.restore_previous_after_finish(activity)
+    }
+
+    /// Após o `finish` de `activity`, a Activity anterior da pilha volta a
+    /// ser a atual (onRestart/onStart/onResume), se `activity` era a atual.
+    fn restore_previous_after_finish(&mut self, activity: ObjRef) -> Result<(), VmExit> {
         if self.fw.current_activity == Some(activity) {
             while let Some(state) = self.fw.activity_stack.pop() {
                 if !matches!(
@@ -1912,13 +1927,27 @@ impl Engine {
             self.call(d, def, &m, vec![Value::Obj(r)])?;
         }
         // lifecycle (só o que o DEX declara — super default é no-op)
-        self.run_lifecycle_step(
+        let outer_launching = self.fw.launching_activity.replace(r);
+        let created = self.run_lifecycle_step(
             activity_desc,
             r,
             "onCreate",
             "(Landroid/os/Bundle;)V",
             vec![Value::Null],
-        )?;
+        );
+        self.fw.launching_activity = outer_launching;
+        created?;
+        if matches!(
+            self.fw.get(r),
+            Some(HostObj::Activity { finished: true, .. })
+        ) {
+            // finish() dentro de onCreate: como no ActivityThread, a Activity
+            // nunca chega a onStart/onResume. É destruída depois do pós-onCreate
+            // e a anterior da pilha volta a ser a atual.
+            self.run_lifecycle_step(activity_desc, r, "onDestroy", "()V", Vec::new())?;
+            self.restore_previous_after_finish(r)?;
+            return Ok(r);
+        }
         self.run_lifecycle_step(activity_desc, r, "onStart", "()V", Vec::new())?;
         self.run_lifecycle_step(activity_desc, r, "onResume", "()V", Vec::new())?;
         // handleResumeActivity → makeVisible: ViewRootImpl attaches the

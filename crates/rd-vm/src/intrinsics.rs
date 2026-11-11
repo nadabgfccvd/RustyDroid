@@ -2154,8 +2154,39 @@ fn reflect_field_intrinsic(
         }
         ("getName", "()Ljava/lang/String;") => Ok(Some(Value::Obj(alloc_string(vm, field_name)?))),
         ("getModifiers", "()I") => Ok(Some(Value::Int(modifiers as i32))),
+        // Campo gerado pelo compilador (ex.: `this$0` de classe interna): o javac
+        // usa `this$…` e `$…`, sem marca no DEX que o modelo leia. Gson exclui
+        // campos sintéticos (Excluder.excludeField).
+        ("isSynthetic", "()Z") => Ok(Some(Value::Int(i32::from(
+            field_name.starts_with("this$") || field_name.starts_with('$'),
+        )))),
         ("getType", "()Ljava/lang/Class;") => {
             Ok(Some(Value::Obj(vm.class_object_for(&field_type)?)))
+        }
+        // Tipo genérico do campo: sem a Signature (dalvik.annotation.Signature)
+        // é a própria classe. Com `<…>` ou tipo variável, ParameterizedType/
+        // TypeVariable ainda não são modelados: falha visível, não a classe crua.
+        (
+            "getAnnotation" | "getDeclaredAnnotation" | "isAnnotationPresent" | "getAnnotations"
+            | "getDeclaredAnnotations",
+            _,
+        ) => crate::jannotations::field_annotation_intrinsic(
+            vm,
+            name,
+            sig,
+            &declaring_class,
+            &field_name,
+            args,
+        ),
+        ("getGenericType", "()Ljava/lang/reflect/Type;") => {
+            match crate::jannotations::field_generic_signature(vm, &declaring_class, &field_name) {
+                Some(sig) if sig.contains('<') || sig.starts_with('T') || sig.starts_with("[T") => {
+                    Err(VmExit::Error(crate::err::not_implemented(format!(
+                        "Field.getGenericType de {declaring_class}.{field_name} ({sig}): tipos genéricos de campo ainda não são modelados"
+                    ))))
+                }
+                _ => Ok(Some(Value::Obj(vm.class_object_for(&field_type)?))),
+            }
         }
         ("get", "(Ljava/lang/Object;)Ljava/lang/Object;") => {
             if (declaring_class == UNSAFE_CLASS || declaring_class == "Ljdk/internal/misc/Unsafe;")
