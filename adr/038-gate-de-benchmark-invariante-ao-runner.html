@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>ADR 038 — Gate de benchmark invariante à classe de runner (calibração normalizada) - RustyDroid Documentation</title>
+        <title>ADR 038 — Gate de benchmark por contagem de instruções (não por tempo de parede) - RustyDroid Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-95e9dc97.js";
+            window.path_to_searchindex_js = "../searchindex-b56980aa.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-e41c4db0.js"></script>
+        <script src="../toc-0de440ca.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,128 +180,129 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="adr-038--gate-de-benchmark-invariante-à-classe-de-runner-calibração-normalizada"><a class="header" href="#adr-038--gate-de-benchmark-invariante-à-classe-de-runner-calibração-normalizada">ADR 038 — Gate de benchmark invariante à classe de runner (calibração normalizada)</a></h1>
+                        <h1 id="adr-038--gate-de-benchmark-por-contagem-de-instruções-não-por-tempo-de-parede"><a class="header" href="#adr-038--gate-de-benchmark-por-contagem-de-instruções-não-por-tempo-de-parede">ADR 038 — Gate de benchmark por contagem de instruções (não por tempo de parede)</a></h1>
 <ul>
-<li><strong>Status:</strong> implementado (Issue #629) · <strong>Data:</strong> 2026-11-10</li>
-<li><strong>Escopo:</strong> <code>scripts/bench_gate.py</code> (novo), <code>crates/rd-dex/benches/parse_tables.rs</code>,
-<code>.github/workflows/bench.yml</code>, <code>.github/workflows/ci.yml</code>,
-<code>tests/scripts/bench_gate_test.sh</code> (novo)</li>
+<li><strong>Status:</strong> implementado (Issue #629) · <strong>Data:</strong> 2026-11-10 · <strong>Revisado:</strong> 2026-11-11</li>
+<li><strong>Escopo:</strong> <code>scripts/bench_ir.py</code> (novo), <code>crates/rd-dex/benches/ir-baseline.json</code> (novo),
+<code>crates/rd-dex/benches/parse_tables.rs</code>, <code>.github/workflows/bench.yml</code>,
+<code>.github/workflows/ci.yml</code>, <code>tests/scripts/bench_ir_test.sh</code> (novo)</li>
 <li><strong>Relacionados:</strong> Issue #629, Issue #227, ADR 037, <code>RustyDroid.md</code> §3.2</li>
 </ul>
+<blockquote>
+<p>Este ADR foi <strong>reescrito duas vezes</strong> no mesmo dia. A primeira versão propunha
+mediana de 5 sem normalizar; a segunda, normalizar pela calibração. Ambas foram
+<strong>medidas e reprovadas</strong> com dados do próprio CI. O histórico das duas está em
+“Alternativas descartadas” — importa, porque as duas parecem razoáveis no papel e
+a única coisa que as distingue é a medição.</p>
+</blockquote>
 <h2 id="contexto"><a class="header" href="#contexto">Contexto</a></h2>
-<p>O §3.2 da especificação exige <code>bench.yml</code> com “fail em regressão &gt; 10%”. A implementação
-era <code>github-action-benchmark</code> com <code>alert-threshold: 110%</code> e <code>fail-on-alert: true</code>, que
-compara cada execução com a <strong>única</strong> execução anterior guardada em <code>gh-pages</code>.</p>
-<p>Em 2026-11-10, o primeiro push em <code>main</code> depois do merge de #628 (que comprovadamente
-<strong>reduziu</strong> o binário e não tocou em <code>rd-dex</code>) falhou no job <code>benches (rd-dex parse tables)</code>
-com 3324 ns contra 1884 ns (1,76×) e 3340 contra 1815 (1,84×). A mesma revisão medida
-localmente deu 3759/3676 ns com ICF e 3712/3716 ns sem ICF — menos de 2% de diferença.
-Não havia regressão: o gate estava medindo a frota.</p>
-<h3 id="o-diagnóstico-correto-não-é-ruído"><a class="header" href="#o-diagnóstico-correto-não-é-ruído">O diagnóstico correto não é “ruído”</a></h3>
-<p>Os 188 resultados guardados formam uma distribuição <strong>bimodal com um vazio</strong>:</p>
+<p>O §3.2 da especificação exige <code>bench.yml</code> com “fail em regressão &gt; 10%”. A
+implementação usava <code>github-action-benchmark</code> com <code>alert-threshold: 110%</code> e
+<code>fail-on-alert: true</code>, comparando cada execução com a <strong>única</strong> anterior guardada
+em <code>gh-pages</code>.</p>
+<p>Em 2026-11-10, o primeiro push em <code>main</code> depois do merge de #628 (que
+comprovadamente <strong>reduziu</strong> o binário e não tocou em <code>rd-dex</code>) falhou com 3324 ns
+contra 1884 ns. A mesma revisão medida localmente deu 3759/3676 ns com ICF e
+3712/3716 ns sem ICF. Não havia regressão.</p>
+<h3 id="o-que-a-série-histórica-mostra"><a class="header" href="#o-que-a-série-histórica-mostra">O que a série histórica mostra</a></h3>
+<p>Os 191 resultados guardados vão de <strong>1 736 a 17 370 ns</strong> por iteração, com um
+vazio entre 1,25× e 2× a mediana e um aglomerado estável em 5,1× (18 execuções
+entre 16 777 e 17 370 ns, 3,5% de espalhamento). São classes de CPU, não ruído.</p>
+<h3 id="o-que-três-execuções-consecutivas-do-mesmo-código-mostram"><a class="header" href="#o-que-três-execuções-consecutivas-do-mesmo-código-mostram">O que três execuções consecutivas do mesmo código mostram</a></h3>
+<p>O dado que decidiu o desenho final. Três pushes seguidos, mesmo benchmark, mesma
+máquina de código:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>faixa (múltiplo da mediana)</th><th>resultados</th></tr>
+<tr><th>run</th><th>commit</th><th><code>calib_scan_20k</code></th><th><code>parse_method_ids_20k</code></th><th>razão</th></tr>
 </thead>
 <tbody>
-<tr><td>&lt; 0,75×</td><td>32</td></tr>
-<tr><td>0,75–1,0×</td><td>62</td></tr>
-<tr><td>1,0–1,25×</td><td>71</td></tr>
-<tr><td>1,25–2×</td><td><strong>0</strong></td></tr>
-<tr><td>2–4×</td><td>5</td></tr>
-<tr><td>≥ 4×</td><td>18</td></tr>
+<tr><td>731</td><td><code>583aa07</code></td><td>43 164 ns</td><td>3 196 ns</td><td>0,0740</td></tr>
+<tr><td>732</td><td><code>e0439c0</code></td><td>68 506 ns</td><td>3 234 ns</td><td>0,0472</td></tr>
+<tr><td>733</td><td><code>7584fd7</code></td><td>42 310 ns</td><td>3 160 ns</td><td>0,0747</td></tr>
+<tr><td><strong>espalhamento</strong></td><td></td><td><strong>62%</strong></td><td><strong>2,3%</strong></td><td><strong>58%</strong></td></tr>
 </tbody>
 </table>
 </div>
-<p>As 18 execuções da última faixa não são cauda de ruído: ficam todas entre 16 777 e
-17 370 ns, ou seja <strong>5,1× com 3,5% de espalhamento</strong>. São classes de CPU diferentes, cada
-uma internamente reprodutível a ~1%. O que varia 10× é a série, não a medição.</p>
-<p>Isso invalida o remédio estatístico. Rejogando os 188 resultados reais com a proposta
-original da Issue #629 (linha de base = mediana das últimas <em>N</em>, limiar de 10%):</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>janela</th><th>falsos positivos</th><th>regressões reais de +19% perdidas</th></tr>
-</thead>
-<tbody>
-<tr><td>1</td><td>29,7%</td><td>31%</td></tr>
-<tr><td>5</td><td>21,3%</td><td>36%</td></tr>
-<tr><td>21</td><td>14,4%</td><td>38%</td></tr>
-</tbody>
-</table>
-</div>
-<p>Alargar a janela reduz o falso positivo e <strong>piora a detecção</strong>: a linha de base passa a
-cobrir classes de máquina, e uma regressão de 19% numa máquina rápida não chega a
-1,19× a mediana global. Mediana não separa 10% de código de 500% de hardware.</p>
+<p>A segunda versão deste ADR normalizava pelo <code>calib_scan_20k</code> justamente para
+cancelar a máquina. O resultado foi o oposto do pretendido: <strong>a calibração é a
+grandeza ruidosa</strong>. Normalizar deixou a métrica 5× pior que o valor bruto, e o
+gate reprovou o push <code>7584fd7</code> de um commit que só mexia em documentação.</p>
+<p>O espalhamento de 62% na calibração não é ruído de amostragem (o desvio dentro de
+uma execução foi de 0,19%), é a mesma memória medida com largura de banda
+diferente em VMs diferentes. Não existe estatística que conserte um mensurando
+que depende da máquina.</p>
 <h2 id="decisão"><a class="header" href="#decisão">Decisão</a></h2>
-<h3 id="1-normalizar-a-métrica-em-vez-de-endurecer-a-estatística"><a class="header" href="#1-normalizar-a-métrica-em-vez-de-endurecer-a-estatística">1. Normalizar a métrica em vez de endurecer a estatística</a></h3>
-<p>O bench publica uma terceira medida, <code>calib_scan_20k</code>: uma varredura sequencial de 8 B por
-entrada sobre o <strong>mesmo</strong> buffer de 160 KB, sem alocação, em
-<code>crates/rd-dex/benches/parse_tables.rs</code>. Ela acompanha a máquina (largura de banda de
-memória, IPC, escala de frequência) do mesmo jeito que o decode acompanha, então a razão
-<code>alvo / calibração</code> é estável entre classes.</p>
-<p>Validação empírica no sandbox, com contenção de CPU sintética para simular runners mais
-lentos:</p>
+<p><strong>Medir instruções retiradas, não tempo.</strong></p>
+<p><code>parse_tables.rs</code> ganhou o modo <code>--count &lt;alvo&gt;</code>, que executa <strong>uma</strong> iteração de
+um alvo e sai, para rodar sob <code>valgrind --tool=callgrind</code>. O gate
+(<code>scripts/bench_ir.py</code>) compara a <strong>diferença</strong> entre o alvo e uma execução
+<code>noop</code> contra o baseline versionado em <code>crates/rd-dex/benches/ir-baseline.json</code>.</p>
+<p>Medido neste repositório:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>condição</th><th>parse_method (ns)</th><th>calib (ns)</th><th>razão</th></tr>
+<tr><th>alvo</th><th>Ir (3 rebuilds)</th></tr>
 </thead>
 <tbody>
-<tr><td>ocioso</td><td>3 897</td><td>64 399</td><td>0,0605</td></tr>
-<tr><td>1 núcleo, 3 processos em spin</td><td>7 575</td><td>117 885</td><td>0,0643</td></tr>
-<tr><td>16 processos em spin (oversubscrito)</td><td>32 683</td><td>525 178</td><td>0,0622</td></tr>
+<tr><td><code>noop</code></td><td>878 378</td></tr>
+<tr><td><code>parse_method_ids_20k</code></td><td>923 930</td></tr>
+<tr><td><code>parse_field_ids_20k</code></td><td>923 958</td></tr>
+<tr><td><strong>delta de trabalho</strong></td><td><strong>45 552 / 45 580</strong></td></tr>
 </tbody>
 </table>
 </div>
-<p>O tempo absoluto varia <strong>8,39×</strong>; a razão fica dentro de 0,0601–0,0661. Em execuções
-repetidas na mesma máquina o espalhamento cai de 6,2% (ns bruto) para 3,0% (razão).</p>
-<h3 id="2-medir-os-três-alvos-intercalados-por-amostra"><a class="header" href="#2-medir-os-três-alvos-intercalados-por-amostra">2. Medir os três alvos intercalados por amostra</a></h3>
-<p><code>measure_all</code> visita calibração, <code>parse_method_ids</code> e <code>parse_field_ids</code> dentro de <strong>cada</strong>
-amostra de 30. Medir um alvo inteiro antes do outro colocaria a calibração sempre na cauda
-mais quente do processo — deriva térmica e turbo incindiriam sobre o numerador e o
-denominador em momentos diferentes, enviesando exatamente a razão que o gate usa.</p>
-<h3 id="3-o-gate-aplica-a-regra-do-32-à-razão-sobre-a-mediana-das-últimas-5"><a class="header" href="#3-o-gate-aplica-a-regra-do-32-à-razão-sobre-a-mediana-das-últimas-5">3. O gate aplica a regra do §3.2 à razão, sobre a mediana das últimas 5</a></h3>
-<p><code>scripts/bench_gate.py</code> normaliza cada resultado guardado com a calibração <strong>da mesma
-execução</strong>, e compara com a mediana das últimas 5 razões. Com ~3% de ruído na razão, o
-erro padrão de uma mediana de 5 é ~1,7%, o que põe o limiar de 10% do §3.2 a ~6σ.
-A regra de 10% continua sendo a regra; só o mensurando mudou.</p>
-<p><code>fail-on-alert</code> passa a <code>false</code> e <code>github-action-benchmark</code> fica só como <strong>escritor do
-histórico</strong> (o alerta dela acima de 110% da execução anterior continua, mas é consultivo).</p>
-<h3 id="4-semear-em-vez-de-adivinhar"><a class="header" href="#4-semear-em-vez-de-adivinhar">4. Semear em vez de adivinhar</a></h3>
-<p>Os 188 resultados existentes não têm coluna de calibração, e nenhuma transformação
-retroativa é possível. O gate ignora linhas não calibradas e, com menos de <code>--min-samples</code>
-(3) linhas calibradas, imprime <code>seeding</code> e <strong>passa</strong>. São ~3 pushes de carência depois do
-merge, documentados, em vez de um gate que falha por não ter com o que comparar.</p>
+<p>Zero variância entre rebuilds do mesmo fonte. Em diretórios de build diferentes o
+delta varia ~0,02%. O limiar de 10% do §3.2 fica a <strong>500×</strong> o ruído da métrica.</p>
+<h3 id="por-que-subtrair-o-noop"><a class="header" href="#por-que-subtrair-o-noop">Por que subtrair o <code>noop</code></a></h3>
+<p>O custo fixo do processo é <strong>95% da contagem</strong> (878 378 de 923 930). Sem
+subtrair, um limiar de 10% incidiria sobre o startup do runtime: um parse 20%
+mais lento passaria como 0,9% do total. Com a subtração, o limiar incide sobre o
+trabalho.</p>
+<h3 id="por-que-o-baseline-é-versionado-e-não-um-histórico"><a class="header" href="#por-que-o-baseline-é-versionado-e-não-um-histórico">Por que o baseline é versionado e não um histórico</a></h3>
+<p>A contagem é determinística, então não há o que acumular: um arquivo de baseline
+no repositório basta. Quando uma mudança altera o trabalho legitimamente (ex.:
+de-vectorização intencional), o PR roda <code>--write</code> e o diff de
+<code>ir-baseline.json</code> aparece na revisão — que é exatamente o lugar onde uma
+mudança de 10% em custo deve ser discutida.</p>
+<h3 id="o-wall-clock-continua-medido-mas-é-consultivo"><a class="header" href="#o-wall-clock-continua-medido-mas-é-consultivo">O wall-clock continua medido, mas é consultivo</a></h3>
+<p><code>cargo bench</code> ainda imprime ns/iter e o <code>github-action-benchmark</code> ainda grava o
+gráfico em <code>gh-pages</code>, com <code>fail-on-alert: false</code>. Serve para ver tendência entre
+execuções da mesma classe de máquina; não serve para gate.</p>
 <h2 id="alternativas-descartadas"><a class="header" href="#alternativas-descartadas">Alternativas descartadas</a></h2>
 <ul>
-<li><strong>Só mediana de 5, sem normalizar.</strong> Medido acima: 21,3% de falso positivo e 36% de
-regressões de +19% perdidas. É o plano original da Issue #629 e ele não funciona.</li>
-<li><strong>Janela maior (21).</strong> 14,4% de falso positivo e detecção pior. Mais história não
-resolve mistura de populações.</li>
-<li><strong>Teto absoluto.</strong> Com a série real indo de 1 701 a 17 362 ns, qualquer teto que passe
-na máquina lenta não pega nada na rápida.</li>
-<li><strong>Linha de base por impressão digital da máquina</strong> (<code>/proc/cpuinfo</code>). Precisa de estado
-auxiliar em <code>gh-pages</code> que o <code>github-action-benchmark</code> não escreve, e deixa a primeira
-execução de cada classe cega — o mesmo problema do seeding, com mais peças móveis.</li>
-<li><strong><code>min</code> ou <code>p10</code> das amostras como estimador.</strong> Medido: a razão por <code>min</code> variou
-1,26–2,03 sob as mesmas condições em que a razão por média ficou em 1,83–2,14. O mínimo
-é sequestrado por uma única amostra não preemptada e não é mais robusto aqui.</li>
+<li><strong>Mediana de 5 sobre ns (proposta original da issue).</strong> Rejogando os 191
+resultados reais: 21,3% de falso positivo e 36% das regressões de +19%
+perdidas. Janela 21 piora a detecção (14,4% FP, 38% perdidas), porque a linha de
+base passa a cobrir classes de máquina.</li>
+<li><strong>Normalizar por uma varredura de calibração.</strong> Medida e reprovada: a
+calibração variou 62% entre execuções enquanto o alvo variou 2,3%.</li>
+<li><strong>Janela de pares (comparar só com resultados de valor próximo).</strong> Backtest
+nos 191 resultados: 6,2% de falso positivo e apenas 67% de detecção em +15%.</li>
+<li><strong>Estimador <code>min</code>/<code>p10</code> das amostras.</strong> Medido sob contenção: a razão por <code>min</code>
+variou 1,26–2,03 nas mesmas condições em que a média ficou em 1,83–2,14. O
+mínimo é sequestrado por uma única amostra não preemptada.</li>
+<li><strong>Teto absoluto em ns.</strong> Com a série real indo de 1 736 a 17 370 ns, qualquer
+teto que passe na máquina lenta não pega nada na rápida.</li>
+<li><strong>Runner self-hosted / de tamanho fixo.</strong> Resolveria, mas é infraestrutura fora
+do repositório e não protege PRs de contribuidores.</li>
 </ul>
 <h2 id="consequências"><a class="header" href="#consequências">Consequências</a></h2>
 <ul>
-<li><strong><code>calib_scan_20k</code> é contrato congelado.</strong> Mudar a semântica da varredura muda o
-denominador e invalida o histórico calibrado; a função está marcada com esse aviso.
-Se um dia for inevitável, o gate entra em <code>seeding</code> de novo — é o comportamento correto.</li>
-<li>O histórico não calibrado permanece no arquivo e continua alimentando os gráficos do
-<code>gh-pages</code>; ele só não participa do gate.</li>
-<li>Aviso não fatal quando a própria calibração está &gt;2,5× ou &lt;0,4× a mediana recente: a
-comparação ainda é feita, mas o log diz que o runner está fora das classes conhecidas.</li>
-<li><code>tests/scripts/bench_gate_test.sh</code> cobre os 22 casos que importam — inclusive “mesmo
-código numa máquina 5× mais lenta passa” e “regressão de +15% numa máquina 5× mais lenta
-falha” — e roda em PR via <code>scripts-tests</code> no <code>ci.yml</code>, sem toolchain Rust.</li>
-<li>O gate só julga em <code>push</code> para <code>main</code>; <code>workflow_dispatch</code> mede e reporta, como antes.</li>
+<li><strong>O que a métrica deixa passar, declaradamente:</strong> uma mudança que troca
+instruções por ciclos (pior IPC, mais cache miss) aparece como neutra ou
+melhoria. Para “o parse ficou mais lento”, instruções é o proxy padrão (é o que
+o <code>iai-callgrind</code> usa); para “ficou mais lento <em>nesta CPU específica</em>”, não
+serve. O ns continua publicado como sinal secundário.</li>
+<li>O job depende de <code>valgrind</code>, que já vem na imagem do runner; há um
+<code>command -v valgrind || apt-get install</code> defensivo.</li>
+<li><code>scripts/bench_gate.py</code> e seu teste, introduzidos no primeiro desenho, foram
+<strong>removidos</strong>: implementavam a normalização que a medição reprovou. Manter os
+dois seria manter um gate que não funciona.</li>
+<li><code>tests/scripts/bench_ir_test.sh</code> cobre 27 casos: limite de 10% (+9,9% passa,
++11% falha), subtração do <code>noop</code>, baseline ausente semeia em vez de falhar,
+baseline desatualizado é anunciado, e o baseline versionado continua cobrindo os
+alvos que o bench define.</li>
 </ul>
 
                     </main>
