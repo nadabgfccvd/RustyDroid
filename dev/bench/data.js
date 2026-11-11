@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794371844612,
+  "lastUpdate": 1794372820810,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7001,6 +7001,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2771,
             "range": "± 28",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2a0f2cf72abe5dc574a17eda1fd6548a002e4e21",
+          "message": "Merge PR #640 — fix(rd-vm): orçamento de pilha nativa relativo à pilha real (#637)\n\nPiso do orçamento passa a ser min(64 KiB, VMA/8) e enter_stack_frame deriva um teto de profundidade. Reproduz o SIGABRT do CI num teste novo e o elimina.",
+          "timestamp": "2026-11-11T01:52:56-03:00",
+          "tree_id": "ca31e91c37b114d7c4750d284dd2ca7e2ee9de68",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/2a0f2cf72abe5dc574a17eda1fd6548a002e4e21"
+        },
+        "date": 1794372818980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3419,
+            "range": "± 168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3422,
+            "range": "± 166",
             "unit": "ns/iter"
           }
         ]
