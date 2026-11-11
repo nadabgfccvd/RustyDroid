@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794363844369,
+  "lastUpdate": 1794364020889,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6731,6 +6731,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3340,
             "range": "± 22",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "343375f65754a6ad0c18dfe76ad0d6fcede00082",
+          "message": "perf(link): --icf=all fecha a meta de tamanho da Issue #227 — −1,046 MB acumulado (#628)\n\nFecha #227.\n\nConverteu-se android_stub_surfaces para motor de tabelas (#627, −743.040 B) e\ndepois mediu-se que o poço declarativo secou: 1.265 de 1.481 braços restantes\ntêm corpo distinto, 25 de 1.285 funções são idênticas, e comparação de strings\né 2,3% do .text do módulo.\n\nO restante é duplicação que se forma depois da geração de código, então o passo\ncerto é o linker: --icf=all do rust-lld em .cargo/config.toml, escopo\nx86_64-unknown-linux-gnu.\n\n  .text −265.824 · .eh_frame −75.320 · .eh_frame_hdr −12.464\n  arquivo −353.696   23.586.896 -> 23.233.200\n\nCumulativo: 24.329.936 -> 23.233.200 = −1.096.736 B (−1,046 MB),\ndentro da faixa de −1,0 a −1,5 MB.\n\nVerificado: 234 lib + 109/109 stub + 12/12 lang + wasm + gc_host_and_jni 7/7,\nclippy/fmt limpos, doc-sync idêntico, cold26 12,28 vs 12,33 ms (budget 26).\nADR 037 §6.",
+          "timestamp": "2026-11-10T23:23:27-03:00",
+          "tree_id": "19a386c78920a87619a1fdf2dad081b7677364e8",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/343375f65754a6ad0c18dfe76ad0d6fcede00082"
+        },
+        "date": 1794364020054,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1927,
+            "range": "± 25",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1803,
+            "range": "± 21",
             "unit": "ns/iter"
           }
         ]
