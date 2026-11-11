@@ -4,3 +4,23 @@
 # arquivo (rastreado no git) o comando documentado funciona para todos.
 [alias]
 xtask = "run --package xtask --"
+
+# Issue #227: o binário release carrega código de máquina duplicado que nenhuma
+# transformação em Rust elimina — corpos de função distintos no fonte que o LLVM
+# compila para bytes idênticos (stubs de erro frios, adaptadores de `Result`,
+# `drop_glue`, monomorfizações equivalentes). `--icf=all` (Identical Code
+# Folding) dobra essas seções no link; é a recomendação do guia oficial de
+# tamanho mínimo do Rust (https://github.com/johnthagen/min-sized-rust).
+#
+# Medido em `--release --all-features` sobre `main` @ `c4099e0`:
+#   23.586.896 B -> 23.233.200 B  (−353.696 B)
+#   `.text` −265.824 · `.eh_frame` −75.320 · `.eh_frame_hdr` −12.464
+#
+# Seguro neste repositório: não há nenhuma comparação de identidade de ponteiro
+# de função (`fn ... as usize`, `ptr::eq` sobre `fn`, `fn_addr_eq`) em
+# `crates/`, então fundir dois corpos idênticos não é observável. Requer
+# `rust-lld`, que é o linker padrão de `x86_64-unknown-linux-gnu` desde o Rust
+# 1.90 — por isso o escopo é o alvo, e não `[build]`: em alvos cujo linker não
+# entende a flag o build continuaria funcionando.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,--icf=all"]
