@@ -95,7 +95,7 @@ jobs:
     # This job publishes by pushing to `gh-pages`, so it never needs the
     # environment — only the branch push.
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b3a2a2f88c # v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: mdbook-site
           path: site
