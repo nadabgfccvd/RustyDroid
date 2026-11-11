@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Matriz de compatibilidade viva no site (M12):** `nightly-compat.yml` continua só
+  produzindo evidência (o artefato `nightly-compat-reports`, retenção de 14 dias) e o
+  `docs.yml` segue como único escritor na `gh-pages`. O job `build` agora busca a última
+  run **bem-sucedida** do nightly (`actions: read`) e `scripts/compat_live.py` renderiza
+  `docs/compat-live.md` + `docs/compat-badge.svg` antes do `mdbook build`; um `schedule`
+  diário (06:17 UTC, atrás do nightly das 04:43) republica o site sem depender de commit.
+  Sem run, artefato expirado ou sem permissão, a página publica **"sem dados"** em vez de
+  placar velho. Renderizador determinístico (sem `now()`) com self-test hermético
+  `tests/scripts/compat_live_test.sh` (23 casos), rodando também no `ci.yml`.
 - **`android.webkit.CookieManager` (`crates/rd-vm/src/webkit_cookies.rs`):** process-wide `getInstance()`, `setCookie`/`getCookie` with the RFC 6265 subset APKs use (host-only vs `Domain=`, `Path=`, `Secure` refused over plain http, `HttpOnly`, `Max-Age` on the virtual clock), `removeAllCookies`/`removeSessionCookies` answering through the `ValueCallback`, `setAcceptCookie`/`acceptCookie`, `flush`, third-party-cookie setters. Not modelled, and documented as such: public-suffix rejection, SameSite, partitioned (CHIPS) cookies. Test: `crates/rd-vm/tests/webkit_cookies.rs` (7).
 - **`Boolean.getBoolean(String)`** reads the platform system-property table and parses it like the JDK (`true` case-insensitive, anything else — including an absent property — is `false`).
 - **`java.util.EnumMap`:** the host Map model over `Landroid`-style enum-keyed maps (`<init>(Class)`, `<init>(EnumMap)`, `put/get/remove/containsKey/size/isEmpty/clear/keySet/values/entrySet` through the shared `map_intrinsic`), plus the `Map` interface in the builtin hierarchy — without it the desugared `j$/util/stream/d7` `<clinit>` died and every later use of that class answered `NoClassDefFoundError`. Also `RD_TRACE_CLINIT=1`, which prints the class and the original cause the first time a `<clinit>` fails (the JLS 12.4.2 error alone hides it).

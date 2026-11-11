@@ -7,6 +7,7 @@
 - [Roadmap (M0 → M12)](./ROADMAP.md)
 - [Target Apps (end-to-end)](./target-apps.md)
 - [Official Compatibility Matrix](./compat-matrix.md)
+- [Compatibilidade ao vivo (última rodada noturna)](./compat-live.md)
 - [Appendices B–F — Implementation Plan & Verified State](./appendix-b-f-plan.md)
 - [Android API Coverage — Appendix C](./api-coverage.md)
 - [Appendix C — Public Android API Inventory (API 26–36)](./appendix-c-inventory.md)

@@ -9,6 +9,14 @@ name: Nightly compat
 # that writes to the default branch would need a write token this workflow
 # deliberately does not have.
 #
+# Consumer: the `build` job of docs.yml (with `actions: read`) picks the latest
+# **successful** run of this workflow and downloads the
+# `nightly-compat-reports` artifact; `scripts/compat_live.py` turns it into
+# `docs/compat-live.md` + `docs/compat-badge.svg`, which ship with the site.
+# That keeps a single writer on `gh-pages` (no race with bench.yml). If the
+# artifact is missing or expired (14-day retention), the page falls back to
+# "sem dados" instead of publishing a stale scoreboard.
+#
 # Not included on purpose: `rd perf` on the fetched APK. The F-Droid client is
 # classified `below_floor_or_structured_result` in the retired RD Sentinel baseline, so a
 # perf gate on it would fail for the wrong reason. The M7 golden perf gate needs

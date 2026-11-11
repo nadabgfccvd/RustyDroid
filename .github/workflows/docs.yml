@@ -33,6 +33,10 @@ on:
       - "docs/**"
       - "scripts/gen_adr_index.py"
       - ".github/workflows/docs.yml"
+  # Atualiza a matriz "viva" mesmo em dias sem commit: o nightly roda às 04:43
+  # UTC e este build busca o artefato da última run bem-sucedida.
+  schedule:
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +51,11 @@ jobs:
     name: build book
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # `actions: read` só para ler a última run do nightly-compat e baixar o
+    # artefato dela (a página docs/compat-live.md). Nada de escrita.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +66,63 @@ jobs:
       # generated compatibility scoreboard.
       - name: ADR index is in sync with docs/adr/
         run: python3 scripts/gen_adr_index.py
+
+      # M12: a matriz "viva" (docs/compat-live.md + docs/compat-badge.svg) é
+      # renderizada a partir do artefato da última run **bem-sucedida** do
+      # nightly-compat. Best-effort de propósito: sem run, com artefato expirado
+      # (retenção de 14 dias) ou sem permissão, a página publica o estado
+      # "sem dados" e o site continua de pé — um placar ausente não pode
+      # derrubar a documentação.
+      - name: Coletar a evidência da última rodada noturna
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          api="https://api.github.com/repos/${REPO}"
+          hdr=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json")
+          empty() { echo "::notice::$1"; echo '{}' > reports-run.json; exit 0; }
+
+          runs="$(curl -fsSL "${hdr[@]}" "${api}/actions/workflows/nightly-compat.yml/runs?status=success&per_page=1" 2>/dev/null)" \
+            || empty "sem acesso às runs do nightly; publicando o estado 'sem dados'"
+          run_id="$(printf '%s' "$runs" | python3 -c 'import json,sys
+          r = json.load(sys.stdin).get("workflow_runs") or []
+          print(r[0]["id"] if r else "")')"
+          [ -n "$run_id" ] || empty "nenhuma run noturna bem-sucedida ainda; publicando o estado 'sem dados'"
+
+          curl -fsSL "${hdr[@]}" "${api}/actions/runs/${run_id}" -o reports-run.json 2>/dev/null \
+            || empty "não consegui ler a run ${run_id}; publicando o estado 'sem dados'"
+
+          arts="$(curl -fsSL "${hdr[@]}" "${api}/actions/runs/${run_id}/artifacts" 2>/dev/null)"
+          url="$(printf '%s' "$arts" | python3 -c 'import json,sys
+          a = json.load(sys.stdin).get("artifacts") or []
+          print(next((x["archive_download_url"] for x in a if x["name"] == "nightly-compat-reports"), ""))')"
+          [ -n "$url" ] || empty "a run ${run_id} não tem o artefato nightly-compat-reports (expirado?)"
+
+          # O zip do upload-artifact guarda os caminhos relativos a `reports/`;
+          # dependendo do upload o diretório pode vir no topo. Aceita os dois.
+          mkdir -p reports-dl
+          if curl -fsSL "${hdr[@]}" -o compat.zip "$url" && unzip -q compat.zip -d reports-dl; then
+            if [ -d reports-dl/junit ]; then
+              mkdir -p reports && cp -R reports-dl/. reports/
+            elif [ -d reports-dl/reports/junit ]; then
+              mkdir -p reports && cp -R reports-dl/reports/. reports/
+            else
+              echo "::warning::o artefato veio sem junit/; a página fica sem tabela por suíte"
+            fi
+          else
+            echo "::warning::download do artefato falhou; a página fica sem tabela por suíte"
+          fi
+          rm -rf reports-dl compat.zip
+
+      - name: Renderizar a matriz viva
+        run: |
+          set -euo pipefail
+          python3 scripts/compat_live.py --reports reports --run-json reports-run.json
+          grep -q "compat-live:begin" docs/compat-live.md
+
+      - name: Self-tests do renderizador
+        run: bash tests/scripts/compat_live_test.sh
 
       - name: Install mdBook (pinned)
         run: cargo install mdbook --locked --version 0.5.4
