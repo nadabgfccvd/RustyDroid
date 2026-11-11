@@ -601,3 +601,27 @@ Comprix 1.6.0 x86_64 release APK, release RustyDroid, desktop Linux sandbox
 No physical camera/Scanner campaign, ARMv7 native JIT, Moto E5 latency or full
 Java/Android compatibility claim is made. Human review is required before merge
 by CONTRIBUTING.md.
+
+## Validação offline do Scanner com rótulos sintéticos (2026-11-11)
+
+Scripts em `tools/comprix/`:
+- `gerar_rotulos.py`: gera EAN-13 válidos (dígito verificador pela função `dv_ean13`, não digitado à mão), tabela nutricional, selo ALTO EM, etiqueta de preço e `gabarito.json`.
+- `validar_fixtures.py`: compara os rótulos com o gabarito. EAN via `zbarimg`; selo, tabela e preço via RapidOCR. Comparação sem acento e por palavra, porque a ordem de leitura do OCR não é garantida. Resultado em `validacao_fixtures.json`.
+- `probe_scanner.py`: sonda MCP do APK 1.6.0 (install → launch → Pular → Nova lista → Compra do Mês → Criar e adicionar itens → Escanear um produto).
+
+Resultado (rótulos sintéticos, fora do VM):
+
+| Item | Resultado |
+|---|---|
+| EAN-13 (3 códigos) | 3/3 lidos por `zbarimg` |
+| Selo ALTO EM | 4/4 palavras (ALTO EM, AÇÚCAR ADICIONADO, GORDURA SATURADA, SÓDIO) |
+| Tabela nutricional | porção 30 g, energia 120 kcal, sódio 150 mg, gorduras saturadas 0,8 g: ok |
+| Tabela nutricional | açúcares adicionados 8 g: **inconclusivo** (OCR não leu o valor na linha) |
+| Etiqueta de preço | R$ 24,90 e código 7891000100103: ok |
+
+Sondagem no APK 1.6.0 (MCP): a tela "Escanear preço" abre após "Escanear um produto", com abas Foto, Vídeo 30 s e Código. O caminho até ela é: lista → "Criar e adicionar itens" → "Escanear um produto".
+
+Limites desta validação:
+- Não é teste ponta a ponta do Scanner no VM. A leitura de código de barras e de texto pelo ML Kit no VM é stub (`host_stub` em `interp.rs` devolve lista vazia, decisão do usuário; `gms.rs` marca ML Kit como `not_implemented`). Trocar esse comportamento exige confirmação explícita.
+- O VM não injeta imagem PNG na câmera CameraX. `m10/camera.rs` cobre só Camera2 e frames sintéticos (`RD-CAM…`).
+- RapidOCR e zbar não são o ML Kit real. Isso é um desvio de fidelidade e deve ser revisto antes de qualquer alegação de compatibilidade.
