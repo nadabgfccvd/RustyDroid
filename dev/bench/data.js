@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794384013262,
+  "lastUpdate": 1794384078697,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7145,6 +7145,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1746,
             "range": "± 25",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75e6f8ff2c4ef0334c966dc4bb86b81b041aa0a4",
+          "message": "Merge pull request #634 from nadabgfccvd/comprix-scanner-offline-20261111\n\nProgresso Comprix: validação offline do Scanner com rótulos sintéticos",
+          "timestamp": "2026-11-11T05:00:13-03:00",
+          "tree_id": "95ac54b73294dee309bde6c4a6aa5ae08b47cc95",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/75e6f8ff2c4ef0334c966dc4bb86b81b041aa0a4"
+        },
+        "date": 1794384076234,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3227,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3229,
+            "range": "± 76",
             "unit": "ns/iter"
           }
         ]
