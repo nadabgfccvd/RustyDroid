@@ -60,25 +60,52 @@ const INTERPOLATORS: &[&str] = &[
     "Landroid/view/animation/CycleInterpolator;",
 ];
 
-pub(crate) fn throw(class: &str, msg: impl Into<String>) -> VmExit {
+#[cold]
+#[inline(never)]
+pub(crate) fn throw_string(class: &str, msg: String) -> VmExit {
     VmExit::Exception(Throwable::new(class, msg))
 }
-pub(crate) fn npe(what: &str) -> VmExit {
-    throw("Ljava/lang/NullPointerException;", what.to_string())
+#[cold]
+#[inline(never)]
+pub(crate) fn throw_str(class: &str, msg: &str) -> VmExit {
+    VmExit::Exception(Throwable::new(class, msg.to_string()))
 }
+#[cold]
+#[inline(never)]
+pub(crate) fn throw(class: &str, msg: impl Into<String>) -> VmExit {
+    throw_string(class, msg.into())
+}
+#[cold]
+#[inline(never)]
+pub(crate) fn npe(what: &str) -> VmExit {
+    throw_str("Ljava/lang/NullPointerException;", what)
+}
+#[cold]
+#[inline(never)]
 pub(crate) fn iae(msg: impl Into<String>) -> VmExit {
-    throw("Ljava/lang/IllegalArgumentException;", msg)
+    throw_string("Ljava/lang/IllegalArgumentException;", msg.into())
 }
 
-pub(crate) fn jstr(vm: &mut Engine, s: impl Into<String>) -> Result<Value, VmExit> {
-    Ok(Value::Obj(crate::intrinsics::alloc_string(vm, s.into())?))
+#[inline(never)]
+pub(crate) fn jstr_owned(vm: &mut Engine, s: String) -> Result<Value, VmExit> {
+    Ok(Value::Obj(crate::intrinsics::alloc_string(vm, s)?))
 }
+#[inline(never)]
+pub(crate) fn jstr_str(vm: &mut Engine, s: &str) -> Result<Value, VmExit> {
+    jstr_owned(vm, s.to_string())
+}
+#[inline(never)]
+pub(crate) fn jstr(vm: &mut Engine, s: impl Into<String>) -> Result<Value, VmExit> {
+    jstr_owned(vm, s.into())
+}
+#[inline(never)]
 pub(crate) fn opt_str(vm: &Engine, v: Option<&Value>) -> Option<String> {
     match v {
         Some(Value::Obj(r)) => vm.heap.as_str(*r).ok().map(str::to_string),
         _ => None,
     }
 }
+#[inline(never)]
 pub(crate) fn charseq(vm: &mut Engine, v: Option<&Value>) -> Result<Option<String>, VmExit> {
     match v {
         Some(Value::Obj(r)) => {
@@ -91,33 +118,42 @@ pub(crate) fn charseq(vm: &mut Engine, v: Option<&Value>) -> Result<Option<Strin
         _ => Ok(None),
     }
 }
+#[inline(never)]
 fn req_charseq(vm: &mut Engine, args: &[Value], i: usize, what: &str) -> Result<String, VmExit> {
     charseq(vm, args.get(i))?.ok_or_else(|| npe(what))
 }
+#[inline(never)]
 pub(crate) fn oarg(args: &[Value], i: usize) -> Option<ObjRef> {
     match args.get(i) {
         Some(Value::Obj(r)) => Some(*r),
         _ => None,
     }
 }
+#[inline(never)]
 pub(crate) fn iarg(args: &[Value], i: usize) -> i32 {
     args.get(i).and_then(|v| v.as_int().ok()).unwrap_or(0)
 }
+#[inline(never)]
 pub(crate) fn larg(args: &[Value], i: usize) -> i64 {
     args.get(i).and_then(|v| v.as_long().ok()).unwrap_or(0)
 }
+#[inline(never)]
 pub(crate) fn farg(args: &[Value], i: usize) -> f32 {
     args.get(i).and_then(|v| v.as_float().ok()).unwrap_or(0.0)
 }
+#[inline(never)]
 pub(crate) fn put(vm: &mut Engine, r: ObjRef, f: &str, v: Value) -> Result<(), VmExit> {
     crate::err::put_field_result(vm.heap.put_field(r, f, v))
 }
+#[inline(never)]
 pub(crate) fn get(vm: &Engine, r: ObjRef, f: &str) -> Value {
     vm.heap.get_field(r, f).unwrap_or(Value::Null)
 }
+#[inline(never)]
 pub(crate) fn field_str(vm: &Engine, r: ObjRef, f: &str) -> Option<String> {
     opt_str(vm, Some(&get(vm, r, f)))
 }
+#[inline(never)]
 pub(crate) fn put_opt_str(
     vm: &mut Engine,
     r: ObjRef,
@@ -125,11 +161,12 @@ pub(crate) fn put_opt_str(
     s: Option<String>,
 ) -> Result<(), VmExit> {
     let v = match s {
-        Some(s) => jstr(vm, s)?,
+        Some(s) => jstr_owned(vm, s)?,
         None => Value::Null,
     };
     put(vm, r, f, v)
 }
+#[inline(never)]
 pub(crate) fn alloc_obj(
     vm: &mut Engine,
     class: &str,
@@ -139,6 +176,11 @@ pub(crate) fn alloc_obj(
         .alloc_instance(class.to_string(), fields)
         .map_err(crate::err::oom_throwable)
 }
+#[inline(never)]
+pub(crate) fn alloc_empty_obj(vm: &mut Engine, class: &str) -> Result<ObjRef, VmExit> {
+    alloc_obj(vm, class, Vec::new())
+}
+#[inline(never)]
 pub(crate) fn obj_array(vm: &mut Engine, desc: &str, elems: Vec<Value>) -> Result<Value, VmExit> {
     crate::arrays::new_array(vm, desc, ElemKind::Obj, elems)
 }
@@ -157,6 +199,7 @@ pub(crate) fn java_string_hash(s: &str) -> i32 {
     }
     h
 }
+#[inline(never)]
 pub(crate) fn bool_value(b: bool) -> Value {
     Value::Int(b as i32)
 }
@@ -1841,6 +1884,7 @@ fn darg(args: &[Value], i: usize) -> f64 {
         _ => 0.0,
     }
 }
+#[inline(never)]
 pub(crate) fn new_list(vm: &mut Engine, elems: Vec<Value>) -> Result<ObjRef, VmExit> {
     let list = alloc_obj(vm, "Ljava/util/ArrayList;", Vec::new())?;
     vm.fw.objects.insert(list, HostObj::List { elems });

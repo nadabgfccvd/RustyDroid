@@ -23,6 +23,7 @@ pub(crate) mod android_region;
 pub(crate) mod android_res;
 pub(crate) mod android_spannable;
 pub(crate) mod android_stub_surfaces;
+pub(crate) mod android_stub_tables;
 pub(crate) mod android_sysservices;
 pub(crate) mod android_text;
 pub(crate) mod android_uri;
