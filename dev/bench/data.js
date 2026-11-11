@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794366001974,
+  "lastUpdate": 1794366674641,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6851,6 +6851,48 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3219,
             "range": "± 110",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0439c01d3cc69bf774bb1afb1009457594fa77c",
+          "message": "ci(docs): remove o environment github-pages que bloqueia o deploy (#632)\n\nci(docs): remove o environment github-pages que bloqueia o deploy",
+          "timestamp": "2026-11-11T00:10:52-03:00",
+          "tree_id": "8c235a74dc85475f4d3bf197aa88ecfe25852cd1",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/e0439c01d3cc69bf774bb1afb1009457594fa77c"
+        },
+        "date": 1794366673665,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "calib_scan_20k",
+            "value": 68506,
+            "range": "± 131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3234,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3244,
+            "range": "± 59",
             "unit": "ns/iter"
           }
         ]
