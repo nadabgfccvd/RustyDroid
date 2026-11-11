@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794370655011,
+  "lastUpdate": 1794371844612,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6965,6 +6965,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1805,
             "range": "± 33",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0288764715c22f7c02ab76f7e17f602442fe41b1",
+          "message": "docs: validação, correção de fatos e arquivo de históricos (#636)\n\ndocs: validação, correção de fatos e arquivo de históricos (RD Sentinel retirado)",
+          "timestamp": "2026-11-11T01:36:48-03:00",
+          "tree_id": "625167018fd5deb24ec43040ec1294da3aab7668",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/0288764715c22f7c02ab76f7e17f602442fe41b1"
+        },
+        "date": 1794371843561,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2787,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2771,
+            "range": "± 28",
             "unit": "ns/iter"
           }
         ]
