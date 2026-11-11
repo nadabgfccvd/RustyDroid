@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-497250b0.js";
+            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de440ca.js"></script>
+        <script src="toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -201,7 +201,7 @@ defaults and exact <code>native</code>/<code>jit</code> forwarding remain intact
 separately opt-in. Tests guard these invariants.</p>
 </li>
 <li>
-<p>MCP was 41 tools in this validation run (the catalog is 47 tools today, see docs/mcp-tools.md). On analyzed APKs, <code>app_info</code> includes all 28
+<p>MCP was 41 tools in this validation run (the catalog is 52 tools as of 2026-11-11, see docs/mcp-tools.md). On analyzed APKs, <code>app_info</code> includes all 28
 engine records without launching a VM; no tool was removed to satisfy the old 32-tool assertion.</p>
 </li>
 <li>
@@ -252,7 +252,7 @@ literal glob/bounds syntax; no lint rule was disabled.</p>
 <tr><td>Registry minimal, all features, each LANG individually</td><td>All 14 configurations passed</td></tr>
 <tr><td>Explicit real-APK registry integration</td><td>Passed on Comprix 1.6.0, 448 ZIP entries</td></tr>
 <tr><td>Real CLI detect vs inspect JSON</td><td>Equal; 28 rows; <code>execution_claimed: false</code></td></tr>
-<tr><td>Real MCP static detection</td><td>41 tools in this run (47 today); equal CLI report; <code>running: false</code> after <code>app_info</code></td></tr>
+<tr><td>Real MCP static detection</td><td>41 tools in this run (52 as of 2026-11-11); equal CLI report; <code>running: false</code> after <code>app_info</code></td></tr>
 <tr><td>No-app MCP contract</td><td>8/8 scenarios passed</td></tr>
 <tr><td>JVM golden gate and real vectors</td><td>Gate rejects 0/149 cases; 150/150 vectors passed</td></tr>
 <tr><td>Real native APKs</td><td>Five pinned APKs passed on each of x86_64, ARM64, ARMv7</td></tr>

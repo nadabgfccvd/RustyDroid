@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -233,7 +233,7 @@
 <ol>
 <li>A premissa “um <code>Engine</code> vivo por thread” fica <strong>explicitamente revogada</strong> para o caminho de sessões (ADR 023), mas o código continua valendo até a migração do item 3.</li>
 <li>Caminho escolhido: <strong>opção A</strong>. Migrar as 8 tabelas com <code>ObjRef</code> ou contadores, mais <code>APP_STDOUT</code>, para <code>HostState</code>. <code>jregex::CACHE</code> fica como está.</li>
-<li>Ordem de PRs (cada um com testes de regressão, RD Sentinel):
+<li>Ordem de PRs (cada um com testes de regressão; a exigência vinha do RD Sentinel, retirado pela ADR 010):
 <ol>
 <li>Mover <code>APP_STDOUT</code> para <code>HostState</code>. Teste: dois engines com saídas separadas.</li>
 <li>Mover as tabelas de <code>ObjRef</code> (spannable, jrandom, jregex matchers, uri, xml, annotations, io). Teste: dois engines intercalados na mesma thread, cada um com objetos com o mesmo <code>ObjRef</code> numérico, sem vazamento.</li>

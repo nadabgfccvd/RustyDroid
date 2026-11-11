@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-497250b0.js";
+            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de440ca.js"></script>
+        <script src="toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -320,9 +320,9 @@ medição no próprio aparelho ou em emulação calibrada. Este número ainda n�
 medido lá.</p>
 <h2 id="testes-e-fuzzing"><a class="header" href="#testes-e-fuzzing">Testes e fuzzing</a></h2>
 <ul>
-<li><code>tests/wasm_mvp.rs</code> (25 testes): módulos montados à mão em <code>tests/support/</code>,
+<li><code>crates/rd-engine-wasm/tests/wasm_mvp.rs</code> (25 testes): módulos montados à mão em <code>crates/rd-engine-wasm/tests/support/</code>,
 cobrindo semântica, traps, fuel, limites, validação e negativos.</li>
-<li><code>tests/fuzz_smoke.rs</code> (3 testes): mutação determinística de 20 000 módulos e
+<li><code>crates/rd-engine-wasm/tests/fuzz_smoke.rs</code> (3 testes): mutação determinística de 20 000 módulos e
 5 000 entradas aleatórias. A propriedade é “nunca pânico, só erro estruturado”.
 Cerca de 2,5% das mutações chegam ao interpretador, o suficiente para exercitá-lo.</li>
 <li><code>fuzz/fuzz_targets/wasm_module.rs</code>: alvo libFuzzer (<code>cargo fuzz build</code> compila

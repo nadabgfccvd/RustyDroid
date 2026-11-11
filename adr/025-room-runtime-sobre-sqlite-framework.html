@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -212,7 +212,7 @@
 </ul>
 <h2 id="decisão-proposta"><a class="header" href="#decisão-proposta">Decisão proposta</a></h2>
 <ol>
-<li>Caminho <strong>A</strong>, em etapas, cada uma com teste de regressão (RD Sentinel: mudança de VM):
+<li>Caminho <strong>A</strong>, em etapas, cada uma com teste de regressão (convenção do RD Sentinel, retirado pela ADR 010: mudança de VM):
 <ol>
 <li>Fazer <code>room_builder</code> chamar <code>init</code> com um <code>DatabaseConfiguration</code> real, usando o helper de framework. Teste: <code>RoomDatabase.connectionManager</code> não é nulo após <code>build()</code>, e um <code>SELECT</code> simples de um DAO devolve linhas.</li>
 <li>Suportar <code>runInTransaction</code>/<code>beginTransaction</code> e o invalidation tracker. Teste: uma escrita dispara a invalidação observada.</li>

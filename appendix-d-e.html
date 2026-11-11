@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-497250b0.js";
+            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de440ca.js"></script>
+        <script src="toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -487,10 +487,8 @@ real da biblioteca executa na VM, sem shim host.
 reduzido por R8 8.7.18 com regras keep. Tem 23 KB e está em
 <code>crates/rd-vm/tests/fixtures/rxjava3/</code>. A regeneração reproduz o SHA-256
 <code>4023c229…</code> (<code>scripts/gen-rxjava3-fixture.sh</code>). Proveniência e licenças no README.</li>
-<li>Exceção de política: <code>.dex</code> é bloqueante no RD Sentinel. A exceção datada, com
-escopo de um único arquivo e validade até 2027-02-05, está em
-<code>docs/adr/036-excecao-fixture-dex-rxjava.md</code>. Ela depende de um mantenedor aplicar
-<code>sentinel:policy-approved</code>. Não foi aplicada por mim.</li>
+<li>Exceção de política (histórica): enquanto o RD Sentinel estava ativo, <code>.dex</code> era bloqueante. Ele foi retirado (ADR 010). A exceção datada, com escopo de um único arquivo e validade até 2027-02-05, está em
+<code>docs/adr/036-excecao-fixture-dex-rxjava.md</code>; sem gate ativo, ela não tem efeito técnico, e manter ou não é decisão do mantenedor.</li>
 <li>Testes: 5 em <code>crates/rd-vm/tests/jetpack_rxjava.rs</code>. Cobrem <code>just</code> + <code>subscribe</code>
 → disposed; <code>never</code> → não disposed; <code>dispose()</code> → disposed; <code>empty</code> → disposed;
 e sem o DEX da biblioteca no Engine a chamada falha.</li>
@@ -535,7 +533,7 @@ v1 com <code>item(id, name)</code>; v2 com <code>qty INTEGER NOT NULL DEFAULT 0<
 <code>--min-api 26</code>). <code>scripts/gen-room-fixture.sh</code> regenera tudo a partir do Google
 Maven (AndroidX não existe no Maven Central), com <code>platform-35</code> para o
 <code>android.jar</code>. O SHA-256 gerado nesta rodada foi <code>134e9ab7…</code>.</li>
-<li>O DEX <strong>não</strong> é versionado: <code>.dex</code> é bloqueante no RD Sentinel e a exceção da
+<li>O DEX <strong>não</strong> é versionado: a regra vinha do RD Sentinel (retirado, ADR 010) e a exceção da
 ADR 036 cobre só o fixture do RxJava. Por isso <code>crates/rd-vm/tests/jetpack_room.rs</code>
 (3 testes) é <code>#[ignore]</code> e exige <code>RD_ROOM_FIXTURE_DEX</code>. Rodar no CI exige uma
 exceção de política nova, que é decisão de mantenedor.</li>
@@ -928,7 +926,7 @@ e nenhum valor fica pendente para o <code>activate</code>. Testes no mesmo arqui
 NO_DEVICES); o erro fica em <code>gms_cast_last_error</code> e a tentativa seguinte bem-sucedida o limpa. Testes no mesmo arquivo.</p>
 </li>
 <li>
-<p><strong>Nearby</strong> (<code>gms-nearby</code>): critério já atendido por testes existentes em <code>tests/gms.rs</code> (ENDPOINT_UNKNOWN para
+<p><strong>Nearby</strong> (<code>gms-nearby</code>): critério já atendido por testes existentes em <code>crates/rd-vm/tests/gms.rs</code> (ENDPOINT_UNKNOWN para
 endpoint não descoberto; ciclo de descoberta, conexão e encerramento). Nenhuma mudança de código.</p>
 </li>
 <li>

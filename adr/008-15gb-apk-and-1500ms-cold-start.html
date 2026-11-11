@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -235,7 +235,7 @@
 <h2 id="3-the-mmaprss-trap-why-pread64-wins"><a class="header" href="#3-the-mmaprss-trap-why-pread64-wins">3. The mmap/RSS trap (why pread64 wins)</a></h2>
 <p><code>peak_rss_mb()</code> reads <code>VmHWM</code> from <code>/proc/self/status</code>. File-backed mmap pages faulted in count toward <code>VmRSS</code>/<code>VmHWM</code>; scanning &gt;512 MB of a mapped 15 GB APK fails the 512 MB gate, and <code>MADV_DONTNEED</code> eviction is racy, platform-specific, and requires <code>unsafe</code> (forbidden). <code>pread64</code> copies only requested ranges into a user-space cache whose size we choose: with 64 KiB × 256 pages the APK layer can pin <strong>at most 16 MiB</strong>, mathematically, forever — independent of APK size. Any future windowed-mmap fast path needs its own ADR, an RSS-eviction hard cap, and may never be the default.</p>
 <h2 id="4-quantitative-budgets"><a class="header" href="#4-quantitative-budgets">4. Quantitative budgets</a></h2>
-<h3 id="41-cold-start-latency-host-ms-4--emulated-design-point-p50--260-hard-max--375-size-independent"><a class="header" href="#41-cold-start-latency-host-ms-4--emulated-design-point-p50--260-hard-max--375-size-independent">4.1 Cold-start latency (host ms; ×4 = emulated). Design point p50 ≤ 260, hard max &lt; 375, size-independent.</a></h3>
+<h3 id="41-cold-start-latency-host-ms-4--emulated-design-point-p50--260-hard-max--375-size-independent"><a class="header" href="#41-cold-start-latency-host-ms-4--emulated-design-point-p50--260-hard-max--375-size-independent">4.1 Cold-start latency (host ms; ×4 = emulated). Design point p50 ≤ 260, hard max &lt; 375, size-independent</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>

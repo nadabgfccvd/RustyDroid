@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-497250b0.js";
+            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de440ca.js"></script>
+        <script src="toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -205,7 +205,7 @@
 <tr><td>M9</td><td>Componentes avançados + NDK</td><td>5 APKs com .so rodando; widgets/IME/notificações ok</td><td>✅ <strong>implementado e revisado (2026-10)</strong> — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21</td></tr>
 <tr><td>M10</td><td>Dispositivos virtuais</td><td>câmera/GPS/biometria programáveis pelo agente</td><td>✅ <strong>implementado (2026-10-25)</strong> — <a href="m10.html">docs/m10.md</a>, <a href="adr/011-m10-virtual-devices.html">ADR 011</a>, PR #201. Viewport em paisagem: <code>Engine::viewport_px()</code> é a fonte única para layout, decor da janela, screenshots e <code>ScreenModel</code> (#252, PR #456)</td></tr>
 <tr><td>M11</td><td>Engines</td><td>WASM → RN → Mono → Flutter (ordem do <a href="adr/013-m11-engine-execution-strategy.html">ADR 013</a>): 1 app de cada em golden flow</td><td>🟡 <strong>parcial (S1 núcleo + S1b bridge em VM + S1c registro/CLI <code>rd engine run wasm</code>, 2026-11)</strong> — interpretador i32/i64 + validador + limites + fuzz em <code>rd-engine-wasm</code> (<a href="m11-wasm.html">docs/m11-wasm.md</a>) + bridge <code>io.rustydroid.wasm.WasmBridge</code> atrás da feature <code>wasm-engine</code> de <code>rd-vm</code>, com golden de VM (ciclo de vida de <code>Activity</code>) e APK de demonstração em <code>golden/engines/wasm/</code> (o <code>TextView</code> mostra <code>add(2, 3) = 5</code> via bridge, <code>wasm_demo_golden</code>). suíte <code>rd test golden/engines/wasm/suite.json</code> PASS no CI. S1c: adaptador <code>wasm</code> no registro atrás da feature <code>wasm-execution</code> (<code>partial_wasm</code>; <code>rd engine check wasm</code> = AVAILABLE_BOUNDED, <code>rd engine run wasm &lt;apk&gt;</code> executa o APK de demonstração e mostra <code>5</code>). Pendente: S2 React Native (estratégia proposta no <a href="adr/020-m11-s2-react-native.html">ADR 020</a>, aguarda decisão do dono sobre engine JS/Hermes), S3 Mono, S4 Flutter (golden flow de 1 app cada).</td></tr>
-<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em https://nadabgfccvd.github.io/RustyDroid/ (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0</td></tr>
+<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em <a href="https://nadabgfccvd.github.io/RustyDroid/">https://nadabgfccvd.github.io/RustyDroid/</a> (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0</td></tr>
 </tbody>
 </table>
 </div>
@@ -348,7 +348,7 @@ sem DEX; dispatch host funciona para views infladas.</li>
 <li>✅ <code>setText(int resId)</code> + <code>Activity.getString(I)</code> resolvem no arsc;
 <strong>bug latente do <code>findViewById</code> corrigido</strong> (guard exigia Obj em args[0]
 e devolvia Null SEMPRE — sem cobertura até o M3.2).</li>
-<li>✅ Fixtures determinísticos byte a byte (<code>tests/common/apkfix.rs</code>): ZIP
+<li>✅ Fixtures determinísticos byte a byte (<code>crates/rd-testsupport/src/apkfix.rs</code>): ZIP
 STORED + string pool UTF-16 + AXML + ARSC gerados em Rust (sem fixture
 binário commitado); 6 testes de integração M3.2 (inclui DoD XML+toque e
 erros tipados). 187 testes no workspace, clippy limpo, fmt ok, MSRV 1.76 ok.</li>

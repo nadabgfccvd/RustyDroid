@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -203,7 +203,7 @@
 <h2 id="consequências"><a class="header" href="#consequências">Consequências</a></h2>
 <ul>
 <li>O modelo “uma sessão por processo” deixa de valer. Clientes MCP que usam a sessão padrão continuam funcionando sem mudança, porque sem <code>engine_id</code> a tool usa a sessão ativa.</li>
-<li>Teste de regressão obrigatório (RD Sentinel: mudança de VM e de sessão): duas sessões com estado isolado (uma sessão não vê classes, prefs nem <code>HostOut</code> da outra) e roteamento de toque para a sessão certa.</li>
+<li>Teste de regressão obrigatório (convenção do RD Sentinel, retirado pela ADR 010: mudança de VM e de sessão): duas sessões com estado isolado (uma sessão não vê classes, prefs nem <code>HostOut</code> da outra) e roteamento de toque para a sessão certa.</li>
 <li>A etapa 2 (composição visual com janela transparente, <code>rd-render</code> com duas camadas) não é coberta por esta ADR. Ela ganha ADR própria quando começar.</li>
 <li>Fora do escopo: threads por sessão, sessões em processos separados e compartilhamento de heap.</li>
 </ul>

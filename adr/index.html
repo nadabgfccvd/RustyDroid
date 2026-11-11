@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -201,7 +201,7 @@ que revisa uma anterior entra como ADR novo que a referencia.</p>
 <tr><td><a href="007-cranelift-leaf-jit.html">007</a></td><td>opt-in Cranelift integer &amp; control-flow JIT (<code>MethodJit</code>)</td><td>—</td><td>accepted and upgraded from straight-line leaf prototype…</td></tr>
 <tr><td><a href="008-15gb-apk-and-1500ms-cold-start.html">008</a></td><td>15 GB APK support with ≤ 1,500 ms cold start on the Moto E5 floor</td><td>2026-10-21</td><td>Accepted</td></tr>
 <tr><td><a href="009-process-cold-26ms.html">009</a></td><td>Process-cold &lt; 26 ms to first frame (live mode, all heavy features)</td><td>—</td><td>Accepted</td></tr>
-<tr><td><a href="010-rd-sentinel-anti-regression-bot.html">010</a></td><td>RD Sentinel: Dependabot-like anti-regression bot beyond CI</td><td>—</td><td>Accepted for implementation</td></tr>
+<tr><td><a href="010-rd-sentinel-anti-regression-bot.html">010</a></td><td>RD Sentinel: Dependabot-like anti-regression bot beyond CI</td><td>—</td><td>retirada</td></tr>
 <tr><td><a href="011-m10-virtual-devices.html">011</a></td><td>M10 virtual devices, sensors, media &amp; deterministic agent controls</td><td>2026-10-25</td><td>aceito e implementado</td></tr>
 <tr><td><a href="012-appendix-d-e-registries.html">012</a></td><td>Registros executáveis dos Apêndices D e E</td><td>2026-10-25</td><td>aceito; runtime de shims em implementação incremental so…</td></tr>
 <tr><td><a href="013-m11-engine-execution-strategy.html">013</a></td><td>Estratégia de execução de engines do M11</td><td>2026-10-25</td><td>proposto</td></tr>
@@ -209,7 +209,7 @@ que revisa uma anterior entra como ADR novo que a referencia.</p>
 <tr><td><a href="015-moto-e5-process-rss-1gb.html">015</a></td><td>moto-e5 process RSS cap raised from 512 MB to 1024 MB</td><td>2026-10-25</td><td>accepted. This is an owner decision</td></tr>
 <tr><td><a href="016-api-floor-9.html">016</a></td><td>Piso de API de execução: minSdk 26 → 9 (tier T0 best-effort)</td><td>2026-10-25</td><td>proposto</td></tr>
 <tr><td><a href="017-host-thread-local-state-engine-boundary.html">017</a></td><td>Estado host thread-local: fronteira de <code>Engine</code>, pacote e sessão</td><td>2026-10-25</td><td>proposto</td></tr>
-<tr><td><a href="018-restore-rd-sentinel-after-accidental-deletion.html">018</a></td><td>Restaurar o RD Sentinel após exclusão acidental (<code>4489813</code>)</td><td>—</td><td>Accepted</td></tr>
+<tr><td><a href="018-restore-rd-sentinel-after-accidental-deletion.html">018</a></td><td>Restaurar o RD Sentinel após exclusão acidental (<code>4489813</code>)</td><td>—</td><td>histórico</td></tr>
 <tr><td><a href="019-renderer-tiny-skia-pendente.html">019</a></td><td>Renderer M4: tiny-skia + shaping (spec) vs. rasterizador próprio atual</td><td>—</td><td>Aceito</td></tr>
 <tr><td><a href="020-m11-s2-react-native.html">020</a></td><td>M11 S2: React Native (LANG-05) — estratégia de execução</td><td>2026-11-01</td><td>proposto</td></tr>
 <tr><td><a href="021-apk-layering.html">021</a></td><td>Layering: executar dois APKs ao mesmo tempo (um por cima do outro)</td><td>2026-11-02</td><td>proposto</td></tr>
@@ -227,7 +227,7 @@ que revisa uma anterior entra como ADR novo que a referencia.</p>
 <tr><td><a href="033-layout-de-campos-por-classe.html">033</a></td><td>Layout de campos de instância por classe</td><td>2026-11-04</td><td>proposto</td></tr>
 <tr><td><a href="034-caminho-quente-de-invoke.html">034</a></td><td>Caminho quente de <code>invoke</code> (cache por site e alocações por chamada)</td><td>2026-11-04</td><td>proposto</td></tr>
 <tr><td><a href="035-identidades-inteiras-no-caminho-quente.html">035</a></td><td>Identidades inteiras (classe, campo, método) no caminho quente</td><td>2026-11-04</td><td>proposto</td></tr>
-<tr><td><a href="036-excecao-fixture-dex-rxjava.html">036</a></td><td>Exceção datada: fixture DEX reduzido do RxJava 3</td><td>2026-11-05</td><td>proposta, aguarda aplicação do label `sentinel:policy-ap…</td></tr>
+<tr><td><a href="036-excecao-fixture-dex-rxjava.html">036</a></td><td>Exceção datada: fixture DEX reduzido do RxJava 3</td><td>2026-11-05</td><td>proposta. Não há gate ativo: o RD Sentinel foi retirado</td></tr>
 <tr><td><a href="037-stubs-android-dirigidos-por-tabela.html">037</a></td><td>Stubs Android dirigidos por tabela, sem relocação e com erro delgado</td><td>2026-11-10</td><td>implementado</td></tr>
 <tr><td><a href="038-gate-de-benchmark-invariante-ao-runner.html">038</a></td><td>Gate de benchmark por contagem de instruções (não por tempo de parede)</td><td>2026-11-10</td><td>implementado</td></tr>
 </tbody>

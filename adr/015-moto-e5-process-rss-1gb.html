@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -194,8 +194,8 @@
 </li>
 </ul>
 <h2 id="context"><a class="header" href="#context">Context</a></h2>
-<p>The <code>moto-e5</code> hardware-floor profile capped the RustyDroid process at <strong>512 MB RSS</strong> (<code>rd perf</code> fails closed above it; Sentinel perf campaigns read the same profile). The owner wants RustyDroid to run APKs of up to <strong>1 GB</strong>.</p>
-<p>#216 already removes the <em>file-size</em> barrier: archives over 512 MiB are opened in paged mode, up to 16 GiB, and are never read whole. What remains is the <em>process</em> budget. Large real apps (big DEX sets, large decoded resources, native libraries) can need more than 512 MB of resident memory while running, even though paging keeps the APK bytes themselves out of RSS.</p>
+<p>The <code>moto-e5</code> hardware-floor profile capped the RustyDroid process at <strong>512 MB RSS</strong> (<code>rd perf</code> fails closed above it; as campanhas de perf do RD Sentinel, retirado pela ADR 010, liam o mesmo perfil). The owner wants RustyDroid to run APKs of up to <strong>1 GB</strong>.</p>
+<h1 id="216-already-removes-the-file-size-barrier-archives-over-512-mib-are-opened-in-paged-mode-up-to-16-gib-and-are-never-read-whole-what-remains-is-the-process-budget-large-real-apps-big-dex-sets-large-decoded-resources-native-libraries-can-need-more-than-512-mb-of-resident-memory-while-running-even-though-paging-keeps-the-apk-bytes-themselves-out-of-rss"><a class="header" href="#216-already-removes-the-file-size-barrier-archives-over-512-mib-are-opened-in-paged-mode-up-to-16-gib-and-are-never-read-whole-what-remains-is-the-process-budget-large-real-apps-big-dex-sets-large-decoded-resources-native-libraries-can-need-more-than-512-mb-of-resident-memory-while-running-even-though-paging-keeps-the-apk-bytes-themselves-out-of-rss">216 already removes the <em>file-size</em> barrier: archives over 512 MiB are opened in paged mode, up to 16 GiB, and are never read whole. What remains is the <em>process</em> budget. Large real apps (big DEX sets, large decoded resources, native libraries) can need more than 512 MB of resident memory while running, even though paging keeps the APK bytes themselves out of RSS.</a></h1>
 <h2 id="decision"><a class="header" href="#decision">Decision</a></h2>
 <ul>
 <li><code>moto-e5.ram_process_cap_mb</code> goes from 512 to <strong>1024</strong>.</li>

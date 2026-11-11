@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-497250b0.js";
+            window.path_to_searchindex_js = "../searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-0de440ca.js"></script>
+        <script src="../toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -297,7 +297,7 @@ continua <code>lang-12</code> (ADR 003 §4). <code>rd engine check wasm</code> d
 <p><strong>Fuzzing do parser novo (review, finding #3).</strong> O módulo <code>.wasm</code> vem de assets
 do APK = entrada não-confiável; SECURITY.md trata parsers como críticos. O S1
 inclui <code>fuzz_targets/wasm_module.rs</code> (parse + validade + instanciação sob
-limites) e a inclusão no campaign fuzz do RD Sentinel, junto de ZIP/AXML/ARSC/DEX.</p>
+limites) e a inclusão no campaign fuzz do RD Sentinel (retirado, ver ADR 010), junto de ZIP/AXML/ARSC/DEX.</p>
 </li>
 <li>
 <p><strong>Fatiamento.</strong> S0 = este ADR. S1 = <code>rd-engine-wasm</code> (interpretador MVP) + golden

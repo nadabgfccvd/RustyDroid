@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-497250b0.js";
+            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de440ca.js"></script>
+        <script src="toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -219,19 +219,22 @@ or invoking any <code>AG-10</code> mutation enables virtual peripherals ahead of
 absent-hardware stubs in <code>crates/rd-vm/src/intrinsics.rs</code>.</li>
 <li><strong>Stable 47-tool MCP catalog.</strong> <code>AG-10</code> multiplexes 18 <code>action</code> modes onto
 <code>device_profile</code> (<code>crates/rd-agent/src/m10_tools.rs</code>), preserving the locked
-47-tool MCP contract (<code>docs/mcp-tools.md</code>) and the no-app Moto E5 floor
+52-tool MCP contract (<code>docs/mcp-tools.md</code>) and the no-app Moto E5 floor
 response when <code>action</code> is omitted or <code>"get"</code>.</li>
 </ul>
 <h2 id="feature-flags"><a class="header" href="#feature-flags">Feature flags</a></h2>
+<p>Opt-in na compilação: <code>virtual-devices</code> <strong>não</strong> está em <code>default</code> (<code>Cargo.toml</code>). A
+ativação por execução (<code>rd app run --virtual-devices</code>) existe no branch do Zoom
+(PR #626) e ainda não está em <code>main</code>; ver a emenda da ADR 011.</p>
 <div class="table-wrapper">
 <table>
 <thead>
 <tr><th>Crate</th><th>Feature</th><th>Default</th><th>Effect</th></tr>
 </thead>
 <tbody>
-<tr><td><code>rd-vm</code></td><td><code>virtual-devices</code></td><td>on (implies <code>advanced-components</code>)</td><td>Enables <code>crates/rd-vm/src/m10/</code> and interpreter/intrinsic dispatch</td></tr>
-<tr><td><code>rd-agent</code></td><td><code>virtual-devices</code></td><td>on</td><td>Enables <code>AG-10</code> <code>device_profile</code> mutations and live <code>virtual_devices</code> snapshot</td></tr>
-<tr><td><code>rd-cli</code></td><td><code>virtual-devices</code></td><td>on</td><td>Forwards <code>virtual-devices</code> to <code>rd-vm</code> and <code>rd-agent</code></td></tr>
+<tr><td><code>rd-vm</code></td><td><code>virtual-devices</code></td><td>off (implies <code>advanced-components</code>)</td><td>Enables <code>crates/rd-vm/src/m10/</code> and interpreter/intrinsic dispatch</td></tr>
+<tr><td><code>rd-agent</code></td><td><code>virtual-devices</code></td><td>off</td><td>Enables <code>AG-10</code> <code>device_profile</code> mutations and live <code>virtual_devices</code> snapshot</td></tr>
+<tr><td><code>rd-cli</code></td><td><code>virtual-devices</code></td><td>off</td><td>Forwards <code>virtual-devices</code> to <code>rd-vm</code> and <code>rd-agent</code></td></tr>
 </tbody>
 </table>
 </div>

@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-497250b0.js";
+            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de440ca.js"></script>
+        <script src="toc-3cfe9074.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -292,7 +292,7 @@ viewer shows the latest frame between calls; it does not animate on its own
 into PNG assets is not (no OCR).</li>
 </ul>
 <h2 id="live-viewer-routes-and-page-rd-mcp---live"><a class="header" href="#live-viewer-routes-and-page-rd-mcp---live">Live viewer: routes and page (<code>rd mcp --live</code>)</a></h2>
-<p>Served by <code>live_serve_conn</code> in <code>crates/rd-agent/src/observe.rs</code> (<code>observe.rs:710</code>; std-only HTTP, one thread per connection, <code>Connection: close</code>). The address comes from <code>rd mcp --live &lt;addr&gt;</code> or <code>RD_MCP_LIVE</code> (<code>crates/rd-cli/src/main.rs:590</code>, <code>crates/rd-agent/src/mcp.rs:3195</code>). The viewer is started in <code>serve_stdio_with</code> (<code>crates/rd-agent/src/mcp.rs:3201-3212</code>) and logs <code>[rd mcp] live viewer: http://&lt;addr&gt;/</code> to stderr.</p>
+<p>Served by <code>live_serve_conn</code> in <code>crates/rd-agent/src/observe.rs</code> (std-only HTTP, one thread per connection, <code>Connection: close</code>). The address comes from <code>rd mcp --live &lt;addr&gt;</code> (handled in <code>crates/rd-cli/src/main.rs</code>) or <code>RD_MCP_LIVE</code> (read in <code>crates/rd-agent/src/mcp.rs</code>). The viewer is started in <code>serve_stdio_with</code> (<code>crates/rd-agent/src/mcp.rs</code>) and logs <code>[rd mcp] live viewer: http://&lt;addr&gt;/</code> to stderr.</p>
 <div class="table-wrapper">
 <table>
 <thead>
