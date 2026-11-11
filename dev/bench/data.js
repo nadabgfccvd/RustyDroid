@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794368733442,
+  "lastUpdate": 1794370655011,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6929,6 +6929,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2765,
             "range": "± 23",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "57b28db52f3e026701fe9b7e3c140007f16de6ef",
+          "message": "docs(m12): corrige os links quebrados do site publicado (#638)\n\ndocs(m12): corrige os links quebrados do site publicado",
+          "timestamp": "2026-11-11T01:17:01-03:00",
+          "tree_id": "7923c8e05ea641553687a62d4fb088f3f6ef4170",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/57b28db52f3e026701fe9b7e3c140007f16de6ef"
+        },
+        "date": 1794370654051,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1823,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1805,
+            "range": "± 33",
             "unit": "ns/iter"
           }
         ]
