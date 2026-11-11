@@ -59,6 +59,24 @@ const NATIVE_STACK_GUARD_RESERVE: usize = 512 * 1024;
 const NATIVE_STACK_HEADROOM: usize = 1024 * 1024;
 const FALLBACK_NATIVE_STACK_BYTES: usize = 1_280 * 1024;
 const MAX_MAIN_NATIVE_STACK_BYTES: usize = 6 * 1024 * 1024;
+/// Piso absoluto do orçamento de pilha nativa. Não pode ser maior que o que a
+/// pilha realmente tem: com o piso antigo (256 KiB fixos) uma thread de 256 KiB
+/// recebia um orçamento igual ao tamanho inteiro da pilha e abortava com SIGABRT
+/// em vez de lançar `StackOverflowError` (#637). O piso agora é relativo à pilha.
+const MIN_NATIVE_STACK_BUDGET: usize = 64 * 1024;
+/// Estimativa conservadora do custo nativo de um frame do interpretador, usada
+/// para derivar um **teto de profundidade** a partir do orçamento de pilha.
+///
+/// Medido em build debug neste repositório: a recursão de 128 frames de
+/// `catchRecurse` precisa de ~350 KiB (a 384 KiB roda, a 320 KiB aborta), ou
+/// seja ~2,7 KiB/frame. 4 KiB/frame é a estimativa com folga; em release o frame
+/// é menor ainda, então o teto só morde em pilhas pequenas.
+const FRAME_COST_BYTES: usize = 4 * 1024;
+/// Nº mínimo de frames que o teto derivado do orçamento pode impor. Evita que
+/// uma pilha minúscula produza um teto degenerado (0/1 frame) que rejeitaria
+/// até uma chamada trivial; com 16 frames × ~4 KiB = 64 KiB, ainda cabe numa
+/// pilha de 256 KiB com folga para o guard page.
+const MIN_DEPTH_FLOOR: usize = 16;
 
 #[inline(never)]
 fn current_stack_addr() -> usize {
@@ -146,7 +164,12 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
                     let free = sp_now
                         .saturating_sub(lo)
                         .saturating_sub(NATIVE_STACK_HEADROOM);
-                    return free.min(ceiling).max(256 * 1024);
+                    // #637: o piso era `256 KiB` fixos. Numa pilha de 256-320
+                    // KiB isso dava um orçamento maior do que a folga real e o
+                    // processo abortava. O piso agora nunca passa de 1/8 da VMA,
+                    // que é quanto sobra garantido depois de reservar o resto.
+                    let floor = MIN_NATIVE_STACK_BUDGET.min((hi.saturating_sub(lo)) / 8);
+                    return free.min(ceiling).max(floor);
                 }
             }
         }
@@ -355,6 +378,9 @@ pub struct Engine {
     host_depth: usize,
     entry_sp: usize,
     entry_stack_budget: usize,
+    /// Teto de profundidade derivado do orçamento de pilha da entrada atual.
+    /// `usize::MAX` quando não há âncora (usa só `config.max_depth`).
+    entry_depth_cap: usize,
     /// Active host->host reentrant call depth (`object_to_string`, `obj_equals`, `obj_hash`, etc.).
     pub(crate) host_reentrant_depth: usize,
 }
@@ -479,6 +505,7 @@ impl Engine {
             host_depth: 0,
             entry_sp: 0,
             entry_stack_budget: FALLBACK_NATIVE_STACK_BYTES,
+            entry_depth_cap: usize::MAX,
             host_reentrant_depth: 0,
             #[cfg(feature = "jit")]
             jit: {
@@ -842,18 +869,29 @@ impl Engine {
         let combined = self.depth.saturating_add(self.host_depth);
         let stack_exceeded =
             self.entry_sp != 0 && self.entry_sp.abs_diff(sp_now) >= self.entry_stack_budget;
-        if combined >= self.config.max_depth || stack_exceeded {
+        if combined >= self.config.max_depth || combined >= self.entry_depth_cap || stack_exceeded {
             return Err(VmExit::Exception(Throwable::new(
                 "Ljava/lang/StackOverflowError;",
                 format!(
                     "profundidade de chamadas ≥ {} (limite do motor: {})",
-                    combined, self.config.max_depth
+                    combined,
+                    self.config.max_depth.min(self.entry_depth_cap)
                 ),
             )));
         }
         let anchored = if self.entry_sp == 0 {
             self.entry_sp = sp_now;
             self.entry_stack_budget = detect_native_stack_budget(sp_now);
+            // #637: o orçamento em bytes só é conferido quando se cria um frame.
+            // Um frame do interpretador custa alguns KiB de pilha nativa entre
+            // duas checagens? Não: custa ~4 KiB, mas o salto entre a checagem e
+            // o consumo real pode ser grande em caminhos host<->DEX. Derivar
+            // também um TETO DE PROFUNDIDADE do orçamento garante que o erro
+            // seja lançado muito antes de a pilha acabar, independentemente do
+            // tamanho de frame — em pilhas pequenas (256-512 KiB) o
+            // `max_depth` configurado pelo chamador podia ser grande demais.
+            self.entry_depth_cap =
+                (self.entry_stack_budget / FRAME_COST_BYTES).max(MIN_DEPTH_FLOOR);
             true
         } else {
             false
@@ -875,6 +913,7 @@ impl Engine {
         if token.0 {
             self.entry_sp = 0;
             self.entry_stack_budget = FALLBACK_NATIVE_STACK_BYTES;
+            self.entry_depth_cap = usize::MAX;
         }
     }
 
