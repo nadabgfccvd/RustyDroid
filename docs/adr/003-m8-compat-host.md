@@ -1,5 +1,9 @@
 # ADR 003 — M8 compat host: interceptação seletiva + estado real consultável
 
+- **Status:** aceito e implementado (M8 concluído, 2026-10)
+- **Data:** data de aceite não registrada no ADR original
+
+
 ## Contexto
 M8 (spec PARTE 4): "Compat real — app OSS médio navega funcional; v0.9".
 Os subsistemas pedidos (RecyclerView, Fragments, Dialogs, OkHttp, SQLite/Room,

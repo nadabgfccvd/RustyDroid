@@ -41,6 +41,13 @@ jobs:
       - name: Internal markdown links resolve (incl. anchors)
         run: python3 scripts/check_md_links.py
 
+      # docs/SUMMARY.md used to carry a hand-written ADR list that stopped at
+      # ADR 020: 18 decision records existed on disk and were invisible in the
+      # published book, and the list was not in numeric order. The index is now
+      # generated; this proves the committed copy matches docs/adr/*.md.
+      - name: ADR index is in sync with docs/adr/
+        run: python3 scripts/gen_adr_index.py
+
       # issue #73: `cargo xtask compat-report` (forma documentada no README e no
       # CONTRIBUTING) precisa funcionar num clone limpo e o placar versionado
       # tem de ser idêntico ao gerado — senão o gate falha.
