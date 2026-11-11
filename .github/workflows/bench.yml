@@ -8,6 +8,15 @@ name: Bench (regression gate)
 # dependency, so cargo-deny stays unchanged). History is stored on the `gh-pages`
 # branch, which must exist (see docs/ROADMAP.md M12 / GH-06).
 #
+# Issue #629: the stored series mixes CPU classes (the same code measures from
+# ~1.7 µs to ~17.4 µs on `ubuntu-latest`), so a comparison against the single
+# previous run is an oracle on the machine fleet, not on the code. The 10% rule
+# from §3.2 is kept, but it is applied by `scripts/bench_gate.py` to a
+# **calibration-normalised** value against the **median of the last 5** stored
+# results. `github-action-benchmark` stays only as the history writer: it still
+# posts its own alert above 110% of the previous run, but that alert is advisory
+# (`fail-on-alert: false`).
+#
 # Only push-to-main stores data and gates. Manual runs measure and report only.
 
 on:
@@ -45,14 +54,49 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Run benches
-        run: |
+        run: |-
           set -euo pipefail
           cargo bench -p rd-dex --bench parse_tables --locked | tee bench-output.txt
           grep -q '^test ' bench-output.txt || { echo "::error::no bench results"; exit 1; }
 
-      # github-action-benchmark compares with the previous stored run and fails
-      # when the slowdown reaches the threshold (110% = a 10% regression).
-      - name: Compare with history and gate
+      # The gate needs the history *before* this run is appended to it, and the
+      # checkout has no credentials (persist-credentials: false), so read it from
+      # the contents API.
+      - name: Fetch stored history (gh-pages)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          set -euo pipefail
+          out="${RUNNER_TEMP}/bench-history.js"
+          code=$(curl -sS -o "$out" -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/contents/dev/bench/data.js?ref=gh-pages")
+          case "$code" in
+            200) echo "history: $(wc -c < "$out") bytes" ;;
+            404) echo "::notice::no history on gh-pages yet; the gate will seed"; rm -f "$out" ;;
+            *)   echo "::error::cannot read gh-pages history (HTTP ${code})"; exit 1 ;;
+          esac
+          echo "HISTORY_PATH=${out}" >>"${GITHUB_ENV}"
+
+      # The actual gate: §3.2's 10% rule, applied to the calibration-normalised
+      # value against the median of the last 5 stored results (issue #629).
+      - name: Gate on regression (§3.2, 10%)
+        if: github.event_name == 'push'
+        run: |-
+          set -euo pipefail
+          python3 scripts/bench_gate.py \
+            --results bench-output.txt \
+            --history "${HISTORY_PATH}" \
+            --dataset "rd-dex parse tables" \
+            --reference calib_scan_20k \
+            --window 5 \
+            --threshold 0.10 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # History writer only. Its own alert stays advisory: it compares against the
+      # single previous run, which is exactly the #629 flaw.
+      - name: Store history (advisory alert only)
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
         with:
           name: rd-dex parse tables
@@ -62,4 +106,4 @@ jobs:
           auto-push: ${{ github.event_name == 'push' }}
           alert-threshold: "110%"
           comment-on-alert: false
-          fail-on-alert: true
+          fail-on-alert: false

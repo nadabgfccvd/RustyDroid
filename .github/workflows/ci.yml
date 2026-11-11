@@ -60,6 +60,17 @@ jobs:
           fi
           echo "✅ No secrets detected"
 
+  scripts-tests:
+    name: Scripts self-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Hermetic: fixtures under mktemp, no network, no cargo. Guards the bench
+      # regression gate (scripts/bench_gate.py, issue #629) — a broken gate is
+      # worse than no gate, because it fails CI on noise and hides real drops.
+      - name: Bench gate self-tests
+        run: bash tests/scripts/bench_gate_test.sh
+
   markdown-lint:
     name: Markdown lint (advisory)
     runs-on: ubuntu-latest
