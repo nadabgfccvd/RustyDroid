@@ -78,6 +78,9 @@ jobs:
       - name: Bench gate self-tests
         run: bash tests/scripts/bench_ir_test.sh
 
+      - name: Docs-site link rewriter self-tests
+        run: bash tests/scripts/book_links_test.sh
+
       # A pinned action SHA that does not exist parses fine, passes YAML lint,
       # and then kills the workflow at `Set up job` before a single step runs —
       # no log, no step, just a red job. That is how the M12 docs deploy failed

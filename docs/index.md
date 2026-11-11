@@ -11,8 +11,12 @@ and AI-agent automation over MCP.
 
 ## Quick Navigation
 
-- **Overview & Quickstart:** [`README.md`](../README.md) · [`README.en.md`](../README.en.md)
-- **Master Specification (v2.1):** [`RustyDroid.md`](../RustyDroid.md)
+> Documents that live at the repository root (`README`, the spec, governance)
+> are linked on GitHub: mdBook only renders what is under `docs/`, so a `../`
+> link would 404 on the published site.
+
+- **Overview & Quickstart:** [`README.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/README.md) · [`README.en.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/README.en.md)
+- **Master Specification (v2.1):** [`RustyDroid.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/RustyDroid.md)
 - **Milestone Roadmap (M0 → M12):** [`ROADMAP.md`](./ROADMAP.md)
 - **Official Compatibility Scoreboard (generated):** [`compat-matrix.md`](./compat-matrix.md)
 
@@ -52,6 +56,6 @@ anchors are continuously verified in CI by `python3 scripts/check_md_links.py`.
 
 ## Governance, Support & Security
 
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md) · [`GOVERNANCE.md`](../GOVERNANCE.md) ·
-  [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) · [`SUPPORT.md`](../SUPPORT.md) ·
-  [`SECURITY.md`](../SECURITY.md) · [`CHANGELOG.md`](../CHANGELOG.md)
+- [`CONTRIBUTING.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/CONTRIBUTING.md) · [`GOVERNANCE.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/GOVERNANCE.md) ·
+  [`CODE_OF_CONDUCT.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/CODE_OF_CONDUCT.md) · [`SUPPORT.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/SUPPORT.md) ·
+  [`SECURITY.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/SECURITY.md) · [`CHANGELOG.md`](https://github.com/nadabgfccvd/RustyDroid/blob/main/CHANGELOG.md)
