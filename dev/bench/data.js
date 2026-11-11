@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794365226276,
+  "lastUpdate": 1794366001974,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6809,6 +6809,48 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3578,
             "range": "± 235",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "583aa07d8477477f54631278ecf55bb7e7925058",
+          "message": "docs(m12): publica o site mdBook e gera o índice de ADRs (#631)\n\ndocs(m12): publica o site mdBook e gera o índice de ADRs",
+          "timestamp": "2026-11-10T23:59:32-03:00",
+          "tree_id": "2afc09aa9bf1f7ba31a9974aeca24f3f1850f900",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/583aa07d8477477f54631278ecf55bb7e7925058"
+        },
+        "date": 1794366001175,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "calib_scan_20k",
+            "value": 43164,
+            "range": "± 1661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3196,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3219,
+            "range": "± 110",
             "unit": "ns/iter"
           }
         ]
