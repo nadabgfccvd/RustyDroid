@@ -3,21 +3,30 @@ name: Bench (regression gate)
 # RustyDroid.md §3.2: "bench.yml | push main | criterion + github-action-benchmark
 # (fail em regressão > 10%)".
 #
-# Benches live in the crates themselves (`harness = false`, libtest-format output
-# so the `cargo` tool of github-action-benchmark can parse them; no criterion
-# dependency, so cargo-deny stays unchanged). History is stored on the `gh-pages`
-# branch, which must exist (see docs/ROADMAP.md M12 / GH-06).
+# ## How the 10% rule is enforced (Issue #629, ADR 038)
 #
-# Issue #629: the stored series mixes CPU classes (the same code measures from
-# ~1.7 µs to ~17.4 µs on `ubuntu-latest`), so a comparison against the single
-# previous run is an oracle on the machine fleet, not on the code. The 10% rule
-# from §3.2 is kept, but it is applied by `scripts/bench_gate.py` to a
-# **calibration-normalised** value against the **median of the last 5** stored
-# results. `github-action-benchmark` stays only as the history writer: it still
-# posts its own alert above 110% of the previous run, but that alert is advisory
-# (`fail-on-alert: false`).
+# Two measurements of the same benches, with different jobs:
 #
-# Only push-to-main stores data and gates. Manual runs measure and report only.
+#   * **wall-clock (ns/iter)** — published to `gh-pages` by
+#     `github-action-benchmark` for the trend graph. **Advisory only**
+#     (`fail-on-alert: false`). It cannot gate: `ubuntu-latest` mixes CPU
+#     classes and this bench, unchanged, has measured from 1 736 to 17 370 ns
+#     per iteration across 191 stored runs. Three consecutive runs of identical
+#     code gave calib 43 164 / 68 506 / 42 310 ns while the target itself stayed
+#     within 2.3% — the machine moves, not the code.
+#
+#   * **instructions retired (callgrind)** — the gate. Deterministic: three
+#     rebuilds of the same source give the same count to the instruction
+#     (45 552 for `parse_method_ids_20k`, three times, zero variance). The 10%
+#     threshold from §3.2 is applied to the **instruction delta** over a `noop`
+#     run, so it fires on code changes and never on the runner fleet.
+#
+# The baseline lives in `crates/rd-dex/benches/ir-baseline.json` and is reviewed
+# with the code: when a change legitimately alters the work, the PR updates it
+# (`python3 scripts/bench_ir.py --results ir.txt --write`) and the diff is part
+# of the review.
+#
+# Only push-to-main gates. Manual runs measure and report only.
 
 on:
   push:
@@ -38,7 +47,7 @@ jobs:
   bench:
     name: benches (rd-dex parse tables)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     # write só para o job: github-action-benchmark grava o histórico no gh-pages
     permissions:
       contents: write
@@ -53,50 +62,49 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Run benches
+      # valgrind ships in the runner image; the install is a no-op guard for the
+      # day it does not.
+      - name: Ensure valgrind
+        run: |
+          set -euo pipefail
+          command -v valgrind || sudo apt-get install -y valgrind
+          valgrind --version
+
+      # ── wall clock: advisory history ──────────────────────────────────────
+      - name: Run benches (wall clock, advisory)
         run: |-
           set -euo pipefail
           cargo bench -p rd-dex --bench parse_tables --locked | tee bench-output.txt
           grep -q '^test ' bench-output.txt || { echo "::error::no bench results"; exit 1; }
 
-      # The gate needs the history *before* this run is appended to it, and the
-      # checkout has no credentials (persist-credentials: false), so read it from
-      # the contents API.
-      - name: Fetch stored history (gh-pages)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ── instructions retired: the gate ────────────────────────────────────
+      - name: Count instructions (callgrind)
         run: |-
           set -euo pipefail
-          out="${RUNNER_TEMP}/bench-history.js"
-          code=$(curl -sS -o "$out" -w '%{http_code}' \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github.raw" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/contents/dev/bench/data.js?ref=gh-pages")
-          case "$code" in
-            200) echo "history: $(wc -c < "$out") bytes" ;;
-            404) echo "::notice::no history on gh-pages yet; the gate will seed"; rm -f "$out" ;;
-            *)   echo "::error::cannot read gh-pages history (HTTP ${code})"; exit 1 ;;
-          esac
-          echo "HISTORY_PATH=${out}" >>"${GITHUB_ENV}"
+          cargo bench -p rd-dex --bench parse_tables --no-run --locked
+          bin="$(ls -t target/release/deps/parse_tables-* | grep -v '\.d$' | head -1)"
+          test -x "$bin" || { echo "::error::bench binary not found"; exit 1; }
+          echo "bench binary: ${bin}"
+          : > ir.txt
+          for target in noop parse_method_ids_20k parse_field_ids_20k; do
+            out="${RUNNER_TEMP}/callgrind.${target}"
+            valgrind --tool=callgrind --callgrind-out-file="$out" -q "$bin" --count "$target"
+            total="$(callgrind_annotate "$out" | sed -n 's/^\([0-9,]*\) .*/\1/p' | head -1 | tr -d ,)"
+            test -n "$total" || { echo "::error::no instruction total for ${target}"; exit 1; }
+            echo "ir ${target} ${total}" >> ir.txt
+          done
+          cat ir.txt
 
-      # The actual gate: §3.2's 10% rule, applied to the calibration-normalised
-      # value against the median of the last 5 stored results (issue #629).
-      - name: Gate on regression (§3.2, 10%)
+      - name: Gate on regression (§3.2, 10% of instructions)
         if: github.event_name == 'push'
         run: |-
           set -euo pipefail
-          python3 scripts/bench_gate.py \
-            --results bench-output.txt \
-            --history "${HISTORY_PATH}" \
-            --dataset "rd-dex parse tables" \
-            --reference calib_scan_20k \
-            --window 5 \
-            --threshold 0.10 \
+          python3 scripts/bench_ir.py --results ir.txt --threshold 0.10 \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       # History writer only. Its own alert stays advisory: it compares against the
-      # single previous run, which is exactly the #629 flaw.
-      - name: Store history (advisory alert only)
+      # single previous run on a different machine, which is the #629 flaw.
+      - name: Store wall-clock history (advisory alert only)
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
         with:
           name: rd-dex parse tables

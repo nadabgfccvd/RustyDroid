@@ -85,5 +85,5 @@ por `scripts/gen_adr_index.py` a partir dos arquivos — não edite à mão.
 - [ADR 035 — Identidades inteiras (classe, campo, método) no caminho quente](./adr/035-identidades-inteiras-no-caminho-quente.md)
 - [ADR 036 — Exceção datada: fixture DEX reduzido do RxJava 3](./adr/036-excecao-fixture-dex-rxjava.md)
 - [ADR 037 — Stubs Android dirigidos por tabela, sem relocação e com erro delgado](./adr/037-stubs-android-dirigidos-por-tabela.md)
-- [ADR 038 — Gate de benchmark invariante à classe de runner (calibração normalizada)](./adr/038-gate-de-benchmark-invariante-ao-runner.md)
+- [ADR 038 — Gate de benchmark por contagem de instruções (não por tempo de parede)](./adr/038-gate-de-benchmark-invariante-ao-runner.md)
 <!-- adr:end -->
