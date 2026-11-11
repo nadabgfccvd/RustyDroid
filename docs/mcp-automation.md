@@ -1,7 +1,7 @@
 # Reliable MCP automation and diagnostics
 
 The generated [tool catalog](mcp-tools.md) remains the source of truth for all
-47 registered tools. The original 41 tool definitions are preserved; the six
+52 registered tools (catálogo de 2026-11-11). The original 41 tool definitions are preserved; the six
 additions below complement, rather than replace, the existing tools.
 
 ## Structured host-view automation

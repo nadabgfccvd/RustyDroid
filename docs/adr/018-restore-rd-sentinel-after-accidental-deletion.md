@@ -1,6 +1,6 @@
 # ADR 018 — Restaurar o RD Sentinel após exclusão acidental (`4489813`)
 
-- **Status:** Accepted (restauração executada, 2026-10-30)
+- **Status:** histórico (restauração executada em 2026-10-30; a ferramenta foi removida em 2026-10-31, ver ADR 010)
 - **Scope:** `tools/rd-sentinel/**` (restauração byte-a-byte), `docs/adr/018-*`
 - **Relaciona-se a:** [ADR 010](010-rd-sentinel-anti-regression-bot.md)
   (o Sentinel é a camada anti-regressão além do CI), ADR 003 / ADR 017

@@ -698,7 +698,7 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
 
 - **Cast** (`gms-cast`): `gms_cast_set_connect_failure(code)` faz a tentativa falhar sem criar sessão (estado
   NO_DEVICES); o erro fica em `gms_cast_last_error` e a tentativa seguinte bem-sucedida o limpa. Testes no mesmo arquivo.
-- **Nearby** (`gms-nearby`): critério já atendido por testes existentes em `tests/gms.rs` (ENDPOINT_UNKNOWN para
+- **Nearby** (`gms-nearby`): critério já atendido por testes existentes em `crates/rd-vm/tests/gms.rs` (ENDPOINT_UNKNOWN para
   endpoint não descoberto; ciclo de descoberta, conexão e encerramento). Nenhuma mudança de código.
 - **Analytics** (`firebase-analytics`): nome de evento (até 40), parâmetro (até 40) e propriedade de usuário (até 24)
   inválidos pela regra documentada do Firebase são rejeitados e contados em `gms_analytics_rejected`. Parâmetro

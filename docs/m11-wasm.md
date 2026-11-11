@@ -140,9 +140,9 @@ medido lá.
 
 ## Testes e fuzzing
 
-- `tests/wasm_mvp.rs` (25 testes): módulos montados à mão em `tests/support/`,
+- `crates/rd-engine-wasm/tests/wasm_mvp.rs` (25 testes): módulos montados à mão em `crates/rd-engine-wasm/tests/support/`,
   cobrindo semântica, traps, fuel, limites, validação e negativos.
-- `tests/fuzz_smoke.rs` (3 testes): mutação determinística de 20 000 módulos e
+- `crates/rd-engine-wasm/tests/fuzz_smoke.rs` (3 testes): mutação determinística de 20 000 módulos e
   5 000 entradas aleatórias. A propriedade é "nunca pânico, só erro estruturado".
   Cerca de 2,5% das mutações chegam ao interpretador, o suficiente para exercitá-lo.
 - `fuzz/fuzz_targets/wasm_module.rs`: alvo libFuzzer (`cargo fuzz build` compila

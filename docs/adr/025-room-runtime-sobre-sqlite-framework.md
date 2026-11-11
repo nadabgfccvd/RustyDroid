@@ -116,4 +116,3 @@ O dono mandou seguir todos os passos. Executado A1, com limite de passos. Nenhum
 **Regressão.** `crates/rd-cli/tests/fdroid_oncreate_e2e.rs` falha se `App.onCreate`, o lateinit do Room ou o `scheduleOrCancel` voltarem a lançar exceção. Os testes unitários de `m8.rs` cobrem os helpers de builder.
 
 **Limites desta etapa.** Não foi medida invalidação de tabelas nem transação do Room sobre o VM. Layering (ADR 021, etapa 1 "sessions") não foi iniciado.
-

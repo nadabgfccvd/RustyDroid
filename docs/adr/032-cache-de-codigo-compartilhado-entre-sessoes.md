@@ -114,4 +114,3 @@ a ela e não serve como comparação.
 - Screenshots idênticas: ATENDIDO.
 - Testes `rd-vm` e `rd-agent`: ver registro da PR.
 - API pública de `Classpath`: sem mudança (só `new_shared_with_decode` e `DecodeCache` novos).
-

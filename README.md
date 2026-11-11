@@ -83,8 +83,7 @@ not claims of universal NDK/Rust support or third-party APK compatibility.
 
 ## Reliable MCP automation and diagnostics
 
-See [the automation guide](docs/mcp-automation.md) for structured host-view selectors, guarded taps, presence/absence waits, session diagnostics, incremental byte-exact log reads and typed error snapshots. The original tool definitions remain intact; the live catalog now has 47 tools.
-
+See [the automation guide](docs/mcp-automation.md) for structured host-view selectors, guarded taps, presence/absence waits, session diagnostics, incremental byte-exact log reads and typed error snapshots. The original tool definitions remain intact; the live catalog now has 52 tools.
 
 ### 🤖 Built with AI — heavily
 
@@ -103,7 +102,7 @@ See [the automation guide](docs/mcp-automation.md) for structured host-view sele
 | **M2** | ✅ **DONE** — minimal Dalvik interpreter: **150/150 golden vectors PASS vs real JVM execution** + real APK pure methods verified |
 | **M3** | ✅ **DONE** — Essential framework: Activity lifecycle, Handler/Looper, LayoutInflater, Resources |
 | **M4** | ✅ **DONE** — software rendering determinístico + UI dump uiautomator-compatible |
-| **M5** | ✅ **DONE** — MCP agent v1 (`rd mcp`, JSON-RPC stdio, **30 tools**: pacote (install/list/remove/clear/launch), input (tap/swipe/type/key), observação (ui_tree/screenshot/logs), wait/wait_for + asserts, permissões, runtime_health, compat_gaps, batch idempotente, sandbox+caps de segurança, `--describe-tools` + docs geradas; the live catalog has since grown to **47 tools**) |
+| **M5** | ✅ **DONE** — MCP agent v1 (`rd mcp`, JSON-RPC stdio, **30 tools** (hoje 52): pacote (install/list/remove/clear/launch), input (tap/swipe/type/key), observação (ui_tree/screenshot/logs), wait/wait_for + asserts, permissões, runtime_health, compat_gaps, batch idempotente, sandbox+caps de segurança, `--describe-tools` + docs geradas; the live catalog has since grown to **52 tools**) |
 | **M6** | ✅ **DONE** — test executor: `rd test suite.json` (cenários JSON, exit codes, **JUnit XML**), compat matrix gerada do roadmap + suítes |
 | **M7** | 🟡 **IN PROGRESS** — `rd perf` mede startup cold/warm + RSS no perfil moto-e5 com gate de CI sobre o app trivial (números emulados por fator de CPU); budgets da golden suite, medição em device real e gate de release ainda pendentes |
 | **M8** | ✅ **DONE (v0.9.0)** — Real-world compat: RecyclerView (DEX adapter populate), Fragments (legacy+androidx), Dialogs, OkHttp shim (offline deterministic), SQLite/Room (in-memory), Services/broadcasts/deep links, WorkManager, stateful SharedPreferences — `crates/rd-vm/src/m8.rs`, ADR 003 |
@@ -294,7 +293,7 @@ Dual-licensed under [`MIT`](./LICENSE-MIT) OR [`Apache-2.0`](./LICENSE-APACHE) �
 **RustyDroid** é uma "Wine para Android": em vez de emular um sistema Android inteiro
 (lento sem KVM), ele parseia APKs diretamente e executa o bytecode Dalvik numa **VM
 escrita em Rust**, com as APIs `android.*` implementadas nativamente, renderização por
-software e um **modo dedicado a agentes de IA (MCP)** com 47 ferramentas estruturadas.
+software e um **modo dedicado a agentes de IA (MCP)** com 52 ferramentas estruturadas.
 
 - **Piso de performance:** Motorola Moto E5 (Snapdragon 425, 2 GB RAM) — todos os
   budgets de performance são calibrados nele, não em emuladores modernos

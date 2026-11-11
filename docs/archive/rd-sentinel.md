@@ -1,3 +1,8 @@
+> **ARQUIVADO em 2026-11-11: histórico, não é guia vigente.** A ferramenta
+> `tools/rd-sentinel/` foi removida em `08ae54f` (2026-10-31) e os workflows
+> `rd-sentinel*.yml` em `46af515` (#436). Nada deste documento é executável no
+> repositório atual. Ver [ADR 010](../adr/010-rd-sentinel-anti-regression-bot.md).
+
 # RD Sentinel — anti-regression bot operator guide
 
 RD Sentinel is RustyDroid's dedicated Dependabot-like guardian. Normal CI
@@ -7,7 +12,7 @@ long campaigns, historic budgets, environment drift, evidence shrinkage, and
 deduplicated GitHub triage.
 
 The architecture and rationale are recorded in
-[ADR 010](adr/010-rd-sentinel-anti-regression-bot.md).
+[ADR 010](../adr/010-rd-sentinel-anti-regression-bot.md).
 
 ## What changed in v1.1
 

@@ -33,7 +33,7 @@
 
 As dependências só apontam para baixo (rd-apk → rd-dex → rd-vm → …). Não crie ciclos.
 
-## 3. Portões obrigatórios (CI e Sentinel)
+## 3. Portões obrigatórios (CI)
 
 ```sh
 cargo fmt --all -- --check
@@ -53,15 +53,10 @@ cargo test --workspace            # ou -p <crate> durante o desenvolvimento
 
 - Gate `benches (rd-dex parse tables)` (push em main, limite 110%): o runner compartilhado varia até ~2x entre execuções do mesmo código (1,8k–3,6k ns em 2026-11-01). Antes de atribuir regressão a um PR, re-execute o job e compare com o histórico do gh-pages (`dev/bench/data.js`).
 
-### RD Sentinel (o relatório fica no comentário `rd-sentinel-report` do PR)
-- **Não enfraqueça** `.github/rd-sentinel/policy.json` nem `baseline.json`.
-- Os labels `sentinel:*-approved` são decisão **humana** do mantenedor. Agente não aplica label.
-- Bloqueios comuns e a **causa real** de cada um. Corrija a causa, não o sintoma:
-  - "no test evidence": falta um `#[test]` novo.
-  - "contract trigger has no ADR": mudança de contrato pede ADR (ou adendo) em `docs/adr/`.
-  - `unwrap`/`expect` novos em código de produção: troque por erro tipado.
-  - "named test removed" / "public fn removed" num PR antigo: geralmente é a base desatualizada. Faça merge da `main` no branch.
-  - Tamanho do binário: o gate por PR é +5% / +256 KiB. Mudança grande pede números de antes/depois.
+### RD Sentinel (retirado)
+- O RD Sentinel foi removido do repositório (ADR 010, emenda de 2026-11-11).
+  Não procure `tools/rd-sentinel/` nem `.github/workflows/rd-sentinel*.yml`.
+  O guia antigo está em `docs/archive/rd-sentinel.md`, só como histórico.
 
 ## 4. Regras de convivência
 

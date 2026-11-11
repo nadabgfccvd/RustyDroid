@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentação revisada (2026-11-11):** o RD Sentinel foi retirado e o guia dele
+  foi para `docs/archive/` (ADR 010, emenda). ADR 011 ganhou emenda: `virtual-devices`
+  é opt-in na compilação, não `default`. O catálogo MCP tem 52 tools (não 47).
+  Caminhos de teste desatualizados foram corrigidos. Os documentos históricos
+  foram para `docs/archive/` (índice em `docs/archive/README.md`).
+
 ### Added
 
 - **`android.webkit.CookieManager` (`crates/rd-vm/src/webkit_cookies.rs`):** process-wide `getInstance()`, `setCookie`/`getCookie` with the RFC 6265 subset APKs use (host-only vs `Domain=`, `Path=`, `Secure` refused over plain http, `HttpOnly`, `Max-Age` on the virtual clock), `removeAllCookies`/`removeSessionCookies` answering through the `ValueCallback`, `setAcceptCookie`/`acceptCookie`, `flush`, third-party-cookie setters. Not modelled, and documented as such: public-suffix rejection, SameSite, partitioned (CHIPS) cookies. Test: `crates/rd-vm/tests/webkit_cookies.rs` (7).
@@ -106,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Opt-in `--features jit` (`RD_JIT=on`) backend in `rd-jni`/`rd-vm` with fuel parity and interpreter fallback.
 - **Large-APK & Cold-Start Architecture ([ADR 008](./docs/adr/008-15gb-apk-and-1500ms-cold-start.md), [ADR 009](./docs/adr/009-process-cold-26ms.md)):**
   Bounded `pread64` `PagedZip` LRU cache, `< 26 ms` snapshot-backed warm/live startup, and `rd perf` phase telemetry against the Motorola Moto E5 floor (`1,500 ms` emulated cold-start budget).
-- **RD Sentinel Anti-Regression Bot ([ADR 010](./docs/adr/010-rd-sentinel-anti-regression-bot.md), [`docs/rd-sentinel.md`](./docs/rd-sentinel.md)):**
+- **RD Sentinel Anti-Regression Bot ([ADR 010](./docs/adr/010-rd-sentinel-anti-regression-bot.md), [`docs/archive/rd-sentinel.md`](./docs/archive/rd-sentinel.md)):**
   Automated diff-risk scoring, static safety invariants, protected-path enforcement, fuzz/mutation/perf campaigns, and SARIF reporting.
 - **Expanded MCP Control Plane ([`docs/mcp-observe.md`](./docs/mcp-observe.md), [`docs/mcp-automation.md`](./docs/mcp-automation.md)):**
   Screen observation without screenshots (`observe`, `tap_text`, subscribable `rustydroid://screen` resources, `--live` browser viewer), guarded selectors, incremental logs, and typed diagnostics across 47 tools.

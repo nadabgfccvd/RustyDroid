@@ -110,4 +110,3 @@ Screenshot: as duas sessões saem idênticas (`cmp`) e idênticas à rodada base
   código decodificado, resolve_cache, buffers de tela). Esse é o próximo passo (ADR 030, opção
   2 e layout de campos por classe).
 - Medição em debug. Release não roda nesta sandbox (ver ADR 030).
-

@@ -3,7 +3,6 @@
 - **Status:** aceito e implementado (M10 concluído em 2026-10-25, PR #201)
 - **Data:** 2026-10-25
 
-
 ## Context
 
 Milestone M10 in `RustyDroid.md` (PARTE 3 + PARTE 4) specifies virtual peripheral
@@ -120,3 +119,12 @@ from M9):
   `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`, `SEND_SMS`, `READ_PHONE_STATE`) raise
   `java.lang.SecurityException` via `Engine::permission_granted` rather than
   returning silent nulls.
+
+## Emenda (2026-11-11): o que o código faz
+
+Esta emenda corrige a Decisão acima com o estado real do código. O texto original foi mantido; a emenda registra a diferença.
+
+- **Feature padrão (corrige "enabled by default"):** `virtual-devices` não está em `default` de `rd-vm`, `rd-agent` nem `rd-cli` (`Cargo.toml`; a feature foi introduzida em `5922e0f` sem entrar no `default`). A compilação é opt-in, e o próprio item 3 da Decisão já dizia "Opt-in". A política vigente é ativação por execução, como nos emuladores Android.
+- **Flag por execução:** a flag `--virtual-devices` de `rd app run` existe no branch do Zoom (PR #626), ainda não em `main`. Até essa mesclagem, `main` não expõe a flag.
+- **Contagem de tools MCP (corrige "47"):** o catálogo tem **52 tools** na build padrão (`rd mcp --describe-tools`, igual a `docs/mcp-tools.md`). A contagem independe de feature, porque `device_profile` é sempre registrada. O número 47 desta ADR é histórico: o ADR 023 registrou 50 e o catálogo cresceu depois.
+- **`baseline.json`:** `.github/rd-sentinel/baseline.json` ainda diz `mcp_tool_count: 50`, mas nenhum script lê esse campo. O RD Sentinel foi removido (ver ADR 010).
