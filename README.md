@@ -143,7 +143,7 @@ permissions (31 declaradas; tabela: 175 permissões)
 components (36: activity×10 · activity-alias×3 · provider×4 · receiver×9 · service×10)
 ```
 
-APK de referência: **F-Droid 2.0.1** (`v2.0.1 · 2000051`), baixado por `./golden-apks/fetch.sh` — `sha256 83d3fe522281c3cb89fce3bc05038f81b3c3b32c108536941f184c5f9bb53778`. Bloco regenerado em **2026-10-12** a partir do binário desta árvore; `cargo test -p rd-cli --test readme_inspect` falha se o exemplo divergir da saída real (o teste é ignorado quando o APK golden não está presente).
+APK de referência do bloco: **F-Droid 2.0.2** (`v2.0.2 · 2000052`), `sha256 19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52` (verificado em 2026-11-11). `./golden-apks/fetch.sh` baixa o `F-Droid.apk` corrente do f-droid.org, que muda a cada release (em 2026-11-11 o índice já listava 2.0.3); para reproduzir o bloco, use o `org.fdroid.fdroid_2000052.apk` do repositório F-Droid. A versão 2.0.1 (`sha256 83d3fe522281c3cb89fce3bc05038f81b3c3b32c108536941f184c5f9bb53778`) dá as mesmas contagens. Bloco regenerado em **2026-10-12** a partir do binário desta árvore; `cargo test -p rd-cli --test readme_inspect` falha se o exemplo divergir da saída real (o teste é ignorado quando o APK golden não está presente).
 
 Build it yourself: `cargo build -p rd-cli` → `./target/debug/rd inspect your.apk`.
 
@@ -165,6 +165,7 @@ rustydroid/
 │   ├── rd-engine-*/   # language bridges (flutter/rn/mono/wasm…) feature-gated (M11)
 │   ├── rd-framework/  # versioned framework data/engines: fd-permissions ✅, fd-devices ✅, fd-behavior ✅, fd-api-coverage ✅, fd-jetpack ✅, fd-gms ✅
 │   ├── rd-render/     # headless / window / web renderers + UI dump     (M4)
+│   ├── rd-testsupport/ # fixtures determinísticos (DexBuilder/apkfix) para os testes dos crates
 │   ├── rd-agent/      # MCP (JSON-RPC próprio, ADR 001) + suite executor `rd test` (M6) + coverage · 52 tools · screen model, resources, live viewer
 │   └── rd-cli/        # the `rd` binary: inspect / perm / device / behavior / api-coverage / jetpack / gms / engine / dex / vm / app / mcp / test / perf
 ├── data/              # permissions (175), devices (6), behavior-switches (25), engines (28), api-coverage (17 domains, 106 surfaces), jetpack (46 libraries), gms (21 services)
