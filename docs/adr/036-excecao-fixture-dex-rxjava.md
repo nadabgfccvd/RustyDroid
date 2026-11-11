@@ -1,14 +1,14 @@
 # ADR 036 — Exceção datada: fixture DEX reduzido do RxJava 3
 
-- **Status:** proposta, aguarda aplicação do label `sentinel:policy-approved` por um mantenedor.
+- **Status:** proposta. Não há gate ativo: o RD Sentinel foi retirado (ADR 010) e nenhum workflow consome o label `sentinel:policy-approved`. Manter, ajustar ou descartar a exceção é decisão do mantenedor.
 - **Data:** 2026-11-05
 - **Escopo:** Apêndice D (S12), `androidx`/`rxjava` como `dex-passthrough`.
 
 ## Contexto
 
-`.github/rd-sentinel/policy.json` lista `.dex` em `diff.binary_extensions_blocking`.
-Um arquivo desse tipo commitado é finding bloqueante (P0/P1). A ADR 010 exige
-`sentinel:policy-approved` aplicado por mantenedor para liberar isso.
+`.github/rd-sentinel/policy.json` (arquivo mantido, sem gate que o leia) lista `.dex` em `diff.binary_extensions_blocking`.
+Enquanto o RD Sentinel estava ativo, um arquivo desse tipo commitado era finding bloqueante (P0/P1), e a ADR 010 exigia
+`sentinel:policy-approved` aplicado por mantenedor para liberá-lo.
 
 Testar a biblioteca real (e não um DEX sintético) é a única forma de validar que o
 bytecode do RxJava executa na VM. Gerar o DEX em tempo de teste exige rede e R8 no CI, o que não é reprodutível.

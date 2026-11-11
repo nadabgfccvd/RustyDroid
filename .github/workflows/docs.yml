@@ -20,7 +20,7 @@ name: Docs site (mdBook)
 # root. A push race with the bench job is handled by retrying the whole
 # fetch → merge → push cycle.
 #
-# ## RD Sentinel notes (`_workflow_findings`)
+# ## Security notes (formerly RD Sentinel `_workflow_findings`; RD Sentinel retired, ADR 010)
 # The deploy job requests `contents: write`, so every action is pinned to a full
 # commit SHA. No `${{ }}` expression appears inside a `run:` script; values
 # arrive through `env:`. The token is never written to a remote URL — it goes

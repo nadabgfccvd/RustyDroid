@@ -109,7 +109,7 @@ gate (tirar a feature do `--all-features`) é proibido pela política no mesmo P
 8. **Fuzzing do parser novo (review, finding #3).** O módulo `.wasm` vem de assets
    do APK = entrada não-confiável; SECURITY.md trata parsers como críticos. O S1
    inclui `fuzz_targets/wasm_module.rs` (parse + validade + instanciação sob
-   limites) e a inclusão no campaign fuzz do RD Sentinel, junto de ZIP/AXML/ARSC/DEX.
+   limites) e a inclusão no campaign fuzz do RD Sentinel (retirado, ver ADR 010), junto de ZIP/AXML/ARSC/DEX.
 
 9. **Fatiamento.** S0 = este ADR. S1 = `rd-engine-wasm` (interpretador MVP) + golden
    `golden/engines/wasm/` (APK e `.wasm` construídos do fonte de forma reproduzível e

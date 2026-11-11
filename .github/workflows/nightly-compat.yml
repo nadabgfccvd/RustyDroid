@@ -10,7 +10,7 @@ name: Nightly compat
 # deliberately does not have.
 #
 # Not included on purpose: `rd perf` on the fetched APK. The F-Droid client is
-# classified `below_floor_or_structured_result` in the Sentinel baseline, so a
+# classified `below_floor_or_structured_result` in the retired RD Sentinel baseline, so a
 # perf gate on it would fail for the wrong reason. The M7 golden perf gate needs
 # a pinned, launchable APK (the primftpd fixture) — tracked as follow-up.
 

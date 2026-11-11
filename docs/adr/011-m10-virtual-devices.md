@@ -88,8 +88,8 @@ from M9):
      `android_sysservices` / `android_stub_surfaces` in `intrinsics.rs` while
      still falling through for pure AOSP value math.
 4. **Preserving the 47-tool MCP contract (ADR 010)**:
-   - RD Sentinel enforces `mcp_tool_count == 47` against
-     `.github/rd-sentinel/baseline.json`. Rather than breaking existing MCP
+   - À época, o RD Sentinel exigia `mcp_tool_count == 47` contra
+     `.github/rd-sentinel/baseline.json` (retirado depois, ver ADR 010). Rather than breaking existing MCP
      clients or baseline invariants with a 48th tool, `AG-10` extends the
      existing `device_profile` tool with optional `action` commands (`"get"`,
      `"location"`, `"sensor"`, `"battery"`, `"network"`, `"telephony"`,

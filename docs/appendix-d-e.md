@@ -283,10 +283,8 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
     reduzido por R8 8.7.18 com regras keep. Tem 23 KB e está em
     `crates/rd-vm/tests/fixtures/rxjava3/`. A regeneração reproduz o SHA-256
     `4023c229…` (`scripts/gen-rxjava3-fixture.sh`). Proveniência e licenças no README.
-  - Exceção de política: `.dex` é bloqueante no RD Sentinel. A exceção datada, com
-    escopo de um único arquivo e validade até 2027-02-05, está em
-    `docs/adr/036-excecao-fixture-dex-rxjava.md`. Ela depende de um mantenedor aplicar
-    `sentinel:policy-approved`. Não foi aplicada por mim.
+  - Exceção de política (histórica): enquanto o RD Sentinel estava ativo, `.dex` era bloqueante. Ele foi retirado (ADR 010). A exceção datada, com escopo de um único arquivo e validade até 2027-02-05, está em
+    `docs/adr/036-excecao-fixture-dex-rxjava.md`; sem gate ativo, ela não tem efeito técnico, e manter ou não é decisão do mantenedor.
   - Testes: 5 em `crates/rd-vm/tests/jetpack_rxjava.rs`. Cobrem `just` + `subscribe`
     → disposed; `never` → não disposed; `dispose()` → disposed; `empty` → disposed;
     e sem o DEX da biblioteca no Engine a chamada falha.
@@ -330,7 +328,7 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
     `--min-api 26`). `scripts/gen-room-fixture.sh` regenera tudo a partir do Google
     Maven (AndroidX não existe no Maven Central), com `platform-35` para o
     `android.jar`. O SHA-256 gerado nesta rodada foi `134e9ab7…`.
-  - O DEX **não** é versionado: `.dex` é bloqueante no RD Sentinel e a exceção da
+  - O DEX **não** é versionado: a regra vinha do RD Sentinel (retirado, ADR 010) e a exceção da
     ADR 036 cobre só o fixture do RxJava. Por isso `crates/rd-vm/tests/jetpack_room.rs`
     (3 testes) é `#[ignore]` e exige `RD_ROOM_FIXTURE_DEX`. Rodar no CI exige uma
     exceção de política nova, que é decisão de mantenedor.

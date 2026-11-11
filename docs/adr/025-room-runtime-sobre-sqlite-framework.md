@@ -29,7 +29,7 @@ O F-Droid chega em `WorkManagerImpl.getInstance` e falha com `lateinit property 
 
 ## Decisão proposta
 
-1. Caminho **A**, em etapas, cada uma com teste de regressão (RD Sentinel: mudança de VM):
+1. Caminho **A**, em etapas, cada uma com teste de regressão (convenção do RD Sentinel, retirado pela ADR 010: mudança de VM):
    1. Fazer `room_builder` chamar `init` com um `DatabaseConfiguration` real, usando o helper de framework. Teste: `RoomDatabase.connectionManager` não é nulo após `build()`, e um `SELECT` simples de um DAO devolve linhas.
    2. Suportar `runInTransaction`/`beginTransaction` e o invalidation tracker. Teste: uma escrita dispara a invalidação observada.
    3. Validar com o F-Droid: `WorkDatabase.systemIdInfoDao()` funciona sem exceção.

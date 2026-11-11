@@ -33,7 +33,7 @@ O dono decidiu: **o piso de execução é 9 (Android 2.3 Gingerbread)**.
    silenciosa (Lei 1). T1 (26–28) passa a "compatibilidade plena (piso
    histórico)"; **o gate de release continua ancorado em T1+**.
 3. `floor_min_sdk` no baseline do RD Sentinel acompanha (26→9) em commit
-   isolado, sob o label `sentinel:baseline-approved` do dono — é mudança de
+   isolado, sob o label `sentinel:baseline-approved` do dono (o RD Sentinel foi retirado depois, ver ADR 010; o campo ficou em 9 e nenhum script o lê) — é mudança de
    contrato declarada, não afrouxamento silencioso de gate.
 
 ## O que NÃO muda (três "pisos" distintos)

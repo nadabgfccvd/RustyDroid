@@ -2,9 +2,8 @@
 #
 # cargo-audit remains useful, but it only answers the RustSec question. This
 # file makes the broader graph policy executable: yanked releases, licenses,
-# wildcard/duplicate declarations, and sources. RD Sentinel's JSON policy is
-# still the approval/check-completeness authority; cargo-deny is one required
-# dependency-campaign check, not the whole anti-regression gate.
+# wildcard/duplicate declarations, and sources. The RD Sentinel JSON policy was
+# retired (ADR 010); cargo-deny is the dependency check that remains in CI.
 #
 # Keep every ignore crate-scoped, reasoned, and time-bounded.
 
@@ -44,7 +43,7 @@ ignore = false
 
 [bans]
 # Cargo can legitimately resolve more than one major of a transitive crate.
-# RD Sentinel separately blocks unexplained growth in duplicate names; making
+# RD Sentinel (retired, ADR 010) once blocked unexplained growth in duplicate names; making
 # every current duplicate a hard cargo-deny failure would hide new ones in a
 # permanently red check.
 multiple-versions = "warn"
