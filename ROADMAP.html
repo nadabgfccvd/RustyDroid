@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
+            window.path_to_searchindex_js = "searchindex-d791e13d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-3cfe9074.js"></script>
+        <script src="toc-8a78525e.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -205,7 +205,7 @@
 <tr><td>M9</td><td>Componentes avançados + NDK</td><td>5 APKs com .so rodando; widgets/IME/notificações ok</td><td>✅ <strong>implementado e revisado (2026-10)</strong> — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21</td></tr>
 <tr><td>M10</td><td>Dispositivos virtuais</td><td>câmera/GPS/biometria programáveis pelo agente</td><td>✅ <strong>implementado (2026-10-25)</strong> — <a href="m10.html">docs/m10.md</a>, <a href="adr/011-m10-virtual-devices.html">ADR 011</a>, PR #201. Viewport em paisagem: <code>Engine::viewport_px()</code> é a fonte única para layout, decor da janela, screenshots e <code>ScreenModel</code> (#252, PR #456)</td></tr>
 <tr><td>M11</td><td>Engines</td><td>WASM → RN → Mono → Flutter (ordem do <a href="adr/013-m11-engine-execution-strategy.html">ADR 013</a>): 1 app de cada em golden flow</td><td>🟡 <strong>parcial (S1 núcleo + S1b bridge em VM + S1c registro/CLI <code>rd engine run wasm</code>, 2026-11)</strong> — interpretador i32/i64 + validador + limites + fuzz em <code>rd-engine-wasm</code> (<a href="m11-wasm.html">docs/m11-wasm.md</a>) + bridge <code>io.rustydroid.wasm.WasmBridge</code> atrás da feature <code>wasm-engine</code> de <code>rd-vm</code>, com golden de VM (ciclo de vida de <code>Activity</code>) e APK de demonstração em <code>golden/engines/wasm/</code> (o <code>TextView</code> mostra <code>add(2, 3) = 5</code> via bridge, <code>wasm_demo_golden</code>). suíte <code>rd test golden/engines/wasm/suite.json</code> PASS no CI. S1c: adaptador <code>wasm</code> no registro atrás da feature <code>wasm-execution</code> (<code>partial_wasm</code>; <code>rd engine check wasm</code> = AVAILABLE_BOUNDED, <code>rd engine run wasm &lt;apk&gt;</code> executa o APK de demonstração e mostra <code>5</code>). Pendente: S2 React Native (estratégia proposta no <a href="adr/020-m11-s2-react-native.html">ADR 020</a>, aguarda decisão do dono sobre engine JS/Hermes), S3 Mono, S4 Flutter (golden flow de 1 app cada).</td></tr>
-<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em <a href="https://nadabgfccvd.github.io/RustyDroid/">https://nadabgfccvd.github.io/RustyDroid/</a> (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0</td></tr>
+<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em <a href="https://nadabgfccvd.github.io/RustyDroid/">https://nadabgfccvd.github.io/RustyDroid/</a> (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia, <strong>compat-matrix viva publicada</strong> (<code>docs/compat-live.md</code> + badge, do artefato da última run noturna); faltam releases automáticas no gh-pages e v1.0</td></tr>
 </tbody>
 </table>
 </div>
@@ -1122,8 +1122,19 @@ status). Há gate de sincronia no <code>ci.yml</code> e no <code>docs.yml</code>
 <li>✅ <strong>Cobertura do livro</strong> — 0 arquivos órfãos (eram 26): os 39 ADRs, os
 apêndices B–F e C-inventory, os perfis do Comprix e <code>target-apps.md</code> estão
 no <code>SUMMARY.md</code>.</li>
-<li>⬜ <strong>Faltam:</strong> compat-matrix viva na mesma origem, releases publicadas no
-<code>gh-pages</code>, e o corte da v1.0.</li>
+<li>✅ <strong>compat-matrix viva na mesma origem</strong> (2026-11-10) — <code>nightly-compat.yml</code>
+continua só produzindo evidência (JUnit por suíte, <code>rd inspect --json</code>, o
+placar gerado) e o artefato tem retenção de 14 dias; quem publica segue sendo
+o <code>docs.yml</code>, único escritor na <code>gh-pages</code>. O job <code>build</code> busca a última run
+<strong>bem-sucedida</strong> do nightly (<code>actions: read</code>), e <code>scripts/compat_live.py</code>
+renderiza <code>docs/compat-live.md</code> + <code>docs/compat-badge.svg</code> antes do
+<code>mdbook build</code>. Um <code>schedule</code> diário (06:17 UTC, depois do nightly das 04:43)
+republica o site mesmo em dias sem commit. Sem run, com artefato expirado ou
+sem permissão, a página publica o estado <strong>“sem dados”</strong> em vez de número
+velho — um placar ausente não pode derrubar a documentação. O renderizador é
+determinístico (nada de <code>now()</code>: o único carimbo é o <code>created_at</code> da run) e
+tem self-test hermético em <code>tests/scripts/compat_live_test.sh</code> (23 casos).</li>
+<li>⬜ <strong>Faltam:</strong> releases publicadas no <code>gh-pages</code>, e o corte da v1.0.</li>
 </ol>
 
                     </main>

@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-ba6ae61a.js";
+            window.path_to_searchindex_js = "searchindex-d791e13d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-3cfe9074.js"></script>
+        <script src="toc-8a78525e.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -260,7 +260,7 @@ anchors are continuously verified in CI by <code>python3 scripts/check_md_links.
 <tr><td>M9</td><td>Componentes avançados + NDK</td><td>5 APKs com .so rodando; widgets/IME/notificações ok</td><td>✅ <strong>implementado e revisado (2026-10)</strong> — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21</td></tr>
 <tr><td>M10</td><td>Dispositivos virtuais</td><td>câmera/GPS/biometria programáveis pelo agente</td><td>✅ <strong>implementado (2026-10-25)</strong> — <a href="#m10--virtual-devices-sensors-media-connectivity-and-dynamic-system-config">docs/m10.md</a>, <a href="#adr-011--m10-virtual-devices-sensors-media--deterministic-agent-controls">ADR 011</a>, PR #201. Viewport em paisagem: <code>Engine::viewport_px()</code> é a fonte única para layout, decor da janela, screenshots e <code>ScreenModel</code> (#252, PR #456)</td></tr>
 <tr><td>M11</td><td>Engines</td><td>WASM → RN → Mono → Flutter (ordem do <a href="#adr-013--estratégia-de-execução-de-engines-do-m11">ADR 013</a>): 1 app de cada em golden flow</td><td>🟡 <strong>parcial (S1 núcleo + S1b bridge em VM + S1c registro/CLI <code>rd engine run wasm</code>, 2026-11)</strong> — interpretador i32/i64 + validador + limites + fuzz em <code>rd-engine-wasm</code> (<a href="#m11--engine-wasm-slices-s1-s1b-s1c">docs/m11-wasm.md</a>) + bridge <code>io.rustydroid.wasm.WasmBridge</code> atrás da feature <code>wasm-engine</code> de <code>rd-vm</code>, com golden de VM (ciclo de vida de <code>Activity</code>) e APK de demonstração em <code>golden/engines/wasm/</code> (o <code>TextView</code> mostra <code>add(2, 3) = 5</code> via bridge, <code>wasm_demo_golden</code>). suíte <code>rd test golden/engines/wasm/suite.json</code> PASS no CI. S1c: adaptador <code>wasm</code> no registro atrás da feature <code>wasm-execution</code> (<code>partial_wasm</code>; <code>rd engine check wasm</code> = AVAILABLE_BOUNDED, <code>rd engine run wasm &lt;apk&gt;</code> executa o APK de demonstração e mostra <code>5</code>). Pendente: S2 React Native (estratégia proposta no <a href="#adr-020--m11-s2-react-native-lang-05--estratégia-de-execução">ADR 020</a>, aguarda decisão do dono sobre engine JS/Hermes), S3 Mono, S4 Flutter (golden flow de 1 app cada).</td></tr>
-<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em <a href="https://nadabgfccvd.github.io/RustyDroid/">https://nadabgfccvd.github.io/RustyDroid/</a> (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0</td></tr>
+<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em <a href="https://nadabgfccvd.github.io/RustyDroid/">https://nadabgfccvd.github.io/RustyDroid/</a> (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia, <strong>compat-matrix viva publicada</strong> (<code>docs/compat-live.md</code> + badge, do artefato da última run noturna); faltam releases automáticas no gh-pages e v1.0</td></tr>
 </tbody>
 </table>
 </div>
@@ -1177,8 +1177,19 @@ status). Há gate de sincronia no <code>ci.yml</code> e no <code>docs.yml</code>
 <li>✅ <strong>Cobertura do livro</strong> — 0 arquivos órfãos (eram 26): os 39 ADRs, os
 apêndices B–F e C-inventory, os perfis do Comprix e <code>target-apps.md</code> estão
 no <code>SUMMARY.md</code>.</li>
-<li>⬜ <strong>Faltam:</strong> compat-matrix viva na mesma origem, releases publicadas no
-<code>gh-pages</code>, e o corte da v1.0.</li>
+<li>✅ <strong>compat-matrix viva na mesma origem</strong> (2026-11-10) — <code>nightly-compat.yml</code>
+continua só produzindo evidência (JUnit por suíte, <code>rd inspect --json</code>, o
+placar gerado) e o artefato tem retenção de 14 dias; quem publica segue sendo
+o <code>docs.yml</code>, único escritor na <code>gh-pages</code>. O job <code>build</code> busca a última run
+<strong>bem-sucedida</strong> do nightly (<code>actions: read</code>), e <code>scripts/compat_live.py</code>
+renderiza <code>docs/compat-live.md</code> + <code>docs/compat-badge.svg</code> antes do
+<code>mdbook build</code>. Um <code>schedule</code> diário (06:17 UTC, depois do nightly das 04:43)
+republica o site mesmo em dias sem commit. Sem run, com artefato expirado ou
+sem permissão, a página publica o estado <strong>“sem dados”</strong> em vez de número
+velho — um placar ausente não pode derrubar a documentação. O renderizador é
+determinístico (nada de <code>now()</code>: o único carimbo é o <code>created_at</code> da run) e
+tem self-test hermético em <code>tests/scripts/compat_live_test.sh</code> (23 casos).</li>
+<li>⬜ <strong>Faltam:</strong> releases publicadas no <code>gh-pages</code>, e o corte da v1.0.</li>
 </ol>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="target-apps-must-run-end-to-end-on-rustydroid"><a class="header" href="#target-apps-must-run-end-to-end-on-rustydroid">Target apps: must run end-to-end on RustyDroid</a></h1>
@@ -1442,6 +1453,59 @@ Lei de Ouro: nenhuma API ausente quebra o app em silêncio — tudo responde <co
 <li>Framework (M3): Activity lifecycle + views host + Handler/Looper + touch + <strong>LayoutInflater de layout XML real</strong> (setContentView(I): resid → @layout/key no arsc → AXML do APK → árvore host; attrs id/text/orientation/visibility/enabled/onClick/layout_height; setText(I), getString(I), findViewById) — classes de view sem host (ImageView/…) e configs específicas (land/locale) respondem tipadas</li>
 <li>Render/agente: render headless, árvore acessível e MCP já disponíveis em subconjuntos documentados; APIs ausentes retornam <code>NOT_IMPLEMENTED(module_id)</code></li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="compatibilidade-ao-vivo-última-rodada-noturna"><a class="header" href="#compatibilidade-ao-vivo-última-rodada-noturna">Compatibilidade ao vivo (última rodada noturna)</a></h1>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="compat-badge.svg" alt="compat nightly"><span class="img-wrapper"><img src="compat-badge.svg" alt="compat nightly"></span></label></p>
+<p>Esta página é o <strong>placar vivo</strong>: o resultado da última execução do
+<a href="https://github.com/nadabgfccvd/RustyDroid/blob/main/.github/workflows/nightly-compat.yml"><code>nightly-compat.yml</code></a>
+sobre os APKs dourados, publicado junto com o site.</p>
+<ul>
+<li>O nightly roda todo dia às <strong>04:43 UTC</strong> (ou por <code>workflow_dispatch</code>), inspeciona
+cada APK dourado, faz o diff de disassembly contra o baksmali e executa todas as
+suítes de <code>tests/suites/</code> em JUnit XML.</li>
+<li>O job <code>build</code> do <code>docs.yml</code> baixa o artefato <code>nightly-compat-reports</code> da última
+run <strong>bem-sucedida</strong>, e <code>scripts/compat_live.py</code> reescreve o bloco abaixo e o
+badge acima antes do <code>mdbook build</code>. Publicar continua sendo só do <code>docs.yml</code>
+(um escritor na <code>gh-pages</code>, sem corrida com o <code>bench.yml</code>).</li>
+<li>Se não houver run recente, a página diz isso em vez de inventar números — a
+matriz oficial por API, que não depende de APK, continua em
+<a href="#compat-matrix--placar-oficial-do-rustydroid">compat-matrix</a>.</li>
+</ul>
+<p>O que <strong>não</strong> está aqui: medições de performance (essas ficam no gráfico
+<code>dev/bench/</code> do site e no gate da
+<a href="#adr-038--gate-de-benchmark-por-contagem-de-instruções-não-por-tempo-de-parede">ADR 038</a>) e o histórico de
+versões, que é o <a href="https://github.com/nadabgfccvd/RustyDroid/blob/main/CHANGELOG.md">CHANGELOG</a>.</p>
+<!-- compat-live:begin -->
+<p><strong>Status da última execução noturna: ✅ verde</strong></p>
+<p>execução de <code>2026-11-10T12:56:27Z</code> · commit <code>d1ee058</code> · run #12</p>
+<p><a href="https://github.com/nadabgfccvd/RustyDroid/actions/runs/42820020537">Log da execução no GitHub Actions</a></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>suíte</th><th style="text-align: right">testes</th><th style="text-align: right">falhas</th><th style="text-align: right">erros</th><th style="text-align: right">pulados</th><th style="text-align: right">tempo</th></tr>
+</thead>
+<tbody>
+<tr><td>contract-no-app</td><td style="text-align: right">8</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">2 ms</td></tr>
+<tr><td>m10-virtual-devices</td><td style="text-align: right">2</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0 ms</td></tr>
+<tr><td>m8-compat</td><td style="text-align: right">2</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">3 ms</td></tr>
+<tr><td><strong>total</strong></td><td style="text-align: right"><strong>12</strong></td><td style="text-align: right"><strong>0</strong></td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right"><strong>5 ms</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p>Também nesta rodada: <strong>3</strong> APK(s) inspecionado(s) em JSON estruturado (artefato <code>nightly-compat-reports</code>, retenção de 14 dias).</p>
+<p>A tabela é gerada por <code>scripts/compat_live.py</code> a partir do JUnit XML do <code>rd test</code>; o placar oficial por API continua em <a href="#compat-matrix--placar-oficial-do-rustydroid">compat-matrix</a>.</p>
+<!-- compat-live:end -->
+<h2 id="como-reproduzir-localmente"><a class="header" href="#como-reproduzir-localmente">Como reproduzir localmente</a></h2>
+<pre><code class="language-bash">cargo build --release -p rd-cli
+./golden-apks/fetch.sh org.schabi.newpipe org.tasks
+mkdir -p reports/junit
+for suite in tests/suites/*.json; do
+  ./target/release/rd test "$suite" --junit "reports/junit/$(basename "$suite" .json).xml"
+done
+python3 scripts/compat_live.py --reports reports --page docs/compat-live.md
+</code></pre>
+<p>Sem <code>--run-json</code> a página fica com os contadores das suítes e sem o commit de
+origem — é o modo útil para um desenvolvedor checar antes de abrir PR.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="apêndices-bf--plano-de-implementação-e-estado-verificado"><a class="header" href="#apêndices-bf--plano-de-implementação-e-estado-verificado">Apêndices B–F — plano de implementação e estado verificado</a></h1>
 <p>Este documento é o plano executável dos Apêndices B, C, D, E e F de <code>RustyDroid.md</code>.
