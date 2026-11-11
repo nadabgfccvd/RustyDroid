@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794374210989,
+  "lastUpdate": 1794384013262,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7109,6 +7109,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2768,
             "range": "± 15",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "766ec00e4dfe6678e2458663dd07f5918630c227",
+          "message": "Merge pull request #643 from nadabgfccvd/feat/m12-releases-page\n\nfeat(m12): página de releases viva no site (e o pipeline de release de verdade)",
+          "timestamp": "2026-11-11T04:59:44-03:00",
+          "tree_id": "1a693b9e18118551644c426c790a0371aa81a352",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/766ec00e4dfe6678e2458663dd07f5918630c227"
+        },
+        "date": 1794384010831,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1749,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1746,
+            "range": "± 25",
             "unit": "ns/iter"
           }
         ]
