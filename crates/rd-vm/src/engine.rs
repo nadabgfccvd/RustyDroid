@@ -196,7 +196,18 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
     if std::thread::current().name() == Some("main") {
         MAX_MAIN_NATIVE_STACK_BYTES
     } else {
-        FALLBACK_NATIVE_STACK_BYTES
+        // #643: o fallback de 1,25 MiB presume uma thread comunitária "normal"
+        // (≥ 8 MiB). Para threads PEQUENAS cuja VMA não foi detectável no
+        // /proc (layout do runner: TLS anônimo acima da pilha, SP fora da
+        // VMA rw que a varredura aceita), esse orçamento era MAIOR que a
+        // pilha inteira: o guard em bytes nunca disparava antes da guard
+        // page do SO e o processo abortava com SIGABRT (flake #637). Sem
+        // detecção não há como conhecer a pilha — o único valor que não
+        // mente para qualquer pilha é o piso absoluto (64 KiB, com
+        // MIN_DEPTH_FLOOR garantindo 16 frames). Threads grandes de verdade
+        // voltam a detectar a VMA e recebem o orçamento cheio; o caminho
+        // principal (main, RLIMIT) segue intacto.
+        MIN_NATIVE_STACK_BUDGET
     }
 }
 
