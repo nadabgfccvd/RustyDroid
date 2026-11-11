@@ -86,6 +86,9 @@ jobs:
       - name: Live compat page renderer self-tests
         run: bash tests/scripts/compat_live_test.sh
 
+      - name: Releases page renderer self-tests
+        run: bash tests/scripts/releases_live_test.sh
+
       # A pinned action SHA that does not exist parses fine, passes YAML lint,
       # and then kills the workflow at `Set up job` before a single step runs —
       # no log, no step, just a red job. That is how the M12 docs deploy failed

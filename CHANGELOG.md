@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Página de releases viva no site (M12):** `docs/releases.md` é renderizada por
+  `scripts/releases_live.py` a partir de `GET /repos/:owner/:repo/releases` no build do
+  `docs.yml`, com uma linha por versão (data, nº de artefatos, tamanho), a lista de
+  arquivos de cada payload e a instrução de verificação da procedência
+  (`gh attestation verify`). Política de falha **diferente** da matriz de
+  compatibilidade: uma lista de releases não envelhece, então se a API não responder o
+  script sai sem tocar na página e o build publica o último snapshot versionado — só uma
+  resposta válida e vazia troca o bloco por "nenhuma release publicada ainda".
+  Self-test hermético `tests/scripts/releases_live_test.sh` (21 casos) no `ci.yml`.
 - **Matriz de compatibilidade viva no site (M12):** `nightly-compat.yml` continua só
   produzindo evidência (o artefato `nightly-compat-reports`, retenção de 14 dias) e o
   `docs.yml` segue como único escritor na `gh-pages`. O job `build` agora busca a última

@@ -233,9 +233,11 @@ def replace_block(page_text: str, block: str) -> str:
     start = page_text.find(BEGIN)
     stop = page_text.find(END)
     if start < 0 or stop < 0 or stop < start:
-        raise SystemExit(
-            f"erro: marcadores {BEGIN} / {END} ausentes ou fora de ordem na página"
+        print(
+            f"erro: marcadores {BEGIN} / {END} ausentes ou fora de ordem na página",
+            file=sys.stderr,
         )
+        raise SystemExit(2)
     return page_text[:start] + block + page_text[stop + len(END):]
 
 
