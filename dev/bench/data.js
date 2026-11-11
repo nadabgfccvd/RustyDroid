@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794366674641,
+  "lastUpdate": 1794368733442,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6893,6 +6893,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3244,
             "range": "± 59",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "69eb6506ed7b4a0eab288e0e977b0193c461ceda",
+          "message": "ci(bench): gate por contagem de instruções substitui o de wall-clock (#635)\n\nci(bench): gate por contagem de instruções substitui o de wall-clock (fecha #629)",
+          "timestamp": "2026-11-11T00:44:28-03:00",
+          "tree_id": "9831c837ebd665f75fd74565c1c797480e93bc77",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/69eb6506ed7b4a0eab288e0e977b0193c461ceda"
+        },
+        "date": 1794368732701,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2765,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2765,
+            "range": "± 23",
             "unit": "ns/iter"
           }
         ]
