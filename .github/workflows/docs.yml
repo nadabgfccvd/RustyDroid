@@ -72,6 +72,16 @@ jobs:
         # mdBook renders `adr/README.md` as `adr/index.html`, not `adr/README.html`.
         run: grep -q "Índice de Architecture Decision Records" target/mdbook/adr/index.html
 
+      # `scripts/check_md_links.py` validates the **repository** view, where
+      # `docs/adr/../README.md` is a real file. The **book** view differs: mdBook
+      # only renders what lives under `docs/`, so the same link resolves to a
+      # page that does not exist. Rewrite those to the GitHub blob URL, then
+      # assert nothing is left missing. Note that `../css/*` and `../favicon-*`
+      # are mdBook's own assets for subdirectory pages and must be left alone —
+      # the script checks the target's existence rather than pattern-matching.
+      - name: Links that escape the book root point at GitHub
+        run: python3 scripts/book_links.py --site target/mdbook
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mdbook-site
