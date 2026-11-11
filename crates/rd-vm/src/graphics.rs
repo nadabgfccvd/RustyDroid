@@ -1298,6 +1298,42 @@ pub(crate) fn static_intrinsic(
                 ("blue", _) if sig.starts_with("(J)") => {
                     Value::Int((it_long(a(0)) as u64 & 0xFF) as i32)
                 }
+                // `Color.colorToHSV` / `RGBToHSV` / `HSVToColor` (AOSP, float). Matiz 0
+                // para acromáticos: o AOSP divide 0/0 aqui (ver docs/compat-desvios.md).
+                ("colorToHSV", "(I[F)V") => {
+                    let hsv = rgb_to_hsv((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+                    write_floats(vm, a(1), &hsv, 0);
+                    Value::Null
+                }
+                ("RGBToHSV", "(III[F)V") => {
+                    let hsv = rgb_to_hsv(
+                        (it(a(0)) as u32) & 0xFF,
+                        (it(a(1)) as u32) & 0xFF,
+                        (it(a(2)) as u32) & 0xFF,
+                    );
+                    write_floats(vm, a(3), &hsv, 0);
+                    Value::Null
+                }
+                ("HSVToColor", "(I[F)I") => {
+                    let hsv = float_array(vm, a(1));
+                    let h = [
+                        hsv.first().copied().unwrap_or(0.0),
+                        hsv.get(1).copied().unwrap_or(0.0),
+                        hsv.get(2).copied().unwrap_or(0.0),
+                    ];
+                    let alpha = c & 0xFF;
+                    let rgb = hsv_to_rgb(h);
+                    Value::Int(((alpha << 24) | rgb) as i32)
+                }
+                ("HSVToColor", "([F)I") => {
+                    let hsv = float_array(vm, a(0));
+                    let h = [
+                        hsv.first().copied().unwrap_or(0.0),
+                        hsv.get(1).copied().unwrap_or(0.0),
+                        hsv.get(2).copied().unwrap_or(0.0),
+                    ];
+                    Value::Int((0xFF00_0000 | hsv_to_rgb(h)) as i32)
+                }
                 ("parseColor", _) => {
                     let s = cs_text(vm, a(0).unwrap_or(&Value::Null))?;
                     let h = s.trim_start_matches('#');
@@ -4805,4 +4841,50 @@ fn blit_preview(
             px[i + 2] = v;
         }
     }
+}
+
+/// `Color.RGBToHSV` em float (AOSP): matiz em graus [0, 360), saturação e valor em [0, 1].
+fn rgb_to_hsv(r8: u32, g8: u32, b8: u32) -> [f32; 3] {
+    let r = r8 as f32 / 255.0;
+    let g = g8 as f32 / 255.0;
+    let b = b8 as f32 / 255.0;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    if max == 0.0 || delta == 0.0 {
+        return [0.0, 0.0, max];
+    }
+    let s = delta / max;
+    let mut h = if r == max {
+        (g - b) / delta
+    } else if g == max {
+        2.0 + (b - r) / delta
+    } else {
+        4.0 + (r - g) / delta
+    };
+    h *= 60.0;
+    if h < 0.0 {
+        h += 360.0;
+    }
+    [h, s, max]
+}
+
+/// `Color.HSVToColor` (AOSP, float): devolve só os 24 bits RGB.
+fn hsv_to_rgb(hsv: [f32; 3]) -> u32 {
+    let h = hsv[0].rem_euclid(360.0);
+    let s = hsv[1].clamp(0.0, 1.0);
+    let v = hsv[2].clamp(0.0, 1.0);
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match (h / 60.0) as u32 % 6 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let q = |f: f32| ((f + m) * 255.0 + 0.5) as u32;
+    (q(r) << 16) | (q(g) << 8) | q(b)
 }

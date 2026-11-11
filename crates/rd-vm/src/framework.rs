@@ -1671,6 +1671,18 @@ impl Engine {
         package: &str,
         extras: Vec<(String, Value)>,
     ) -> Result<ObjRef, VmExit> {
+        self.start_activity_with(desc, package, extras, None)
+    }
+
+    /// Como `start_activity`, mas o intent de origem traz action, categories,
+    /// flags e data: o intent da nova Activity herda isso (como no AOSP).
+    pub(crate) fn start_activity_with(
+        &mut self,
+        desc: &str,
+        package: &str,
+        extras: Vec<(String, Value)>,
+        intent_meta: Option<crate::bundle::IntentMeta>,
+    ) -> Result<ObjRef, VmExit> {
         if self.cp.find_class(desc).is_none() {
             return Err(crate::err::vm_error(
                 "MISSING_ENTRY",
@@ -1700,7 +1712,7 @@ impl Engine {
             self.run_lifecycle_step(&class, state.activity, "onPause", "()V", Vec::new())?;
             self.fw.activity_stack.push(state);
         }
-        match self.launch_activity_inner(desc, package, extras) {
+        match self.launch_activity_inner(desc, package, extras, intent_meta) {
             Ok(r) => {
                 if let Some(state) = previous {
                     if matches!(
@@ -1802,7 +1814,7 @@ impl Engine {
         extras: Vec<(String, Value)>,
     ) -> Result<ObjRef, VmExit> {
         let old_depth = self.fw.activity_stack.len();
-        let result = self.launch_activity_inner(desc, package, extras);
+        let result = self.launch_activity_inner(desc, package, extras, None);
         if result.is_ok() {
             self.fw
                 .activity_stack
@@ -1815,6 +1827,7 @@ impl Engine {
         activity_desc: &str,
         package_name: &str,
         intent_extras: Vec<(String, Value)>,
+        intent_meta: Option<crate::bundle::IntentMeta>,
     ) -> Result<ObjRef, VmExit> {
         // issue #82: resolver a classe ANTES de alocar. Uma classe ausente do
         // DEX não pode ser lançada (no Android o `am start` falharia com
@@ -1910,6 +1923,16 @@ impl Engine {
                 extras: intent_extras,
             },
         );
+        if let Some(mut m) = intent_meta {
+            // Herda action, data, mime, categories e flags. Componente, pacote e
+            // seletor são do intent de origem e não valem para a nova Activity.
+            m.component_obj = None;
+            m.package = None;
+            m.selector = None;
+            m.identifier = None;
+            m.source_bounds = None;
+            self.intent_meta.insert(ir, m);
+        }
         if let Some(HostObj::Activity { intent, .. }) = self.fw.objects.get_mut(&r) {
             *intent = Some(ir);
         }
@@ -4099,6 +4122,34 @@ fn call_host_instance_rooted(
                     .map_or(Value::Null, Value::Obj),
             ))
         }
+        // Janela única, sem PiP: a Activity nunca está em multi-window (AOSP: false
+        // quando a janela não é multi-window).
+        (ACTIVITY, "isInMultiWindowMode" | "isInPictureInPictureMode") if sig == "()Z" => {
+            Ok(Some(Value::Int(0)))
+        }
+        // `setRequestedOrientation` registra o valor (sem girar a tela); padrão -1
+        // (SCREEN_ORIENTATION_UNSPECIFIED), como o AOSP.
+        (ACTIVITY, "setRequestedOrientation") if sig == "(I)V" => {
+            let v = match args.first() {
+                Some(Value::Int(i)) => *i,
+                _ => -1,
+            };
+            vm.view_props.insert(
+                (recv, "rd_requested_orientation".to_string()),
+                Value::Int(v),
+            );
+            Ok(Some(Value::Null))
+        }
+        (ACTIVITY, "getRequestedOrientation") if sig == "()I" => {
+            let v = match vm
+                .view_props
+                .get(&(recv, "rd_requested_orientation".to_string()))
+            {
+                Some(Value::Int(i)) => *i,
+                _ => -1,
+            };
+            Ok(Some(Value::Int(v)))
+        }
         // Activity.isFinishing(): verdadeiro depois de finish() (mesmo flag).
         (ACTIVITY, "isFinishing") if sig == "()Z" => {
             let finished = matches!(
@@ -4164,7 +4215,8 @@ fn call_host_instance_rooted(
                 _ => Vec::new(),
             };
             let pkg = vm.fw.package_name.clone();
-            let _new = vm.start_activity(&target, &pkg, extras)?;
+            let meta = vm.intent_meta.get(ir).cloned();
+            let _new = vm.start_activity_with(&target, &pkg, extras, meta)?;
             Ok(Some(Value::Null))
         }
         // lifecycle via super (user chama super.onCreate etc.) → no-op host

@@ -694,6 +694,18 @@ pub(crate) fn static_intrinsic(
         }
         (RESOURCES, "getSystem", _) => Value::Obj(resources(vm)?),
         (LOCALE, "getDefault", "()Ljava/util/Locale;") => Value::Obj(default_locale(vm)?),
+        // `Locale.getDefault(Category)`: o modelo tem um único locale padrão, então
+        // as categorias (DISPLAY/FORMAT) devolvem o mesmo valor.
+        (LOCALE, "getDefault", "(Ljava/util/Locale$Category;)Ljava/util/Locale;") => {
+            Value::Obj(default_locale(vm)?)
+        }
+        (LOCALE, "setDefault", "(Ljava/util/Locale$Category;Ljava/util/Locale;)V") => {
+            if let Some(Value::Obj(l)) = args.get(1) {
+                vm.statics
+                    .insert(("Lrd/Resources;".into(), "locale".into()), Value::Obj(*l));
+            }
+            Value::Null
+        }
         (LOCALE, "setDefault", "(Ljava/util/Locale;)V") => {
             if let Some(Value::Obj(l)) = args.first() {
                 vm.statics
@@ -1481,17 +1493,17 @@ mod framework_color_tests {
     fn framework_colors_match_the_documented_argb_values() {
         assert_eq!(
             framework_color(0x0106_000c),
-            Some(ResolvedValue::Integer(0xff00_0000u32 as i32)),
+            Some(ResolvedValue::Color(0xff00_0000u32 as i32)),
             "android.R.color.black"
         );
         assert_eq!(
             framework_color(0x0106_000b),
-            Some(ResolvedValue::Integer(0xffff_ffffu32 as i32)),
+            Some(ResolvedValue::Color(0xffff_ffffu32 as i32)),
             "android.R.color.white"
         );
         assert_eq!(
             framework_color(0x0106_0000),
-            Some(ResolvedValue::Integer(0xffaa_aaaau32 as i32)),
+            Some(ResolvedValue::Color(0xffaa_aaaau32 as i32)),
             "android.R.color.darker_gray"
         );
     }

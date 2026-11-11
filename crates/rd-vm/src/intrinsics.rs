@@ -2204,25 +2204,7 @@ fn reflect_field_intrinsic(
                         platform_static(vm, &declaring_class, &field_name)?.unwrap_or(Value::Null)
                     }
                 };
-                // Field.get returns Object: primitives come back boxed
-                let wrapper = match field_type.as_str() {
-                    "I" => Some("Ljava/lang/Integer;"),
-                    "J" => Some("Ljava/lang/Long;"),
-                    "Z" => Some("Ljava/lang/Boolean;"),
-                    "F" => Some("Ljava/lang/Float;"),
-                    "D" => Some("Ljava/lang/Double;"),
-                    "S" => Some("Ljava/lang/Short;"),
-                    "B" => Some("Ljava/lang/Byte;"),
-                    "C" => Some("Ljava/lang/Character;"),
-                    _ => None,
-                };
-                return Ok(Some(match (wrapper, &v) {
-                    (
-                        Some(w),
-                        Value::Int(_) | Value::Long(_) | Value::Float(_) | Value::Double(_),
-                    ) => Value::Obj(crate::boxes::box_value(vm, w, v)?),
-                    _ => v,
-                }));
+                return Ok(Some(box_field_value(vm, &field_type, v)?));
             }
             let Some(target) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {
                 return Err(VmExit::Exception(Throwable::new(
@@ -2230,11 +2212,11 @@ fn reflect_field_intrinsic(
                     "Field.get target null",
                 )));
             };
-            Ok(Some(
-                vm.heap
-                    .get_field(target, &field_name)
-                    .map_err(|e| crate::err::vm_error("INVALID_FORMAT", e))?,
-            ))
+            let v = vm
+                .heap
+                .get_field(target, &field_name)
+                .map_err(|e| crate::err::vm_error("INVALID_FORMAT", e))?;
+            Ok(Some(box_field_value(vm, &field_type, v)?))
         }
         ("getInt", "(Ljava/lang/Object;)I") | ("getLong", "(Ljava/lang/Object;)J") => {
             let value = if is_static {
@@ -5954,6 +5936,14 @@ fn instance_intrinsic_core(
                 nanos / target_scale
             })))
         }
+        // `Runtime.exec`: o VM não executa comandos do host. Lança IOException, como
+        // um `exec` que falha ao iniciar (apps testam root com `su`/`sh` e tratam isso).
+        (_, "exec", _) if mref_class == "Ljava/lang/Runtime;" => {
+            Err(VmExit::Exception(crate::err::Throwable::new(
+                "Ljava/io/IOException;",
+                "Cannot run program: processos do host não são executados pelo VM",
+            )))
+        }
         (_, "availableProcessors", "()I") if mref_class == "Ljava/lang/Runtime;" => {
             Ok(Some(Value::Int(1)))
         }
@@ -7832,4 +7822,27 @@ mod launch_gap_tests {
         .expect("tratado");
         assert_eq!(assertion_message(&mut vm, n), "null");
     }
+}
+
+/// `Field.get` devolve Object: primitivo vem boxado conforme o tipo declarado do
+/// campo (`I` -> Integer…). Sem isso, `instanceof`/`checkcast` no app falham
+/// (ex.: `DebugMetadataKt.getLabel` do Kotlin, ciclo 66).
+fn box_field_value(vm: &mut Engine, field_type: &str, v: Value) -> Result<Value, VmExit> {
+    let wrapper = match field_type {
+        "I" => Some("Ljava/lang/Integer;"),
+        "J" => Some("Ljava/lang/Long;"),
+        "Z" => Some("Ljava/lang/Boolean;"),
+        "F" => Some("Ljava/lang/Float;"),
+        "D" => Some("Ljava/lang/Double;"),
+        "S" => Some("Ljava/lang/Short;"),
+        "B" => Some("Ljava/lang/Byte;"),
+        "C" => Some("Ljava/lang/Character;"),
+        _ => None,
+    };
+    Ok(match (wrapper, &v) {
+        (Some(w), Value::Int(_) | Value::Long(_) | Value::Float(_) | Value::Double(_)) => {
+            Value::Obj(crate::boxes::box_value(vm, w, v)?)
+        }
+        _ => v,
+    })
 }

@@ -24,3 +24,14 @@ Itens que a VM aceita com comportamento aproximado. Cada um é observável no c�
 | `Class.getModifiers()` de classe membro | Usa `accessFlags` de `dalvik.annotation.InnerClass` (inclui `static`). | `jannotations.rs`, `jlclass.rs` |
 | `Objects.toString` | Igual à JDK (nulo → default ou `"null"`). | `intrinsics.rs` |
 | `Object.equals/hashCode/toString` via interface | Quando o receptor não sobrescreve, usa a identidade de `Object` (JLS 9.2). | `interp.rs` |
+| `Runtime.exec` / `ProcessBuilder` | Lança `IOException`: o VM não executa comandos do host (apps que testam root com `su`/`sh` tratam a falha). | `intrinsics.rs` (`Runtime`) |
+| `Activity.set/getRequestedOrientation` | Registra o valor (padrão -1, `SCREEN_ORIENTATION_UNSPECIFIED`); a tela não gira. | `framework.rs` |
+| `Activity.isInMultiWindowMode` / `isInPictureInPictureMode` | Sempre `false` (janela única, sem PiP). | `framework.rs` |
+| `Color.colorToHSV` / `RGBToHSV` / `HSVToColor` | Float como no AOSP. Acromáticos (preto, cinza) saem com matiz 0; o AOSP divide 0/0 nesse caso. A confirmar contra o AOSP. | `graphics.rs` |
+| `Locale.getDefault(Category)` / `setDefault(Category, …)` | Um único locale padrão para todas as categorias. | `android_res.rs` |
+| `CompoundButton` (checked, tint list/mode, button drawable) | Guardados em `view_props` pelo fallback genérico, sem render. `getButtonTintList`/`getButtonTintMode` começam `null`. | `view_props.rs` |
+| `TextView.getCompoundDrawables(Relative)` | Devolve 4 posições nulas. Drawables de texto definidos pelo app não são guardados. | `view_props.rs` |
+| `Resources.getColorStateList` | Cor simples vira `ColorStateList.valueOf`. Seletor XML (`res/color/*.xml`) falha com `NOT_IMPLEMENTED` e o caminho. | `android_res.rs` (`color_state_list_of`) |
+| `Field.getGenericType` / `Class.getGenericSuperclass` | Sem `Signature`, devolvem a classe crua. Com tipo parametrizado, falham com `NOT_IMPLEMENTED` (sem `ParameterizedType`). | `intrinsics.rs`, `jlclass.rs` |
+| `finish()` durante o `onCreate` do lançamento | A destruição é adiada até depois do pós-`onCreate`; a Activity não recebe `onStart`/`onResume`, como no `ActivityThread`. | `framework.rs` (`launch_activity_inner`) |
+| Intent de lançamento | Herda action, data, mime, categories e flags do intent de origem; componente, pacote e seletor não são herdados. | `framework.rs` (`start_activity_with`) |
