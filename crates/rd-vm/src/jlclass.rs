@@ -376,3 +376,41 @@ fn superclass_sig_is_parameterized(sig: &str) -> bool {
         .next()
         .is_some_and(|head| head.contains('<'))
 }
+
+#[cfg(test)]
+mod generic_superclass_tests {
+    use super::superclass_sig_is_parameterized;
+
+    #[test]
+    fn plain_superclass_is_not_parameterized() {
+        assert!(!superclass_sig_is_parameterized("Ljava/lang/Object;"));
+        assert!(!superclass_sig_is_parameterized(
+            "Lcom/x/Base;Lja/io/Serializable;"
+        ));
+    }
+
+    #[test]
+    fn parameterized_superclass_is_detected() {
+        assert!(superclass_sig_is_parameterized(
+            "Ljava/util/ArrayList<Ljava/lang/String;>;"
+        ));
+        assert!(superclass_sig_is_parameterized(
+            "<T:Ljava/lang/Object;>Lcom/x/Base<TT;>;"
+        ));
+    }
+
+    #[test]
+    fn class_type_parameters_are_skipped_before_superclass() {
+        assert!(!superclass_sig_is_parameterized(
+            "<T:Ljava/lang/Object;>Ljava/lang/Object;"
+        ));
+        assert!(superclass_sig_is_parameterized(
+            "<T:Ljava/lang/Object;>Lcom/x/Base<TT;>;"
+        ));
+    }
+
+    #[test]
+    fn unterminated_type_parameters_are_conservative() {
+        assert!(superclass_sig_is_parameterized("<T:Ljava/lang/Object;"));
+    }
+}

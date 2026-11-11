@@ -4888,3 +4888,39 @@ fn hsv_to_rgb(hsv: [f32; 3]) -> u32 {
     let q = |f: f32| ((f + m) * 255.0 + 0.5) as u32;
     (q(r) << 16) | (q(g) << 8) | q(b)
 }
+
+#[cfg(test)]
+mod hsv_tests {
+    use super::{hsv_to_rgb, rgb_to_hsv};
+
+    #[test]
+    fn primaries_match_aosp_hue_angles() {
+        assert_eq!(rgb_to_hsv(255, 0, 0), [0.0, 1.0, 1.0]);
+        assert_eq!(rgb_to_hsv(0, 255, 0)[0], 120.0);
+        assert_eq!(rgb_to_hsv(0, 0, 255)[0], 240.0);
+    }
+
+    #[test]
+    fn achromatic_colors_have_zero_hue_and_saturation() {
+        assert_eq!(rgb_to_hsv(0, 0, 0), [0.0, 0.0, 0.0]);
+        assert_eq!(rgb_to_hsv(128, 128, 128)[1], 0.0);
+        assert_eq!(rgb_to_hsv(255, 255, 255)[2], 1.0);
+    }
+
+    #[test]
+    fn hsv_round_trips_through_rgb() {
+        for rgb in [0x00ff_8040u32, 0x0012_3456, 0x00fe_fe01, 0x0000_ff00] {
+            let (r, g, b) = ((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
+            let back = hsv_to_rgb(rgb_to_hsv(r, g, b));
+            for (a, c) in [(back >> 16, r), ((back >> 8) & 0xff, g), (back & 0xff, b)] {
+                assert!((a as i64 - c as i64).abs() <= 1, "{rgb:06x} -> {back:06x}");
+            }
+        }
+    }
+
+    #[test]
+    fn hue_wraps_into_0_360() {
+        let h = rgb_to_hsv(255, 0, 1)[0];
+        assert!((0.0..360.0).contains(&h), "{h}");
+    }
+}
