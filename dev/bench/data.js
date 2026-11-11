@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794372851275,
+  "lastUpdate": 1794374210989,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7073,6 +7073,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2955,
             "range": "± 75",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "97984c2607f43cbc8aeaf7bf257309ca4ba5aedd",
+          "message": "Merge PR #642 — fix(docs): archive/README.html respondia 404 no site\n\nbook_links.py reescreve X/README.html -> X/index.html quando o index existe e falha o build quando não existe nenhum dos dois.",
+          "timestamp": "2026-11-11T02:16:07-03:00",
+          "tree_id": "b699c2a6857560826c70d1335c0ba8de42b8531e",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/97984c2607f43cbc8aeaf7bf257309ca4ba5aedd"
+        },
+        "date": 1794374208332,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2764,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2768,
+            "range": "± 15",
             "unit": "ns/iter"
           }
         ]
