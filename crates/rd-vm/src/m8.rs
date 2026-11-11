@@ -1419,6 +1419,30 @@ fn dialog(
         // Each Dialog owns a host Window (AOSP: PhoneWindow created in the
         // Dialog constructor); `setContentView(View)` sets its content.
         "getWindow" if !is_builder => Ok(Some(Value::Obj(dialog_window(vm, recv)?))),
+        // AOSP `Dialog.findViewById`: delegates to the dialog's own Window.
+        "findViewById" if !is_builder && _sig == "(I)Landroid/view/View;" => {
+            let w = dialog_window(vm, recv)?;
+            crate::window::instance_intrinsic(
+                vm,
+                "Landroid/view/Window;",
+                "findViewById",
+                _sig,
+                w,
+                args,
+            )
+        }
+        // AOSP `Dialog.mOwnerActivity`: stored, not used by the host model.
+        "setOwnerActivity" if !is_builder => {
+            let owner = oarg(args, 0).map(Value::Obj).unwrap_or(Value::Null);
+            vm.view_props.insert((recv, "dlg:owner".to_string()), owner);
+            Ok(Some(Value::Null))
+        }
+        "getOwnerActivity" if !is_builder => Ok(Some(
+            vm.view_props
+                .get(&(recv, "dlg:owner".to_string()))
+                .cloned()
+                .unwrap_or(Value::Null),
+        )),
         "setContentView" if !is_builder => {
             if let Some(v) = oarg(args, 0) {
                 let w = dialog_window(vm, recv)?;

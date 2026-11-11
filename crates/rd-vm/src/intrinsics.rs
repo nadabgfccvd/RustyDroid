@@ -3418,6 +3418,8 @@ fn vector_supported(name: &str, sig: &str) -> bool {
             | ("trimToSize", "()V")
             | ("setSize", "(I)V")
             | ("copyInto", "([Ljava/lang/Object;)V")
+            | ("toArray", "()[Ljava/lang/Object;")
+            | ("toArray", "([Ljava/lang/Object;)[Ljava/lang/Object;")
     )
 }
 
@@ -3496,6 +3498,12 @@ fn vector_intrinsic(
             let elems = list_elems(vm, recv)?;
             elems.resize(req, Value::Null);
             Ok(Some(Value::Null))
+        }
+        // Vector.toArray(): same snapshot semantics as Collection.toArray.
+        ("toArray", _) => {
+            let items = list_elems(vm, recv)?.clone();
+            let arr = crate::jcollections::to_array(vm, items, args.first())?;
+            Ok(Some(arr))
         }
         ("copyInto", _) => {
             let Some(Value::Obj(array)) = args.first() else {

@@ -210,7 +210,25 @@ pub fn static_intrinsic(
 
 /// True for a framework Drawable class name (host-implemented base).
 fn is_drawable_class(c: &str) -> bool {
-    c.starts_with(PKG) && !c.contains("Icon")
+    c.starts_with(PKG) && !c.contains("Icon") && !c.starts_with(SHAPES)
+}
+
+/// `android.graphics.drawable.shapes.*` (`Shape`, `OvalShape`, …): geometry
+/// objects, not drawables. Only their constructors are modelled.
+const SHAPES: &str = "Landroid/graphics/drawable/shapes/";
+const PAINT: &str = "Landroid/graphics/Paint;";
+
+/// `ShapeDrawable.getPaint()`: one `Paint` per drawable, created on first use
+/// through the real `Paint.<init>()`. The paint keeps colour and shadow state;
+/// the shape itself is not rasterized (see `docs/compat-desvios.md`).
+fn shape_paint(vm: &mut Engine, r: ObjRef) -> Result<ObjRef, VmExit> {
+    if let Ok(Value::Obj(p)) = vm.heap.get_field(r, "rd_paint") {
+        return Ok(p);
+    }
+    let p = vm.heap.alloc_instance(PAINT.into(), Vec::new())?;
+    crate::graphics::instance_intrinsic(vm, PAINT, PAINT, "<init>", "()V", p, &[])?;
+    put(vm, r, "rd_paint", Value::Obj(p))?;
+    Ok(p)
 }
 
 fn bounds(vm: &Engine, r: ObjRef) -> [i32; 4] {
@@ -272,6 +290,13 @@ pub fn instance_intrinsic(
     if recv_class == CSL || mref_class == CSL {
         return color_state_list(vm, name, recv, args);
     }
+    if recv_class.starts_with(SHAPES) || mref_class.starts_with(SHAPES) {
+        // Shape constructors are the only modelled members (no drawing).
+        return Ok(match name {
+            "<init>" => Some(Value::Null),
+            _ => None,
+        });
+    }
     if !is_drawable_class(mref_class) && !is_drawable_class(recv_class) {
         return Ok(None);
     }
@@ -294,6 +319,12 @@ pub fn instance_intrinsic(
                 put(vm, recv, "rd_color", c.clone())?;
                 put(vm, recv, "rd_base", c)?;
             }
+            if kind.ends_with("ShapeDrawable;") {
+                // ShapeDrawable(Shape) keeps its shape; ShapeDrawable() has none.
+                if let Some(sh) = obj(0) {
+                    put(vm, recv, "rd_shape", Value::Obj(sh))?;
+                }
+            }
             if kind.ends_with("RippleDrawable;") {
                 if sig.starts_with("(Landroid/content/res/ColorStateList;") {
                     match obj(0) {
@@ -309,6 +340,25 @@ pub fn instance_intrinsic(
                 }
                 put(vm, recv, "rd_radius", Value::Int(-1))?;
             }
+            Value::Null
+        }
+        ("getPaint", "()Landroid/graphics/Paint;") if kind.ends_with("ShapeDrawable;") => {
+            Value::Obj(shape_paint(vm, recv)?)
+        }
+        ("getShape", "()Landroid/graphics/drawable/shapes/Shape;")
+            if kind.ends_with("ShapeDrawable;") =>
+        {
+            vm.heap.get_field(recv, "rd_shape").unwrap_or(Value::Null)
+        }
+        ("setShape", "(Landroid/graphics/drawable/shapes/Shape;)V")
+            if kind.ends_with("ShapeDrawable;") =>
+        {
+            put(
+                vm,
+                recv,
+                "rd_shape",
+                obj(0).map(Value::Obj).unwrap_or(Value::Null),
+            )?;
             Value::Null
         }
         ("setBounds", "(IIII)V") => {

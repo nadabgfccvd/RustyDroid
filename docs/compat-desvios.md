@@ -35,3 +35,10 @@ Itens que a VM aceita com comportamento aproximado. Cada um é observável no c�
 | `Field.getGenericType` / `Class.getGenericSuperclass` | Sem `Signature`, devolvem a classe crua. Com tipo parametrizado, falham com `NOT_IMPLEMENTED` (sem `ParameterizedType`). | `intrinsics.rs`, `jlclass.rs` |
 | `finish()` durante o `onCreate` do lançamento | A destruição é adiada até depois do pós-`onCreate`; a Activity não recebe `onStart`/`onResume`, como no `ActivityThread`. | `framework.rs` (`launch_activity_inner`) |
 | Intent de lançamento | Herda action, data, mime, categories e flags do intent de origem; componente, pacote e seletor não são herdados. | `framework.rs` (`start_activity_with`) |
+| Drawables de forma (`ShapeDrawable`, `shapes.Shape`/`OvalShape`) | `getPaint()` devolve um `Paint` real (cor e sombra guardadas), mas a forma **não é rasterizada**. Construtores e `getShape`/`setShape` são modelados. | `android_drawable.rs` |
+| `Paint.setShadowLayer` | Aceito e guardado pelo catch-all de `set*`; a sombra não é desenhada. | `graphics.rs` |
+| `InputMethodManager.getEnabledInputMethodList` / `getInputMethodList` | Lista vazia: o modelo não tem IME de terceiros instalado. | `m9/ime.rs` |
+| `Activity.isDestroyed` | Verdadeiro depois de `onDestroy` (AOSP `mDestroyed`). | `framework.rs` |
+| `Dialog.setOwnerActivity` / `getOwnerActivity` / `findViewById` | Dono guardado sem efeito; `findViewById` delega à janela do diálogo. | `m8.rs` |
+| `Vector.toArray` | Mesmo snapshot de `Collection.toArray`. | `intrinsics.rs` |
+| Constantes `android.R.integer.config_{short,medium,long}AnimTime` | 200, 400 e 500 ms (padrão AOSP). O valor de `long` (500) não foi conferido no `config.xml` do AOSP. | `android_res.rs` (`FRAMEWORK_INTEGERS`) |

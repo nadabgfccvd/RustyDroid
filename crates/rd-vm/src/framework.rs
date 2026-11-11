@@ -2004,6 +2004,11 @@ impl Engine {
             dispatch(self, activity, e, Phase::Main, bundle.clone())?;
             dispatch(self, activity, e, Phase::Post, bundle)?;
         }
+        if name == "onDestroy" {
+            // AOSP `Activity.mDestroyed`: set once onDestroy has run.
+            self.view_props
+                .insert((activity, "rd_destroyed".to_string()), Value::Int(1));
+        }
         Ok(())
     }
 
@@ -4157,6 +4162,14 @@ fn call_host_instance_rooted(
                 Some(HostObj::Activity { finished: true, .. })
             );
             Ok(Some(Value::Int(finished as i32)))
+        }
+        // Activity.isDestroyed(): verdadeiro depois de onDestroy (AOSP mDestroyed).
+        (ACTIVITY, "isDestroyed") if sig == "()Z" => {
+            let destroyed = matches!(
+                vm.view_props.get(&(recv, "rd_destroyed".to_string())),
+                Some(Value::Int(1))
+            );
+            Ok(Some(Value::Int(destroyed as i32)))
         }
         (ACTIVITY, "finish") => {
             vm.finish_activity(recv)?;

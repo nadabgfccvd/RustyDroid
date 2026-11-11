@@ -1447,6 +1447,14 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Landroid/graphics/drawable/LayerDrawable;" => {
             Some(&["Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;"])
         }
+        "Landroid/graphics/drawable/ShapeDrawable;" => {
+            Some(&["Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;"])
+        }
+        "Landroid/graphics/drawable/shapes/Shape;" => Some(OBJECT),
+        "Landroid/graphics/drawable/shapes/OvalShape;" => Some(&[
+            "Landroid/graphics/drawable/shapes/Shape;",
+            "Ljava/lang/Object;",
+        ]),
         "Landroid/graphics/drawable/RippleDrawable;" => Some(&[
             "Landroid/graphics/drawable/LayerDrawable;",
             "Landroid/graphics/drawable/Drawable;",
@@ -2199,6 +2207,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Landroid/animation/Animator;",
             "Ljava/lang/Object;",
         ]),
+        // Base de animações de view (`SwipeRefreshLayout$6` estende `Animation`
+        // e o ctor da base precisa resolver para o app inicializar).
+        "Landroid/view/animation/Animation;" => Some(OBJECT),
         "Landroid/animation/Keyframe$ObjectKeyframe;"
         | "Landroid/animation/Keyframe$IntKeyframe;"
         | "Landroid/animation/Keyframe$FloatKeyframe;" => {

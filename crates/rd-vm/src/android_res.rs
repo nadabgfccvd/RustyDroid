@@ -468,8 +468,28 @@ fn framework_color(id: u32) -> Option<ResolvedValue> {
         .map(|(_, argb)| ResolvedValue::Color(*argb as i32))
 }
 
+/// Framework integers (`android.R.integer.config_*AnimTime`, package `0x01`,
+/// ids from the public `R.integer` docs: short `0x010e0000`, medium
+/// `0x010e0001`, long `0x010e0002`). Values are the AOSP `config.xml`
+/// defaults in milliseconds: short 200, medium 400, long 500.
+const FRAMEWORK_INTEGERS: &[(u32, i32)] = &[
+    (0x010e_0000, 200), // android.R.integer.config_shortAnimTime
+    (0x010e_0001, 400), // android.R.integer.config_mediumAnimTime
+    (0x010e_0002, 500), // android.R.integer.config_longAnimTime
+];
+
+fn framework_integer(id: u32) -> Option<ResolvedValue> {
+    FRAMEWORK_INTEGERS
+        .iter()
+        .find(|(rid, _)| *rid == id)
+        .map(|(_, v)| ResolvedValue::Integer(*v))
+}
+
 fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
     if let Some(v) = framework_color(id as u32) {
+        return Ok(v);
+    }
+    if let Some(v) = framework_integer(id as u32) {
         return Ok(v);
     }
     let mut cur = id as u32;
@@ -599,11 +619,24 @@ fn parse_theme_id(raw: &str) -> Option<u32> {
 }
 
 fn theme_id_for_context(vm: &Engine, context: ObjRef) -> Option<u32> {
-    if let Some(Value::Int(id)) = vm
-        .view_props
-        .get(&(context, "rd_theme_override".to_string()))
-    {
-        return (*id != 0).then_some(*id as u32);
+    // A wrapper (ContextThemeWrapper, TintContextWrapper, ...) answers with its
+    // own non-zero theme override. `themeResId == 0` (or no override) means
+    // "inherit": the theme of the context it wraps, up to the Activity (AOSP
+    // ContextThemeWrapper.initializeTheme).
+    let mut context = context;
+    for _ in 0..16 {
+        if let Some(Value::Int(id)) = vm
+            .view_props
+            .get(&(context, "rd_theme_override".to_string()))
+        {
+            if *id != 0 {
+                return Some(*id as u32);
+            }
+        }
+        match vm.view_props.get(&(context, "ctx:mBase".to_string())) {
+            Some(Value::Obj(base)) if *base != context => context = *base,
+            _ => break,
+        }
     }
     let apk = vm.fw.resources.as_ref()?;
     let class = vm.heap.class_of(context).ok()?;
@@ -936,13 +969,18 @@ pub(crate) fn instance_intrinsic(
                         ));
                     };
                     let resolve_refs = args.get(2).and_then(|v| v.as_int().ok()).unwrap_or(0) != 0;
+                    // AOSP: with resolveRefs, a reference value is followed and
+                    // `resourceId` is the referenced resource (SplashScreen reads
+                    // `postSplashScreenTheme` this way to call setTheme).
+                    let mut res_id = attr_id as i32;
                     if resolve_refs {
                         if let ResolvedValue::Reference(id) = &value {
+                            res_id = *id as i32;
                             value =
                                 value_of(vm, *id as i32).unwrap_or(ResolvedValue::Reference(*id));
                         }
                     }
-                    fill_typed_value(vm, *out, attr_id as i32, &value)?;
+                    fill_typed_value(vm, *out, res_id, &value)?;
                     Value::Int(1)
                 }
                 "obtainStyledAttributes" => {

@@ -713,6 +713,11 @@ pub(crate) fn instance_intrinsic(
     {
         return text_classifier_instance(vm, name, sig, recv, args);
     }
+    // Construtor da base `Animation`: sem estado modelado nesta fatia (no-op).
+    // Subclasses DEX (ex.: `SwipeRefreshLayout$6`) chamam `<init>()V` no super.
+    if mref_class == "Landroid/view/animation/Animation;" && name == "<init>" {
+        return Ok(Some(Value::Null));
+    }
     if let Some(value) = partial57_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
         return Ok(Some(value));
     }
