@@ -107,7 +107,7 @@ rm "$REP/junit/broken.xml"
 # ── 6. página sem marcadores é erro, não escrita silenciosa ───────────────
 BAD="$WORK/bad.md"
 printf '# nada aqui\n' >"$BAD"
-run 1 "sem marcadores: falha com exit 1" --reports "$REP" --page "$BAD" --badge "$WORK/b2.svg"
+run 2 "sem marcadores: falha com exit 2" --reports "$REP" --page "$BAD" --badge "$WORK/b2.svg"
 if [ "$(cat "$BAD")" = "# nada aqui" ]; then ok "sem marcadores: página intacta"; else ko "sem marcadores: página foi mexida"; fi
 
 # ── 7. --check não escreve ────────────────────────────────────────────────

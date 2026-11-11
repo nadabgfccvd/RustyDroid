@@ -124,6 +124,26 @@ jobs:
       - name: Self-tests do renderizador
         run: bash tests/scripts/compat_live_test.sh
 
+      # Mesma ideia da matriz viva, política de falha diferente: a lista de
+      # releases não envelhece, então se a API não responder o script sai sem
+      # tocar na página e o build publica o último snapshot versionado.
+      - name: Renderizar a página de releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_RELEASES: https://api.github.com/repos/${{ github.repository }}/releases?per_page=30
+        run: |
+          set -uo pipefail
+          if curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+               -H "Accept: application/vnd.github+json" \
+               "${API_RELEASES}" -o releases.json 2>/dev/null; then
+            python3 scripts/releases_live.py --api-json releases.json
+          else
+            echo "::notice::API de releases indisponível; mantendo o snapshot versionado"
+          fi
+
+      - name: Self-tests da página de releases
+        run: bash tests/scripts/releases_live_test.sh
+
       - name: Install mdBook (pinned)
         run: cargo install mdbook --locked --version 0.5.4
 
