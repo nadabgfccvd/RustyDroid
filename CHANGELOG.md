@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`~4 KiB` por frame) para que o erro seja lançado muito antes de a pilha acabar,
   independentemente do tamanho de frame. Teste de regressão novo cobre 256/320/512 KiB
   (antes: SIGABRT; agora: `Ljava/lang/StackOverflowError;`).
+- **Link morto `archive/README.html` no site (M12):** o mdBook renderiza
+  `docs/archive/README.md` como `archive/index.html`, então o link de `docs/index.md`
+  para `./archive/README.md` — correto na visão do repositório — virava
+  `archive/README.html` no HTML e respondia **404** no site publicado. `scripts/book_links.py`
+  agora reescreve `X/README.html` → `X/index.html` quando é esse o arquivo que existe, e
+  **falha o build** quando não existe nenhum dos dois (link morto não passa em silêncio).
+  Achado no crawl das 97 páginas do site; 7 casos novos no `book_links_test.sh`.
 - **VM, `android.view.ScaleGestureDetector` (`crates/rd-vm/src/view_scale_gesture.rs`):** the class was not modelled, so `new ScaleGestureDetector(Context, OnScaleGestureListener)` answered `NOT_FOUND` inside `PreviewView.<init>` (CameraX). The error aborted the `Recomposer` frame before `applyChanges` and left the Comprix Scanner tab without its preview. The constructor and `onTouchEvent` (consumed, as AOSP) are modelled; `isInProgress()` is `false` (the virtual input is single-pointer). Quick scale, stylus scaling and the scale-factor getters stay typed `NOT_FOUND`, documented as limits. Tests: `crates/rd-vm/tests/android_scale_gesture.rs` (the constructor test fails without the hook, with the same `NOT_FOUND` as the app).
 - **VM, `Resources.NotFoundException` hierarchy (`crates/rd-vm/src/classpath.rs`):** the exception `android_res` throws for an unknown resource id had no superclass entry, so `checkcast Throwable` raised `ClassCastException` and the coroutine machinery aborted the process (`FATAL EXCEPTION: main`, Comprix Scanner). Now `RuntimeException`, as AOSP. Test: `crates/rd-vm/tests/android_res_not_found.rs` (fails without the entry with the same message as the app).
 - **VM, framework colors (`android.R.color`):** `black` (`0x0106000c`), `white` (`0x0106000b`) and `darker_gray` (`0x01060000`) resolve to the documented ARGB values. Before, `PreviewView` (CameraX) failed on `Resource ID #0x106000c` in the Scanner tab. Other framework ids stay `NotFoundException`.
