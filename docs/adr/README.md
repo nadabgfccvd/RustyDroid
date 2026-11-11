@@ -46,4 +46,4 @@ que revisa uma anterior entra como ADR novo que a referencia.
 | [035](035-identidades-inteiras-no-caminho-quente.md) | Identidades inteiras (classe, campo, método) no caminho quente | 2026-11-04 | proposto |
 | [036](036-excecao-fixture-dex-rxjava.md) | Exceção datada: fixture DEX reduzido do RxJava 3 | 2026-11-05 | proposta, aguarda aplicação do label `sentinel:policy-ap… |
 | [037](037-stubs-android-dirigidos-por-tabela.md) | Stubs Android dirigidos por tabela, sem relocação e com erro delgado | 2026-11-10 | implementado |
-| [038](038-gate-de-benchmark-invariante-ao-runner.md) | Gate de benchmark invariante à classe de runner (calibração normalizada) | 2026-11-10 | implementado |
+| [038](038-gate-de-benchmark-invariante-ao-runner.md) | Gate de benchmark por contagem de instruções (não por tempo de parede) | 2026-11-10 | implementado |

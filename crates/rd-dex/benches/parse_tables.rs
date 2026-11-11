@@ -7,20 +7,20 @@
 //! Entrada sintética e determinística: tabelas `method_ids` / `field_ids`
 //! de 20 000 entradas (8 bytes cada), com índices válidos.
 //!
-//! # Calibração (Issue #629)
+//! # Dois modos, e por quê (Issue #629, ADR 038)
 //!
-//! O pool `ubuntu-latest` mistura classes de CPU: o mesmo código rende de
-//! ~1,7 µs a ~16,8 µs por iteração conforme a máquina sorteada (a série
-//! histórica de `dev/bench/data.js` é bimodal, com um vazio entre 1,25× e 2×
-//! e um aglomerado estável em 5,1× da mediana). Comparar ns absolutos entre
-//! execuções mede o parque de máquinas, não o código.
+//! **Modo wall-clock (padrão).** Imprime ns/iter no formato libtest, que o
+//! `github-action-benchmark` lê para desenhar o gráfico em `gh-pages`. É
+//! **advisory**: o pool `ubuntu-latest` mistura classes de CPU e a série
+//! histórica vai de 1 736 a 17 370 ns por iteração com o mesmo código. Medido
+//! em três execuções consecutivas: o alvo variou 2,3% e a calibração que eu
+//! tinha posto como denominador variou 62% — normalizar piorou a métrica.
 //!
-//! Por isso o bench publica também `calib_scan_20k`: uma varredura fixa sobre
-//! o mesmo buffer, com o mesmo padrão de acesso (leitura sequencial de 8 B por
-//! entrada). Ela nunca muda de semântica e serve de denominador. O gate
-//! (`scripts/bench_gate.py`) compara a razão `alvo / calibração`, que é
-//! invariante à máquina — medido: 8,3× de variação no tempo absoluto
-//! (71 µs → 593 µs sob contenção) mantém a razão dentro de 1,83–2,14.
+//! **Modo `--count <nome>`.** Executa **uma** iteração de um alvo e sai, para
+//! rodar sob `valgrind --tool=callgrind`. Instruções retiradas são
+//! determinísticas: três rebuilds do mesmo fonte dão exatamente o mesmo número
+//! (delta de 45 552 instruções para `parse_method_ids_20k`, três vezes). Esse é
+//! o modo que o gate bloqueante usa (`scripts/bench_ir.py`).
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -38,44 +38,16 @@ fn table(entries: u32) -> Vec<u8> {
     buf
 }
 
-/// Varredura de calibração: uma passada sequencial de 8 B por entrada sobre o
-/// mesmo buffer, sem alocação. O custo acompanha a máquina (largura de banda de
-/// memória, IPC, escala de frequência) como o decode acompanha, então a razão
-/// entre os dois é estável entre runners.
-///
-/// **Não altere a semântica desta função**: ela é o denominador do gate e está
-/// versionada junto com `scripts/bench_gate.py` justamente para não mudar.
-#[inline(never)]
-fn calib_scan(data: &[u8]) -> u64 {
-    let mut acc = 0u64;
-    let mut o = 0usize;
-    while o + 8 <= data.len() {
-        let v = u64::from_le_bytes([
-            data[o],
-            data[o + 1],
-            data[o + 2],
-            data[o + 3],
-            data[o + 4],
-            data[o + 5],
-            data[o + 6],
-            data[o + 7],
-        ]);
-        acc = acc.rotate_left(7) ^ v;
-        o += 8;
-    }
-    acc
-}
-
 /// Mede N alvos **intercalados** no mesmo laço de amostragem.
 ///
 /// Intercalar importa: cada amostra visita todos os alvos em sequência, então
 /// deriva térmica, turbo e roubo de CPU incidem igualmente sobre eles. Medir um
-/// alvo completo antes do outro deixaria a calibração sempre na cauda mais
+/// alvo completo antes do outro deixaria um deles sempre na cauda mais
 /// quente do processo, enviesando a razão que o gate usa.
 fn measure_all<'a, const N: usize>(
     mut fns: [Box<dyn FnMut() -> usize + 'a>; N],
 ) -> [(f64, f64); N] {
-    // aquecimento + calibração de iterações: ~20 ms por amostra, por alvo
+    // aquecimento + escolha do número de iterações: ~20 ms por amostra, por alvo
     let mut iters = [0usize; N];
     for (i, f) in fns.iter_mut().enumerate() {
         for _ in 0..3 {
@@ -115,11 +87,51 @@ fn report(name: &str, (mean, dev): (f64, f64)) {
 }
 
 fn main() {
+    // `--count <name>`: exactly one iteration of one target, then exit. Meant to
+    // be run under `valgrind --tool=callgrind`, which counts retired
+    // instructions instead of wall-clock time. Instruction counts are
+    // deterministic and machine-invariant, which is the only way a 10% gate can
+    // mean anything on a shared runner pool (issue #629, ADR 038 amendment).
+    let mut args = std::env::args().skip(1);
+    if let Some(flag) = args.next() {
+        if flag == "--count" {
+            let name = args.next().unwrap_or_default();
+            let data = table(ENTRIES);
+            let n = match name.as_str() {
+                // Linha de base do processo: `table()` já rodou, então o que
+                // sobra é o custo fixo de startup + alocação do buffer. O gate
+                // subtrai esta contagem para que o limiar de 10% incida sobre o
+                // trabalho, não sobre o runtime.
+                "noop" => {
+                    black_box(&data);
+                    0
+                }
+                "parse_method_ids_20k" => {
+                    let r = rd_dex::methods::parse_method_ids(&data, ENTRIES, 0);
+                    black_box(&r);
+                    r.as_ref().map(|v| v.len()).unwrap_or(0)
+                }
+                "parse_field_ids_20k" => {
+                    let r = rd_dex::fields::parse_field_ids(&data, ENTRIES, 0);
+                    black_box(&r);
+                    r.as_ref().map(|v| v.len()).unwrap_or(0)
+                }
+                other => {
+                    eprintln!("unknown bench: {other}");
+                    std::process::exit(2);
+                }
+            };
+            // O valor é impresso para o otimizador não descartar o trabalho e
+            // para o log mostrar que a iteração realmente aconteceu.
+            println!("counted {name} (len={n})");
+            return;
+        }
+    }
+
     let data = table(ENTRIES);
-    // Ordem: calibração primeiro no array, mas os três são intercalados por
-    // amostra, então a posição só define o rótulo de saída.
-    let [calib, method, field] = measure_all([
-        Box::new(|| black_box(calib_scan(&data)) as usize) as Box<dyn FnMut() -> usize + '_>,
+    // Os dois alvos são intercalados por amostra, então deriva térmica e turbo
+    // incidem igualmente sobre eles.
+    let [method, field] = measure_all([
         Box::new(|| {
             let r = rd_dex::methods::parse_method_ids(&data, ENTRIES, 0);
             let n = r.as_ref().map(|v| v.len()).unwrap_or(0);
@@ -136,7 +148,6 @@ fn main() {
         }),
     ]);
 
-    report("calib_scan_20k", calib);
     report("parse_method_ids_20k", method);
     report("parse_field_ids_20k", field);
 }
