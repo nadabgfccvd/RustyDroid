@@ -733,6 +733,27 @@ impl ArscFix {
         self.resid_of("layout", name)
     }
 
+    /// Drawable cuja entrada ARSC aponta para `res/drawable/<name>.xml` — é
+    /// assim que o aapt emite um `<vector>`/`<shape>` (o valor da entrada é o
+    /// caminho do arquivo, não um inteiro).
+    pub fn add_drawable_file(&mut self, name: &str) -> u32 {
+        self.add_file("drawable", name)
+    }
+
+    /// `res/<kind>/<name>.xml` como valor string da entrada ARSC.
+    pub fn add_file(&mut self, kind: &'static str, name: &str) -> u32 {
+        let path = format!("res/{kind}/{name}.xml");
+        if !self.values.contains(&path) {
+            self.values.push(path.clone());
+        }
+        self.slot(kind).push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Str(path),
+            lang: None,
+        });
+        self.resid_of(kind, name)
+    }
+
     pub fn add_string(&mut self, name: &str, value: &str) -> u32 {
         if !self.values.iter().any(|v| v == value) {
             self.values.push(value.to_string());

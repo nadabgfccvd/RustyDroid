@@ -4515,6 +4515,25 @@ fn call_host_instance_rooted(
                     .unwrap_or(Value::Null),
             ))
         }
+        // `TransformationMethod` é o que `EditText` usa para senha/`DigitsKeyListener`
+        // e o que o appcompat consulta em `TextViewCompat`. O modelo só guarda o
+        // objeto; quem aplica a transformação é a view de texto do guest.
+        (TEXTVIEW, "setTransformationMethod")
+            if sig == "(Landroid/text/method/TransformationMethod;)V" && is_view(vm) =>
+        {
+            let method = args.first().cloned().unwrap_or(Value::Null);
+            crate::err::put_field_result(vm.heap.put_field(recv, "transformationMethod", method))?;
+            Ok(Some(Value::Null))
+        }
+        (TEXTVIEW, "getTransformationMethod")
+            if sig == "()Landroid/text/method/TransformationMethod;" && is_view(vm) =>
+        {
+            Ok(Some(
+                vm.heap
+                    .get_field(recv, "transformationMethod")
+                    .unwrap_or(Value::Null),
+            ))
+        }
 
         // ── View/ViewGroup measurement and layout ─────────────────────────
         (VIEW, "getFitsSystemWindows") if sig == "()Z" && is_view(vm) => {

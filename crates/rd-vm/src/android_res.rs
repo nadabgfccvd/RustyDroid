@@ -448,6 +448,124 @@ fn framework_color(id: u32) -> Option<ResolvedValue> {
         .map(|(_, argb)| ResolvedValue::Integer(*argb as i32))
 }
 
+/// Lê `path` do APK e, se for um `<vector>`, devolve um
+/// `Landroid/graphics/drawable/VectorDrawable;` com os paths já achatados e as
+/// cores resolvidas. `Ok(None)` = o arquivo não é um vetor (PNG, `<shape>`…),
+/// e o chamador emite o gap estruturado.
+fn vector_drawable_for(vm: &mut Engine, path: &str) -> Result<Option<Value>, VmExit> {
+    use crate::vector_drawable::{self, RawColor};
+
+    if path.split('/').any(|seg| seg == ".." || seg.is_empty()) {
+        return Ok(None);
+    }
+    let bytes = match vm.resources().and_then(|apk| {
+        apk.zip
+            .read(path)
+            .map_err(|e| crate::err::vm_error("NOT_FOUND", format!("{path}: {e}")).into())
+    }) {
+        Ok(b) => b,
+        // Recurso apontando para arquivo ausente: não é "fora do modelo",
+        // é um APK inconsistente — mesmo assim não derruba o app.
+        Err(_) => return Ok(None),
+    };
+    let Some(raw) = vector_drawable::parse_vector(&bytes) else {
+        return Ok(None);
+    };
+
+    // Resolve `@color/…` com o mesmo caminho de recursos do resto do modelo.
+    let resolve = |c: RawColor| -> Option<u32> {
+        match c {
+            RawColor::Literal(v) => Some(v),
+            RawColor::Ref(id) => match value_of(vm, id as i32) {
+                Ok(ResolvedValue::Integer(v)) => Some(v as u32),
+                _ => None,
+            },
+        }
+    };
+
+    let mut paths = Vec::with_capacity(raw.paths.len());
+    let mut dropped = 0usize;
+    for p in raw.paths {
+        // Cor não resolvível vira transparência (e o path é contado em gap).
+        let fill = match p.fill {
+            Some(c) => resolve(c)
+                .map(|v| apply_alpha(v, p.fill_alpha))
+                .unwrap_or(0),
+            None => 0,
+        };
+        let stroke = p.stroke.and_then(|(c, w)| resolve(c).map(|v| (v, w)));
+        if fill == 0 && stroke.is_none() {
+            dropped += 1;
+            continue;
+        }
+        paths.push(vector_drawable::VPath {
+            polylines: p.polylines,
+            fill,
+            stroke,
+            even_odd: p.even_odd,
+        });
+    }
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    let gaps = raw.gaps;
+    if dropped > 0 {
+        // Sem cor resolvível, o path não é desenhado — e isso é dito.
+        let mut g = gaps;
+        g.push(format!("{dropped} path(s) sem cor resolvível"));
+        let spec = vector_drawable::VectorSpec {
+            viewport: raw.viewport,
+            intrinsic: raw.intrinsic,
+            paths,
+            gaps: g,
+        };
+        return alloc_vector(vm, spec, path);
+    }
+    let spec = vector_drawable::VectorSpec {
+        viewport: raw.viewport,
+        intrinsic: raw.intrinsic,
+        paths,
+        gaps,
+    };
+    alloc_vector(vm, spec, path)
+}
+
+fn apply_alpha(color: u32, alpha: f32) -> u32 {
+    let a = ((color >> 24) & 0xFF) as f32 * alpha.clamp(0.0, 1.0);
+    (color & 0x00FF_FFFF) | ((a as u32) << 24)
+}
+
+fn alloc_vector(
+    vm: &mut Engine,
+    spec: crate::vector_drawable::VectorSpec,
+    path: &str,
+) -> Result<Option<Value>, VmExit> {
+    let d = vm
+        .heap
+        .alloc_instance(
+            "Landroid/graphics/drawable/VectorDrawable;".to_string(),
+            Vec::new(),
+        )
+        .map_err(crate::err::oom_throwable)?;
+    put(vm, d, "rd_visible", Value::Int(1))?;
+    put(vm, d, "rd_alpha", Value::Int(255))?;
+    put(vm, d, "rd_vpath", Value::Null)?;
+    put(vm, d, "rd_vsrc", Value::Null)?;
+    // Intrínseco em dp (o produto por densidade é feito no layout).
+    put(vm, d, "rd_vw", Value::Int(spec.intrinsic.0.round() as i32))?;
+    put(vm, d, "rd_vh", Value::Int(spec.intrinsic.1.round() as i32))?;
+    if !spec.gaps.is_empty() {
+        // Ressalvas estruturais ficam no objeto para o dump de gaps do agente.
+        let joined = spec.gaps.join("; ");
+        let sref = crate::intrinsics::alloc_string(vm, joined)
+            .map_err(|_| crate::err::vm_error("OOM", "string de gap"))?;
+        put(vm, d, "rd_vgaps", Value::Obj(sref))?;
+    }
+    let _ = path;
+    vm.gfx.objs.insert(d, crate::graphics::G::Vector(spec));
+    Ok(Some(Value::Obj(d)))
+}
+
 fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
     if let Some(v) = framework_color(id as u32) {
         return Ok(v);
@@ -1272,16 +1390,27 @@ pub(crate) fn instance_intrinsic(
             let value = value_of(vm, id)?;
             match value {
                 ResolvedValue::Str(path) if path.starts_with("res/") => {
-                    return Err(crate::err::with_suggestion(
-                        crate::err::vm_error(
-                            "NOT_IMPLEMENTED",
-                            format!(
-                                "drawable 0x{id:08x} ({path}) não é rasterizado: Drawable de arquivo (vetor/PNG) fora do modelo"
-                            ),
-                        ),
-                        "o modelo tem ColorDrawable e ColorStateList; vetores exigem um renderizador de vetores",
-                    )
-                    .into())
+                    // #: `<vector>` é o formato de ícone de praticamente todo
+                    // app Android atual — e o AppCompat **exige** que
+                    // `getDrawable(abc_vector_test)` devolva um
+                    // `android.graphics.drawable.VectorDrawable`, senão lança
+                    // `IllegalStateException` e o app não abre. Por isso o
+                    // vetor é parseado de verdade (ver `vector_drawable.rs`).
+                    match vector_drawable_for(vm, &path)? {
+                        Some(d) => d,
+                        None => {
+                            return Err(crate::err::with_suggestion(
+                                crate::err::vm_error(
+                                    "NOT_IMPLEMENTED",
+                                    format!(
+                                        "drawable 0x{id:08x} ({path}) não é rasterizado: nem <vector> nem PNG/bitmap modelados para este arquivo"
+                                    ),
+                                ),
+                                "vetores (fill sólido + stroke) são modelados; bitmaps e <shape> XML ainda não",
+                            )
+                            .into())
+                        }
+                    }
                 }
                 ResolvedValue::Integer(color) => {
                     let d = vm
