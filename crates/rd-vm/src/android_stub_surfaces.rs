@@ -139,7 +139,11 @@ fn put_opt_str(vm: &mut Engine, r: ObjRef, f: &str, s: Option<String>) -> StubRe
     sys::put_opt_str(vm, r, f, s).map_err(StubExit::from)
 }
 #[inline(never)]
-pub(crate) fn alloc_obj(vm: &mut Engine, class: &str, fields: Vec<(String, Value)>) -> StubResult<ObjRef> {
+pub(crate) fn alloc_obj(
+    vm: &mut Engine,
+    class: &str,
+    fields: Vec<(String, Value)>,
+) -> StubResult<ObjRef> {
     sys::alloc_obj(vm, class, fields).map_err(StubExit::from)
 }
 #[inline(never)]
@@ -294,7 +298,10 @@ const JAVA_FILE_DESCRIPTOR: &str = "Ljava/io/FileDescriptor;";
 #[cold]
 #[inline(never)]
 fn iae_fmt(args: std::fmt::Arguments<'_>) -> StubExit {
-    throw_string("Ljava/lang/IllegalArgumentException;", std::fmt::format(args))
+    throw_string(
+        "Ljava/lang/IllegalArgumentException;",
+        std::fmt::format(args),
+    )
 }
 #[cold]
 #[inline(never)]
@@ -304,12 +311,18 @@ fn ise_fmt(args: std::fmt::Arguments<'_>) -> StubExit {
 #[cold]
 #[inline(never)]
 fn oob_fmt(args: std::fmt::Arguments<'_>) -> StubExit {
-    throw_string("Ljava/lang/ArrayIndexOutOfBoundsException;", std::fmt::format(args))
+    throw_string(
+        "Ljava/lang/ArrayIndexOutOfBoundsException;",
+        std::fmt::format(args),
+    )
 }
 #[cold]
 #[inline(never)]
 fn idx_oob_fmt(args: std::fmt::Arguments<'_>) -> StubExit {
-    throw_string("Ljava/lang/IndexOutOfBoundsException;", std::fmt::format(args))
+    throw_string(
+        "Ljava/lang/IndexOutOfBoundsException;",
+        std::fmt::format(args),
+    )
 }
 #[cold]
 #[inline(never)]
@@ -423,7 +436,8 @@ fn new_int_array(vm: &mut Engine, vals: &[i32]) -> StubResult<Value> {
         "[I",
         ElemKind::Int,
         vals.iter().copied().map(Value::Int).collect(),
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 #[cold]
 fn new_float_array(vm: &mut Engine, vals: &[f32]) -> StubResult<Value> {
@@ -432,7 +446,8 @@ fn new_float_array(vm: &mut Engine, vals: &[f32]) -> StubResult<Value> {
         "[F",
         ElemKind::Float,
         vals.iter().copied().map(Value::Float).collect(),
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 #[cold]
 #[inline(never)]
@@ -560,71 +575,71 @@ pub(crate) fn host_static(
             return Ok(Some(value));
         }
 
-    if owner == ANDROID_OS_CONSTANTS {
-        if let Some(value) = android_os_constant(field) {
-            return Ok(Some(Value::Int(value)));
+        if owner == ANDROID_OS_CONSTANTS {
+            if let Some(value) = android_os_constant(field) {
+                return Ok(Some(Value::Int(value)));
+            }
         }
-    }
-    if let Some(value) = partial57_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial49_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial41_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35b_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35c_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35d_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35e_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36a_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36b_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36c_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36d_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36e_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36f_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36g_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36h_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36i_host_static(vm, owner, field)? {
-        return Ok(Some(value));
-    }
-    match (owner, field) {
-        (TEXT_CLASSIFIER, "NO_OP") => return text_no_op(vm).map(Some),
-        (AUTOFILL_ID, "NO_AUTOFILL_ID") => return af_no_autofill_id(vm).map(Some),
-        (TEXT_CLASSIFICATION, "EMPTY") => return empty_text_classification(vm).map(Some),
-        (TEXT_LANGUAGE, "EMPTY") => return empty_text_language(vm).map(Some),
-        _ => return Ok(None),
-    }
-
-    })().map_err(|e| *e.0)
+        if let Some(value) = partial57_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial49_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial41_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35b_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35c_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35d_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35e_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36a_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36b_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36c_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36d_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36e_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36f_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36g_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36h_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36i_host_static(vm, owner, field)? {
+            return Ok(Some(value));
+        }
+        match (owner, field) {
+            (TEXT_CLASSIFIER, "NO_OP") => text_no_op(vm).map(Some),
+            (AUTOFILL_ID, "NO_AUTOFILL_ID") => af_no_autofill_id(vm).map(Some),
+            (TEXT_CLASSIFICATION, "EMPTY") => empty_text_classification(vm).map(Some),
+            (TEXT_LANGUAGE, "EMPTY") => empty_text_language(vm).map(Some),
+            _ => Ok(None),
+        }
+    })()
+    .map_err(|e| *e.0)
 }
 
 pub(crate) fn static_intrinsic(
@@ -744,212 +759,190 @@ pub(crate) fn instance_intrinsic(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     (|| -> StubResult<Option<Value>> {
-    // TextClassifier is an interface; its NO_OP object is represented by the
-    // interface descriptor itself in the host profile.  Only dispatch it when
-    // the receiver is that singleton (or explicitly marked), so a guest DEX
-    // implementation class is not shadowed when invoked through the interface.
-    if mref_class == TEXT_CLASSIFIER
-        && (recv_class == TEXT_CLASSIFIER || field_bool(vm, recv, "rd_noop"))
-    {
-        return text_classifier_instance(vm, name, sig, recv, args);
-    }
-    if let Some(value) = partial57_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial49_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial41_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35b_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35c_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35d_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial35e_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36a_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36b_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36c_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36d_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36e_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36f_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36g_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36h_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    if let Some(value) = partial36i_instance(vm, recv_class, mref_class, name, sig, recv, args)? {
-        return Ok(Some(value));
-    }
-    let class = if is_stub_class(recv_class) {
-        recv_class
-    } else if is_stub_class(mref_class) {
-        mref_class
-    } else {
-        return Ok(None);
-    };
-    match crate::android_stub_tables::lookup_class_id(0, 134, class) {
-        Some(0) => webview_instance(vm, name, sig, recv, args),
-        Some(1) => web_settings_instance(vm, name, sig, recv, args),
-        Some(2) => documents_path_instance(vm, name, sig, recv, args),
-        Some(3) => network_policy_instance(vm, name, sig, recv, args),
-        Some(4) => keychain_callback_instance(vm, name, sig, recv, args),
-        Some(5) => camera_manager_instance(vm, name, sig, recv, args),
-        Some(6) => camera_access_exception_instance(vm, name, sig, recv, args),
-        Some(7) => camera_metadata_native_instance(vm, name, sig, recv, args),
-        Some(8) => native_key_instance(vm, name, sig, recv, args),
-        Some(9) => type_reference_instance(vm, name, sig, recv, args),
-        Some(10) => camera_characteristics_instance(vm, name, sig, recv, args),
-        Some(11) => {
-            wrapper_key_instance(vm, class, name, sig, recv, args)
-        },
-        Some(12) => capture_request_instance(vm, name, sig, recv, args),
-        Some(13) => capture_request_builder_instance(vm, name, sig, recv, args),
-        Some(14) => capture_result_instance(vm, name, sig, recv, args),
-        Some(15) => stream_configuration_instance(vm, name, sig, recv, args),
-        Some(16) => {
-            stream_configuration_duration_instance(vm, name, sig, recv, args)
-        },
-        Some(17) => stream_map_instance(vm, name, sig, recv, args),
-        Some(18) => {
-            high_speed_video_configuration_instance(vm, name, sig, recv, args)
-        },
-        Some(19) => reprocess_formats_map_instance(vm, name, sig, recv, args),
-        Some(20) => metering_rectangle_instance(vm, name, sig, recv, args),
-        Some(21) => rggb_channel_vector_instance(vm, name, sig, recv, args),
-        Some(22) => black_level_pattern_instance(vm, name, sig, recv, args),
-        Some(23) => color_space_transform_instance(vm, name, sig, recv, args),
-        Some(24) => entity_config_instance(vm, name, sig, recv, args),
-        Some(25) => {
-            entity_config_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(26) => text_classification_instance(vm, name, sig, recv, args),
-        Some(27) => {
-            text_classification_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(28) => {
-            text_classification_request_instance(vm, name, sig, recv, args)
-        },
-        Some(29) => {
-            text_classification_request_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(30) => text_selection_instance(vm, name, sig, recv, args),
-        Some(31) => text_selection_builder_instance(vm, name, sig, recv, args),
-        Some(32) => text_selection_request_instance(vm, name, sig, recv, args),
-        Some(33) => {
-            text_selection_request_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(34) => text_language_instance(vm, name, sig, recv, args),
-        Some(35) => text_language_builder_instance(vm, name, sig, recv, args),
-        Some(36) => text_language_request_instance(vm, name, sig, recv, args),
-        Some(37) => {
-            text_language_request_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(38) => text_links_instance(vm, name, sig, recv, args),
-        Some(39) => text_links_builder_instance(vm, name, sig, recv, args),
-        Some(40) => text_link_instance(vm, name, sig, recv, args),
-        Some(41) => text_links_request_instance(vm, name, sig, recv, args),
-        Some(42) => {
-            text_links_request_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(43) => conversation_actions_instance(vm, name, sig, recv, args),
-        Some(44) => conversation_action_instance(vm, name, sig, recv, args),
-        Some(45) => {
-            conversation_action_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(46) => conversation_message_instance(vm, name, sig, recv, args),
-        Some(47) => {
-            conversation_message_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(48) => conversation_request_instance(vm, name, sig, recv, args),
-        Some(49) => {
-            conversation_request_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(50) => {
-            system_text_classifier_manager_instance(vm, name, sig, recv, args)
-        },
-        Some(51) => ulocale_instance(vm, name, sig, recv, args),
-        Some(52) => entity_confidence_instance(vm, name, sig, recv, args),
-        Some(53) => animator_base_instance(vm, name, sig, recv, args),
-        Some(54) => value_animator_instance(vm, name, sig, recv, args),
-        Some(55) => object_animator_instance(vm, name, sig, recv, args),
-        Some(56) => property_values_holder_instance(vm, name, sig, recv, args),
-        Some(57) => {
-            keyframe_instance(vm, class, name, sig, recv, args)
-        },
-        Some(58) => animation_handler_instance(vm, name, sig, recv, args),
-        Some(59) => {
-            animation_evaluator_instance(vm, class, name, sig, recv, args)
-        },
-        Some(60) => {
-            android_property_instance(vm, class, name, sig, recv, args)
-        },
-        Some(61) => autofill_id_instance(vm, name, sig, recv, args),
-        Some(62) => autofill_value_instance(vm, name, sig, recv, args),
-        Some(63) => af_dataset_instance(vm, name, sig, recv, args),
-        Some(64) => af_dataset_builder_instance(vm, name, sig, recv, args),
-        Some(65) => af_dataset_filter_instance(vm, name, sig, recv, args),
-        Some(66) => af_field_instance(vm, name, sig, recv, args),
-        Some(67) => af_field_builder_instance(vm, name, sig, recv, args),
-        Some(68) => af_presentations_instance(vm, name, sig, recv, args),
-        Some(69) => af_presentations_builder_instance(vm, name, sig, recv, args),
-        Some(70) => af_inline_presentation_instance(vm, name, sig, recv, args),
-        Some(71) => af_fill_response_instance(vm, name, sig, recv, args),
-        Some(72) => af_fill_response_builder_instance(vm, name, sig, recv, args),
-        Some(73) => af_save_info_instance(vm, name, sig, recv, args),
-        Some(74) => af_save_info_builder_instance(vm, name, sig, recv, args),
-        Some(75) => af_user_data_instance(vm, name, sig, recv, args),
-        Some(76) => af_user_data_builder_instance(vm, name, sig, recv, args),
-        Some(77) => af_validator_instance(vm, class, name, sig, recv, args),
-        Some(78) => {
-            af_sanitizer_instance(vm, class, name, sig, recv, args)
-        },
-        Some(79) => af_fill_request_instance(vm, name, sig, recv, args),
-        Some(80) => af_save_request_instance(vm, name, sig, recv, args),
-        Some(81) => af_fill_context_instance(vm, name, sig, recv, args),
-        Some(82) => af_fill_callback_instance(vm, name, sig, recv, args),
-        Some(83) => af_save_callback_instance(vm, name, sig, recv, args),
-        Some(84) => af_field_classification_instance(vm, name, sig, recv, args),
-        Some(85) => {
-            af_field_classification_match_instance(vm, name, sig, recv, args)
-        },
-        Some(86) => af_saved_datasets_info_instance(vm, name, sig, recv, args),
-        Some(87) => af_autofill_service_instance(vm, name, sig, recv, args),
-        Some(88) => transition_instance(vm, name, sig, recv, args),
-        Some(89) => transition_values_instance(vm, name, sig, recv, args),
-        Some(90) => transition_animation_info_instance(vm, name, sig, recv, args),
-        Some(91) => transition_manager_instance(vm, name, sig, recv, args),
-        Some(92) => transition_scene_instance(vm, name, sig, recv, args),
-        Some(93) => {
-            transition_callback_instance(vm, class, name, sig, recv, args)
-        },
-        Some(94) => android_system_instance(vm, class, name, sig, recv, args),
-        _ => Ok(None),
-    }
-})().map_err(|e| *e.0)
+        // TextClassifier is an interface; its NO_OP object is represented by the
+        // interface descriptor itself in the host profile.  Only dispatch it when
+        // the receiver is that singleton (or explicitly marked), so a guest DEX
+        // implementation class is not shadowed when invoked through the interface.
+        if mref_class == TEXT_CLASSIFIER
+            && (recv_class == TEXT_CLASSIFIER || field_bool(vm, recv, "rd_noop"))
+        {
+            return text_classifier_instance(vm, name, sig, recv, args);
+        }
+        if let Some(value) = partial57_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial49_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial41_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35b_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35c_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35d_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial35e_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36a_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36b_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36c_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36d_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36e_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36f_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36g_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36h_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        if let Some(value) = partial36i_instance(vm, recv_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+        let class = if is_stub_class(recv_class) {
+            recv_class
+        } else if is_stub_class(mref_class) {
+            mref_class
+        } else {
+            return Ok(None);
+        };
+        match crate::android_stub_tables::lookup_class_id(0, 134, class) {
+            Some(0) => webview_instance(vm, name, sig, recv, args),
+            Some(1) => web_settings_instance(vm, name, sig, recv, args),
+            Some(2) => documents_path_instance(vm, name, sig, recv, args),
+            Some(3) => network_policy_instance(vm, name, sig, recv, args),
+            Some(4) => keychain_callback_instance(vm, name, sig, recv, args),
+            Some(5) => camera_manager_instance(vm, name, sig, recv, args),
+            Some(6) => camera_access_exception_instance(vm, name, sig, recv, args),
+            Some(7) => camera_metadata_native_instance(vm, name, sig, recv, args),
+            Some(8) => native_key_instance(vm, name, sig, recv, args),
+            Some(9) => type_reference_instance(vm, name, sig, recv, args),
+            Some(10) => camera_characteristics_instance(vm, name, sig, recv, args),
+            Some(11) => wrapper_key_instance(vm, class, name, sig, recv, args),
+            Some(12) => capture_request_instance(vm, name, sig, recv, args),
+            Some(13) => capture_request_builder_instance(vm, name, sig, recv, args),
+            Some(14) => capture_result_instance(vm, name, sig, recv, args),
+            Some(15) => stream_configuration_instance(vm, name, sig, recv, args),
+            Some(16) => stream_configuration_duration_instance(vm, name, sig, recv, args),
+            Some(17) => stream_map_instance(vm, name, sig, recv, args),
+            Some(18) => high_speed_video_configuration_instance(vm, name, sig, recv, args),
+            Some(19) => reprocess_formats_map_instance(vm, name, sig, recv, args),
+            Some(20) => metering_rectangle_instance(vm, name, sig, recv, args),
+            Some(21) => rggb_channel_vector_instance(vm, name, sig, recv, args),
+            Some(22) => black_level_pattern_instance(vm, name, sig, recv, args),
+            Some(23) => color_space_transform_instance(vm, name, sig, recv, args),
+            Some(24) => entity_config_instance(vm, name, sig, recv, args),
+            Some(25) => entity_config_builder_instance(vm, name, sig, recv, args),
+            Some(26) => text_classification_instance(vm, name, sig, recv, args),
+            Some(27) => text_classification_builder_instance(vm, name, sig, recv, args),
+            Some(28) => text_classification_request_instance(vm, name, sig, recv, args),
+            Some(29) => text_classification_request_builder_instance(vm, name, sig, recv, args),
+            Some(30) => text_selection_instance(vm, name, sig, recv, args),
+            Some(31) => text_selection_builder_instance(vm, name, sig, recv, args),
+            Some(32) => text_selection_request_instance(vm, name, sig, recv, args),
+            Some(33) => text_selection_request_builder_instance(vm, name, sig, recv, args),
+            Some(34) => text_language_instance(vm, name, sig, recv, args),
+            Some(35) => text_language_builder_instance(vm, name, sig, recv, args),
+            Some(36) => text_language_request_instance(vm, name, sig, recv, args),
+            Some(37) => text_language_request_builder_instance(vm, name, sig, recv, args),
+            Some(38) => text_links_instance(vm, name, sig, recv, args),
+            Some(39) => text_links_builder_instance(vm, name, sig, recv, args),
+            Some(40) => text_link_instance(vm, name, sig, recv, args),
+            Some(41) => text_links_request_instance(vm, name, sig, recv, args),
+            Some(42) => text_links_request_builder_instance(vm, name, sig, recv, args),
+            Some(43) => conversation_actions_instance(vm, name, sig, recv, args),
+            Some(44) => conversation_action_instance(vm, name, sig, recv, args),
+            Some(45) => conversation_action_builder_instance(vm, name, sig, recv, args),
+            Some(46) => conversation_message_instance(vm, name, sig, recv, args),
+            Some(47) => conversation_message_builder_instance(vm, name, sig, recv, args),
+            Some(48) => conversation_request_instance(vm, name, sig, recv, args),
+            Some(49) => conversation_request_builder_instance(vm, name, sig, recv, args),
+            Some(50) => system_text_classifier_manager_instance(vm, name, sig, recv, args),
+            Some(51) => ulocale_instance(vm, name, sig, recv, args),
+            Some(52) => entity_confidence_instance(vm, name, sig, recv, args),
+            Some(53) => animator_base_instance(vm, name, sig, recv, args),
+            Some(54) => value_animator_instance(vm, name, sig, recv, args),
+            Some(55) => object_animator_instance(vm, name, sig, recv, args),
+            Some(56) => property_values_holder_instance(vm, name, sig, recv, args),
+            Some(57) => keyframe_instance(vm, class, name, sig, recv, args),
+            Some(58) => animation_handler_instance(vm, name, sig, recv, args),
+            Some(59) => animation_evaluator_instance(vm, class, name, sig, recv, args),
+            Some(60) => android_property_instance(vm, class, name, sig, recv, args),
+            Some(61) => autofill_id_instance(vm, name, sig, recv, args),
+            Some(62) => autofill_value_instance(vm, name, sig, recv, args),
+            Some(63) => af_dataset_instance(vm, name, sig, recv, args),
+            Some(64) => af_dataset_builder_instance(vm, name, sig, recv, args),
+            Some(65) => af_dataset_filter_instance(vm, name, sig, recv, args),
+            Some(66) => af_field_instance(vm, name, sig, recv, args),
+            Some(67) => af_field_builder_instance(vm, name, sig, recv, args),
+            Some(68) => af_presentations_instance(vm, name, sig, recv, args),
+            Some(69) => af_presentations_builder_instance(vm, name, sig, recv, args),
+            Some(70) => af_inline_presentation_instance(vm, name, sig, recv, args),
+            Some(71) => af_fill_response_instance(vm, name, sig, recv, args),
+            Some(72) => af_fill_response_builder_instance(vm, name, sig, recv, args),
+            Some(73) => af_save_info_instance(vm, name, sig, recv, args),
+            Some(74) => af_save_info_builder_instance(vm, name, sig, recv, args),
+            Some(75) => af_user_data_instance(vm, name, sig, recv, args),
+            Some(76) => af_user_data_builder_instance(vm, name, sig, recv, args),
+            Some(77) => af_validator_instance(vm, class, name, sig, recv, args),
+            Some(78) => af_sanitizer_instance(vm, class, name, sig, recv, args),
+            Some(79) => af_fill_request_instance(vm, name, sig, recv, args),
+            Some(80) => af_save_request_instance(vm, name, sig, recv, args),
+            Some(81) => af_fill_context_instance(vm, name, sig, recv, args),
+            Some(82) => af_fill_callback_instance(vm, name, sig, recv, args),
+            Some(83) => af_save_callback_instance(vm, name, sig, recv, args),
+            Some(84) => af_field_classification_instance(vm, name, sig, recv, args),
+            Some(85) => af_field_classification_match_instance(vm, name, sig, recv, args),
+            Some(86) => af_saved_datasets_info_instance(vm, name, sig, recv, args),
+            Some(87) => af_autofill_service_instance(vm, name, sig, recv, args),
+            Some(88) => transition_instance(vm, name, sig, recv, args),
+            Some(89) => transition_values_instance(vm, name, sig, recv, args),
+            Some(90) => transition_animation_info_instance(vm, name, sig, recv, args),
+            Some(91) => transition_manager_instance(vm, name, sig, recv, args),
+            Some(92) => transition_scene_instance(vm, name, sig, recv, args),
+            Some(93) => transition_callback_instance(vm, class, name, sig, recv, args),
+            Some(94) => android_system_instance(vm, class, name, sig, recv, args),
+            _ => Ok(None),
+        }
+    })()
+    .map_err(|e| *e.0)
 }
 
 fn is_stub_class(c: &str) -> bool {
@@ -1325,7 +1318,10 @@ fn documents_static(
                 }
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 0, 1, name, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 0, 1, name, None, args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(out))
 }
@@ -1350,12 +1346,7 @@ fn documents_path_instance(
             if items.iter().any(|v| matches!(v, Value::Null)) {
                 return Err(iae("path must not contain null elements"));
             }
-            put(
-                vm,
-                recv,
-                "mRootId",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mRootId", varg(args, 0))?;
             // AOSP retains the caller's List reference (it does not copy it).
             put(vm, recv, "mPath", path)?;
             Value::Null
@@ -1409,7 +1400,10 @@ fn documents_path_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 1, 4, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 1, 4, name, Some(recv), args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -1476,7 +1470,10 @@ fn network_policy_instance(
             );
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 4, 6, name, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 4, 6, name, None, args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -1573,7 +1570,10 @@ fn keychain_static(
             vm.invoke_instance(callback, "alias", "(Ljava/lang/String;)V", &[Value::Null])?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 6, 8, name, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 6, 8, name, None, args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(out))
 }
@@ -1586,7 +1586,12 @@ fn keychain_callback_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    Ok(Some(match crate::android_stub_tables::eval_name_range(vm, 8, 9, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
+    Ok(Some(
+        match crate::android_stub_tables::eval_name_range(vm, 8, 9, name, Some(recv), args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1922,12 +1927,7 @@ fn webview_instance(
             let url = req_str(vm, args, 0, "url")?;
             if args.len() > 1 {
                 req_obj(args, 1, "additionalHttpHeaders")?;
-                put(
-                    vm,
-                    recv,
-                    "rd_headers",
-                    varg(args, 1),
-                )?;
+                put(vm, recv, "rd_headers", varg(args, 1))?;
             }
             web_navigate(vm, recv, url)?;
             Value::Null
@@ -1935,12 +1935,7 @@ fn webview_instance(
         "postUrl" => {
             let url = req_str(vm, args, 0, "url")?;
             req_obj(args, 1, "postData")?;
-            put(
-                vm,
-                recv,
-                "rd_post_data",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "rd_post_data", varg(args, 1))?;
             web_navigate(vm, recv, url)?;
             Value::Null
         }
@@ -2038,7 +2033,12 @@ fn webview_instance(
                 cur
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 9, 25, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 9, 25, name, Some(recv), args)? {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     };
     Ok(Some(out))
 }
@@ -2066,7 +2066,10 @@ fn webview_static(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 25, 27, name, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 25, 27, name, None, args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -2234,7 +2237,11 @@ fn entity_confidence_instance(
             Value::Obj(m)
         }
         "toString" => jstr(vm, entity_map_string(vm, recv))?,
-        _ => match crate::android_stub_tables::eval_name_range(vm, 27, 28, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 27, 28, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -2316,7 +2323,11 @@ fn entity_config_builder_instance(
                 include,
             )?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 28, 33, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 28, 33, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2359,7 +2370,11 @@ fn entity_config_instance(
                 h
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 33, 35, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 33, 35, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -2392,12 +2407,7 @@ fn text_classification_builder_instance(
         "setEntityType" => {
             // Unlike TextSelection.Builder, this AOSP method does not call
             // Objects.requireNonNull(type); ArrayMap accepts a null key.
-            builder_set_entity(
-                vm,
-                recv,
-                varg(args, 0),
-                farg(args, 1),
-            )?;
+            builder_set_entity(vm, recv, varg(args, 0), farg(args, 1))?;
             this
         }
         "setEntityConfidence" => {
@@ -2456,7 +2466,11 @@ fn text_classification_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 35, 43, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 35, 43, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2515,7 +2529,11 @@ fn text_classification_instance(
                 entity_map_string(vm, recv)
             ))?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 43, 50, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 43, 50, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2531,12 +2549,7 @@ fn text_classification_static(
         "createIntentOnClickListener" => {
             req_obj(args, 0, "intent")?;
             let r = alloc_empty_obj(vm, "Landroid/view/View$OnClickListener;")?;
-            put(
-                vm,
-                r,
-                "rd_pending_intent",
-                varg(args, 0),
-            )?;
+            put(vm, r, "rd_pending_intent", varg(args, 0))?;
             Value::Obj(r)
         }
         _ => return Ok(None),
@@ -2597,7 +2610,11 @@ fn text_selection_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 50, 53, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 50, 53, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2646,7 +2663,11 @@ fn text_selection_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 53, 58, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 53, 58, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -2677,7 +2698,11 @@ fn request_common_get(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match name {
         "getExtras" => bundle_or_empty(vm, Some(&get(vm, recv, "rd_extras")))?,
-        _ => match crate::android_stub_tables::eval_name_range(vm, 58, 67, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 58, 67, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2730,7 +2755,11 @@ fn text_classification_request_builder_instance(
             recv,
             &["rd_locales", "rd_ref_time"],
         )?,
-        _ => match crate::android_stub_tables::eval_name_range(vm, 67, 70, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 67, 70, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2762,7 +2791,11 @@ fn text_selection_request_builder_instance(
             recv,
             &["rd_locales", "rd_dark", "rd_include_tc"],
         )?,
-        _ => match crate::android_stub_tables::eval_name_range(vm, 70, 74, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 70, 74, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2948,7 +2981,11 @@ fn text_language_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 74, 77, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 74, 77, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2983,7 +3020,11 @@ fn text_language_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 77, 79, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 77, 79, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -2999,12 +3040,7 @@ fn text_language_request_builder_instance(
             if !array_is_obj(args.first()) {
                 return Err(npe("text"));
             }
-            put(
-                vm,
-                recv,
-                "rd_text",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "rd_text", varg(args, 0))?;
             Value::Null
         }
         "build" => {
@@ -3016,7 +3052,11 @@ fn text_language_request_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 79, 80, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 79, 80, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3071,12 +3111,7 @@ fn text_links_builder_instance(
     Ok(Some(match name {
         "<init>" => {
             req_obj(args, 0, "fullText")?;
-            put(
-                vm,
-                recv,
-                "rd_text",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "rd_text", varg(args, 0))?;
             let links = new_list(vm, Vec::new())?;
             put(vm, recv, "rd_links", Value::Obj(links))?;
             Value::Null
@@ -3086,10 +3121,7 @@ fn text_links_builder_instance(
             let (extras, url_span) = if sig.contains("Landroid/os/Bundle;") {
                 (varg(args, 3), Value::Null)
             } else if sig.contains("URLSpan") {
-                (
-                    empty_bundle(vm)?,
-                    varg(args, 3),
-                )
+                (empty_bundle(vm)?, varg(args, 3))
             } else {
                 (empty_bundle(vm)?, Value::Null)
             };
@@ -3134,7 +3166,11 @@ fn text_links_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 80, 81, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 80, 81, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3180,7 +3216,11 @@ fn text_links_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 81, 83, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 81, 83, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3205,7 +3245,11 @@ fn text_link_instance(
                 entity_map_string(vm, recv)
             ),
         )?,
-        _ => match crate::android_stub_tables::eval_name_range(vm, 83, 86, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 83, 86, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3235,7 +3279,11 @@ fn text_links_request_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 86, 92, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 86, 92, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3269,12 +3317,7 @@ fn conversation_actions_instance(
             // AOSP stores Collections.unmodifiableList(new ArrayList<>(...)).
             let copied = new_list(vm, collection_items(vm, args.first()))?;
             put(vm, recv, "rd_actions", Value::Obj(copied))?;
-            put(
-                vm,
-                recv,
-                "rd_id",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "rd_id", varg(args, 1))?;
             Value::Null
         }
         "getConversationActions" => {
@@ -3285,7 +3328,11 @@ fn conversation_actions_instance(
                 a
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 92, 94, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 92, 94, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3311,7 +3358,11 @@ fn conversation_action_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 94, 99, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 94, 99, name, Some(recv), args)?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3363,7 +3414,13 @@ fn conversation_message_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 99, 103, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 99, 103, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -3426,7 +3483,13 @@ fn conversation_request_builder_instance(
             put(vm, r, "rd_extras", extras)?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 103, 108, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 103, 108, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -3447,7 +3510,13 @@ fn conversation_request_instance(
             }
         }
         "getExtras" => bundle_or_empty(vm, Some(&get(vm, recv, "rd_extras")))?,
-        _ => match crate::android_stub_tables::eval_name_range(vm, 108, 115, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 108, 115, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 
@@ -3522,12 +3591,7 @@ fn text_classifier_default(
             } else {
                 req_obj(args, 0, "text")?;
                 let r = alloc_empty_obj(vm, TEXT_LINKS)?;
-                put(
-                    vm,
-                    r,
-                    "rd_text",
-                    varg(args, 0),
-                )?;
+                put(vm, r, "rd_text", varg(args, 0))?;
                 let links = new_list(vm, Vec::new())?;
                 put(vm, r, "rd_links", Value::Obj(links))?;
                 let extras = empty_bundle(vm)?;
@@ -3555,7 +3619,10 @@ fn text_classifier_default(
             put(vm, r, "rd_actions", Value::Obj(actions))?;
             Value::Obj(r)
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 115, 120, name, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_name_range(vm, 115, 120, name, None, args)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 #[cold]
@@ -3592,7 +3659,13 @@ fn system_text_classifier_manager_instance(
                 system
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 120, 122, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 120, 122, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 // ---------------------------------------------------------------------------
@@ -3763,7 +3836,13 @@ fn metering_rectangle_instance(
             field_int(vm, recv, "rd_h"),
             field_int(vm, recv, "rd_weight"),
         ])),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 122, 128, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 122, 128, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -4138,7 +4217,9 @@ fn check_argument_format_internal(format: i32) -> StubResult<i32> {
         | HAL_FORMAT_BLOB
         | HAL_FORMAT_RAW_OPAQUE
         | HAL_FORMAT_Y16 => Ok(format),
-        IMAGE_JPEG | IMAGE_HEIC => Err(iae_fmt(format_args!("An unknown internal format: {format}"))),
+        IMAGE_JPEG | IMAGE_HEIC => Err(iae_fmt(format_args!(
+            "An unknown internal format: {format}"
+        ))),
         _ => check_argument_format(format),
     }
 }
@@ -4161,7 +4242,9 @@ fn depth_format_to_public(format: i32) -> StubResult<i32> {
         HAL_FORMAT_IMPLEMENTATION_DEFINED => {
             Err(iae("IMPLEMENTATION_DEFINED must not leak to public API"))
         }
-        _ => Err(iae_fmt(format_args!("Unknown DATASPACE_DEPTH format {format}"))),
+        _ => Err(iae_fmt(format_args!(
+            "Unknown DATASPACE_DEPTH format {format}"
+        ))),
     }
 }
 #[cold]
@@ -4248,7 +4331,13 @@ fn stream_configuration_instance(
             field_int(vm, recv, "rd_h"),
             field_bool(vm, recv, "rd_input") as i32,
         ])),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 128, 132, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 128, 132, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -4330,7 +4419,13 @@ fn stream_configuration_duration_instance(
                 ((d as u64) >> 32) as i32,
             ]))
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 132, 135, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 132, 135, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -4418,7 +4513,13 @@ fn high_speed_video_configuration_instance(
             field_int(vm, recv, "rd_fps_min"),
             field_int(vm, recv, "rd_fps_max"),
         ])),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 135, 141, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 135, 141, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -4472,12 +4573,7 @@ fn reprocess_formats_map_instance(
                 inputs += 1;
             }
             // mEntry retains the caller's array reference.
-            put(
-                vm,
-                recv,
-                "rd_entry",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "rd_entry", varg(args, 0))?;
             put(vm, recv, "rd_input_count", Value::Int(inputs as i32))?;
             Value::Null
         }
@@ -4702,12 +4798,7 @@ fn stream_sizes_value(vm: &mut Engine, sizes: Vec<(i32, i32)>) -> StubResult<Val
     obj_array(vm, "[Landroid/util/Size;", values)
 }
 #[cold]
-fn stream_supported_format(
-    vm: &Engine,
-    recv: ObjRef,
-    format: i32,
-    output: bool,
-) -> StubResult<()> {
+fn stream_supported_format(vm: &Engine, recv: ObjRef, format: i32, output: bool) -> StubResult<()> {
     check_argument_format(format)?;
     let internal = image_format_to_internal(format);
     let dataspace = image_format_to_dataspace(format);
@@ -4939,12 +5030,7 @@ fn stream_map_instance(
             }
             if array_is_obj(args.get(15)) {
                 stream_check_array(vm, args, 15, "highSpeedVideoConfigurations")?;
-                put(
-                    vm,
-                    recv,
-                    "rd_high_speed",
-                    varg(args, 15),
-                )?;
+                put(vm, recv, "rd_high_speed", varg(args, 15))?;
             } else {
                 let empty = obj_array(
                     vm,
@@ -4953,12 +5039,7 @@ fn stream_map_instance(
                 )?;
                 put(vm, recv, "rd_high_speed", empty)?;
             }
-            put(
-                vm,
-                recv,
-                "rd_io_map",
-                varg(args, 16),
-            )?;
+            put(vm, recv, "rd_io_map", varg(args, 16))?;
             put(vm, recv, "rd_list_high_res", Value::Int(iarg(args, 17)))?;
             let enforce = if args.len() > 18 {
                 iarg(args, 18) != 0
@@ -5353,7 +5434,13 @@ fn type_reference_instance(
             None => false,
         }),
         "hashCode" => Value::Int(type_reference_hash(vm, recv)),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 141, 143, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 141, 143, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -5536,7 +5623,13 @@ fn native_key_instance(
             Value::Int(i) => i as i64,
             _ => i64::MAX,
         }),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 143, 148, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 143, 148, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -5605,7 +5698,13 @@ fn wrapper_key_instance(
             };
             jstr(vm, format!("{prefix}({n})"))?
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 148, 149, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 148, 149, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -5850,7 +5949,13 @@ fn camera_metadata_native_instance(
             bool_value(eq)
         }
         "hashCode" => Value::Int(metadata_content_hash(vm, recv)?),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 149, 150, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 149, 150, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -6225,7 +6330,13 @@ fn capture_request_instance(
             bool_value(eq)
         }
         "hashCode" => Value::Int(capture_request_hash(vm, recv)?),
-        _ => match crate::android_stub_tables::eval_name_range(vm, 150, 156, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 150, 156, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -6291,12 +6402,7 @@ fn capture_request_builder_instance(
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
-            metadata_set(
-                vm,
-                settings,
-                key,
-                varg(args, 1),
-            )?;
+            metadata_set(vm, settings, key, varg(args, 1))?;
             Value::Null
         }
         "get" => {
@@ -6318,12 +6424,7 @@ fn capture_request_builder_instance(
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
-            metadata_set(
-                vm,
-                settings,
-                key,
-                varg(args, 1),
-            )?;
+            metadata_set(vm, settings, key, varg(args, 1))?;
             Value::Obj(recv)
         }
         "getPhysicalCameraKey" => {
@@ -6338,12 +6439,7 @@ fn capture_request_builder_instance(
         }
         "setTag" => {
             let request = request_of(vm, recv)?;
-            put(
-                vm,
-                request,
-                "rd_tag",
-                varg(args, 0),
-            )?;
+            put(vm, request, "rd_tag", varg(args, 0))?;
             Value::Null
         }
         "setPartOfCHSRequestList" => {
@@ -6528,7 +6624,13 @@ fn capture_result_instance(
                 p
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 156, 160, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 156, 160, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -6613,7 +6715,13 @@ fn camera_access_exception_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 160, 161, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 160, 161, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 #[cold]
@@ -6718,7 +6826,13 @@ fn camera_manager_instance(
         "getTorchStrengthLevel" => {
             return Err(iae("No camera available on device."));
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 161, 164, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 161, 164, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     }))
 }
 
@@ -7161,19 +7275,11 @@ fn anim_pvh_set_int_values(vm: &mut Engine, holder: ObjRef, values: &[i32]) -> S
     let keyframes = anim_keyframes_from_ints(vm, values)?;
     anim_pvh_replace_keyframes(vm, holder, ANIM_KIND_INT, keyframes, "I", false)
 }
-fn anim_pvh_set_float_values(
-    vm: &mut Engine,
-    holder: ObjRef,
-    values: &[f32],
-) -> StubResult<()> {
+fn anim_pvh_set_float_values(vm: &mut Engine, holder: ObjRef, values: &[f32]) -> StubResult<()> {
     let keyframes = anim_keyframes_from_floats(vm, values)?;
     anim_pvh_replace_keyframes(vm, holder, ANIM_KIND_FLOAT, keyframes, "F", false)
 }
-fn anim_pvh_set_object_values(
-    vm: &mut Engine,
-    holder: ObjRef,
-    values: &[Value],
-) -> StubResult<()> {
+fn anim_pvh_set_object_values(vm: &mut Engine, holder: ObjRef, values: &[Value]) -> StubResult<()> {
     let first = values.first().ok_or_else(|| oob("0"))?;
     if matches!(first, Value::Null) {
         return Err(npe("values[0]"));
@@ -7644,11 +7750,7 @@ fn anim_notify_listener_field(
     }
     Ok(())
 }
-fn anim_notify_start_listeners(
-    vm: &mut Engine,
-    animator: ObjRef,
-    reverse: bool,
-) -> StubResult<()> {
+fn anim_notify_start_listeners(vm: &mut Engine, animator: ObjRef, reverse: bool) -> StubResult<()> {
     let was_called = field_bool(vm, animator, "rd_start_listeners_called");
     anim_put_bool(vm, animator, "rd_start_listeners_called", true)?;
     if !was_called && field_obj(vm, animator, "rd_listeners").is_some() {
@@ -7662,11 +7764,7 @@ fn anim_notify_start_listeners(
     }
     Ok(())
 }
-fn anim_notify_end_listeners(
-    vm: &mut Engine,
-    animator: ObjRef,
-    reverse: bool,
-) -> StubResult<()> {
+fn anim_notify_end_listeners(vm: &mut Engine, animator: ObjRef, reverse: bool) -> StubResult<()> {
     let was_called = field_bool(vm, animator, "rd_start_listeners_called");
     anim_put_bool(vm, animator, "rd_start_listeners_called", false)?;
     if was_called && field_obj(vm, animator, "rd_listeners").is_some() {
@@ -7803,7 +7901,8 @@ fn anim_property_get(
         "get",
         "(Ljava/lang/Object;)Ljava/lang/Object;",
         &[Value::Obj(target)],
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 fn anim_convert_back(vm: &mut Engine, holder: ObjRef, value: Value) -> StubResult<Value> {
@@ -8191,11 +8290,7 @@ fn anim_animate_based_on_time(
     anim_animate_value(vm, animator, current)?;
     Ok(done)
 }
-fn anim_do_animation_frame(
-    vm: &mut Engine,
-    animator: ObjRef,
-    frame_time: i64,
-) -> StubResult<bool> {
+fn anim_do_animation_frame(vm: &mut Engine, animator: ObjRef, frame_time: i64) -> StubResult<bool> {
     let mut start_time = anim_long_or(vm, animator, "rd_start_time", -1);
     if start_time < 0 {
         start_time = if field_bool(vm, animator, "rd_reversing") {
@@ -8247,11 +8342,7 @@ fn anim_do_animation_frame(
     }
     Ok(finished)
 }
-fn anim_set_current_fraction(
-    vm: &mut Engine,
-    animator: ObjRef,
-    fraction: f32,
-) -> StubResult<()> {
+fn anim_set_current_fraction(vm: &mut Engine, animator: ObjRef, fraction: f32) -> StubResult<()> {
     anim_init_animation(vm, animator)?;
     let fraction = anim_clamp_fraction(vm, animator, fraction);
     anim_put_bool(vm, animator, "rd_start_time_committed", true)?;
@@ -9337,7 +9428,18 @@ fn property_values_holder_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 0, 5, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            0,
+            5,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -9448,7 +9550,18 @@ fn keyframe_instance(
         ("clone", "()Landroid/animation/Keyframe;") | ("clone", "()Ljava/lang/Object;") => {
             Value::Obj(anim_clone_keyframe(vm, recv)?)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 5, 15, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            5,
+            15,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -9505,7 +9618,13 @@ fn animation_evaluator_instance(
                 _ => return Ok(None),
             }
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 164, 165, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 164, 165, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     };
     Ok(Some(value))
 }
@@ -9521,40 +9640,20 @@ fn android_property_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Ljava/lang/Class;Ljava/lang/String;)V") => {
-            put(
-                vm,
-                recv,
-                "rd_type",
-                varg(args, 0),
-            )?;
-            put(
-                vm,
-                recv,
-                "rd_name",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "rd_type", varg(args, 0))?;
+            put(vm, recv, "rd_name", varg(args, 1))?;
             Value::Null
         }
         ("<init>", "(Ljava/lang/String;)V") if class == ANDROID_INT_PROPERTY => {
             let type_value = anim_class_value(vm, "Ljava/lang/Integer;")?;
             put(vm, recv, "rd_type", type_value)?;
-            put(
-                vm,
-                recv,
-                "rd_name",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "rd_name", varg(args, 0))?;
             Value::Null
         }
         ("<init>", "(Ljava/lang/String;)V") if class == ANDROID_FLOAT_PROPERTY => {
             let type_value = anim_class_value(vm, "Ljava/lang/Float;")?;
             put(vm, recv, "rd_type", type_value)?;
-            put(
-                vm,
-                recv,
-                "rd_name",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "rd_name", varg(args, 0))?;
             Value::Null
         }
         ("set", "(Ljava/lang/Object;Ljava/lang/Object;)V") => {
@@ -9587,7 +9686,18 @@ fn android_property_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 15, 18, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            15,
+            18,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -9630,7 +9740,18 @@ fn animation_handler_instance(
             anim_set_frame_delay(vm, larg(args, 0));
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 18, 19, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            18,
+            19,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -9651,12 +9772,7 @@ fn animator_base_instance(
             Value::Null
         }
         ("addListener", "(Landroid/animation/Animator$AnimatorListener;)V") => {
-            anim_append_listener(
-                vm,
-                recv,
-                "rd_listeners",
-                varg(args, 0),
-            )?;
+            anim_append_listener(vm, recv, "rd_listeners", varg(args, 0))?;
             Value::Null
         }
         ("removeListener", "(Landroid/animation/Animator$AnimatorListener;)V") => {
@@ -9665,12 +9781,7 @@ fn animator_base_instance(
             Value::Null
         }
         ("addPauseListener", "(Landroid/animation/Animator$AnimatorPauseListener;)V") => {
-            anim_append_listener(
-                vm,
-                recv,
-                "rd_pause_listeners",
-                varg(args, 0),
-            )?;
+            anim_append_listener(vm, recv, "rd_pause_listeners", varg(args, 0))?;
             Value::Null
         }
         ("removePauseListener", "(Landroid/animation/Animator$AnimatorPauseListener;)V") => {
@@ -9708,7 +9819,18 @@ fn animator_base_instance(
         ("clone", "()Landroid/animation/Animator;") | ("clone", "()Ljava/lang/Object;") => {
             Value::Obj(anim_clone_animator(vm, recv)?)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 19, 35, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            19,
+            35,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -9847,12 +9969,7 @@ fn value_animator_instance(
             Value::Int(if mode == 0 { 1 } else { mode })
         }
         ("addUpdateListener", "(Landroid/animation/ValueAnimator$AnimatorUpdateListener;)V") => {
-            anim_append_listener(
-                vm,
-                recv,
-                "rd_update_listeners",
-                varg(args, 0),
-            )?;
+            anim_append_listener(vm, recv, "rd_update_listeners", varg(args, 0))?;
             Value::Null
         }
         ("removeUpdateListener", "(Landroid/animation/ValueAnimator$AnimatorUpdateListener;)V") => {
@@ -10041,29 +10158,14 @@ fn object_animator_instance(
         }
         ("<init>", "(Ljava/lang/Object;Ljava/lang/String;)V") => {
             anim_init_animator(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "rd_target",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "rd_target", varg(args, 0))?;
             put_opt_str(vm, recv, "rd_property_name", opt_str_arg(vm, args, 1))?;
             Value::Null
         }
         ("<init>", "(Ljava/lang/Object;Landroid/util/Property;)V") => {
             anim_init_animator(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "rd_target",
-                varg(args, 0),
-            )?;
-            put(
-                vm,
-                recv,
-                "rd_property",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "rd_target", varg(args, 0))?;
+            put(vm, recv, "rd_property", varg(args, 1))?;
             Value::Null
         }
         ("setIntValues", "([I)V") => {
@@ -10269,7 +10371,9 @@ fn af_check_flags(value: i32, valid: i32) -> StubResult<i32> {
 #[cold]
 fn af_check_range(value: i32, min: i32, max: i32, name: &str) -> StubResult<i32> {
     if value < min || value > max {
-        Err(iae_fmt(format_args!("{name} is out of range [{min}, {max}]")))
+        Err(iae_fmt(format_args!(
+            "{name} is out of range [{min}, {max}]"
+        )))
     } else {
         Ok(value)
     }
@@ -10470,9 +10574,7 @@ fn af_id_new(
 /// (AOSP runs `view.assignAutofillId()` from `ViewRootImpl`). Used by
 /// `View.getAutofillId()` in `view_layout.rs`; the id is opaque to apps.
 pub(crate) fn new_view_autofill_id(vm: &mut Engine, view_id: i32) -> Result<ObjRef, VmExit> {
-    (|| -> StubResult<ObjRef> {
-    af_id_new(vm, 0, view_id, -1, 0)
-})().map_err(|e| *e.0)
+    af_id_new(vm, 0, view_id, -1, 0).map_err(|e| *e.0)
 }
 
 #[cold]
@@ -10670,7 +10772,18 @@ fn autofill_id_instance(
             }
             jstr(vm, text)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 35, 40, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            35,
+            40,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -10803,7 +10916,18 @@ fn autofill_value_instance(
             }
             Value::Int(kind.wrapping_add(af_objects_hash(vm, &value)?))
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 40, 42, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            40,
+            42,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -10823,7 +10947,20 @@ fn af_dataset_filter_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 42, 45, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
+    Ok(Some(
+        match crate::android_stub_tables::eval_method_range(
+            vm,
+            42,
+            45,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+    ))
 }
 
 #[cold]
@@ -10835,13 +10972,22 @@ fn af_field_instance(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     Ok(Some(match (name, sig) {
-        ("getFilter", "()Ljava/util/regex/Pattern;") => {
-            match field_obj(vm, recv, "filter") {
-                Some(filter) => get(vm, filter, "pattern"),
-                None => Value::Null,
-            }
-        }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 45, 49, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        ("getFilter", "()Ljava/util/regex/Pattern;") => match field_obj(vm, recv, "filter") {
+            Some(filter) => get(vm, filter, "pattern"),
+            None => Value::Null,
+        },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            45,
+            49,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -10869,7 +11015,18 @@ fn af_field_builder_instance(
             put(vm, field, "presentations", get(vm, recv, "presentations"))?;
             Value::Obj(field)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 49, 52, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            49,
+            52,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -10958,17 +11115,23 @@ fn af_presentations_builder_instance(
             put(vm, presentations, "inlineTooltipPresentation", tooltip)?;
             Value::Obj(presentations)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 56, 60, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            56,
+            60,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
 #[cold]
-fn af_inline_new(
-    vm: &mut Engine,
-    slice: Value,
-    spec: Value,
-    pinned: bool,
-) -> StubResult<Value> {
+fn af_inline_new(vm: &mut Engine, slice: Value, spec: Value, pinned: bool) -> StubResult<Value> {
     if matches!(slice, Value::Null) {
         return Err(npe("slice must not be null"));
     }
@@ -10990,9 +11153,7 @@ fn af_inline_presentation_static(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     Ok(Some(match name {
-        "createTooltipPresentation" => {
-            af_inline_new(vm, varg(args, 0), varg(args, 1), false)?
-        }
+        "createTooltipPresentation" => af_inline_new(vm, varg(args, 0), varg(args, 1), false)?,
         _ => return Ok(None),
     }))
 }
@@ -11076,7 +11237,18 @@ fn af_inline_presentation_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 60, 64, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            60,
+            64,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -12098,7 +12270,18 @@ fn af_fill_response_instance(
             }
             Value::Obj(new_collection(vm, "Ljava/util/HashSet;", unique)?)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 73, 100, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            73,
+            100,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -12611,7 +12794,18 @@ fn af_save_info_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 101, 115, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            101,
+            115,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -12998,14 +13192,21 @@ fn af_user_data_instance(
             if oarg(args, 0).is_none() {
                 return Err(npe("categoryId"));
             }
-            af_map_get(
-                vm,
-                &get(vm, recv, "categoryAlgorithms"),
-                &varg(args, 0),
-            )
-            .unwrap_or(Value::Null)
+            af_map_get(vm, &get(vm, recv, "categoryAlgorithms"), &varg(args, 0))
+                .unwrap_or(Value::Null)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 115, 123, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            115,
+            123,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -13117,8 +13318,7 @@ fn af_validators_static(
 ) -> StubResult<Option<Value>> {
     let v = match name {
         "and" | "or" => {
-            let validators =
-                af_check_array_elements_not_null(vm, &varg(args, 0), "validators")?;
+            let validators = af_check_array_elements_not_null(vm, &varg(args, 0), "validators")?;
             for (i, validator) in validators.iter().enumerate() {
                 if !af_is_subtype(vm, validator, AF_INTERNAL_VALIDATOR) {
                     let text = value_string(vm, validator)?;
@@ -13215,7 +13415,7 @@ fn af_validator_is_valid(
             };
             let pattern = field_obj(vm, recv, "regex").ok_or_else(|| npe("regex"))?;
             af_pattern_matches(vm, pattern, &text)
-        },
+        }
         Some(1) => {
             for validator in array_elems(vm, Some(&get(vm, recv, "validators"))) {
                 let validator_ref = match validator {
@@ -13233,7 +13433,7 @@ fn af_validator_is_valid(
                 }
             }
             Ok(true)
-        },
+        }
         Some(2) => {
             for validator in array_elems(vm, Some(&get(vm, recv, "validators"))) {
                 let validator_ref = match validator {
@@ -13251,7 +13451,7 @@ fn af_validator_is_valid(
                 }
             }
             Ok(false)
-        },
+        }
         Some(3) => {
             let validator = field_obj(vm, recv, "validator").ok_or_else(|| npe("validator"))?;
             let valid = vm.invoke_instance(
@@ -13261,7 +13461,7 @@ fn af_validator_is_valid(
                 &[finder_value],
             )?;
             Ok(valid.as_int().unwrap_or(0) == 0)
-        },
+        }
         _ => Ok(false),
     }
 }
@@ -13300,9 +13500,9 @@ fn af_validator_instance(
             put(vm, recv, "validator", Value::Obj(validator))?;
             Value::Null
         }
-        (_, "isValid", "(Landroid/service/autofill/ValueFinder;)Z") => bool_value(
-            af_validator_is_valid(vm, class, recv, varg(args, 0))?,
-        ),
+        (_, "isValid", "(Landroid/service/autofill/ValueFinder;)Z") => {
+            bool_value(af_validator_is_valid(vm, class, recv, varg(args, 0))?)
+        }
         (_, "describeContents", "()I") => Value::Int(0),
         _ => return Ok(None),
     };
@@ -13430,7 +13630,19 @@ fn af_sanitizer_instance(
             }
         }
         (_, "describeContents", "()I") => Value::Int(0),
-        _ => match crate::android_stub_tables::eval_class_method_range(vm, 0, 2, class, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_class_method_range(
+            vm,
+            0,
+            2,
+            class,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -13479,7 +13691,18 @@ fn af_save_request_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    let v = match crate::android_stub_tables::eval_method_range(vm, 131, 136, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) };
+    let v = match crate::android_stub_tables::eval_method_range(
+        vm,
+        131,
+        136,
+        name,
+        sig,
+        Some(recv),
+        args,
+    )? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
     Ok(Some(v))
 }
 #[cold]
@@ -13490,7 +13713,18 @@ fn af_fill_context_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    let v = match crate::android_stub_tables::eval_method_range(vm, 136, 141, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) };
+    let v = match crate::android_stub_tables::eval_method_range(
+        vm,
+        136,
+        141,
+        name,
+        sig,
+        Some(recv),
+        args,
+    )? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
     Ok(Some(v))
 }
 #[cold]
@@ -13545,7 +13779,18 @@ fn af_fill_callback_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 141, 142, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            141,
+            142,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -13599,7 +13844,18 @@ fn af_save_callback_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 142, 143, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            142,
+            143,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -13631,7 +13887,18 @@ fn af_field_classification_instance(
             put(vm, recv, "matches", matches_value)?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 143, 144, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            143,
+            144,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -13643,7 +13910,18 @@ fn af_field_classification_match_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    let v = match crate::android_stub_tables::eval_method_range(vm, 144, 147, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) };
+    let v = match crate::android_stub_tables::eval_method_range(
+        vm,
+        144,
+        147,
+        name,
+        sig,
+        Some(recv),
+        args,
+    )? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
     Ok(Some(v))
 }
 #[cold]
@@ -13699,7 +13977,18 @@ fn af_saved_datasets_info_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 147, 149, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            147,
+            149,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -13807,24 +14096,14 @@ fn tr_set_field_list(
     Ok(value)
 }
 #[cold]
-fn tr_append_field_list(
-    vm: &mut Engine,
-    r: ObjRef,
-    field: &str,
-    item: Value,
-) -> StubResult<()> {
+fn tr_append_field_list(vm: &mut Engine, r: ObjRef, field: &str, item: Value) -> StubResult<()> {
     let mut items = tr_field_items(vm, r, field);
     items.push(item);
     tr_set_field_list(vm, r, field, items)?;
     Ok(())
 }
 #[cold]
-fn tr_remove_field_list(
-    vm: &mut Engine,
-    r: ObjRef,
-    field: &str,
-    item: &Value,
-) -> StubResult<bool> {
+fn tr_remove_field_list(vm: &mut Engine, r: ObjRef, field: &str, item: &Value) -> StubResult<bool> {
     let mut items = tr_field_items(vm, r, field);
     let mut found = None;
     for (index, existing) in items.iter().enumerate() {
@@ -14152,12 +14431,7 @@ fn transition_values_instance(
         }
         ("<init>", "(Landroid/view/View;)V") => {
             tr_ensure_values(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "view",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "view", varg(args, 0))?;
             Value::Null
         }
         ("equals", "(Ljava/lang/Object;)Z") => {
@@ -14227,36 +14501,11 @@ fn transition_animation_info_instance(
     {
         return Ok(None);
     }
-    put(
-        vm,
-        recv,
-        "view",
-        varg(args, 0),
-    )?;
-    put(
-        vm,
-        recv,
-        "name",
-        varg(args, 1),
-    )?;
-    put(
-        vm,
-        recv,
-        "transition",
-        varg(args, 2),
-    )?;
-    put(
-        vm,
-        recv,
-        "windowId",
-        varg(args, 3),
-    )?;
-    put(
-        vm,
-        recv,
-        "values",
-        varg(args, 4),
-    )?;
+    put(vm, recv, "view", varg(args, 0))?;
+    put(vm, recv, "name", varg(args, 1))?;
+    put(vm, recv, "transition", varg(args, 2))?;
+    put(vm, recv, "windowId", varg(args, 3))?;
+    put(vm, recv, "values", varg(args, 4))?;
     Ok(Some(Value::Null))
 }
 
@@ -14291,11 +14540,7 @@ fn tr_view_transition_name(vm: &mut Engine, view: ObjRef) -> StubResult<Value> {
     }
 }
 #[cold]
-fn tr_class_is_instance(
-    vm: &mut Engine,
-    class_value: &Value,
-    target: ObjRef,
-) -> StubResult<bool> {
+fn tr_class_is_instance(vm: &mut Engine, class_value: &Value, target: ObjRef) -> StubResult<bool> {
     let Some(class_obj) = obj(Some(class_value)) else {
         return Ok(false);
     };
@@ -14878,11 +15123,7 @@ fn tr_end(vm: &mut Engine, transition: ObjRef) -> StubResult<()> {
     Ok(())
 }
 #[cold]
-fn tr_animator_set_duration(
-    vm: &mut Engine,
-    animator: ObjRef,
-    duration: i64,
-) -> StubResult<()> {
+fn tr_animator_set_duration(vm: &mut Engine, animator: ObjRef, duration: i64) -> StubResult<()> {
     let class = class_of(vm, animator).to_string();
     if vm.cp.is_subtype(&class, VALUE_ANIMATOR) {
         if duration < 0 {
@@ -14916,11 +15157,7 @@ fn tr_animator_get_start_delay(vm: &mut Engine, animator: ObjRef) -> StubResult<
     )
 }
 #[cold]
-fn tr_animator_set_start_delay(
-    vm: &mut Engine,
-    animator: ObjRef,
-    delay: i64,
-) -> StubResult<()> {
+fn tr_animator_set_start_delay(vm: &mut Engine, animator: ObjRef, delay: i64) -> StubResult<()> {
     let class = class_of(vm, animator).to_string();
     if vm.cp.is_subtype(&class, VALUE_ANIMATOR) {
         put(vm, animator, "rd_start_delay", Value::Long(delay.max(0)))?;
@@ -15098,7 +15335,8 @@ fn tr_transition_properties_value(vm: &mut Engine, transition: ObjRef) -> StubRe
         "getTransitionProperties",
         "()[Ljava/lang/String;",
         &[],
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 #[cold]
 fn tr_transition_properties(vm: &mut Engine, transition: ObjRef) -> StubResult<Vec<Value>> {
@@ -15154,12 +15392,7 @@ fn tr_call_is_transition_required(
     )? == Value::Int(1))
 }
 #[cold]
-fn tr_value_changed(
-    vm: &mut Engine,
-    start: ObjRef,
-    end: ObjRef,
-    key: &Value,
-) -> StubResult<bool> {
+fn tr_value_changed(vm: &mut Engine, start: ObjRef, end: ObjRef, key: &Value) -> StubResult<bool> {
     let start_map = tr_values_map(vm, start);
     let end_map = tr_values_map(vm, end);
     if tr_map_contains(vm, &start_map, key) != tr_map_contains(vm, &end_map, key) {
@@ -15385,11 +15618,7 @@ fn tr_create_animators(
     Ok(())
 }
 #[cold]
-fn tr_play_transition(
-    vm: &mut Engine,
-    transition: ObjRef,
-    scene_root: ObjRef,
-) -> StubResult<()> {
+fn tr_play_transition(vm: &mut Engine, transition: ObjRef, scene_root: ObjRef) -> StubResult<()> {
     tr_match_start_and_end(vm, transition)?;
     let running = tr_running_animators(vm)?;
     let entries = tr_map_entries(vm, &Value::Obj(running));
@@ -15529,11 +15758,7 @@ fn tr_pause(vm: &mut Engine, transition: ObjRef, scene_root: Option<ObjRef>) -> 
     Ok(())
 }
 #[cold]
-fn tr_resume(
-    vm: &mut Engine,
-    transition: ObjRef,
-    scene_root: Option<ObjRef>,
-) -> StubResult<()> {
+fn tr_resume(vm: &mut Engine, transition: ObjRef, scene_root: Option<ObjRef>) -> StubResult<()> {
     tr_ensure_transition(vm, transition)?;
     if field_bool(vm, transition, "mPaused") {
         if !field_bool(vm, transition, "mEnded") {
@@ -15636,11 +15861,7 @@ fn tr_values_get_key(
     Ok(tr_values_get_with_key(vm, Some(values), &key))
 }
 #[cold]
-fn tr_values_contains_key(
-    vm: &mut Engine,
-    values: Option<ObjRef>,
-    key: &str,
-) -> StubResult<bool> {
+fn tr_values_contains_key(vm: &mut Engine, values: Option<ObjRef>, key: &str) -> StubResult<bool> {
     let Some(values) = values else {
         return Ok(false);
     };
@@ -15801,11 +16022,7 @@ fn tr_visibility_on_appear5(
     ).map_err(StubExit::from)
 }
 #[cold]
-fn tr_set_transition_visibility(
-    vm: &mut Engine,
-    view: ObjRef,
-    visibility: i32,
-) -> StubResult<()> {
+fn tr_set_transition_visibility(vm: &mut Engine, view: ObjRef, visibility: i32) -> StubResult<()> {
     match tr_invoke(
         vm,
         view,
@@ -15916,11 +16133,7 @@ fn tr_visibility_on_disappear5(
     Ok(animator)
 }
 #[cold]
-fn tr_fade_start_alpha(
-    vm: &mut Engine,
-    start: Option<ObjRef>,
-    fallback: f32,
-) -> StubResult<f32> {
+fn tr_fade_start_alpha(vm: &mut Engine, start: Option<ObjRef>, fallback: f32) -> StubResult<f32> {
     Ok(tr_values_get_key(vm, start, TR_PROP_FADE_ALPHA)?
         .and_then(|value| tr_unbox_float(vm, &value))
         .unwrap_or(fallback))
@@ -16196,11 +16409,7 @@ fn tr_interpolate_int(start: i32, end: i32, fraction: f32) -> i32 {
     (start as f32 + (end - start) as f32 * fraction).round() as i32
 }
 #[cold]
-fn tr_change_bounds_update(
-    vm: &mut Engine,
-    listener: ObjRef,
-    animator: ObjRef,
-) -> StubResult<()> {
+fn tr_change_bounds_update(vm: &mut Engine, listener: ObjRef, animator: ObjRef) -> StubResult<()> {
     let fraction = match tr_invoke(vm, animator, "getAnimatedFraction", "()F", &[])? {
         Value::Float(v) => v.clamp(0.0, 1.0),
         _ => 0.0,
@@ -16371,45 +16580,20 @@ fn transition_callback_instance(
     if name == "<init>" {
         match class {
             TRANSITION_RUN_LISTENER | TRANSITION_ANIMATE_LISTENER if !args.is_empty() => {
-                put(
-                    vm,
-                    recv,
-                    "this$0",
-                    varg(args, 0),
-                )?;
+                put(vm, recv, "this$0", varg(args, 0))?;
                 if let Some(map) = args.get(1) {
                     put(vm, recv, "val$runningAnimators", map.clone())?;
                 }
             }
             TRANSITION_SET_LISTENER => {
-                put(
-                    vm,
-                    recv,
-                    "mTransitionSet",
-                    varg(args, 0),
-                )?;
+                put(vm, recv, "mTransitionSet", varg(args, 0))?;
             }
             TRANSITION_SET_NEXT_LISTENER => {
-                put(
-                    vm,
-                    recv,
-                    "this$0",
-                    varg(args, 0),
-                )?;
-                put(
-                    vm,
-                    recv,
-                    "val$nextTransition",
-                    varg(args, 1),
-                )?;
+                put(vm, recv, "this$0", varg(args, 0))?;
+                put(vm, recv, "val$nextTransition", varg(args, 1))?;
             }
             TRANSITION_MANAGER_MULTI => {
-                put(
-                    vm,
-                    recv,
-                    "mTransition",
-                    varg(args, 0),
-                )?;
+                put(vm, recv, "mTransition", varg(args, 0))?;
                 let root = varg(args, 1);
                 put(vm, recv, "mSceneRoot", root.clone())?;
                 if let Some(root_ref) = obj(Some(&root)) {
@@ -16428,40 +16612,15 @@ fn transition_callback_instance(
                 }
             }
             TRANSITION_MANAGER_END_LISTENER => {
-                put(
-                    vm,
-                    recv,
-                    "val$sceneRoot",
-                    varg(args, 0),
-                )?;
-                put(
-                    vm,
-                    recv,
-                    "val$runningTransitions",
-                    varg(args, 1),
-                )?;
+                put(vm, recv, "val$sceneRoot", varg(args, 0))?;
+                put(vm, recv, "val$runningTransitions", varg(args, 1))?;
             }
             TRANSITION_FADE_LISTENER => {
-                put(
-                    vm,
-                    recv,
-                    "this$0",
-                    varg(args, 0),
-                )?;
-                put(
-                    vm,
-                    recv,
-                    "val$view",
-                    varg(args, 1),
-                )?;
+                put(vm, recv, "this$0", varg(args, 0))?;
+                put(vm, recv, "val$view", varg(args, 1))?;
             }
             TRANSITION_FADE_ANIM_LISTENER => {
-                put(
-                    vm,
-                    recv,
-                    "mView",
-                    varg(args, 0),
-                )?;
+                put(vm, recv, "mView", varg(args, 0))?;
                 put(vm, recv, "mLayerTypeChanged", Value::Int(0))?;
             }
             TRANSITION_DISAPPEAR_LISTENER => {
@@ -16793,45 +16952,20 @@ fn transition_scene_instance(
     let value = match (name, sig) {
         ("<init>", "(Landroid/view/ViewGroup;)V") => {
             tr_scene_ensure(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "mSceneRoot",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mSceneRoot", varg(args, 0))?;
             Value::Null
         }
         ("<init>", "(Landroid/view/ViewGroup;Landroid/view/View;)V")
         | ("<init>", "(Landroid/view/ViewGroup;Landroid/view/ViewGroup;)V") => {
             tr_scene_ensure(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "mSceneRoot",
-                varg(args, 0),
-            )?;
-            put(
-                vm,
-                recv,
-                "mLayout",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "mSceneRoot", varg(args, 0))?;
+            put(vm, recv, "mLayout", varg(args, 1))?;
             Value::Null
         }
         ("<init>", "(Landroid/view/ViewGroup;ILandroid/content/Context;)V") => {
             tr_scene_ensure(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "mContext",
-                varg(args, 2),
-            )?;
-            put(
-                vm,
-                recv,
-                "mSceneRoot",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mContext", varg(args, 2))?;
+            put(vm, recv, "mSceneRoot", varg(args, 0))?;
             put(vm, recv, "mLayoutId", Value::Int(iarg(args, 1)))?;
             Value::Null
         }
@@ -16849,22 +16983,12 @@ fn transition_scene_instance(
         }
         ("setEnterAction", "(Ljava/lang/Runnable;)V") => {
             tr_scene_ensure(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "mEnterAction",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mEnterAction", varg(args, 0))?;
             Value::Null
         }
         ("setExitAction", "(Ljava/lang/Runnable;)V") => {
             tr_scene_ensure(vm, recv)?;
-            put(
-                vm,
-                recv,
-                "mExitAction",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mExitAction", varg(args, 0))?;
             Value::Null
         }
         ("isCreatedFromLayoutResource", "()Z") => {
@@ -16908,11 +17032,7 @@ fn transition_scene_static(
                 scene,
                 "<init>",
                 "(Landroid/view/ViewGroup;ILandroid/content/Context;)V",
-                &[
-                    Value::Obj(root),
-                    Value::Int(iarg(args, 1)),
-                    varg(args, 2),
-                ],
+                &[Value::Obj(root), Value::Int(iarg(args, 1)), varg(args, 2)],
             )?;
             tr_map_put(vm, cache, key, Value::Obj(scene))?;
             Value::Obj(scene)
@@ -17041,11 +17161,7 @@ fn tr_manager_running_list(
     }
 }
 #[cold]
-fn tr_manager_setup(
-    vm: &mut Engine,
-    root: ObjRef,
-    transition: Option<ObjRef>,
-) -> StubResult<()> {
+fn tr_manager_setup(vm: &mut Engine, root: ObjRef, transition: Option<ObjRef>) -> StubResult<()> {
     if let Some(list) = tr_manager_running_list(vm, root, false)? {
         for running in tr_items(vm, &list)
             .iter()
@@ -17274,11 +17390,7 @@ fn tr_manager_on_detached(vm: &mut Engine, listener: ObjRef) -> StubResult<()> {
     Ok(())
 }
 #[cold]
-fn tr_manager_get_transition(
-    vm: &mut Engine,
-    manager: ObjRef,
-    scene: ObjRef,
-) -> StubResult<Value> {
+fn tr_manager_get_transition(vm: &mut Engine, manager: ObjRef, scene: ObjRef) -> StubResult<Value> {
     tr_manager_ensure(vm, manager)?;
     let root_value = tr_invoke(vm, scene, "getSceneRoot", "()Landroid/view/ViewGroup;", &[])?;
     if let Some(root) = obj(Some(&root_value)) {
@@ -17399,30 +17511,18 @@ fn transition_manager_static(
             Value::Null
         }
         ("go", "(Landroid/transition/Scene;Landroid/transition/Transition;)V") => {
-            tr_manager_change_scene(
-                vm,
-                varg(args, 0),
-                varg(args, 1),
-            )?;
+            tr_manager_change_scene(vm, varg(args, 0), varg(args, 1))?;
             Value::Null
         }
         ("beginDelayedTransition", "(Landroid/view/ViewGroup;)V") => {
-            tr_manager_begin_delayed(
-                vm,
-                varg(args, 0),
-                Value::Null,
-            )?;
+            tr_manager_begin_delayed(vm, varg(args, 0), Value::Null)?;
             Value::Null
         }
         (
             "beginDelayedTransition",
             "(Landroid/view/ViewGroup;Landroid/transition/Transition;)V",
         ) => {
-            tr_manager_begin_delayed(
-                vm,
-                varg(args, 0),
-                varg(args, 1),
-            )?;
+            tr_manager_begin_delayed(vm, varg(args, 0), varg(args, 1))?;
             Value::Null
         }
         ("endTransitions", "(Landroid/view/ViewGroup;)V") => {
@@ -17450,11 +17550,7 @@ fn transition_manager_static(
             Value::Null
         }
         ("changeScene", "(Landroid/transition/Scene;Landroid/transition/Transition;)V") => {
-            tr_manager_change_scene(
-                vm,
-                varg(args, 0),
-                varg(args, 1),
-            )?;
+            tr_manager_change_scene(vm, varg(args, 0), varg(args, 1))?;
             Value::Null
         }
         ("sceneChangeSetup", "(Landroid/view/ViewGroup;Landroid/transition/Transition;)V") => {
@@ -19530,7 +19626,12 @@ fn android_os_static(
                 ],
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 160, 167, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm, 160, 167, name, sig, None, args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -19795,7 +19896,18 @@ fn p57_text_info_instance(
                 None => Value::Null,
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 167, 171, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            167,
+            171,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -19847,7 +19959,18 @@ fn p57_suggestions_info_instance(
             }
             elems[index as usize].clone()
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 171, 176, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            171,
+            176,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -19920,7 +20043,18 @@ fn p57_sentence_suggestions_instance(
                 values[i as usize]
             })
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 176, 178, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            176,
+            178,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -20124,7 +20258,18 @@ fn p57_spell_subtype_instance(
             };
             bool_value(eq)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 178, 181, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            178,
+            181,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -20139,7 +20284,7 @@ fn p57_spell_params_instance(
 ) -> StubResult<Option<Value>> {
     if class == P57_SPELL_PARAMS_BUILDER {
         return Ok(Some(match (name, sig) {
-        ("<init>", "()V") => {
+            ("<init>", "()V") => {
                 put(vm, recv, "mLocale", Value::Null)?;
                 put(
                     vm,
@@ -20152,7 +20297,10 @@ fn p57_spell_params_instance(
                 put(vm, recv, "mExtras", extras)?;
                 Value::Null
             }
-        ("build", "()Landroid/view/textservice/SpellCheckerSession$SpellCheckerSessionParams;") => {
+            (
+                "build",
+                "()Landroid/view/textservice/SpellCheckerSession$SpellCheckerSessionParams;",
+            ) => {
                 if field_obj(vm, recv, "mLocale").is_none()
                     && !field_bool(vm, recv, "mShouldReferToSpellCheckerLanguageSettings")
                 {
@@ -20172,10 +20320,34 @@ fn p57_spell_params_instance(
                 }
                 Value::Obj(out)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 181, 185, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                181,
+                185,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
-    Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 185, 189, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
+    Ok(Some(
+        match crate::android_stub_tables::eval_method_range(
+            vm,
+            185,
+            189,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+    ))
 }
 
 #[cold]
@@ -20367,7 +20539,18 @@ fn p57_translation_spec_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 201, 204, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            201,
+            204,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -20385,11 +20568,7 @@ fn p57_translation_request_value_hash(vm: &Engine, recv: ObjRef) -> StubResult<i
 }
 
 #[cold]
-fn p57_translation_request_value_equal(
-    vm: &mut Engine,
-    a: &Value,
-    b: &Value,
-) -> StubResult<bool> {
+fn p57_translation_request_value_equal(vm: &mut Engine, a: &Value, b: &Value) -> StubResult<bool> {
     let (Some(a), Some(b)) = (obj(Some(a)), obj(Some(b))) else {
         return Ok(matches!((a, b), (Value::Null, Value::Null)));
     };
@@ -20429,15 +20608,23 @@ fn p57_translation_request_value_instance(
             let text = value_string(vm, &v)?;
             jstr(vm, format!("TranslationRequestValue {{ text = {text} }}"))?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 204, 207, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            204,
+            207,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
 #[cold]
-fn p57_view_translation_map_hash(
-    vm: &mut Engine,
-    entries: &[(Value, Value)],
-) -> StubResult<i32> {
+fn p57_view_translation_map_hash(vm: &mut Engine, entries: &[(Value, Value)]) -> StubResult<i32> {
     let mut hash = 0i32;
     for (k, v) in entries {
         let kh = match k {
@@ -20495,7 +20682,11 @@ fn p57_view_translation_request_instance(
             }
             match found {
                 Some(v) => v,
-                None => return Err(iae_fmt(format_args!("Request does not contain value for key={key}"))),
+                None => {
+                    return Err(iae_fmt(format_args!(
+                        "Request does not contain value for key={key}"
+                    )))
+                }
             }
         }
         ("getKeys", "()Ljava/util/Set;") => {
@@ -20590,7 +20781,18 @@ fn p57_view_translation_request_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 207, 209, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            207,
+            209,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -20894,7 +21096,10 @@ fn p57_translation_manager_instance(
 ) -> StubResult<Option<Value>> {
     // No on-device translation service is installed in this profile.
     Ok(Some(match (name, sig) {
-        ("<init>", "(Landroid/content/Context;Landroid/view/translation/ITranslationManager;)V") => {
+        (
+            "<init>",
+            "(Landroid/content/Context;Landroid/view/translation/ITranslationManager;)V",
+        ) => {
             if oarg(args, 0).is_none() {
                 return Err(npe("context cannot be null"));
             }
@@ -20906,14 +21111,30 @@ fn p57_translation_manager_instance(
         | ("getTranslationCapabilities", "(II)Ljava/util/Set;") => {
             // The no-service/failure path in AOSP returns
             // Collections.emptySet(), whose mutations throw.
-            vm.invoke_static("Ljava/util/Collections;", "emptySet", "()Ljava/util/Set;", &[])?
+            vm.invoke_static(
+                "Ljava/util/Collections;",
+                "emptySet",
+                "()Ljava/util/Set;",
+                &[],
+            )?
         }
         ("getOnDeviceTranslationSettingsActivityIntent", "()Landroid/app/PendingIntent;")
         | ("getTranslationSettingsActivityIntent", "()Landroid/app/PendingIntent;") => {
             let _ = recv;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 220, 227, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            220,
+            227,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -20931,7 +21152,18 @@ fn p57_usb_endpoint_instance(
         ("getEndpointNumber", "()I") => Value::Int(field_int(vm, recv, "mAddress") & 15),
         ("getDirection", "()I") => Value::Int(field_int(vm, recv, "mAddress") & 128),
         ("getType", "()I") => Value::Int(field_int(vm, recv, "mAttributes") & 3),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 227, 234, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            227,
+            234,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -20999,7 +21231,18 @@ fn p57_usb_interface_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 234, 242, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            234,
+            242,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -21065,7 +21308,18 @@ fn p57_usb_configuration_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 242, 246, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            242,
+            246,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -21426,14 +21680,28 @@ fn p57_usb_manager_instance(
     let _ = recv;
     Ok(Some(match (name, sig) {
         ("getDeviceList", "()Ljava/util/HashMap;") => p57_new_map(vm, Vec::new())?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 263, 276, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            263,
+            276,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
 // --- android.telephony.euicc ----------------------------------------------
 
 #[cold]
-pub(crate) fn p57_euicc_send_unavailable(vm: &mut Engine, callback: Option<&Value>) -> StubResult<()> {
+pub(crate) fn p57_euicc_send_unavailable(
+    vm: &mut Engine,
+    callback: Option<&Value>,
+) -> StubResult<()> {
     let Some(pi) = obj(callback) else {
         return Err(npe("callbackIntent"));
     };
@@ -21453,7 +21721,20 @@ fn p57_euicc_instance(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     if class == P57_EUICC_INFO {
-        return Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 276, 279, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }));
+        return Ok(Some(
+            match crate::android_stub_tables::eval_method_range(
+                vm,
+                276,
+                279,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        ));
     }
 
     // No IEuiccController is present, so AOSP's isEnabled() is always false.
@@ -21500,7 +21781,18 @@ fn p57_euicc_instance(
             // Intent extra, which this slice does not model.
             return Err(iae("Invalid result intent"));
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 279, 299, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            279,
+            299,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -21612,7 +21904,18 @@ fn p57_usage_stats_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 299, 312, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            299,
+            312,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -21694,7 +21997,18 @@ fn p57_usage_event_instance(
             put(vm, out, "mNotificationChannelId", channel)?;
             Value::Obj(out)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 312, 325, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            312,
+            325,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -21755,7 +22069,18 @@ fn p57_usage_events_instance(
                 }
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 325, 328, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            325,
+            328,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22051,9 +22376,9 @@ fn p57_media_size_instance(
                 get(vm, recv, "mId")
             }
         }
-        ("isPortrait", "()Z") => bool_value(
-            field_int(vm, recv, "mHeightMils") >= field_int(vm, recv, "mWidthMils"),
-        ),
+        ("isPortrait", "()Z") => {
+            bool_value(field_int(vm, recv, "mHeightMils") >= field_int(vm, recv, "mWidthMils"))
+        }
         ("asPortrait", "()Landroid/print/PrintAttributes$MediaSize;") => {
             let w = field_int(vm, recv, "mWidthMils");
             let h = field_int(vm, recv, "mHeightMils");
@@ -22088,7 +22413,18 @@ fn p57_media_size_instance(
                 )?
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 328, 334, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            328,
+            334,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22144,7 +22480,18 @@ fn p57_resolution_instance(
             put(vm, recv, "mVerticalDpi", Value::Int(iarg(args, 3)))?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 334, 341, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            334,
+            341,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22172,7 +22519,18 @@ fn p57_margins_instance(
                         .iter()
                         .all(|f| field_int(vm, recv, f) == field_int(vm, other, f))
         )),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 341, 347, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            341,
+            347,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22392,7 +22750,18 @@ fn p57_print_attributes_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 347, 358, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            347,
+            358,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22479,7 +22848,18 @@ fn p57_print_builder_instance(
                 Value::Obj(out)
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 358, 359, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            358,
+            359,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22529,7 +22909,18 @@ fn p57_page_range_instance(
                 },
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 359, 364, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            359,
+            364,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22600,7 +22991,18 @@ fn p57_printer_id_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 364, 368, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            364,
+            368,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -22985,21 +23387,37 @@ fn p57_keygen_instance(
             put(vm, recv, "mNamespace", Value::Int(ns))?;
             self_value
         }
-        ("setDigests", "([Ljava/lang/String;)Landroid/security/keystore/KeyGenParameterSpec$Builder;") => {
+        (
+            "setDigests",
+            "([Ljava/lang/String;)Landroid/security/keystore/KeyGenParameterSpec$Builder;",
+        ) => {
             let v = p57_clone_string_array_or_null(vm, &args[0])?;
             put(vm, recv, "mDigests", v)?;
             self_value
         }
-        ("setUserAuthenticationValidityDurationSeconds", "(I)Landroid/security/keystore/KeyGenParameterSpec$Builder;") => {
+        (
+            "setUserAuthenticationValidityDurationSeconds",
+            "(I)Landroid/security/keystore/KeyGenParameterSpec$Builder;",
+        ) => {
             let seconds = iarg(args, 0);
             if seconds < -1 {
                 return Err(iae("seconds must be -1 or larger"));
             }
             if seconds == -1 {
-                put(vm, recv, "mUserAuthenticationValidityDurationSeconds", Value::Int(0))?;
+                put(
+                    vm,
+                    recv,
+                    "mUserAuthenticationValidityDurationSeconds",
+                    Value::Int(0),
+                )?;
                 put(vm, recv, "mUserAuthenticationType", Value::Int(2))?;
             } else {
-                put(vm, recv, "mUserAuthenticationValidityDurationSeconds", Value::Int(seconds))?;
+                put(
+                    vm,
+                    recv,
+                    "mUserAuthenticationValidityDurationSeconds",
+                    Value::Int(seconds),
+                )?;
                 put(vm, recv, "mUserAuthenticationType", Value::Int(1 | 2))?;
             }
             self_value
@@ -23010,9 +23428,7 @@ fn p57_keygen_instance(
                 put(vm, recv, "mMaxUsageCount", Value::Int(count))?;
                 self_value
             } else {
-                return Err(iae(
-                    "maxUsageCount is not valid",
-                ));
+                return Err(iae("maxUsageCount is not valid"));
             }
         }
         ("build", "()Landroid/security/keystore/KeyGenParameterSpec;") => {
@@ -23021,7 +23437,18 @@ fn p57_keygen_instance(
             p57_keygen_finish(vm, out)?;
             Value::Obj(out)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 400, 430, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            400,
+            430,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -23096,9 +23523,20 @@ fn p57_key_protection_instance(
 ) -> StubResult<Option<Value>> {
     if class == P57_KEY_PROTECTION {
         return Ok(Some(match (name, sig) {
-        ("getDigests", "()[Ljava/lang/String;") => p57_keygen_get_digests(vm, recv)?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 430, 452, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            ("getDigests", "()[Ljava/lang/String;") => p57_keygen_get_digests(vm, recv)?,
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                430,
+                452,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     let self_value = Value::Obj(recv);
@@ -23157,7 +23595,18 @@ fn p57_key_protection_instance(
             p57_key_protection_finish(vm, out, recv)?;
             Value::Obj(out)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 452, 471, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            452,
+            471,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -23524,7 +23973,18 @@ fn p57_mtp_object_builder_instance(
             put(vm, recv, "mObjectInfo", Value::Null)?;
             info
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 493, 501, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            493,
+            501,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -23601,7 +24061,18 @@ fn p57_mtp_device_instance(
         ("getObjectSizeLong", "(II)J") => {
             return Err(p57_ioexception("Failed to obtain object size"));
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 501, 515, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            501,
+            515,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -23619,32 +24090,18 @@ fn partial57_instance_for_class(
     match crate::android_stub_tables::lookup_class_id(143, 189, class) {
         Some(0) => p57_text_services_manager_instance(vm, name, sig, recv, args),
         Some(1) => p57_spell_session_instance(vm, name, sig, recv, args),
-        Some(2) => {
-            p57_spell_params_instance(vm, class, name, sig, recv, args)
-        },
+        Some(2) => p57_spell_params_instance(vm, class, name, sig, recv, args),
         Some(3) => p57_text_info_instance(vm, name, sig, recv, args),
         Some(4) => p57_suggestions_info_instance(vm, name, sig, recv, args),
-        Some(5) => {
-            p57_sentence_suggestions_instance(vm, name, sig, recv, args)
-        },
+        Some(5) => p57_sentence_suggestions_instance(vm, name, sig, recv, args),
         Some(6) => p57_spell_subtype_instance(vm, name, sig, recv, args),
         Some(7) => p57_translation_manager_instance(vm, name, sig, recv, args),
         Some(8) => p57_translation_spec_instance(vm, name, sig, recv, args),
-        Some(9) => {
-            p57_translation_request_value_instance(vm, name, sig, recv, args)
-        },
-        Some(10) => {
-            p57_view_translation_request_instance(vm, name, sig, recv, args)
-        },
-        Some(11) => {
-            p57_view_translation_builder_instance(vm, name, sig, recv, args)
-        },
-        Some(12) => {
-            p57_translation_context_instance(vm, class, name, sig, recv, args)
-        },
-        Some(13) => {
-            p57_translation_capability_instance(vm, name, sig, recv, args)
-        },
+        Some(9) => p57_translation_request_value_instance(vm, name, sig, recv, args),
+        Some(10) => p57_view_translation_request_instance(vm, name, sig, recv, args),
+        Some(11) => p57_view_translation_builder_instance(vm, name, sig, recv, args),
+        Some(12) => p57_translation_context_instance(vm, class, name, sig, recv, args),
+        Some(13) => p57_translation_capability_instance(vm, name, sig, recv, args),
         Some(14) => p57_usb_manager_instance(vm, name, sig, recv, args),
         Some(15) => p57_usb_device_instance(vm, name, sig, recv, args),
         Some(16) => p57_usb_device_builder_instance(vm, name, sig, recv, args),
@@ -23664,12 +24121,8 @@ fn partial57_instance_for_class(
         Some(30) => p57_margins_instance(vm, name, sig, recv, args),
         Some(31) => p57_page_range_instance(vm, name, sig, recv, args),
         Some(32) => p57_printer_id_instance(vm, name, sig, recv, args),
-        Some(33) => {
-            p57_keygen_instance(vm, class, name, sig, recv, args)
-        },
-        Some(34) => {
-            p57_key_protection_instance(vm, class, name, sig, recv, args)
-        },
+        Some(33) => p57_keygen_instance(vm, class, name, sig, recv, args),
+        Some(34) => p57_key_protection_instance(vm, class, name, sig, recv, args),
         Some(35) => p57_key_info_instance(vm, name, sig, recv, args),
         Some(36) => p57_mtp_device_info_instance(vm, name, sig, recv, args),
         Some(37) => p57_mtp_storage_info_instance(vm, name, sig, recv, args),
@@ -23803,28 +24256,37 @@ fn partial57_static(
         (P57_KEY_PROPERTIES, "namespaceToLegacyUid", "(I)I") => match iarg(args, 0) {
             -1 => Value::Int(-1),
             102 => Value::Int(1010),
-            ns => return Err(iae_fmt(format_args!("No UID corresponding to namespace {ns}"))),
+            ns => {
+                return Err(iae_fmt(format_args!(
+                    "No UID corresponding to namespace {ns}"
+                )))
+            }
         },
         (P57_KEY_PROPERTIES, "legacyUidToNamespace", "(I)I") => match iarg(args, 0) {
             -1 => Value::Int(-1),
             1010 => Value::Int(102),
-            uid => return Err(iae_fmt(format_args!("No namespace corresponding to uid {uid}"))),
+            uid => {
+                return Err(iae_fmt(format_args!(
+                    "No namespace corresponding to uid {uid}"
+                )))
+            }
         },
         (P57_MTP_CONSTANTS, "isAbstractObject", "(I)Z") => bool_value(matches!(
             iarg(args, 0),
             0xba01 | 0xba02 | 0xba03 | 0xba04 | 0xba05 | 0xba09 | 0xba0a | 0xba0b | 0xba81
         )),
-        _ => match crate::android_stub_tables::eval_class_method_range(vm, 2, 5, class, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_class_method_range(
+            vm, 2, 5, class, name, sig, None, args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
 #[cold]
 #[allow(unused_variables)]
-fn partial57_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial57_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     {
         let value: Option<i32> = None;
         if let Some(v) = value {
@@ -23972,7 +24434,8 @@ fn p49_new_byte_array(vm: &mut Engine, bytes: &[u8]) -> StubResult<Value> {
         "[B",
         ElemKind::Int,
         bytes.iter().map(|b| Value::Int(*b as i8 as i32)).collect(),
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
@@ -24037,12 +24500,7 @@ fn p49_other(vm: &Engine, recv: ObjRef, args: &[Value], class: &str) -> Option<O
 }
 
 #[cold]
-fn p49_copy_fields(
-    vm: &mut Engine,
-    src: ObjRef,
-    dst: ObjRef,
-    fields: &[&str],
-) -> StubResult<()> {
+fn p49_copy_fields(vm: &mut Engine, src: ObjRef, dst: ObjRef, fields: &[&str]) -> StubResult<()> {
     for field in fields {
         let value = get(vm, src, field);
         put(vm, dst, field, value)?;
@@ -24118,7 +24576,18 @@ fn p49_crypto_instance(
             };
             Value::Long(op_id)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 515, 520, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            515,
+            520,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -24130,7 +24599,20 @@ fn p49_biometric_identifier_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 520, 527, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
+    Ok(Some(
+        match crate::android_stub_tables::eval_method_range(
+            vm,
+            520,
+            527,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+    ))
 }
 
 #[cold]
@@ -24147,12 +24629,38 @@ fn p49_fingerprint_instance(
             if let Some(value) = p49_biometric_identifier_instance(vm, name, sig, recv, args)? {
                 return Ok(Some(value));
             }
-            return Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 527, 531, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }));
-        },
+            return Ok(Some(
+                match crate::android_stub_tables::eval_method_range(
+                    vm,
+                    527,
+                    531,
+                    name,
+                    sig,
+                    Some(recv),
+                    args,
+                )? {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            ));
+        }
         Some(1) => return p49_crypto_instance(vm, name, sig, recv, args),
         Some(2) => {
-            return Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 531, 536, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }));
-        },
+            return Ok(Some(
+                match crate::android_stub_tables::eval_method_range(
+                    vm,
+                    531,
+                    536,
+                    name,
+                    sig,
+                    Some(recv),
+                    args,
+                )? {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            ));
+        }
         Some(3) => {
             // The public callback class supplies empty defaults.  Only the
             // exact host-allocated base object records calls for tests; a
@@ -24160,9 +24668,22 @@ fn p49_fingerprint_instance(
             if class_of(vm, recv) != P49_FINGERPRINT_CALLBACK {
                 return Ok(None);
             }
-            return Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 536, 544, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }));
-        },
-        Some(4) => {},
+            return Ok(Some(
+                match crate::android_stub_tables::eval_method_range(
+                    vm,
+                    536,
+                    544,
+                    name,
+                    sig,
+                    Some(recv),
+                    args,
+                )? {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            ));
+        }
+        Some(4) => {}
         _ => return Ok(None),
     }
 
@@ -24278,7 +24799,18 @@ fn p49_prompt_info_instance(
                 || field_obj(vm, recv, "mDeviceCredentialDescription").is_some()
                 || field_bool(vm, recv, "mReceiveSystemEvents"),
         ),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 554, 588, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            554,
+            588,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -24585,17 +25117,41 @@ fn p49_biometric_instance(
         Some(0) => p49_prompt_info_instance(vm, name, sig, recv, args),
         Some(1) => p49_biometric_builder_instance(vm, name, sig, recv, args),
         Some(2) => p49_biometric_prompt_instance(vm, name, sig, recv, args),
-        Some(3) => {
-            p49_crypto_instance(vm, name, sig, recv, args)
-        },
+        Some(3) => p49_crypto_instance(vm, name, sig, recv, args),
         Some(4) => p49_biometric_identifier_instance(vm, name, sig, recv, args),
-        Some(5) => Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 588, 593, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) })),
+        Some(5) => Ok(Some(
+            match crate::android_stub_tables::eval_method_range(
+                vm,
+                588,
+                593,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        )),
         Some(6) => {
             if class_of(vm, recv) != P49_BIOMETRIC_CALLBACK {
                 return Ok(None);
             }
-            Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 593, 600, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
-        },
+            Ok(Some(
+                match crate::android_stub_tables::eval_method_range(
+                    vm,
+                    593,
+                    600,
+                    name,
+                    sig,
+                    Some(recv),
+                    args,
+                )? {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            ))
+        }
         Some(7) => match (name, sig) {
             ("getButtonLabel", "()Ljava/lang/CharSequence;")
             | ("getPromptMessage", "()Ljava/lang/CharSequence;")
@@ -24607,10 +25163,10 @@ fn p49_biometric_instance(
             _ => Ok(None),
         },
         Some(8) => Ok(Some(match (name, sig) {
-        ("getSensorProperties", "()Ljava/util/List;") => {
+            ("getSensorProperties", "()Ljava/util/List;") => {
                 return Err(throw("Ljava/lang/NullPointerException;", ""));
             }
-        ("getStrings", "(I)Landroid/hardware/biometrics/BiometricManager$Strings;") => {
+            ("getStrings", "(I)Landroid/hardware/biometrics/BiometricManager$Strings;") => {
                 p49_alloc_value(
                     vm,
                     P49_BIOMETRIC_STRINGS,
@@ -24621,8 +25177,19 @@ fn p49_biometric_instance(
                     ],
                 )?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 600, 604, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                600,
+                604,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         _ => Ok(None),
     }
 }
@@ -24761,7 +25328,18 @@ fn p49_device_features_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 611, 618, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            611,
+            618,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -24976,7 +25554,18 @@ fn p49_hdmi_device_info_instance(
             }
             jstr(vm, text)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 629, 644, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            629,
+            644,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -25001,7 +25590,7 @@ fn p49_hdmi_port_instance(
 ) -> StubResult<Option<Value>> {
     if class == P49_HDMI_PORT_INFO_BUILDER {
         return Ok(Some(match (name, sig) {
-        ("<init>", "(III)V") => {
+            ("<init>", "(III)V") => {
                 let ty = iarg(args, 1);
                 if ty != 0 && ty != 1 {
                     return Err(iae("type should be 0 or 1."));
@@ -25022,18 +25611,29 @@ fn p49_hdmi_port_instance(
                 }
                 Value::Null
             }
-        ("<init>", "(Landroid/hardware/hdmi/HdmiPortInfo;)V") => {
+            ("<init>", "(Landroid/hardware/hdmi/HdmiPortInfo;)V") => {
                 let other = req_obj(args, 0, "hdmiPortInfo")?;
                 p49_copy_fields(vm, other, recv, &P49_HDMI_PORT_FIELDS)?;
                 Value::Null
             }
-        ("build", "()Landroid/hardware/hdmi/HdmiPortInfo;") => {
+            ("build", "()Landroid/hardware/hdmi/HdmiPortInfo;") => {
                 let out = alloc_empty_obj(vm, P49_HDMI_PORT_INFO)?;
                 p49_copy_fields(vm, recv, out, &P49_HDMI_PORT_FIELDS)?;
                 Value::Obj(out)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 644, 648, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                644,
+                648,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     Ok(Some(match (name, sig) {
@@ -25076,7 +25676,18 @@ fn p49_hdmi_port_instance(
                 field_bool(vm, recv, "mEarcSupported"),
             ),
         )?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 648, 657, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            648,
+            657,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -25133,7 +25744,18 @@ fn p49_hdmi_manager_instance(
                     && p49_local_port_from_physical_address(target_address, local_address) != -1,
             )
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 657, 666, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            657,
+            666,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -25147,15 +25769,9 @@ fn p49_hdmi_instance(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     match crate::android_stub_tables::lookup_class_id(204, 211, class) {
-        Some(0) => {
-            p49_device_features_instance(vm, class, name, sig, recv, args)
-        },
-        Some(1) => {
-            p49_hdmi_device_info_instance(vm, class, name, sig, recv, args)
-        },
-        Some(2) => {
-            p49_hdmi_port_instance(vm, class, name, sig, recv, args)
-        },
+        Some(0) => p49_device_features_instance(vm, class, name, sig, recv, args),
+        Some(1) => p49_hdmi_device_info_instance(vm, class, name, sig, recv, args),
+        Some(2) => p49_hdmi_port_instance(vm, class, name, sig, recv, args),
         Some(3) => p49_hdmi_manager_instance(vm, name, sig, recv, args),
         _ => Ok(None),
     }
@@ -25311,11 +25927,11 @@ fn p49_input_device_instance2(
 ) -> StubResult<Option<Value>> {
     if class == P49_INPUT_DEVICE_BUILDER {
         return Ok(Some(match (name, sig) {
-        ("<init>", "()V") => {
+            ("<init>", "()V") => {
                 p49_input_device_defaults(vm, recv)?;
                 Value::Null
             }
-        (
+            (
                 "setUsiVersion",
                 "(Landroid/hardware/input/HostUsiVersion;)Landroid/view/InputDevice$Builder;",
             ) => {
@@ -25330,7 +25946,7 @@ fn p49_input_device_instance2(
                 put(vm, recv, "mUsiVersionMinor", Value::Int(minor))?;
                 Value::Obj(recv)
             }
-        ("addMotionRange", "(IIFFFFF)Landroid/view/InputDevice$Builder;") => {
+            ("addMotionRange", "(IIFFFFF)Landroid/view/InputDevice$Builder;") => {
                 let range = p49_motion_range_value(
                     vm,
                     iarg(args, 0),
@@ -25348,7 +25964,7 @@ fn p49_input_device_instance2(
                 put(vm, recv, "rd_motion_ranges", stored)?;
                 Value::Obj(recv)
             }
-        ("build", "()Landroid/view/InputDevice;") => {
+            ("build", "()Landroid/view/InputDevice;") => {
                 let out = alloc_empty_obj(vm, P49_INPUT_DEVICE)?;
                 p49_copy_fields(vm, recv, out, &P49_INPUT_DEVICE_FIELDS)?;
                 let ranges = get(vm, recv, "rd_motion_ranges");
@@ -25356,29 +25972,51 @@ fn p49_input_device_instance2(
                 p49_input_finish_device(vm, out)?;
                 Value::Obj(out)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 666, 685, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                666,
+                685,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     if class == P49_INPUT_MOTION_RANGE {
         return Ok(Some(match (name, sig) {
-        ("isFromSource", "(I)Z") => {
+            ("isFromSource", "(I)Z") => {
                 bool_value((field_int(vm, recv, "mSource") & iarg(args, 0)) == iarg(args, 0))
             }
-        ("getRange", "()F") => {
+            ("getRange", "()F") => {
                 Value::Float(field_float(vm, recv, "mMax") - field_float(vm, recv, "mMin"))
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 685, 693, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                685,
+                693,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     if class == P49_HOST_USI_VERSION {
         return Ok(Some(match (name, sig) {
-        ("isValid", "()Z") => bool_value(
+            ("isValid", "()Z") => bool_value(
                 field_int(vm, recv, "mMajorVersion") >= 0
                     && field_int(vm, recv, "mMinorVersion") >= 0,
             ),
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 let equal = p49_other(vm, recv, args, P49_HOST_USI_VERSION)
                     .map(|other| {
                         field_int(vm, recv, "mMajorVersion")
@@ -25389,18 +26027,29 @@ fn p49_input_device_instance2(
                     .unwrap_or(false);
                 bool_value(equal || matches!(args.first(), Some(Value::Obj(r)) if *r == recv))
             }
-        ("hashCode", "()I") => Value::Int(
+            ("hashCode", "()I") => Value::Int(
                 (31 + field_int(vm, recv, "mMajorVersion"))
                     .wrapping_mul(31)
                     .wrapping_add(field_int(vm, recv, "mMinorVersion")),
             ),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 693, 698, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                693,
+                698,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     if class == P49_INPUT_DEVICE_IDENTIFIER {
         return Ok(Some(match (name, sig) {
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 let equal = p49_other(vm, recv, args, P49_INPUT_DEVICE_IDENTIFIER)
                     .map(|other| {
                         field_str(vm, recv, "mDescriptor") == field_str(vm, other, "mDescriptor")
@@ -25411,7 +26060,7 @@ fn p49_input_device_instance2(
                     .unwrap_or(false);
                 bool_value(equal || matches!(args.first(), Some(Value::Obj(r)) if *r == recv))
             }
-        ("hashCode", "()I") => {
+            ("hashCode", "()I") => {
                 let values = [
                     get(vm, recv, "mDescriptor"),
                     Value::Int(field_int(vm, recv, "mVendorId")),
@@ -25419,8 +26068,19 @@ fn p49_input_device_instance2(
                 ];
                 Value::Int(p49_objects_hash(vm, &values))
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 698, 702, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                698,
+                702,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     if class == P49_INPUT_MANAGER {
@@ -25837,7 +26497,18 @@ fn p49_sound_model_common(
                 bool_value(false)
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 740, 745, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            740,
+            745,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -25865,7 +26536,7 @@ fn p49_sound_trigger_instance(
                 return Ok(Some(Value::Null));
             }
             p49_sound_model_common(vm, name, sig, recv, args)
-        },
+        }
         Some(1) => match (name, sig) {
             ("<init>", "(Ljava/util/UUID;Ljava/util/UUID;[BI)V") => {
                 p49_sound_model_init(
@@ -26007,13 +26678,12 @@ fn p49_sound_trigger_instance(
                 }
                 _ => p49_sound_model_common(vm, name, sig, recv, args),
             }
-        },
+        }
         Some(3) => Ok(Some(match (name, sig) {
-        ("<init>", "(IILjava/util/Locale;Ljava/lang/String;[I)V") => {
+            ("<init>", "(IILjava/util/Locale;Ljava/lang/String;[I)V") => {
                 let locale = req_obj(args, 2, "locale")?;
                 let text = req_obj(args, 3, "text")?;
-                let users =
-                    p49_array_or_empty(vm, &varg(args, 4), "[I")?;
+                let users = p49_array_or_empty(vm, &varg(args, 4), "[I")?;
                 put(vm, recv, "mId", Value::Int(iarg(args, 0)))?;
                 put(vm, recv, "mRecognitionModes", Value::Int(iarg(args, 1)))?;
                 put(vm, recv, "mLocale", Value::Obj(locale))?;
@@ -26021,7 +26691,7 @@ fn p49_sound_trigger_instance(
                 put(vm, recv, "mUsers", users)?;
                 Value::Null
             }
-        ("hashCode", "()I") => {
+            ("hashCode", "()I") => {
                 let text = get(vm, recv, "mText");
                 let locale = get(vm, recv, "mLocale");
                 let users = get(vm, recv, "mUsers");
@@ -26042,7 +26712,7 @@ fn p49_sound_trigger_instance(
                     .wrapping_add(p49_array_hash(vm, &users));
                 Value::Int(result)
             }
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 if matches!(args.first(), Some(Value::Obj(r)) if *r == recv) {
                     bool_value(true)
                 } else if let Some(other) = p49_other_exact(vm, args, P49_SOUND_KEYPHRASE) {
@@ -26066,7 +26736,7 @@ fn p49_sound_trigger_instance(
                     bool_value(false)
                 }
             }
-        ("toString", "()Ljava/lang/String;") => {
+            ("toString", "()Ljava/lang/String;") => {
                 let locale_tag = match field_obj(vm, recv, "mLocale") {
                     Some(locale) => match vm.invoke_instance(
                         locale,
@@ -26092,15 +26762,26 @@ fn p49_sound_trigger_instance(
                     ),
                 )?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 745, 751, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                745,
+                751,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(4) => Ok(Some(match (name, sig) {
-        ("hashCode", "()I") => Value::Int(
+            ("hashCode", "()I") => Value::Int(
                 (31 + field_int(vm, recv, "mStart"))
                     .wrapping_mul(31)
                     .wrapping_add(field_int(vm, recv, "mEnd")),
             ),
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 let equal = p49_other_exact(vm, args, P49_MODEL_PARAM_RANGE)
                     .map(|other| {
                         field_int(vm, recv, "mStart") == field_int(vm, other, "mStart")
@@ -26109,10 +26790,21 @@ fn p49_sound_trigger_instance(
                     .unwrap_or(false);
                 bool_value(equal || matches!(args.first(), Some(Value::Obj(r)) if *r == recv))
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 751, 756, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                751,
+                756,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(5) => Ok(Some(match (name, sig) {
-        (
+            (
                 "<init>",
                 "(ZZ[Landroid/hardware/soundtrigger/SoundTrigger$KeyphraseRecognitionExtra;[BI)V",
             )
@@ -26125,8 +26817,7 @@ fn p49_sound_trigger_instance(
                     &varg(args, 2),
                     "[Landroid/hardware/soundtrigger/SoundTrigger$KeyphraseRecognitionExtra;",
                 )?;
-                let data =
-                    p49_array_or_empty(vm, &varg(args, 3), "[B")?;
+                let data = p49_array_or_empty(vm, &varg(args, 3), "[B")?;
                 put(vm, recv, "captureRequested", Value::Int(iarg(args, 0)))?;
                 put(vm, recv, "allowMultipleTriggers", Value::Int(iarg(args, 1)))?;
                 put(vm, recv, "keyphrases", keyphrases)?;
@@ -26143,7 +26834,7 @@ fn p49_sound_trigger_instance(
                 )?;
                 Value::Null
             }
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 if matches!(args.first(), Some(Value::Obj(r)) if *r == recv) {
                     bool_value(true)
                 } else if let Some(other) = p49_other(vm, recv, args, P49_RECOGNITION_CONFIG) {
@@ -26169,7 +26860,7 @@ fn p49_sound_trigger_instance(
                     bool_value(false)
                 }
             }
-        ("hashCode", "()I") => {
+            ("hashCode", "()I") => {
                 let mut result: i32 = 1;
                 result = result.wrapping_mul(31).wrapping_add(
                     if field_bool(vm, recv, "captureRequested") {
@@ -26197,7 +26888,7 @@ fn p49_sound_trigger_instance(
                         .wrapping_add(field_int(vm, recv, "audioCapabilities"));
                 Value::Int(result)
             }
-        ("toString", "()Ljava/lang/String;") => {
+            ("toString", "()Ljava/lang/String;") => {
                 let keyphrases = p49_array_to_string(vm, &get(vm, recv, "keyphrases"))?;
                 let data = p49_array_to_string(vm, &get(vm, recv, "data"))?;
                 jstr(
@@ -26212,15 +26903,26 @@ fn p49_sound_trigger_instance(
                     ),
                 )?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 756, 757, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                756,
+                757,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(6) => Ok(Some(match (name, sig) {
-        ("hashCode", "()I") => Value::Int(
+            ("hashCode", "()I") => Value::Int(
                 (31 + field_int(vm, recv, "confidenceLevel"))
                     .wrapping_mul(31)
                     .wrapping_add(field_int(vm, recv, "userId")),
             ),
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 let equal = p49_other_exact(vm, args, P49_CONFIDENCE_LEVEL)
                     .map(|other| {
                         field_int(vm, recv, "confidenceLevel")
@@ -26230,10 +26932,21 @@ fn p49_sound_trigger_instance(
                     .unwrap_or(false);
                 bool_value(equal || matches!(args.first(), Some(Value::Obj(r)) if *r == recv))
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 757, 760, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                757,
+                760,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(7) => Ok(Some(match (name, sig) {
-        ("<init>", "(III)V") => {
+            ("<init>", "(III)V") => {
                 let levels = obj_array(
                     vm,
                     "[Landroid/hardware/soundtrigger/SoundTrigger$ConfidenceLevel;",
@@ -26245,7 +26958,7 @@ fn p49_sound_trigger_instance(
                 put(vm, recv, "confidenceLevels", levels)?;
                 Value::Null
             }
-        ("<init>", "(III[Landroid/hardware/soundtrigger/SoundTrigger$ConfidenceLevel;)V") => {
+            ("<init>", "(III[Landroid/hardware/soundtrigger/SoundTrigger$ConfidenceLevel;)V") => {
                 let levels = p49_array_or_empty(
                     vm,
                     &varg(args, 3),
@@ -26257,11 +26970,11 @@ fn p49_sound_trigger_instance(
                 put(vm, recv, "confidenceLevels", levels)?;
                 Value::Null
             }
-        ("getConfidenceLevels", "()Ljava/util/Collection;") => {
+            ("getConfidenceLevels", "()Ljava/util/Collection;") => {
                 let levels = array_elems(vm, Some(&get(vm, recv, "confidenceLevels")));
                 p49_list_value(vm, levels)?
             }
-        ("hashCode", "()I") => {
+            ("hashCode", "()I") => {
                 let mut result: i32 = 1;
                 result = result
                     .wrapping_mul(31)
@@ -26280,7 +26993,7 @@ fn p49_sound_trigger_instance(
                 ));
                 Value::Int(result)
             }
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 if matches!(args.first(), Some(Value::Obj(r)) if *r == recv) {
                     bool_value(true)
                 } else if let Some(other) =
@@ -26301,7 +27014,7 @@ fn p49_sound_trigger_instance(
                     bool_value(false)
                 }
             }
-        ("toString", "()Ljava/lang/String;") => {
+            ("toString", "()Ljava/lang/String;") => {
                 let levels = p49_array_to_string(vm, &get(vm, recv, "confidenceLevels"))?;
                 jstr(
                     vm,
@@ -26314,10 +27027,21 @@ fn p49_sound_trigger_instance(
                     ),
                 )?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 760, 764, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                760,
+                764,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(8) => Ok(Some(match (name, sig) {
-        ("<init>", "(ILjava/lang/String;Ljava/util/Set;I)V") => {
+            ("<init>", "(ILjava/lang/String;Ljava/util/Set;I)V") => {
                 let locales_arg = req_obj(args, 2, "supportedLocales")?;
                 let items = collection_items(vm, Some(&Value::Obj(locales_arg)));
                 let locales = Value::Obj(new_collection(vm, "Landroid/util/ArraySet;", items)?);
@@ -26328,7 +27052,7 @@ fn p49_sound_trigger_instance(
                 put(vm, recv, "mRecognitionModeFlags", Value::Int(iarg(args, 3)))?;
                 Value::Null
             }
-        ("supportsPhrase", "(Ljava/lang/String;)Z") => {
+            ("supportsPhrase", "(Ljava/lang/String;)Z") => {
                 let Some(keyphrase) = field_str(vm, recv, "mKeyphrase") else {
                     return Err(npe("getKeyphrase()"));
                 };
@@ -26342,7 +27066,7 @@ fn p49_sound_trigger_instance(
                     )
                 }
             }
-        ("supportsLocale", "(Ljava/util/Locale;)Z") => {
+            ("supportsLocale", "(Ljava/util/Locale;)Z") => {
                 let locales = collection_items(vm, Some(&get(vm, recv, "mSupportedLocales")));
                 if locales.is_empty() {
                     bool_value(true)
@@ -26358,7 +27082,7 @@ fn p49_sound_trigger_instance(
                     bool_value(found)
                 }
             }
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 if matches!(args.first(), Some(Value::Obj(r)) if *r == recv) {
                     bool_value(true)
                 } else if let Some(other) = p49_other_exact(vm, args, P49_KEYPHRASE_METADATA) {
@@ -26392,7 +27116,7 @@ fn p49_sound_trigger_instance(
                     bool_value(false)
                 }
             }
-        ("hashCode", "()I") => {
+            ("hashCode", "()I") => {
                 let locales = collection_items(vm, Some(&get(vm, recv, "mSupportedLocales")));
                 let mut locale_hash: i32 = 0;
                 for locale in &locales {
@@ -26413,7 +27137,7 @@ fn p49_sound_trigger_instance(
                 ));
                 Value::Int(result)
             }
-        ("toString", "()Ljava/lang/String;") => {
+            ("toString", "()Ljava/lang/String;") => {
                 let locales = collection_items(vm, Some(&get(vm, recv, "mSupportedLocales")));
                 let mut parts = Vec::new();
                 for locale in &locales {
@@ -26430,8 +27154,19 @@ fn p49_sound_trigger_instance(
                     ),
                 )?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 764, 769, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                764,
+                769,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         _ => Ok(None),
     }
 }
@@ -26954,12 +27689,7 @@ const P49_TV_TRACK_FIELDS: [&str; 17] = [
 ];
 
 #[cold]
-fn p49_tv_track_defaults(
-    vm: &mut Engine,
-    recv: ObjRef,
-    kind: i32,
-    id: Value,
-) -> StubResult<()> {
+fn p49_tv_track_defaults(vm: &mut Engine, recv: ObjRef, kind: i32, id: Value) -> StubResult<()> {
     put(vm, recv, "mType", Value::Int(kind))?;
     put(vm, recv, "mId", id)?;
     put(vm, recv, "mLanguage", Value::Null)?;
@@ -27026,7 +27756,7 @@ fn p49_tv_instance(
 ) -> StubResult<Option<Value>> {
     match crate::android_stub_tables::lookup_class_id(225, 230, class) {
         Some(0) => Ok(Some(match (name, sig) {
-        ("<init>", "(Landroid/media/tv/ITvInputManager;I)V") => {
+            ("<init>", "(Landroid/media/tv/ITvInputManager;I)V") => {
                 let service = varg(args, 0);
                 put(vm, recv, "mService", service)?;
                 put(vm, recv, "mUserId", Value::Int(iarg(args, 1)))?;
@@ -27036,19 +27766,19 @@ fn p49_tv_instance(
                 put(vm, recv, "rd_blocked_rating_strings", blocked)?;
                 Value::Null
             }
-        ("getTvInputInfo", "(Ljava/lang/String;)Landroid/media/tv/TvInputInfo;") => {
+            ("getTvInputInfo", "(Ljava/lang/String;)Landroid/media/tv/TvInputInfo;") => {
                 let _ = p49_req_obj_arg(args, 0)?;
                 Value::Null
             }
-        ("getInputState", "(Ljava/lang/String;)I") => {
+            ("getInputState", "(Ljava/lang/String;)I") => {
                 let _ = p49_req_obj_arg(args, 0)?;
                 Value::Int(2) // INPUT_STATE_DISCONNECTED for an unknown ID.
             }
-        ("getAvailableExtensionInterfaceNames", "(Ljava/lang/String;)Ljava/util/List;") => {
+            ("getAvailableExtensionInterfaceNames", "(Ljava/lang/String;)Ljava/util/List;") => {
                 let _ = p49_req_obj_arg(args, 0)?;
                 p49_empty_list(vm)?
             }
-        (
+            (
                 "getExtensionInterface",
                 "(Ljava/lang/String;Ljava/lang/String;)Landroid/os/IBinder;",
             ) => {
@@ -27056,7 +27786,7 @@ fn p49_tv_instance(
                 let _ = p49_req_obj_arg(args, 1)?;
                 Value::Null
             }
-        (
+            (
                 "registerCallback",
                 "(Landroid/media/tv/TvInputManager$TvInputCallback;Landroid/os/Handler;)V",
             ) => {
@@ -27068,7 +27798,7 @@ fn p49_tv_instance(
                 put(vm, recv, "rd_callbacks", stored)?;
                 Value::Null
             }
-        ("unregisterCallback", "(Landroid/media/tv/TvInputManager$TvInputCallback;)V") => {
+            ("unregisterCallback", "(Landroid/media/tv/TvInputManager$TvInputCallback;)V") => {
                 let callback = p49_req_obj_arg(args, 0)?;
                 let mut callbacks = collection_items(vm, Some(&get(vm, recv, "rd_callbacks")));
                 if let Some(pos) = callbacks
@@ -27081,7 +27811,7 @@ fn p49_tv_instance(
                 put(vm, recv, "rd_callbacks", stored)?;
                 Value::Null
             }
-        ("isRatingBlocked", "(Landroid/media/tv/TvContentRating;)Z") => {
+            ("isRatingBlocked", "(Landroid/media/tv/TvContentRating;)Z") => {
                 let rating = p49_req_obj_arg(args, 0)?;
                 let blocked_strings: Vec<String> =
                     collection_items(vm, Some(&get(vm, recv, "rd_blocked_rating_strings")))
@@ -27104,7 +27834,7 @@ fn p49_tv_instance(
                 }
                 bool_value(blocked)
             }
-        ("getBlockedRatings", "()Ljava/util/List;") => {
+            ("getBlockedRatings", "()Ljava/util/List;") => {
                 let blocked_strings: Vec<String> =
                     collection_items(vm, Some(&get(vm, recv, "rd_blocked_rating_strings")))
                         .iter()
@@ -27116,7 +27846,7 @@ fn p49_tv_instance(
                 }
                 p49_list_value(vm, ratings)?
             }
-        ("addBlockedRating", "(Landroid/media/tv/TvContentRating;)V") => {
+            ("addBlockedRating", "(Landroid/media/tv/TvContentRating;)V") => {
                 let rating = p49_req_obj_arg(args, 0)?;
                 let flattened =
                     vm.invoke_instance(rating, "flattenToString", "()Ljava/lang/String;", &[])?;
@@ -27139,7 +27869,7 @@ fn p49_tv_instance(
                 }
                 Value::Null
             }
-        ("removeBlockedRating", "(Landroid/media/tv/TvContentRating;)V") => {
+            ("removeBlockedRating", "(Landroid/media/tv/TvContentRating;)V") => {
                 let rating = p49_req_obj_arg(args, 0)?;
                 let flattened =
                     vm.invoke_instance(rating, "flattenToString", "()Ljava/lang/String;", &[])?;
@@ -27160,16 +27890,40 @@ fn p49_tv_instance(
                 put(vm, recv, "rd_blocked_rating_strings", stored)?;
                 Value::Null
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 785, 789, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                785,
+                789,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(1) => {
             if class_of(vm, recv) != P49_TV_CALLBACK {
                 return Ok(None);
             }
-            Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 789, 796, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
-        },
+            Ok(Some(
+                match crate::android_stub_tables::eval_method_range(
+                    vm,
+                    789,
+                    796,
+                    name,
+                    sig,
+                    Some(recv),
+                    args,
+                )? {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            ))
+        }
         Some(2) => Ok(Some(match (name, sig) {
-        (
+            (
                 "<init>",
                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)V",
             ) => {
@@ -27197,7 +27951,7 @@ fn p49_tv_instance(
                 )?;
                 Value::Null
             }
-        ("getSubRatings", "()Ljava/util/List;") => match get(vm, recv, "mSubRatings") {
+            ("getSubRatings", "()Ljava/util/List;") => match get(vm, recv, "mSubRatings") {
                 Value::Obj(_) => {
                     // AOSP: Collections.unmodifiableList(Arrays.asList(...))
                     let subs = array_elems(vm, Some(&get(vm, recv, "mSubRatings")));
@@ -27211,10 +27965,10 @@ fn p49_tv_instance(
                 }
                 _ => Value::Null,
             },
-        ("flattenToString", "()Ljava/lang/String;") => {
+            ("flattenToString", "()Ljava/lang/String;") => {
                 jstr(vm, p49_tv_rating_flatten(vm, recv))?
             }
-        ("contains", "(Landroid/media/tv/TvContentRating;)Z") => {
+            ("contains", "(Landroid/media/tv/TvContentRating;)Z") => {
                 let other = p49_req_obj_arg(args, 0)?;
                 if field_str(vm, recv, "mDomain") != field_str(vm, other, "mDomain")
                     || field_str(vm, recv, "mRatingSystem") != field_str(vm, other, "mRatingSystem")
@@ -27245,7 +27999,7 @@ fn p49_tv_instance(
                     }
                 }
             }
-        ("equals", "(Ljava/lang/Object;)Z") => {
+            ("equals", "(Ljava/lang/Object;)Z") => {
                 let equal = p49_other(vm, recv, args, P49_TV_RATING)
                     .map(|other| {
                         p49_tv_rating_hash(vm, recv) == p49_tv_rating_hash(vm, other)
@@ -27262,13 +28016,24 @@ fn p49_tv_instance(
                     .unwrap_or(false);
                 bool_value(equal)
             }
-        ("hashCode", "()I") => Value::Int(p49_tv_rating_hash(vm, recv)),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 796, 799, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    })),
+            ("hashCode", "()I") => Value::Int(p49_tv_rating_hash(vm, recv)),
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                796,
+                799,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        })),
         Some(3) => {
             let kind = field_int(vm, recv, "mType");
             Ok(Some(match (name, sig) {
-        ("<init>", "(ILjava/lang/String;)V") => {
+                ("<init>", "(ILjava/lang/String;)V") => {
                     let kind = iarg(args, 0);
                     if !matches!(kind, 0..=2) {
                         return Err(iae_fmt(format_args!("Unknown type: {kind}")));
@@ -27277,12 +28042,12 @@ fn p49_tv_instance(
                     p49_tv_track_defaults(vm, recv, kind, Value::Obj(id))?;
                     Value::Null
                 }
-        ("setLanguage", "(Ljava/lang/String;)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setLanguage", "(Ljava/lang/String;)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     let value = p49_req_obj_arg(args, 0)?;
                     put(vm, recv, "mLanguage", Value::Obj(value))?;
                     Value::Obj(recv)
                 }
-        (
+                (
                     "setDescription",
                     "(Ljava/lang/CharSequence;)Landroid/media/tv/TvTrackInfo$Builder;",
                 ) => {
@@ -27290,63 +28055,63 @@ fn p49_tv_instance(
                     put(vm, recv, "mDescription", Value::Obj(value))?;
                     Value::Obj(recv)
                 }
-        ("setAudioChannelCount", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setAudioChannelCount", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 0 {
                         return Err(ise("Not an audio track"));
                     }
                     put(vm, recv, "mAudioChannelCount", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setAudioSampleRate", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setAudioSampleRate", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 0 {
                         return Err(ise("Not an audio track"));
                     }
                     put(vm, recv, "mAudioSampleRate", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setAudioDescription", "(Z)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setAudioDescription", "(Z)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 0 {
                         return Err(ise("Not an audio track"));
                     }
                     put(vm, recv, "mAudioDescription", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setHardOfHearing", "(Z)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setHardOfHearing", "(Z)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 0 && kind != 2 {
                         return Err(ise("Not an audio track or a subtitle track"));
                     }
                     put(vm, recv, "mHardOfHearing", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setSpokenSubtitle", "(Z)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setSpokenSubtitle", "(Z)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 0 {
                         return Err(ise("Not an audio track"));
                     }
                     put(vm, recv, "mSpokenSubtitle", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setVideoWidth", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setVideoWidth", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 1 {
                         return Err(ise("Not a video track"));
                     }
                     put(vm, recv, "mVideoWidth", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setVideoHeight", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setVideoHeight", "(I)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 1 {
                         return Err(ise("Not a video track"));
                     }
                     put(vm, recv, "mVideoHeight", Value::Int(iarg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setVideoFrameRate", "(F)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setVideoFrameRate", "(F)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 1 {
                         return Err(ise("Not a video track"));
                     }
                     put(vm, recv, "mVideoFrameRate", Value::Float(farg(args, 0)))?;
                     Value::Obj(recv)
                 }
-        ("setVideoPixelAspectRatio", "(F)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setVideoPixelAspectRatio", "(F)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     if kind != 1 {
                         return Err(ise("Not a video track"));
                     }
@@ -27358,7 +28123,7 @@ fn p49_tv_instance(
                     )?;
                     Value::Obj(recv)
                 }
-        (
+                (
                     "setVideoActiveFormatDescription",
                     "(B)Landroid/media/tv/TvTrackInfo$Builder;",
                 ) => {
@@ -27373,7 +28138,7 @@ fn p49_tv_instance(
                     )?;
                     Value::Obj(recv)
                 }
-        ("setExtra", "(Landroid/os/Bundle;)Landroid/media/tv/TvTrackInfo$Builder;") => {
+                ("setExtra", "(Landroid/os/Bundle;)Landroid/media/tv/TvTrackInfo$Builder;") => {
                     let extra = p49_req_obj_arg(args, 0)?;
                     let clone = alloc_empty_obj(vm, "Landroid/os/Bundle;")?;
                     vm.invoke_instance(
@@ -27385,14 +28150,25 @@ fn p49_tv_instance(
                     put(vm, recv, "mExtra", Value::Obj(clone))?;
                     Value::Obj(recv)
                 }
-        ("build", "()Landroid/media/tv/TvTrackInfo;") => {
+                ("build", "()Landroid/media/tv/TvTrackInfo;") => {
                     let out = alloc_empty_obj(vm, P49_TV_TRACK)?;
                     p49_copy_fields(vm, recv, out, &P49_TV_TRACK_FIELDS)?;
                     Value::Obj(out)
                 }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 799, 801, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }))
-        },
+                _ => match crate::android_stub_tables::eval_method_range(
+                    vm,
+                    799,
+                    801,
+                    name,
+                    sig,
+                    Some(recv),
+                    args,
+                )? {
+                    Some(v) => v,
+                    None => return Ok(None),
+                },
+            }))
+        }
         Some(4) => {
             let kind = field_int(vm, recv, "mType");
             Ok(Some(match (name, sig) {
@@ -27539,7 +28315,7 @@ fn p49_tv_instance(
         ("hashCode", "()I") => Value::Int(p49_tv_track_hash(vm, recv)),
         _ => match crate::android_stub_tables::eval_method_range(vm, 801, 808, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
     }))
-        },
+        }
         _ => Ok(None),
     }
 }
@@ -27701,7 +28477,9 @@ fn p49_mac_value_from_bytes(vm: &mut Engine, value: &Value) -> StubResult<Value>
             .map(|b| (*b as i8).to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(iae_fmt(format_args!("[{shown}] was not a valid MAC address")));
+        return Err(iae_fmt(format_args!(
+            "[{shown}] was not a valid MAC address"
+        )));
     }
     p49_mac_value_from_long(vm, p49_mac_long_from_bytes(&bytes))
 }
@@ -27753,7 +28531,18 @@ fn p49_mac_address_instance(
                     == (p49_mac_long(vm, base) & p49_mac_long(vm, mask)),
             )
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 808, 809, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            808,
+            809,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -27776,18 +28565,8 @@ fn p49_companion_manager_instance(
             "(Landroid/companion/ICompanionDeviceManager;Landroid/content/Context;)V",
         )
     {
-        put(
-            vm,
-            recv,
-            "mService",
-            varg(args, 0),
-        )?;
-        put(
-            vm,
-            recv,
-            "mContext",
-            varg(args, 1),
-        )?;
+        put(vm, recv, "mService", varg(args, 0))?;
+        put(vm, recv, "mContext", varg(args, 1))?;
         return Ok(Some(Value::Null));
     }
     if (name, sig) == ("checkFeaturePresent", "()Z") {
@@ -27812,7 +28591,18 @@ fn p49_companion_manager_instance(
                 &[],
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 809, 826, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            809,
+            826,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -27834,7 +28624,18 @@ fn p49_companion_callback_instance(
             put(vm, recv, "rd_found_sender", sender)?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 826, 830, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            826,
+            830,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -27849,7 +28650,7 @@ fn p49_association_request_instance(
 ) -> StubResult<Option<Value>> {
     if class == P49_ASSOCIATION_REQUEST_BUILDER {
         return Ok(Some(match (name, sig) {
-        (
+            (
                 "addDeviceFilter",
                 "(Landroid/companion/DeviceFilter;)Landroid/companion/AssociationRequest$Builder;",
             ) => {
@@ -27862,7 +28663,7 @@ fn p49_association_request_instance(
                 }
                 Value::Obj(recv)
             }
-        ("build", "()Landroid/companion/AssociationRequest;")
+            ("build", "()Landroid/companion/AssociationRequest;")
             | ("build", "()Ljava/lang/Object;") => {
                 p49_check_builder_not_used(vm, recv)?;
                 put(vm, recv, "rd_used", Value::Int(1))?;
@@ -27898,8 +28699,19 @@ fn p49_association_request_instance(
                 put(vm, out, "mSkipPrompt", Value::Int(0))?;
                 Value::Obj(out)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 830, 836, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                830,
+                836,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     Ok(Some(match (name, sig) {
@@ -27907,18 +28719,8 @@ fn p49_association_request_instance(
             let filters = req_obj(args, 1, "deviceFilters")?;
             put(vm, recv, "mSingleDevice", Value::Int(iarg(args, 0)))?;
             put(vm, recv, "mDeviceFilters", Value::Obj(filters))?;
-            put(
-                vm,
-                recv,
-                "mDeviceProfile",
-                varg(args, 2),
-            )?;
-            put(
-                vm,
-                recv,
-                "mDisplayName",
-                varg(args, 3),
-            )?;
+            put(vm, recv, "mDeviceProfile", varg(args, 2))?;
+            put(vm, recv, "mDisplayName", varg(args, 3))?;
             put(vm, recv, "mSelfManaged", Value::Int(iarg(args, 4)))?;
             put(vm, recv, "mForceConfirmation", Value::Int(iarg(args, 5)))?;
             put(vm, recv, "mAssociatedDevice", Value::Null)?;
@@ -28037,7 +28839,18 @@ fn p49_association_request_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 836, 855, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            836,
+            855,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -28082,7 +28895,7 @@ fn p49_association_info_instance(
 ) -> StubResult<Option<Value>> {
     if class == P49_ASSOCIATION_INFO_BUILDER {
         return Ok(Some(match (name, sig) {
-        ("<init>", "(Landroid/companion/AssociationInfo;)V") => {
+            ("<init>", "(Landroid/companion/AssociationInfo;)V") => {
                 let info = req_obj(args, 0, "info")?;
                 put(vm, recv, "mOriginalInfo", Value::Obj(info))?;
                 put(
@@ -28111,7 +28924,7 @@ fn p49_association_info_instance(
                 )?;
                 Value::Null
             }
-        ("setLastTimeConnected", "(J)Landroid/companion/AssociationInfo$Builder;")
+            ("setLastTimeConnected", "(J)Landroid/companion/AssociationInfo$Builder;")
             | (
                 "setLastTimeConnected",
                 "(J)Landroid/companion/AssociationInfo$NonActionableBuilder;",
@@ -28125,7 +28938,7 @@ fn p49_association_info_instance(
                 put(vm, recv, "mLastTimeConnectedMs", Value::Long(value))?;
                 Value::Obj(recv)
             }
-        ("build", "()Landroid/companion/AssociationInfo;") => {
+            ("build", "()Landroid/companion/AssociationInfo;") => {
                 let original =
                     field_obj(vm, recv, "mOriginalInfo").ok_or_else(|| npe("mOriginalInfo"))?;
                 let out = alloc_empty_obj(vm, P49_ASSOCIATION_INFO)?;
@@ -28141,8 +28954,19 @@ fn p49_association_info_instance(
                 }
                 Value::Obj(out)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 855, 861, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                855,
+                861,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     Ok(Some(match (name, sig) {
@@ -28395,18 +29219,8 @@ fn p49_bt_filter_instance(
             "<init>",
             "(Ljava/util/regex/Pattern;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V",
         ) => {
-            put(
-                vm,
-                recv,
-                "mNamePattern",
-                varg(args, 0),
-            )?;
-            put(
-                vm,
-                recv,
-                "mAddress",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "mNamePattern", varg(args, 0))?;
+            put(vm, recv, "mAddress", varg(args, 1))?;
             for (index, field) in [(2, "mServiceUuids"), (3, "mServiceUuidMasks")] {
                 let raw = args.get(index).cloned().unwrap_or(Value::Null);
                 let value = if matches!(raw, Value::Obj(_)) {
@@ -28459,7 +29273,18 @@ fn p49_bt_filter_instance(
                 .wrapping_add(p49_collection_hash(vm, &get(vm, recv, "mServiceUuidMasks")));
             Value::Int(result)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 877, 884, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            877,
+            884,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -28749,7 +29574,7 @@ fn p49_wifi_filter_instance(
 ) -> StubResult<Option<Value>> {
     if class == P49_WIFI_FILTER_BUILDER {
         return Ok(Some(match (name, sig) {
-        ("build", "()Landroid/companion/WifiDeviceFilter;") => {
+            ("build", "()Landroid/companion/WifiDeviceFilter;") => {
                 p49_check_builder_not_used(vm, recv)?;
                 put(vm, recv, "rd_used", Value::Int(1))?;
                 let mask = if field_bool(vm, recv, "rd_bssid_mask_set") {
@@ -28770,8 +29595,19 @@ fn p49_wifi_filter_instance(
                     ],
                 )?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 897, 901, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    }));
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                897,
+                901,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        }));
     }
 
     Ok(Some(match (name, sig) {
@@ -28808,7 +29644,18 @@ fn p49_wifi_filter_instance(
                 .wrapping_add(p49_value_hash(vm, &get(vm, recv, "mBssidMask")));
             Value::Int(result)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 901, 907, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            901,
+            907,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -28824,21 +29671,11 @@ fn p49_companion_instance(
     match crate::android_stub_tables::lookup_class_id(230, 243, class) {
         Some(0) => p49_companion_manager_instance(vm, name, sig, recv, args),
         Some(1) => p49_companion_callback_instance(vm, name, sig, recv, args),
-        Some(2) => {
-            p49_association_request_instance(vm, class, name, sig, recv, args)
-        },
-        Some(3) => {
-            p49_association_info_instance(vm, class, name, sig, recv, args)
-        },
-        Some(4) => {
-            p49_bt_filter_instance(vm, class, name, sig, recv, args)
-        },
-        Some(5) => {
-            p49_ble_filter_instance(vm, class, name, sig, recv, args)
-        },
-        Some(6) => {
-            p49_wifi_filter_instance(vm, class, name, sig, recv, args)
-        },
+        Some(2) => p49_association_request_instance(vm, class, name, sig, recv, args),
+        Some(3) => p49_association_info_instance(vm, class, name, sig, recv, args),
+        Some(4) => p49_bt_filter_instance(vm, class, name, sig, recv, args),
+        Some(5) => p49_ble_filter_instance(vm, class, name, sig, recv, args),
+        Some(6) => p49_wifi_filter_instance(vm, class, name, sig, recv, args),
         Some(7) => p49_mac_address_instance(vm, name, sig, recv, args),
         _ => Ok(None),
     }
@@ -28862,9 +29699,7 @@ fn partial49_instance_for_class(
         Some(3) => p49_input_instance(vm, class, name, sig, recv, args),
         Some(4) => p49_sound_trigger_instance(vm, class, name, sig, recv, args),
         Some(5) => p49_midi_instance(vm, class, name, sig, recv, args),
-        Some(6) => {
-            p49_tv_instance(vm, class, name, sig, recv, args)
-        },
+        Some(6) => p49_tv_instance(vm, class, name, sig, recv, args),
         Some(7) => p49_companion_instance(vm, class, name, sig, recv, args),
         _ => Ok(None),
     }
@@ -29089,11 +29924,7 @@ fn partial49_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial49_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial49_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     if class == P49_TV_RATING && field == "UNRATED" {
         return p49_tv_rating_value(vm, "null", "null", "null", Vec::new()).map(Some);
     }
@@ -29221,7 +30052,18 @@ fn p41_tile_instance(
             }
             return Ok(None);
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 907, 922, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            907,
+            922,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -29301,7 +30143,18 @@ fn p41_tile_service_instance(
             }
             return Ok(None);
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 922, 929, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            922,
+            929,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -29494,7 +30347,18 @@ fn p41_wallpaper_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 929, 939, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            929,
+            939,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -29676,7 +30540,18 @@ fn p41_dream_instance(
             }
             Value::Int(0)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 939, 950, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            939,
+            950,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -29713,7 +30588,7 @@ fn p41_chooser_instance(
 
     if class == P41_CHOOSER_SERVICE {
         let value = match (name, sig) {
-        ("onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;") => {
+            ("onBind", "(Landroid/content/Intent;)Landroid/os/IBinder;") => {
                 let action = p41_intent_action(vm, args, 0)?;
                 if action.as_deref() != Some("android.service.chooser.ChooserTargetService") {
                     Value::Null
@@ -29729,8 +30604,19 @@ fn p41_chooser_instance(
                     Value::Obj(wrapper)
                 }
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 950, 951, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    };
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                950,
+                951,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        };
         return Ok(Some(value));
     }
 
@@ -29972,7 +30858,18 @@ fn p41_carrier_instance(
             "(Landroid/service/carrier/CarrierIdentifier;)Landroid/os/PersistableBundle;",
             &[varg(args, 1)],
         )?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 967, 968, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            967,
+            968,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -30024,7 +30921,18 @@ fn p41_media_result_instance(
         ("isDone", "()Z") => bool_value(
             field_bool(vm, recv, "mDetachCalled") || field_bool(vm, recv, "mSendResultCalled"),
         ),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 968, 971, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            968,
+            971,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -30043,7 +30951,7 @@ fn p41_media_instance(
     }
     if class == P41_MEDIA_BROWSER_ROOT {
         let value = match (name, sig) {
-        ("<init>", "(Ljava/lang/String;Landroid/os/Bundle;)V") => {
+            ("<init>", "(Ljava/lang/String;Landroid/os/Bundle;)V") => {
                 if oarg(args, 0).is_none() {
                     return Err(iae(
                         "The root id in BrowserRoot cannot be null. Use null for BrowserRoot instead.",
@@ -30053,8 +30961,19 @@ fn p41_media_instance(
                 put(vm, recv, "mExtras", varg(args, 1))?;
                 Value::Null
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 971, 973, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    };
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                971,
+                973,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        };
         return Ok(Some(value));
     }
 
@@ -30160,19 +31079,11 @@ fn partial41_instance_for_class(
     match crate::android_stub_tables::lookup_class_id(303, 318, class) {
         Some(0) => p41_tile_instance(vm, name, sig, recv, args),
         Some(1) => p41_tile_service_instance(vm, name, sig, recv, args),
-        Some(2) => {
-            p41_wallpaper_instance(vm, class, name, sig, recv, args)
-        },
+        Some(2) => p41_wallpaper_instance(vm, class, name, sig, recv, args),
         Some(3) => p41_dream_instance(vm, name, sig, recv, args),
-        Some(4) => {
-            p41_chooser_instance(vm, class, name, sig, recv, args)
-        },
-        Some(5) => {
-            p41_carrier_instance(vm, class, name, sig, recv, args)
-        },
-        Some(6) => {
-            p41_media_instance(vm, class, name, sig, recv, args)
-        },
+        Some(4) => p41_chooser_instance(vm, class, name, sig, recv, args),
+        Some(5) => p41_carrier_instance(vm, class, name, sig, recv, args),
+        Some(6) => p41_media_instance(vm, class, name, sig, recv, args),
         _ => Ok(None),
     }
 }
@@ -30224,11 +31135,7 @@ fn partial41_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial41_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial41_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     if class == P41_TILE_SERVICE && field == "START_ACTIVITY_NEEDS_PENDING_INTENT" {
         return Ok(Some(Value::Long(241_766_793)));
     }
@@ -30321,7 +31228,8 @@ fn p35_immutable_empty_list(vm: &mut Engine) -> StubResult<Value> {
         "emptyList",
         "()Ljava/util/List;",
         &[],
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 /// AOSP spell-checker IPC wrappers catch only RemoteException around
@@ -30755,14 +31663,25 @@ fn p35_recognition_service_instance(
 
     if class == P35_SUPPORT_CALLBACK {
         let value = match (name, sig) {
-        ("onSupportResult", "(Landroid/speech/RecognitionSupport;)V") | ("onError", "(I)V") => {
+            ("onSupportResult", "(Landroid/speech/RecognitionSupport;)V") | ("onError", "(I)V") => {
                 let Some(callback) = field_obj(vm, recv, "mCallback") else {
                     return Err(npe(""));
                 };
                 vm.invoke_instance(callback, name, sig, args)?
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 987, 988, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    };
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                987,
+                988,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        };
         return Ok(Some(value));
     }
 
@@ -30984,7 +31903,18 @@ fn p35_recognition_support_instance(
             }
             Value::Int(h)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 991, 997, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            991,
+            997,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -31003,11 +31933,7 @@ fn p35_confidence_level_name(value: i32) -> String {
 }
 
 #[cold]
-fn p35_validate_recognition_part(
-    raw: &Value,
-    timestamp: i64,
-    confidence: i32,
-) -> StubResult<()> {
+fn p35_validate_recognition_part(raw: &Value, timestamp: i64, confidence: i32) -> StubResult<()> {
     if !matches!(raw, Value::Obj(_)) {
         return Err(npe(""));
     }
@@ -31033,13 +31959,13 @@ fn p35_recognition_part_instance(
 ) -> StubResult<Option<Value>> {
     if class == P35_RECOGNITION_PART_BUILDER || class == P35_RECOGNITION_PART_BASE_BUILDER {
         let value = match (name, sig) {
-        ("setRawText", "(Ljava/lang/String;)Landroid/speech/RecognitionPart$Builder;") => {
+            ("setRawText", "(Ljava/lang/String;)Landroid/speech/RecognitionPart$Builder;") => {
                 p35_check_not_used(vm, recv, 0x10)?;
                 p35_mark_field(vm, recv, 0x1)?;
                 put(vm, recv, "mRawText", varg(args, 0))?;
                 Value::Obj(recv)
             }
-        (
+            (
                 "setFormattedText",
                 "(Ljava/lang/String;)Landroid/speech/RecognitionPart$Builder;",
             ) => {
@@ -31052,19 +31978,19 @@ fn p35_recognition_part_instance(
                 put(vm, recv, "mFormattedText", varg(args, 0))?;
                 Value::Obj(recv)
             }
-        ("setTimestampMillis", "(J)Landroid/speech/RecognitionPart$Builder;") => {
+            ("setTimestampMillis", "(J)Landroid/speech/RecognitionPart$Builder;") => {
                 p35_check_not_used(vm, recv, 0x10)?;
                 p35_mark_field(vm, recv, 0x4)?;
                 put(vm, recv, "mTimestampMillis", Value::Long(larg(args, 0)))?;
                 Value::Obj(recv)
             }
-        ("setConfidenceLevel", "(I)Landroid/speech/RecognitionPart$Builder;") => {
+            ("setConfidenceLevel", "(I)Landroid/speech/RecognitionPart$Builder;") => {
                 p35_check_not_used(vm, recv, 0x10)?;
                 p35_mark_field(vm, recv, 0x8)?;
                 put(vm, recv, "mConfidenceLevel", Value::Int(iarg(args, 0)))?;
                 Value::Obj(recv)
             }
-        ("build", "()Landroid/speech/RecognitionPart;") => {
+            ("build", "()Landroid/speech/RecognitionPart;") => {
                 p35_check_not_used(vm, recv, 0x10)?;
                 let set = p35_mark_field(vm, recv, 0x10)?;
                 let raw = get(vm, recv, "mRawText");
@@ -31096,8 +32022,19 @@ fn p35_recognition_part_instance(
                 )?;
                 Value::Obj(part)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 997, 998, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    };
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                997,
+                998,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        };
         return Ok(Some(value));
     }
 
@@ -31152,7 +32089,18 @@ fn p35_recognition_part_instance(
             );
             jstr(vm, text)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 998, 1003, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            998,
+            1003,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -31223,7 +32171,18 @@ fn p35_alternative_span_instance(
             h = p35_hash_mix(h, af_objects_hash(vm, &get(vm, recv, "mAlternatives"))?);
             Value::Int(h)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1003, 1008, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1003,
+            1008,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -31513,23 +32472,13 @@ fn partial35_instance_for_class(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     match crate::android_stub_tables::lookup_class_id(318, 343, class) {
-        Some(0) => {
-            p35_speech_recognizer_instance(vm, class, name, sig, recv, args)
-        },
+        Some(0) => p35_speech_recognizer_instance(vm, class, name, sig, recv, args),
         Some(1) => p35_listener_recorder(vm, class, name, sig, recv, args),
-        Some(2) => {
-            p35_recognition_service_instance(vm, class, name, sig, recv, args)
-        },
-        Some(3) => {
-            p35_recognition_support_instance(vm, class, name, sig, recv, args)
-        },
-        Some(4) => {
-            p35_recognition_part_instance(vm, class, name, sig, recv, args)
-        },
+        Some(2) => p35_recognition_service_instance(vm, class, name, sig, recv, args),
+        Some(3) => p35_recognition_support_instance(vm, class, name, sig, recv, args),
+        Some(4) => p35_recognition_part_instance(vm, class, name, sig, recv, args),
         Some(5) => p35_alternative_span_instance(vm, name, sig, recv, args),
-        Some(6) => {
-            p35_spell_instance(vm, class, name, sig, recv, args)
-        },
+        Some(6) => p35_spell_instance(vm, class, name, sig, recv, args),
         _ => Ok(None),
     }
 }
@@ -31736,11 +32685,7 @@ fn partial35_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial35_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial35_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -31856,7 +32801,8 @@ fn p35b_tts_uri_parse(vm: &mut Engine, text: &str) -> StubResult<Value> {
         "parse",
         "(Ljava/lang/String;)Landroid/net/Uri;",
         &[value],
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
@@ -32190,7 +33136,18 @@ fn p35b_tts_voice_instance(
                     == field_bool(vm, other, "mRequiresNetworkConnection");
             Value::Int(eq as i32)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1029, 1037, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1029,
+            1037,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -32231,7 +33188,18 @@ fn p35b_synthesis_request_instance(
             };
             vm.invoke_instance(text, "toString", "()Ljava/lang/String;", &[])?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1037, 1051, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1037,
+            1051,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -32246,12 +33214,7 @@ fn p35b_upl_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("onError", "(Ljava/lang/String;I)V") => {
-            vm.invoke_instance(
-                recv,
-                "onError",
-                "(Ljava/lang/String;)V",
-                &[varg(args, 0)],
-            )?;
+            vm.invoke_instance(recv, "onError", "(Ljava/lang/String;)V", &[varg(args, 0)])?;
             Value::Null
         }
         ("onRangeStart", "(Ljava/lang/String;III)V") => {
@@ -32263,7 +33226,18 @@ fn p35b_upl_instance(
             )?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1051, 1056, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1051,
+            1056,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -32642,7 +33616,11 @@ fn p35b_assist_state_instance(
         }
         (P35B_ACTIVITY_ID, "hashCode", "()I") => {
             let token = af_objects_hash(vm, &get(vm, recv, "mAssistToken"))?;
-            Value::Int(field_int(vm, recv, "mTaskId").wrapping_mul(31).wrapping_add(token))
+            Value::Int(
+                field_int(vm, recv, "mTaskId")
+                    .wrapping_mul(31)
+                    .wrapping_add(token),
+            )
         }
         (P35B_ACTIVITY_ID, "equals", "(Ljava/lang/Object;)Z") => {
             let Some(other) = oarg(args, 0) else {
@@ -32662,7 +33640,19 @@ fn p35b_assist_state_instance(
                 )?;
             Value::Int(eq as i32)
         }
-        _ => match crate::android_stub_tables::eval_class_method_range(vm, 7, 17, class, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_class_method_range(
+            vm,
+            7,
+            17,
+            class,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -32810,7 +33800,8 @@ fn p35b_copy_stream_list(vm: &mut Engine, value: &Value) -> StubResult<Value> {
         "unmodifiableList",
         "(Ljava/util/List;)Ljava/util/List;",
         &[Value::Obj(snapshot)],
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
@@ -33096,7 +34087,18 @@ fn p35b_detected_instance(
                 && af_objects_equal(vm, &get(vm, recv, "mExtras"), &get(vm, other, "mExtras"))?;
             Value::Int(eq as i32)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1098, 1110, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1098,
+            1110,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -33112,13 +34114,13 @@ fn p35b_rejected_instance(
 ) -> StubResult<Option<Value>> {
     if class == P35B_REJECTED_BUILDER {
         let value = match (name, sig) {
-        ("setConfidenceLevel", "(I)Landroid/service/voice/HotwordRejectedResult$Builder;") => {
+            ("setConfidenceLevel", "(I)Landroid/service/voice/HotwordRejectedResult$Builder;") => {
                 p35_check_not_used(vm, recv, 0x2)?;
                 p35_mark_field(vm, recv, 0x1)?;
                 put(vm, recv, "mConfidenceLevel", Value::Int(iarg(args, 0)))?;
                 Value::Obj(recv)
             }
-        ("build", "()Landroid/service/voice/HotwordRejectedResult;") => {
+            ("build", "()Landroid/service/voice/HotwordRejectedResult;") => {
                 p35_check_not_used(vm, recv, 0x2)?;
                 let set = p35_mark_field(vm, recv, 0x2)?;
                 let confidence = if set & 0x1 == 0 {
@@ -33136,8 +34138,19 @@ fn p35b_rejected_instance(
                 )?;
                 Value::Obj(result)
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1110, 1111, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
-    };
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm,
+                1110,
+                1111,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        };
         return Ok(Some(value));
     }
     let value = match (name, sig) {
@@ -33152,7 +34165,18 @@ fn p35b_rejected_instance(
                         == field_int(vm, other, "mConfidenceLevel"));
             Value::Int(eq as i32)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1111, 1114, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1111,
+            1114,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -33168,9 +34192,7 @@ fn partial35b_instance_for_class(
 ) -> StubResult<Option<Value>> {
     match crate::android_stub_tables::lookup_class_id(343, 360, class) {
         Some(0) => p35b_tts_instance(vm, name, sig, recv, args),
-        Some(1) => {
-            p35b_tts_listener_recorder(vm, class, name, sig, recv, args)
-        },
+        Some(1) => p35b_tts_listener_recorder(vm, class, name, sig, recv, args),
         Some(2) => p35b_engine_info_instance(vm, name, sig, recv, args),
         Some(3) => p35b_tts_voice_instance(vm, name, sig, recv, args),
         Some(4) => p35b_synthesis_request_instance(vm, name, sig, recv, args),
@@ -33178,15 +34200,9 @@ fn partial35b_instance_for_class(
         Some(6) => p35b_tts_service_instance(vm, name, sig, recv, args),
         Some(7) => p35b_vis_instance(vm, name, sig, recv, args),
         Some(8) => p35b_session_instance(vm, name, sig, recv, args),
-        Some(9) => {
-            p35b_assist_state_instance(vm, class, name, sig, recv, args)
-        },
-        Some(10) => {
-            p35b_detected_instance(vm, class, name, sig, recv, args)
-        },
-        Some(11) => {
-            p35b_rejected_instance(vm, class, name, sig, recv, args)
-        },
+        Some(9) => p35b_assist_state_instance(vm, class, name, sig, recv, args),
+        Some(10) => p35b_detected_instance(vm, class, name, sig, recv, args),
+        Some(11) => p35b_rejected_instance(vm, class, name, sig, recv, args),
         _ => Ok(None),
     }
 }
@@ -33278,18 +34294,19 @@ fn partial35b_static(
                 &[varg(args, 1)],
             )?
         }
-        _ => match crate::android_stub_tables::eval_class_method_range(vm, 17, 21, class, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_class_method_range(
+            vm, 17, 21, class, name, sig, None, args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
 
 #[cold]
 #[allow(unused_variables)]
-fn partial35b_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial35b_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -34036,7 +35053,18 @@ fn p35c_location_instance(
             }
             Value::Int(eq as i32)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1114, 1121, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1114,
+            1121,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -34077,7 +35105,9 @@ fn p35c_location_convert_to_string(coordinate: f64, output_type: i32) -> StubRes
         ));
     }
     if !(0..=2).contains(&output_type) {
-        return Err(iae_fmt(format_args!("{output_type} is an unrecognized format")));
+        return Err(iae_fmt(format_args!(
+            "{output_type} is an unrecognized format"
+        )));
     }
     let mut result = String::new();
     let mut coordinate = coordinate;
@@ -34126,7 +35156,8 @@ fn p35c_location_convert_from_string(input: &str) -> StubResult<f64> {
     // VM's Java double parser preserves its whitespace/suffix/NaN and
     // Infinity spellings rather than Rust's narrower float grammar.
     let parse_double = |token: &str| {
-        crate::numerics::parse_float(token).map_err(|_| iae_fmt(format_args!("coordinate={coordinate}")))
+        crate::numerics::parse_float(token)
+            .map_err(|_| iae_fmt(format_args!("coordinate={coordinate}")))
     };
     let bad_int = |_: std::num::ParseIntError| iae_fmt(format_args!("coordinate={coordinate}"));
     if tokens.len() == 1 {
@@ -34310,7 +35341,18 @@ fn p35c_criteria_instance(
             text.push(']');
             jstr(vm, text)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1121, 1124, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1121,
+            1124,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -34378,7 +35420,18 @@ fn p35c_slice_spec_instance(
             // SliceSpec does not override hashCode in AOSP: identity.
             return Ok(None);
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1124, 1129, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1124,
+            1129,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -35012,11 +36065,7 @@ fn partial35c_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial35c_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial35c_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -35203,7 +36252,18 @@ fn p35d_backup_agent_instance(
             }
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1166, 1171, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1166,
+            1171,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -35250,7 +36310,18 @@ fn p35d_event_logger_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("getLoggingResults", "()Ljava/util/List;") => p35_empty_list(vm)?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1171, 1174, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1171,
+            1174,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -35332,7 +36403,18 @@ fn p35d_gsm_cell_location_instance(
                 && field_int(vm, recv, "mPsc") == field_int(vm, other, "mPsc");
             Value::Int(eq as i32)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1174, 1182, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1174,
+            1182,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -35349,15 +36431,13 @@ fn partial35d_instance_for_class(
     match crate::android_stub_tables::lookup_class_id(367, 374, class) {
         Some(0) => p35d_backup_manager_instance(vm, name, sig, recv, args),
         Some(1) => p35d_backup_agent_instance(vm, name, sig, recv, args),
-        Some(2) => {
-            p35d_observer_instance(vm, class, name, sig, recv, args)
-        },
+        Some(2) => p35d_observer_instance(vm, class, name, sig, recv, args),
         Some(3) => p35d_event_logger_instance(vm, name, sig, recv, args),
         Some(4) => p35d_gsm_cell_location_instance(vm, name, sig, recv, args),
         Some(5) => {
             // Only the constructor is concrete on the abstract base.
             Ok((name == "<init>" && sig == "()V").then_some(Value::Null))
-        },
+        }
         _ => Ok(None),
     }
 }
@@ -35413,11 +36493,7 @@ fn partial35d_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial35d_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial35d_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -35544,7 +36620,18 @@ fn p35e_ssl_error_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1182, 1184, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1182,
+            1184,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -36218,7 +37305,8 @@ fn p35e_bundle_get_string(vm: &mut Engine, bundle: ObjRef, key: &str) -> StubRes
         "getString",
         "(Ljava/lang/String;)Ljava/lang/String;",
         &[key],
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
@@ -36367,7 +37455,8 @@ fn partial35e_static(
                         "generateCertificate",
                         "(Ljava/io/InputStream;)Ljava/security/cert/Certificate;",
                         &[Value::Obj(stream)],
-                    ).map_err(StubExit::from)
+                    )
+                    .map_err(StubExit::from)
                 })();
                 // AOSP catches CertificateException only, and its cast
                 // to X509Certificate is outside that protection for any
@@ -36412,11 +37501,7 @@ fn partial35e_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial35e_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial35e_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -37352,14 +38437,8 @@ fn partial36a_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36a_host_static(
-    _vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
-    Ok(match (class, field) {
-        _ => None,
-    })
+fn partial36a_host_static(_vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
+    Ok(None)
 }
 
 // ---------------------------------------------------------------------------
@@ -37448,7 +38527,18 @@ fn p36b_camera_size_instance(
                 .wrapping_mul(32713)
                 .wrapping_add(field_int(vm, recv, "height")),
         ),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1190, 1191, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1190,
+            1191,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -37485,7 +38575,18 @@ fn p36b_camera_area_instance(
                     as i32,
             )
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1191, 1192, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1191,
+            1192,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -37507,11 +38608,7 @@ fn p36b_application_context(vm: &mut Engine, context: ObjRef) -> StubResult<ObjR
 }
 
 #[cold]
-fn p36b_has_system_feature(
-    vm: &mut Engine,
-    context: ObjRef,
-    feature: &str,
-) -> StubResult<bool> {
+fn p36b_has_system_feature(vm: &mut Engine, context: ObjRef, feature: &str) -> StubResult<bool> {
     let pm = vm.invoke_instance(
         context,
         "getPackageManager",
@@ -37567,7 +38664,18 @@ fn p36b_nfc_manager_instance(
             put(vm, recv, "mAdapter", Value::Null)?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1192, 1193, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1192,
+            1193,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -37659,7 +38767,9 @@ fn p36b_camera_static(
         ("openLegacy", "(II)Landroid/hardware/Camera;") => {
             let hal_version = iarg(args, 1);
             if hal_version < 0x300 {
-                return Err(iae_fmt(format_args!("Unsupported HAL version {hal_version}")));
+                return Err(iae_fmt(format_args!(
+                    "Unsupported HAL version {hal_version}"
+                )));
             }
             let camera = alloc_empty_obj(vm, P36B_CAMERA)?;
             vm.invoke_instance(camera, "<init>", "(I)V", &[Value::Int(iarg(args, 0))])?
@@ -37670,7 +38780,12 @@ fn p36b_camera_static(
             Value::Obj(camera)
         }
         ("checkInitErrors", "(I)Z") => Value::Int((iarg(args, 0) != 0) as i32),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1193, 1194, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm, 1193, 1194, name, sig, None, args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -37749,11 +38864,7 @@ fn partial36b_static(
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36b_host_static(
-    vm: &mut Engine,
-    class: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36b_host_static(vm: &mut Engine, class: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -37789,18 +38900,16 @@ const P36C_SIP_EXCEPTION: &str = "Landroid/net/sip/SipException;";
 #[cold]
 fn p36c_object_string(vm: &mut Engine, value: &Value) -> StubResult<String> {
     match value {
-        Value::Obj(reference) => crate::intrinsics::object_to_string(vm, *reference).map_err(StubExit::from),
+        Value::Obj(reference) => {
+            crate::intrinsics::object_to_string(vm, *reference).map_err(StubExit::from)
+        }
         _ => Ok("null".to_string()),
     }
 }
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36c_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36c_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     if owner == P36C_NSD_MANAGER {
         let text = match field {
             "ACTION_NSD_STATE_CHANGED" => Some("android.net.nsd.STATE_CHANGED"),
@@ -38097,7 +39206,7 @@ fn p36c_set_txt_records(vm: &mut Engine, recv: ObjRef, bytes: &[u8]) -> StubResu
                             VmExit::Exception(t) if t.class == "Ljava/lang/IllegalArgumentException;"
                         );
                         if !logged_iae {
-                            return Err(error.into());
+                            return Err(error);
                         }
                     }
                 }
@@ -38258,7 +39367,18 @@ fn p36c_nsd_info_instance(
             );
             jstr(vm, text)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1194, 1203, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1194,
+            1203,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -38884,11 +40004,7 @@ const P36D_AID_GROUP: &str = "Landroid/nfc/cardemulation/AidGroup;";
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36d_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36d_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     if owner == P36D_SCAN_FILTER && field == "EMPTY" {
         return Ok(Some(p36d_empty_scan_filter(vm)?));
     }
@@ -38950,9 +40066,7 @@ fn partial36d_instance(
         Some(1) => p36d_bt_manager_instance(vm, name, sig, recv, args),
         Some(2) => p36d_bt_device_instance(vm, name, sig, recv, args),
         Some(3) => p36d_scan_settings_instance(vm, name, sig, recv, args),
-        Some(4) => {
-            p36d_scan_settings_builder_instance(vm, name, sig, recv, args)
-        },
+        Some(4) => p36d_scan_settings_builder_instance(vm, name, sig, recv, args),
         Some(5) => p36d_scan_filter_instance(vm, name, sig, recv, args),
         Some(6) => p36d_scan_filter_builder_instance(vm, name, sig, recv, args),
         Some(7) => p36d_tag_instance(vm, name, sig, recv, args),
@@ -39058,7 +40172,12 @@ fn p36d_bt_adapter_static(
             };
             jstr(vm, name)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1204, 1205, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm, 1204, 1205, name, sig, None, args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -39076,9 +40195,7 @@ fn p36d_bt_adapter_instance(
             "<init>",
             "(Landroid/bluetooth/IBluetoothManager;Landroid/content/AttributionSource;)V",
         ) => {
-            if !matches!(varg(args, 0), Value::Obj(_))
-                || !matches!(varg(args, 1), Value::Obj(_))
-            {
+            if !matches!(varg(args, 0), Value::Obj(_)) || !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(npe(""));
             }
             put(vm, recv, "mManagerService", varg(args, 0))?;
@@ -39138,8 +40255,7 @@ fn p36d_bt_adapter_instance(
             } else if matches!(get(vm, recv, "mBluetoothLeScanner"), Value::Obj(_)) {
                 get(vm, recv, "mBluetoothLeScanner")
             } else {
-                let scanner =
-                    alloc_empty_obj(vm, "Landroid/bluetooth/le/BluetoothLeScanner;")?;
+                let scanner = alloc_empty_obj(vm, "Landroid/bluetooth/le/BluetoothLeScanner;")?;
                 put(vm, recv, "mBluetoothLeScanner", Value::Obj(scanner))?;
                 Value::Obj(scanner)
             }
@@ -39182,7 +40298,18 @@ fn p36d_bt_adapter_instance(
             let key = (P36D_BT_ADAPTER.to_string(), "sService".to_string());
             vm.statics.get(&key).cloned().unwrap_or(Value::Null)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1205, 1208, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1205,
+            1208,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -39387,7 +40514,9 @@ fn p36d_bt_device_instance(
             let address = opt_str_arg(vm, args, 0);
             if !p36d_check_bluetooth_address(address.as_deref()) {
                 let shown = address.unwrap_or_else(|| "null".to_string());
-                return Err(iae_fmt(format_args!("{shown} is not a valid Bluetooth address")));
+                return Err(iae_fmt(format_args!(
+                    "{shown} is not a valid Bluetooth address"
+                )));
             }
             let address_type = if sig == "(Ljava/lang/String;I)V" {
                 iarg(args, 1)
@@ -39429,7 +40558,18 @@ fn p36d_bt_device_instance(
             }
             Value::Int(host_hash(vm, &address))
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1209, 1214, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1209,
+            1214,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -39442,7 +40582,18 @@ fn p36d_scan_settings_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    let value = match crate::android_stub_tables::eval_method_range(vm, 1214, 1224, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) };
+    let value = match crate::android_stub_tables::eval_method_range(
+        vm,
+        1214,
+        1224,
+        name,
+        sig,
+        Some(recv),
+        args,
+    )? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
     Ok(Some(value))
 }
 
@@ -39466,7 +40617,9 @@ fn p36d_scan_settings_builder_instance(
         ("setCallbackType", "(I)Landroid/bluetooth/le/ScanSettings$Builder;") => {
             let callback_type = iarg(args, 0);
             if !matches!(callback_type, 1 | 2 | 4 | 6 | 8) {
-                return Err(iae_fmt(format_args!("invalid callback type - {callback_type}")));
+                return Err(iae_fmt(format_args!(
+                    "invalid callback type - {callback_type}"
+                )));
             }
             put(vm, recv, "mCallbackType", Value::Int(callback_type))?;
             Value::Obj(recv)
@@ -39474,7 +40627,9 @@ fn p36d_scan_settings_builder_instance(
         ("setScanResultType", "(I)Landroid/bluetooth/le/ScanSettings$Builder;") => {
             let result_type = iarg(args, 0);
             if !matches!(result_type, 0 | 1) {
-                return Err(iae_fmt(format_args!("invalid scanResultType - {result_type}")));
+                return Err(iae_fmt(format_args!(
+                    "invalid scanResultType - {result_type}"
+                )));
             }
             put(vm, recv, "mScanResultType", Value::Int(result_type))?;
             Value::Obj(recv)
@@ -39519,7 +40674,18 @@ fn p36d_scan_settings_builder_instance(
             )?;
             Value::Obj(settings)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1224, 1228, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1224,
+            1228,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -39768,7 +40934,9 @@ fn p36d_set_scan_filter_address(
         return Err(npe(""));
     };
     if !p36d_check_bluetooth_address(Some(&address_text)) {
-        return Err(iae_fmt(format_args!("invalid device address {address_text}")));
+        return Err(iae_fmt(format_args!(
+            "invalid device address {address_text}"
+        )));
     }
     if !(0..=1).contains(&address_type) {
         return Err(iae("'addressType' is invalid!"));
@@ -40266,7 +41434,18 @@ fn p36d_tag_instance(
             }
             jstr(vm, format!("TAG: Tech [{}]", names.join(", ")))?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1250, 1256, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1250,
+            1256,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -40309,7 +41488,8 @@ fn p36d_tag_service(vm: &mut Engine, recv: ObjRef) -> StubResult<Value> {
         Value::Obj(tag) => tag,
         _ => return Err(npe("")),
     };
-    vm.invoke_instance(tag, "getTagService", "()Landroid/nfc/INfcTag;", &[]).map_err(StubExit::from)
+    vm.invoke_instance(tag, "getTagService", "()Landroid/nfc/INfcTag;", &[])
+        .map_err(StubExit::from)
 }
 
 #[cold]
@@ -40575,7 +41755,18 @@ fn p36d_nfc_a_instance(
                 other => other?,
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1256, 1259, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1256,
+            1259,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -40788,7 +41979,18 @@ fn p36d_aid_group_instance(
             }
             jstr(vm, text)?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1259, 1262, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1259,
+            1262,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -40815,11 +42017,7 @@ const P36E_AUDIO_EFFECT_DESCRIPTOR: &str = "Landroid/media/audiofx/AudioEffect$D
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36e_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36e_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     if owner == P36E_MEDIA_METADATA {
         if let Some(suffix) = field.strip_prefix("METADATA_KEY_") {
             if p36e_metadata_key_type(&format!("android.media.metadata.{suffix}")).is_some() {
@@ -40943,38 +42141,24 @@ fn partial36e_instance(
 ) -> StubResult<Option<Value>> {
     match crate::android_stub_tables::lookup_class_id(402, 423, recv_class) {
         Some(0) => p36e_media_metadata_instance(vm, name, sig, recv, args),
-        Some(1) => {
-            p36e_media_metadata_builder_instance(vm, name, sig, recv, args)
-        },
+        Some(1) => p36e_media_metadata_builder_instance(vm, name, sig, recv, args),
         Some(2) => p36e_media_description_instance(vm, name, sig, recv, args),
-        Some(3) => {
-            p36e_media_description_builder_instance(vm, name, sig, recv, args)
-        },
+        Some(3) => p36e_media_description_builder_instance(vm, name, sig, recv, args),
         Some(4) => p36e_rating_instance(vm, name, sig, recv, args),
         Some(5) => p36e_playback_state_instance(vm, name, sig, recv, args),
-        Some(6) => {
-            p36e_playback_state_builder_instance(vm, name, sig, recv, args)
-        },
+        Some(6) => p36e_playback_state_builder_instance(vm, name, sig, recv, args),
         Some(7) => p36e_custom_action_instance(vm, name, sig, recv, args),
-        Some(8) => {
-            p36e_custom_action_builder_instance(vm, name, sig, recv, args)
-        },
+        Some(8) => p36e_custom_action_builder_instance(vm, name, sig, recv, args),
         Some(9) => p36e_queue_item_instance(vm, name, sig, recv, args),
         Some(10) => p36e_media_session_instance(vm, name, sig, recv, args),
-        Some(11) => {
-            p36e_media_session_manager_instance(vm, name, sig, recv, args)
-        },
+        Some(11) => p36e_media_session_manager_instance(vm, name, sig, recv, args),
         Some(12) => p36e_media_browser_instance(vm, name, sig, recv, args),
         Some(13) => p36e_media_item_instance(vm, name, sig, recv, args),
-        Some(14) => {
-            p36e_media_browser_callback_instance(vm, recv_class, name, sig, recv)
-        },
+        Some(14) => p36e_media_browser_callback_instance(vm, recv_class, name, sig, recv),
         Some(15) => p36e_projection_manager_instance(vm, name, sig, recv, args),
         Some(16) => p36e_projection_instance(vm, name, sig, recv, args),
         Some(17) => p36e_audio_effect_instance(vm, name, sig, recv, args),
-        Some(18) => {
-            p36e_audio_effect_descriptor_instance(vm, name, sig, recv, args)
-        },
+        Some(18) => p36e_audio_effect_descriptor_instance(vm, name, sig, recv, args),
         _ => Ok(None),
     }
 }
@@ -41252,7 +42436,18 @@ fn p36e_rating_instance(
         } else {
             -1.0
         }),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1262, 1263, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1262,
+            1263,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -41269,7 +42464,9 @@ fn p36e_media_description_instance(
         ("equals", "(Ljava/lang/Object;)Z") => {
             let other = match varg(args, 0) {
                 Value::Obj(other)
-                    if vm.cp.is_subtype(class_of(vm, other), P36E_MEDIA_DESCRIPTION) =>
+                    if vm
+                        .cp
+                        .is_subtype(class_of(vm, other), P36E_MEDIA_DESCRIPTION) =>
                 {
                     other
                 }
@@ -41295,7 +42492,18 @@ fn p36e_media_description_instance(
             let description = value_string(vm, &description)?;
             jstr(vm, format!("{title}, {subtitle}, {description}"))?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1263, 1273, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1263,
+            1273,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -41437,37 +42645,32 @@ fn p36e_metadata_bundle_call(
     key: &Value,
 ) -> StubResult<Value> {
     let bundle = p36e_bundle_ref(vm, receiver)?;
-    vm.invoke_instance(bundle, method, sig, std::slice::from_ref(key)).map_err(StubExit::from)
+    vm.invoke_instance(bundle, method, sig, std::slice::from_ref(key))
+        .map_err(StubExit::from)
 }
 
 #[cold]
-fn p36e_metadata_text_by_key(
-    vm: &mut Engine,
-    receiver: ObjRef,
-    key: &str,
-) -> StubResult<Value> {
+fn p36e_metadata_text_by_key(vm: &mut Engine, receiver: ObjRef, key: &str) -> StubResult<Value> {
     let key = jstr(vm, key.to_string())?;
     vm.invoke_instance(
         receiver,
         "getText",
         "(Ljava/lang/String;)Ljava/lang/CharSequence;",
         std::slice::from_ref(&key),
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
-fn p36e_metadata_string_by_key(
-    vm: &mut Engine,
-    receiver: ObjRef,
-    key: &str,
-) -> StubResult<Value> {
+fn p36e_metadata_string_by_key(vm: &mut Engine, receiver: ObjRef, key: &str) -> StubResult<Value> {
     let key = jstr(vm, key.to_string())?;
     vm.invoke_instance(
         receiver,
         "getString",
         "(Ljava/lang/String;)Ljava/lang/String;",
         std::slice::from_ref(&key),
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
@@ -41808,7 +43011,18 @@ fn p36e_media_metadata_instance(
             }
             Value::Int(hash)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1273, 1275, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1273,
+            1275,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -42070,7 +43284,18 @@ fn p36e_playback_state_instance(
             field_int(vm, recv, "mState"),
             3 | 4 | 5 | 6 | 8 | 9 | 10 | 11
         ))),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1275, 1286, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1275,
+            1286,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -42255,7 +43480,18 @@ fn p36e_custom_action_instance(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1292, 1298, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1292,
+            1298,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -42303,7 +43539,18 @@ fn p36e_custom_action_builder_instance(
                 &values,
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1298, 1299, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1298,
+            1299,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -42353,7 +43600,18 @@ fn p36e_queue_item_instance(
             let right = get(vm, other, "mDescription");
             Value::Int(i32::from(af_objects_equal(vm, &left, &right)?))
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1299, 1302, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1299,
+            1302,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -42383,7 +43641,18 @@ fn p36e_media_session_instance(
                 "Remote error creating session.",
             ));
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1302, 1305, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1302,
+            1305,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -42862,7 +44131,18 @@ fn p36e_media_item_instance(
             };
             vm.invoke_instance(description, "getMediaId", "()Ljava/lang/String;", &[])?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1309, 1312, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1309,
+            1312,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -43256,7 +44536,18 @@ fn p36e_audio_effect_instance(
             p36e_audio_effect_check_state(vm, recv, &method)?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1313, 1314, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1313,
+            1314,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(value))
 }
@@ -43268,7 +44559,8 @@ fn p36e_uuid_from_string(vm: &mut Engine, value: &Value) -> StubResult<Value> {
         "fromString",
         "(Ljava/lang/String;)Ljava/util/UUID;",
         std::slice::from_ref(value),
-    ).map_err(StubExit::from)
+    )
+    .map_err(StubExit::from)
 }
 
 #[cold]
@@ -43401,11 +44693,7 @@ const P36F_RECT: &str = "Landroid/graphics/Rect;";
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36f_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36f_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     let int: Option<i32> = None;
     if let Some(value) = int {
         return Ok(Some(Value::Int(value)));
@@ -43565,13 +44853,52 @@ fn partial36f_instance(
     }
     match crate::android_stub_tables::lookup_class_id(423, 431, class) {
         Some(0) => p36f_pdf_document_instance(vm, name, sig, recv, args),
-        Some(1) => Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 1315, 1320, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) })),
+        Some(1) => Ok(Some(
+            match crate::android_stub_tables::eval_method_range(
+                vm,
+                1315,
+                1320,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        )),
         Some(2) => p36f_page_info_builder_instance(vm, name, sig, recv, args),
-        Some(3) => Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 1320, 1322, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) })),
+        Some(3) => Ok(Some(
+            match crate::android_stub_tables::eval_method_range(
+                vm,
+                1320,
+                1322,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        )),
         Some(4) => p36f_pdf_renderer_instance(vm, name, sig, recv, args),
         Some(5) => p36f_pdf_renderer_page_instance(vm, name, sig, recv, args),
         Some(6) => p36f_element_instance(vm, name, sig, recv, args),
-        Some(7) => Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 1322, 1323, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) })),
+        Some(7) => Ok(Some(
+            match crate::android_stub_tables::eval_method_range(
+                vm,
+                1322,
+                1323,
+                name,
+                sig,
+                Some(recv),
+                args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        )),
         _ => Ok(None),
     }
 }
@@ -44083,12 +45410,7 @@ fn p36f_vector_values(vm: &Engine, recv: ObjRef, dim: usize) -> Vec<f32> {
 }
 
 #[cold]
-fn p36f_vector_store(
-    vm: &mut Engine,
-    recv: ObjRef,
-    dim: usize,
-    values: &[f32],
-) -> StubResult<()> {
+fn p36f_vector_store(vm: &mut Engine, recv: ObjRef, dim: usize, values: &[f32]) -> StubResult<()> {
     for (field, value) in P36F_VEC_FIELDS[..dim].iter().zip(values.iter()) {
         put(vm, recv, field, Value::Float(*value))?;
     }
@@ -44112,7 +45434,9 @@ fn p36f_vector_apply(op: &str, left: &[f32], right: &[f32]) -> Vec<f32> {
 fn p36f_vector_boxed(vm: &mut Engine, class: &str, value: f32) -> StubResult<Value> {
     // Float3's generated dotProduct/elementSum return boxed Float.
     if class == P36F_RS_FLOAT3 {
-        crate::boxes::box_value(vm, "Ljava/lang/Float;", Value::Float(value)).map(Value::Obj).map_err(StubExit::from)
+        crate::boxes::box_value(vm, "Ljava/lang/Float;", Value::Float(value))
+            .map(Value::Obj)
+            .map_err(StubExit::from)
     } else {
         Ok(Value::Float(value))
     }
@@ -44294,12 +45618,7 @@ fn p36f_matrix_values(vm: &Engine, recv: ObjRef, dim: usize) -> Vec<f32> {
 }
 
 #[cold]
-fn p36f_matrix_store(
-    vm: &mut Engine,
-    recv: ObjRef,
-    dim: usize,
-    values: &[f32],
-) -> StubResult<()> {
+fn p36f_matrix_store(vm: &mut Engine, recv: ObjRef, dim: usize, values: &[f32]) -> StubResult<()> {
     if let Value::Obj(array) = get(vm, recv, "mMat") {
         let elems = vm.heap.array_elems_mut(array).map_err(StubExit::from)?;
         if elems.len() == dim * dim {
@@ -44754,7 +46073,18 @@ fn p36f_matrix_instance(
             store(vm, &out)?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1325, 1326, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1325,
+            1326,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -44789,11 +46119,7 @@ const P36G_FREEZE_PERIOD: &str = "Landroid/app/admin/FreezePeriod;";
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36g_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36g_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     let text: Option<&str> = None;
     if let Some(text) = text {
         return jstr(vm, text).map(Some);
@@ -45249,7 +46575,18 @@ fn p36g_freeze_period_instance(
             let (start, end) = p36g_freeze_days(vm, recv);
             jstr(vm, p36g_freeze_to_string(start, end))?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1347, 1350, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1347,
+            1350,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -45315,7 +46652,20 @@ fn p36g_slice_entry_instance(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    Ok(Some(match crate::android_stub_tables::eval_method_range(vm, 1350, 1352, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) }))
+    Ok(Some(
+        match crate::android_stub_tables::eval_method_range(
+            vm,
+            1350,
+            1352,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+    ))
 }
 
 #[cold]
@@ -45329,8 +46679,7 @@ fn p36g_begin_get_option_instance(
     Ok(Some(match (name, sig) {
         ("<init>", "(Ljava/lang/String;Ljava/lang/String;Landroid/os/Bundle;)V") => {
             let id = p36g_check_string_not_empty(vm, &varg(args, 0), "id must not be empty")?;
-            let kind =
-                p36g_check_string_not_empty(vm, &varg(args, 1), "type must not be empty")?;
+            let kind = p36g_check_string_not_empty(vm, &varg(args, 1), "type must not be empty")?;
             let copy = p36e_clone_bundle(vm, &varg(args, 2))?;
             let Value::Obj(copy_ref) = copy else {
                 return Err(npe("candidateQueryData"));
@@ -45359,7 +46708,18 @@ fn p36g_begin_get_option_instance(
                 format!("GetCredentialOption {{type={kind}, candidateQueryData={data}, id={id}}}"),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1352, 1355, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1352,
+            1355,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -45394,7 +46754,18 @@ fn p36g_calling_app_info_instance(
             )?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1355, 1359, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1355,
+            1359,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -45458,11 +46829,8 @@ fn p36g_begin_create_req_instance(
             "<init>",
             "(Ljava/lang/String;Landroid/os/Bundle;Landroid/service/credentials/CallingAppInfo;)V",
         ) => {
-            let kind = p36g_check_string_not_empty(
-                vm,
-                &varg(args, 0),
-                "type must not be null or empty",
-            )?;
+            let kind =
+                p36g_check_string_not_empty(vm, &varg(args, 0), "type must not be null or empty")?;
             let copy = p36e_clone_bundle(vm, &varg(args, 1))?;
             put(vm, recv, "mType", kind)?;
             put(vm, recv, "mData", copy)?;
@@ -45478,7 +46846,18 @@ fn p36g_begin_create_req_instance(
             )?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1360, 1363, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1360,
+            1363,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -45497,11 +46876,8 @@ fn p36g_credential_entry_instance(
                 &varg(args, 0),
                 "beginGetCredentialOptionId must not be null, or empty",
             )?;
-            let kind = p36g_check_string_not_empty(
-                vm,
-                &varg(args, 1),
-                "type must not be null, or empty",
-            )?;
+            let kind =
+                p36g_check_string_not_empty(vm, &varg(args, 1), "type must not be null, or empty")?;
             req_obj(args, 2, "slice must not be null")?;
             put(vm, recv, "mBeginGetCredentialOptionId", id)?;
             put(vm, recv, "mType", kind)?;
@@ -45529,7 +46905,18 @@ fn p36g_credential_entry_instance(
             put(vm, recv, "mSlice", varg(args, 1))?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1363, 1367, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1363,
+            1367,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -45689,7 +47076,18 @@ fn p36g_begin_create_resp_builder_instance(
             put(vm, recv, "mRemoteCreateEntry", varg(args, 0))?;
             Value::Obj(recv)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1367, 1368, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1367,
+            1368,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -45704,11 +47102,8 @@ fn p36g_credential_option_builder_instance(
     const RETURN: &str = "Landroid/credentials/CredentialOption$Builder;";
     Ok(Some(match (name, sig) {
         ("<init>", "(Ljava/lang/String;Landroid/os/Bundle;Landroid/os/Bundle;)V") => {
-            let kind = p36g_check_string_not_empty(
-                vm,
-                &varg(args, 0),
-                "type must not be null, or empty",
-            )?;
+            let kind =
+                p36g_check_string_not_empty(vm, &varg(args, 0), "type must not be null, or empty")?;
             req_obj(args, 1, "credentialRetrievalData must not be null")?;
             req_obj(args, 2, "candidateQueryData must not be null")?;
             let allowed = new_collection(vm, "Landroid/util/ArraySet;", Vec::new())?;
@@ -45791,7 +47186,18 @@ fn p36g_provider_service_instance(
                 Value::Null
             }
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1368, 1370, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1368,
+            1370,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     }))
 }
 
@@ -46149,7 +47555,10 @@ fn p36h_hex_encode(bytes: &[u8]) -> String {
 fn p36h_hex_decode(text: &str) -> StubResult<Vec<u8>> {
     let chars: Vec<char> = text.chars().collect();
     if !chars.len().is_multiple_of(2) {
-        return Err(iae_fmt(format_args!("Invalid input length: {}", chars.len())));
+        return Err(iae_fmt(format_args!(
+            "Invalid input length: {}",
+            chars.len()
+        )));
     }
     let mut out = Vec::with_capacity(chars.len() / 2);
     let mut i = 0;
@@ -46206,11 +47615,7 @@ fn p36h_is_60ghz(freq: i32) -> bool {
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36h_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36h_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     if owner == P36H_SUPPLICANT {
         if let Some(pos) = P36H_SUPPLICANT_NAMES.iter().position(|n| *n == field) {
             return Ok(Some(enum_value(vm, P36H_SUPPLICANT, field, pos as i32)?));
@@ -46630,7 +48035,19 @@ fn partial36h_wifi_instance(
             }
             Value::Int(h)
         }
-        _ => match crate::android_stub_tables::eval_class_method_range(vm, 21, 47, recv_class, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_class_method_range(
+            vm,
+            21,
+            47,
+            recv_class,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -46927,7 +48344,9 @@ fn p36h_proposal_builder(
             // before applying the Child SA supported-algorithm filter.
             p36h_validate_encryption(algorithm, key_length)?;
             if is_child && !P36H_CHILD_ENCR_IDS.contains(&algorithm) {
-                return Err(iae_fmt(format_args!("Unsupported encryption algorithm {algorithm}")));
+                return Err(iae_fmt(format_args!(
+                    "Unsupported encryption algorithm {algorithm}"
+                )));
             }
             let is_aead = p36h_is_aead(algorithm);
             let has_aead = field_int(vm, recv, "rd_has_aead");
@@ -46979,7 +48398,9 @@ fn p36h_proposal_builder(
             }
             let prf = iarg(args, 0);
             if !P36H_PRF_IDS.contains(&prf) {
-                return Err(iae_fmt(format_args!("Unsupported Pseudorandom Function ID: {prf}")));
+                return Err(iae_fmt(format_args!(
+                    "Unsupported Pseudorandom Function ID: {prf}"
+                )));
             }
             p36h_append_int_unique(vm, recv, "rd_prf", prf)?;
             this
@@ -47319,27 +48740,41 @@ fn p36h_identification(
         }
         (_, "equals", "(Ljava/lang/Object;)Z") => {
             let eq = match oarg(args, 0) {
-                Some(other) if class_of(vm, other) == recv_class => match crate::android_stub_tables::lookup_class_id(454, 458, recv_class) {
-        Some(0) => field_str(vm, recv, "fqdn") == field_str(vm, other, "fqdn"),
-        Some(1) => {
-                        field_str(vm, recv, "rfc822Name") == field_str(vm, other, "rfc822Name")
-                    },
-        Some(2) => {
-                        p36h_bytes(vm, Some(&get(vm, recv, "keyId")))
-                            == p36h_bytes(vm, Some(&get(vm, other, "keyId")))
-                    },
-        Some(3) => p36h_inet_equal(
-                        vm,
-                        &get(vm, recv, "ipv4Address"),
-                        &get(vm, other, "ipv4Address"),
-                    ),
-        _ => false,
-    },
+                Some(other) if class_of(vm, other) == recv_class => {
+                    match crate::android_stub_tables::lookup_class_id(454, 458, recv_class) {
+                        Some(0) => field_str(vm, recv, "fqdn") == field_str(vm, other, "fqdn"),
+                        Some(1) => {
+                            field_str(vm, recv, "rfc822Name") == field_str(vm, other, "rfc822Name")
+                        }
+                        Some(2) => {
+                            p36h_bytes(vm, Some(&get(vm, recv, "keyId")))
+                                == p36h_bytes(vm, Some(&get(vm, other, "keyId")))
+                        }
+                        Some(3) => p36h_inet_equal(
+                            vm,
+                            &get(vm, recv, "ipv4Address"),
+                            &get(vm, other, "ipv4Address"),
+                        ),
+                        _ => false,
+                    }
+                }
                 _ => false,
             };
             bool_value(eq)
         }
-        _ => match crate::android_stub_tables::eval_class_method_range(vm, 47, 50, recv_class, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_class_method_range(
+            vm,
+            47,
+            50,
+            recv_class,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -47393,12 +48828,7 @@ fn p36h_params_builder_init(
 }
 
 #[cold]
-fn p36h_append_value(
-    vm: &mut Engine,
-    recv: ObjRef,
-    field: &str,
-    value: Value,
-) -> StubResult<()> {
+fn p36h_append_value(vm: &mut Engine, recv: ObjRef, field: &str, value: Value) -> StubResult<()> {
     let mut items = collection_items(vm, Some(&get(vm, recv, field)));
     items.push(value);
     let list = p49_list_value(vm, items)?;
@@ -47791,11 +49221,7 @@ fn p36i_service_state_init(vm: &mut Engine, recv: ObjRef) -> StubResult<()> {
 
 #[cold]
 #[allow(unused_variables)]
-fn partial36i_host_static(
-    vm: &mut Engine,
-    owner: &str,
-    field: &str,
-) -> StubResult<Option<Value>> {
+fn partial36i_host_static(vm: &mut Engine, owner: &str, field: &str) -> StubResult<Option<Value>> {
     let v = match (owner, field) {
         (P36I_PHONE_NUMBER_UTILS, "PAUSE") => Value::Int(P36I_PAUSE as i32),
         (P36I_PHONE_NUMBER_UTILS, "WAIT") => Value::Int(P36I_WAIT as i32),
@@ -47987,17 +49413,27 @@ fn partial36i_telephony_static(
     }
     if class == P36I_SUBSCRIPTION_MANAGER {
         let v = match (name, sig) {
-        ("isValidSubscriptionId", "(I)Z") => bool_value(iarg(args, 0) > -1),
-        ("isUsableSubscriptionId", "(I)Z") | ("isUsableSubIdValue", "(I)Z") => {
+            ("isValidSubscriptionId", "(I)Z") => bool_value(iarg(args, 0) > -1),
+            ("isUsableSubscriptionId", "(I)Z") | ("isUsableSubIdValue", "(I)Z") => {
                 let id = iarg(args, 0);
                 bool_value((0..i32::MAX).contains(&id))
             }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1370, 1377, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
-    };
+            _ => match crate::android_stub_tables::eval_method_range(
+                vm, 1370, 1377, name, sig, None, args,
+            )? {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+        };
         return Ok(Some(v));
     }
     if class == P36I_DOWNLOAD_REQUEST {
-        let v = match crate::android_stub_tables::eval_method_range(vm, 1377, 1379, name, sig, None, args)? { Some(v) => v, None => return Ok(None) };
+        let v = match crate::android_stub_tables::eval_method_range(
+            vm, 1377, 1379, name, sig, None, args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        };
         return Ok(Some(v));
     }
     Ok(None)
@@ -48079,7 +49515,18 @@ fn p36i_subscription_manager(
             "()Ljava/util/List;",
             &[],
         )?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1379, 1388, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1379,
+            1388,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48143,7 +49590,18 @@ fn p36i_service_state(
             put(vm, recv, "mDataRegState", Value::Int(3))?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1388, 1415, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1388,
+            1415,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48196,7 +49654,18 @@ fn p36i_cb_id_range(
                 1237
             },
         ])),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1415, 1421, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1415,
+            1421,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48228,7 +49697,18 @@ fn p36i_file_info(
             p36i_guest_hash(vm, &get(vm, recv, "uri")),
             p36i_guest_hash(vm, &get(vm, recv, "mimeType")),
         ])),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1421, 1425, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1421,
+            1425,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48275,7 +49755,13 @@ fn p36i_download_builder(
             }
             this
         }
-        _ => match crate::android_stub_tables::eval_name_range(vm, 165, 168, name, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => {
+            match crate::android_stub_tables::eval_name_range(vm, 165, 168, name, Some(recv), args)?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            }
+        }
     };
     Ok(Some(v))
 }
@@ -48342,7 +49828,18 @@ fn p36i_download_request(
             p36i_guest_hash(vm, &get(vm, recv, "serializedResultIntentForApp")),
             field_int(vm, recv, "version"),
         ])),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1425, 1431, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1425,
+            1431,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48378,12 +49875,7 @@ fn p36i_account_handle(
     let v = match (name, sig) {
         ("<init>", "(Landroid/content/ComponentName;Ljava/lang/String;)V") => {
             // Null component/user are only logged in AOSP, never rejected.
-            put(
-                vm,
-                recv,
-                "mComponentName",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mComponentName", varg(args, 0))?;
             put(vm, recv, "mId", varg(args, 1))?;
             let user = p36i_my_user_handle(vm)?;
             put(vm, recv, "mUserHandle", user)?;
@@ -48412,7 +49904,18 @@ fn p36i_account_handle(
             p36i_guest_hash(vm, &get(vm, recv, "mId")),
             p36i_guest_hash(vm, &get(vm, recv, "mUserHandle")),
         ])),
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1431, 1436, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1431,
+            1436,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48465,12 +49968,7 @@ fn p36i_account_builder(
         ("<init>", "(Landroid/telecom/PhoneAccountHandle;Ljava/lang/CharSequence;)V") => {
             p36i_account_builder_init(vm, recv)?;
             put(vm, recv, "mAccountHandle", arg0)?;
-            put(
-                vm,
-                recv,
-                "mLabel",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "mLabel", varg(args, 1))?;
             Value::Null
         }
         ("<init>", "(Landroid/telecom/PhoneAccount;)V") => {
@@ -48716,7 +50214,18 @@ fn p36i_phone_account(
                 p36i_guest_hash(vm, &get(vm, recv, "mGroupId")),
             ]))
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1436, 1451, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1436,
+            1451,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -48766,32 +50275,12 @@ fn p36i_disconnect_cause(
             match sig {
                 "(I)V" => {}
                 "(ILjava/lang/String;)V" => {
-                    put(
-                        vm,
-                        recv,
-                        "mDisconnectReason",
-                        varg(args, 1),
-                    )?;
+                    put(vm, recv, "mDisconnectReason", varg(args, 1))?;
                 }
                 _ => {
-                    put(
-                        vm,
-                        recv,
-                        "mDisconnectLabel",
-                        varg(args, 1),
-                    )?;
-                    put(
-                        vm,
-                        recv,
-                        "mDisconnectDescription",
-                        varg(args, 2),
-                    )?;
-                    put(
-                        vm,
-                        recv,
-                        "mDisconnectReason",
-                        varg(args, 3),
-                    )?;
+                    put(vm, recv, "mDisconnectLabel", varg(args, 1))?;
+                    put(vm, recv, "mDisconnectDescription", varg(args, 2))?;
+                    put(vm, recv, "mDisconnectReason", varg(args, 3))?;
                     if args.len() > 4 {
                         put(vm, recv, "mToneToPlay", Value::Int(iarg(args, 4)))?;
                     }
@@ -48808,12 +50297,7 @@ fn p36i_disconnect_cause(
                             "mTelephonyPreciseDisconnectCause",
                             Value::Int(iarg(args, 6)),
                         )?;
-                        put(
-                            vm,
-                            recv,
-                            "mImsReasonInfo",
-                            varg(args, 7),
-                        )?;
+                        put(vm, recv, "mImsReasonInfo", varg(args, 7))?;
                     }
                 }
             }
@@ -48907,7 +50391,18 @@ fn p36i_disconnect_cause(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1451, 1460, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1451,
+            1460,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49046,7 +50541,18 @@ fn p36i_call_audio_state(
                 ),
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1460, 1466, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1460,
+            1466,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49087,7 +50593,18 @@ fn p36i_video_profile(
                 field_int(vm, recv, "mQuality")
             ),
         )?,
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1466, 1471, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1466,
+            1471,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49113,7 +50630,18 @@ fn p36i_camera_caps(
             )?;
             Value::Null
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1471, 1477, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1471,
+            1477,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49180,22 +50708,11 @@ fn p36i_status_hints(
             "<init>",
             "(Ljava/lang/CharSequence;Landroid/graphics/drawable/Icon;Landroid/os/Bundle;)V",
         ) => {
-            put(
-                vm,
-                recv,
-                "mLabel",
-                varg(args, 0),
-            )?;
+            put(vm, recv, "mLabel", varg(args, 0))?;
             // Binder.getCallingUserHandle() is user 0 in this single-user VM.
-            let icon =
-                p36i_validate_icon_boundary(vm, varg(args, 1), 0)?;
+            let icon = p36i_validate_icon_boundary(vm, varg(args, 1), 0)?;
             put(vm, recv, "mIcon", icon)?;
-            put(
-                vm,
-                recv,
-                "mExtras",
-                varg(args, 2),
-            )?;
+            put(vm, recv, "mExtras", varg(args, 2))?;
             Value::Null
         }
         (
@@ -49216,20 +50733,10 @@ fn p36i_status_hints(
                     &[pkg, Value::Int(res_id)],
                 )?
             };
-            put(
-                vm,
-                recv,
-                "mLabel",
-                varg(args, 1),
-            )?;
+            put(vm, recv, "mLabel", varg(args, 1))?;
             let icon = p36i_validate_icon_boundary(vm, icon, 0)?;
             put(vm, recv, "mIcon", icon)?;
-            put(
-                vm,
-                recv,
-                "mExtras",
-                varg(args, 3),
-            )?;
+            put(vm, recv, "mExtras", varg(args, 3))?;
             Value::Null
         }
         ("getIcon", "(Landroid/content/Context;)Landroid/graphics/drawable/Drawable;") => {
@@ -49277,7 +50784,18 @@ fn p36i_status_hints(
             );
             Value::Obj(component)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1477, 1484, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1477,
+            1484,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49321,7 +50839,18 @@ fn p36i_telecom_manager(
                 &[text],
             )?
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1484, 1513, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1484,
+            1513,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49532,12 +51061,7 @@ fn p36i_bcd_byte(bytes: &[u8], index: i32) -> StubResult<u8> {
 // internalCalledPartyBCDFragmentToString: returns how far decoding got; an
 // invalid nibble stops decoding (AOSP returns from the helper mid-buffer).
 #[cold]
-fn p36i_bcd_fragment(
-    bytes: &[u8],
-    offset: i32,
-    length: i32,
-    ext_type: i32,
-) -> StubResult<String> {
+fn p36i_bcd_fragment(bytes: &[u8], offset: i32, length: i32, ext_type: i32) -> StubResult<String> {
     let mut ret = String::new();
     let end = offset.saturating_add(length);
     let mut i = offset;
@@ -49698,7 +51222,18 @@ fn p36i_gateway_info(
                 .unwrap_or(true);
             bool_value(pkg_empty || matches!(get(vm, recv, "mGatewayAddress"), Value::Null))
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1513, 1518, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1513,
+            1518,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
@@ -49739,7 +51274,18 @@ fn p36i_user_handle(
             };
             bool_value(eq)
         }
-        _ => match crate::android_stub_tables::eval_method_range(vm, 1518, 1524, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
+        _ => match crate::android_stub_tables::eval_method_range(
+            vm,
+            1518,
+            1524,
+            name,
+            sig,
+            Some(recv),
+            args,
+        )? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
     };
     Ok(Some(v))
 }
