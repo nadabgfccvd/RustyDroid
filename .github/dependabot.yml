@@ -1,6 +1,6 @@
-# Dependabot proposes updates; RD Sentinel gives every proposal a strict,
-# RustyDroid-specific anti-regression trial.  Auto-merge is intentionally not
-# configured here or in the Sentinel publisher.
+# Dependabot proposes updates. The RD Sentinel anti-regression trial was retired
+# (ADR 010); each proposal is reviewed by a maintainer. Auto-merge is intentionally
+# not configured here.
 #
 # Cooldowns are explicit even though GitHub now has a default: a version must
 # exist long enough for obvious compromised/broken releases to be noticed.
@@ -34,7 +34,7 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
       # Major updates are deliberately not grouped: each one gets its own PR,
-      # changelog/MSRV review, deep Sentinel campaign, and approval label.
+      # changelog/MSRV review, and maintainer approval (the RD Sentinel campaign was retired, ADR 010).
 
   - package-ecosystem: github-actions
     directory: /

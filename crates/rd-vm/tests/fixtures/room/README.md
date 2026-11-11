@@ -1,7 +1,7 @@
 # Fixture: Room 2.6.1 (banco v1 → v2 com migração)
 
-Fontes Java em `src/com/example/roomfx/`. O DEX **não é versionado** (`.dex` é
-bloqueante no RD Sentinel; ver [ADR 036](../../../../../docs/adr/036-excecao-fixture-dex-rxjava.md)
+Fontes Java em `src/com/example/roomfx/`. O DEX **não é versionado** (regra herdada
+do RD Sentinel, retirado pela ADR 010; ver [ADR 036](../../../../../docs/adr/036-excecao-fixture-dex-rxjava.md)
 para a única exceção existente, que cobre o fixture do RxJava). No CI, o job
 `room-fixture` gera o DEX com o script abaixo e roda os 3 testes com `--ignored`.
 

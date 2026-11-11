@@ -17,7 +17,7 @@ compatibility reporting:
   request merges (see [`.github/CODEOWNERS`](./.github/CODEOWNERS)).
 - **Maintainers & Reviewers** — Triaging issues, auditing compatibility claims
   against AOSP specifications, running end-to-end APK verification, and
-  enforcing CI and RD Sentinel gates.
+  enforcing the CI gates.
 - **Contributors (Human & AI-Assisted)** — Anyone submitting issues, ADRs,
   compatibility shims, parsers, tests, or documentation in accordance with
   [`CONTRIBUTING.md`](./CONTRIBUTING.md) and
@@ -64,7 +64,7 @@ before or alongside the implementation:
   generational GC ([`006`](./docs/adr/006-generational-gc-and-live-frame-roots.md)),
   opt-in Cranelift JIT ([`007`](./docs/adr/007-cranelift-leaf-jit.md)),
   15 GB / 1,500 ms Moto E5 budgets
-  ([`008`](./docs/adr/008-15gb-apk-and-1500ms-cold-start.md)), RD Sentinel
+  ([`008`](./docs/adr/008-15gb-apk-and-1500ms-cold-start.md)), RD Sentinel, retirado
   ([`010`](./docs/adr/010-rd-sentinel-anti-regression-bot.md)), M10 virtual
   devices ([`011`](./docs/adr/011-m10-virtual-devices.md)), and M11 engines
   ([`013`](./docs/adr/013-m11-engine-execution-strategy.md)).
@@ -78,15 +78,12 @@ A pull request is eligible for merge only when:
    confinement (`rd-ndk`/`rd-jni` only), markdown link integrity, and `xtask`
    generated report sync (`docs/compat-matrix.md`, `docs/api-coverage.md`,
    `docs/engine-registry.md`, `docs/jetpack.md`, `docs/gms.md`).
-2. **RD Sentinel (`rd-sentinel/gate`) passes:** Zero blocking `P0`/`P1`
-   findings across static safety rules, test-shrinking checks, fuzz/perf
-   campaigns, and protected-path controls (see
-   [`docs/rd-sentinel.md`](./docs/rd-sentinel.md)).
-3. **Protected paths & baselines:** Files listed under `protected_paths` in
-   `.github/rd-sentinel/policy.json` (CI security gates, Sentinel policy and
-   baselines, `deny.toml`, `CODEOWNERS`) cannot be weakened in a feature PR and
-   require explicit owner approval labels (`sentinel:policy-approved` /
-   `sentinel:baseline-approved`).
+2. **Anti-regressão:** o RD Sentinel foi retirado (ADR 010, emenda de
+   2026-11-11). Não há gate `rd-sentinel/gate` no CI. Qualquer substituto é
+   decisão do dono.
+3. **Caminhos protegidos e baselines:** `CODEOWNERS`, `deny.toml` e as baselines
+   de performance e de teste não podem ser enfraquecidos num PR de
+   funcionalidade. Mudança desses arquivos exige aprovação explícita do dono.
 4. **Performance claims:** Optimization PRs must include paired before/after
    measurements on identical hardware/profiles.
 
@@ -116,7 +113,7 @@ tomadas no **RustyDroid**, refletindo a PARTE 3 (§3.3) da especificação mestr
 ## 1. Papéis e Modelo de Decisão
 
 - **Dono do Repositório (`@nadabgfccvd`)** — Autoridade final sobre rumos do
-  projeto, aceitação de ADRs, baselines/políticas do Sentinel e aprovação de
+  projeto, aceitação de ADRs, baselines de performance e de teste e aprovação de
   todo merge na `main` ([`.github/CODEOWNERS`](./.github/CODEOWNERS)).
 - **Mantenedores e Revisores** — Triagem de issues, auditoria fiel ao AOSP,
   validação E2E em APKs reais e fiscalização dos gates.
@@ -142,8 +139,8 @@ tomadas no **RustyDroid**, refletindo a PARTE 3 (§3.3) da especificação mestr
   documentada da spec exige registro em `docs/adr/NNN-slug.md`.
 - **Gates obrigatórios:** CI verde (incluindo MSRV **1.97.0** com
   `--all-features --locked`, `clippy -D warnings`, links markdown e relatórios
-  `cargo xtask` sincronizados) + **RD Sentinel** sem bloqueios
-  ([`docs/rd-sentinel.md`](./docs/rd-sentinel.md)).
+  `cargo xtask` sincronizados) + baselines de performance e de teste preservadas (o RD Sentinel foi retirado;
+  ver ADR 010).
 - **SemVer e Releases:** `0.x` durante a construção dos marcos (`0.9.0` = M8);
   `1.0.0` no fechamento do M12 com contratos MCP/CLI estáveis e histórico em
   [`CHANGELOG.md`](./CHANGELOG.md).

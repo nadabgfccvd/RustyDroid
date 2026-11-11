@@ -44,10 +44,9 @@ Root causes (verified in tree):
 
 `peak_rss_mb()` reads `VmHWM` from `/proc/self/status`. File-backed mmap pages faulted in count toward `VmRSS`/`VmHWM`; scanning >512 MB of a mapped 15 GB APK fails the 512 MB gate, and `MADV_DONTNEED` eviction is racy, platform-specific, and requires `unsafe` (forbidden). `pread64` copies only requested ranges into a user-space cache whose size we choose: with 64 KiB × 256 pages the APK layer can pin **at most 16 MiB**, mathematically, forever — independent of APK size. Any future windowed-mmap fast path needs its own ADR, an RSS-eviction hard cap, and may never be the default.
 
-
 ## 4. Quantitative budgets
 
-### 4.1 Cold-start latency (host ms; ×4 = emulated). Design point p50 ≤ 260, hard max < 375, size-independent.
+### 4.1 Cold-start latency (host ms; ×4 = emulated). Design point p50 ≤ 260, hard max < 375, size-independent
 
 | Phase | 11 MB today | 11 MB target | 15 GB target | Why size-independent |
 |---|---|---|---|---|

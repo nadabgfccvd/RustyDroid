@@ -128,7 +128,7 @@ o slot via `get` (o `None` é memoizado e determinístico).
 ## Consequências
 
 - Inspect/launch na classe flagship/torture param de pagar 410k decodificações
-  + materialização total no cold path; APKs típicos ficam ~iguais ("nunca
+  - materialização total no cold path; APKs típicos ficam ~iguais ("nunca
   pior que o eager, estritamente melhor quando subconjunto tocado").
 - Retenção de memória: buffer cru inteiro (40 MB no torture) + índice
   (~3,2 MB de pares) + touched-cache — troca o pico de DECODE (Strings +

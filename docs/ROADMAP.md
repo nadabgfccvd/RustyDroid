@@ -21,7 +21,7 @@
 | M9 | Componentes avançados + NDK | 5 APKs com .so rodando; widgets/IME/notificações ok | ✅ **implementado e revisado (2026-10)** — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21 |
 | M10 | Dispositivos virtuais | câmera/GPS/biometria programáveis pelo agente | ✅ **implementado (2026-10-25)** — [docs/m10.md](m10.md), [ADR 011](adr/011-m10-virtual-devices.md), PR #201. Viewport em paisagem: `Engine::viewport_px()` é a fonte única para layout, decor da janela, screenshots e `ScreenModel` (#252, PR #456) |
 | M11 | Engines | WASM → RN → Mono → Flutter (ordem do [ADR 013](adr/013-m11-engine-execution-strategy.md)): 1 app de cada em golden flow | 🟡 **parcial (S1 núcleo + S1b bridge em VM + S1c registro/CLI `rd engine run wasm`, 2026-11)** — interpretador i32/i64 + validador + limites + fuzz em `rd-engine-wasm` ([docs/m11-wasm.md](m11-wasm.md)) + bridge `io.rustydroid.wasm.WasmBridge` atrás da feature `wasm-engine` de `rd-vm`, com golden de VM (ciclo de vida de `Activity`) e APK de demonstração em `golden/engines/wasm/` (o `TextView` mostra `add(2, 3) = 5` via bridge, `wasm_demo_golden`). suíte `rd test golden/engines/wasm/suite.json` PASS no CI. S1c: adaptador `wasm` no registro atrás da feature `wasm-execution` (`partial_wasm`; `rd engine check wasm` = AVAILABLE_BOUNDED, `rd engine run wasm <apk>` executa o APK de demonstração e mostra `5`). Pendente: S2 React Native (estratégia proposta no [ADR 020](adr/020-m11-s2-react-native.md), aguarda decisão do dono sobre engine JS/Hermes), S3 Mono, S4 Flutter (golden flow de 1 app cada). |
-| M12 | Ecossistema GH | docs site, compat-matrix viva, releases; v1.0 | 🟡 **parcial (2026-11-10)** — site mdBook publicado em https://nadabgfccvd.github.io/RustyDroid/ (Pages legacy sobre `gh-pages`, preservando `dev/bench`), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0 |
+| M12 | Ecossistema GH | docs site, compat-matrix viva, releases; v1.0 | 🟡 **parcial (2026-11-10)** — site mdBook publicado em <https://nadabgfccvd.github.io/RustyDroid/> (Pages legacy sobre `gh-pages`, preservando `dev/bench`), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0 |
 
 ## ✅ Apêndice G — registro e detecção completos (2026-10-14)
 
@@ -163,7 +163,7 @@ crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).
 5. ✅ `setText(int resId)` + `Activity.getString(I)` resolvem no arsc;
    **bug latente do `findViewById` corrigido** (guard exigia Obj em args[0]
    e devolvia Null SEMPRE — sem cobertura até o M3.2).
-6. ✅ Fixtures determinísticos byte a byte (`tests/common/apkfix.rs`): ZIP
+6. ✅ Fixtures determinísticos byte a byte (`crates/rd-testsupport/src/apkfix.rs`): ZIP
    STORED + string pool UTF-16 + AXML + ARSC gerados em Rust (sem fixture
    binário commitado); 6 testes de integração M3.2 (inclui DoD XML+toque e
    erros tipados). 187 testes no workspace, clippy limpo, fmt ok, MSRV 1.76 ok.
@@ -194,7 +194,6 @@ certos); configs específicas (land/locale/density) selecionáveis.
 > Feito nesta rodada: Round 2 (#538) e bidi (#539).
 
 > **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). Continua sem bidi/RTL e sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
-
 
 1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
    (class/resource-id `package:id/nome`/text/bounds/visibility/enabled/

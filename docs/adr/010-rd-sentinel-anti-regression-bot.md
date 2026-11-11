@@ -1,9 +1,9 @@
 # ADR 010 — RD Sentinel: Dependabot-like anti-regression bot beyond CI
 
-- **Status:** Accepted for implementation (repo-owner request, 2026-10-22)
+- **Status:** retirada (a ferramenta foi removida em 2026-10-31; ver emenda no fim do arquivo)
 - **Scope:** `.github/dependabot.yml`, `.github/CODEOWNERS`, `deny.toml`,
   `.github/rd-sentinel/`, `.github/workflows/rd-sentinel*.yml`,
-  `tools/rd-sentinel/`, and the operator guide in `docs/rd-sentinel.md`
+  `tools/rd-sentinel/`, and the operator guide (now `docs/archive/rd-sentinel.md`)
 - **Current implementation:** RD Sentinel 1.2.0 (v1.2 amendment, 2026-10-23)
 - **Identity (unchanged):** Rust-native Android runtime; no VM, KVM, or guest
   kernel; MSRV 1.76; minSdk 26; deterministic MCP/runtime behavior; no new
@@ -252,3 +252,10 @@ Decisão:
    - `pass` (pré-existente) só quando a base também estoura. Nesse caso, quem bloqueia regressões são os gates pareados que já existiam (`perf-ab-p50-regression`: ratio > 1,10 e +25 ms; `perf-ab-max-regression`).
 
 Nenhum limiar muda. `STARTUP_BUDGET_EMULATED_MS` continua em 1500 e `policy.json` não muda. Piorar continua bloqueado; melhorar deixa de ser bloqueado. O orçamento absoluto volta a valer sozinho assim que a `main` ficar abaixo dele.
+
+## Emenda (2026-11-11): retirada
+
+- `tools/rd-sentinel/` foi removido em `08ae54f` (2026-10-31). Os quatro workflows `rd-sentinel*.yml` foram removidos em `46af515` (#436), porque falhavam em "Compute risk-selected campaign" sem o script.
+- Não há mais gate `rd-sentinel/gate` no CI. As regras de merge que citavam o Sentinel em `CONTRIBUTING.md`, `GOVERNANCE.md` e no template de PR foram atualizadas para refletir isso.
+- O guia operacional foi movido para [`docs/archive/rd-sentinel.md`](../archive/rd-sentinel.md) como histórico.
+- `.github/rd-sentinel/` (política e baseline) e as entradas em `CODEOWNERS` foram mantidos pelo commit de #436. Decisão de remoção pendente do mantenedor.

@@ -24,7 +24,7 @@ A ADR 021 pede dois APKs rodando juntos, um por cima do outro. A opção A (duas
 ## Consequências
 
 - O modelo "uma sessão por processo" deixa de valer. Clientes MCP que usam a sessão padrão continuam funcionando sem mudança, porque sem `engine_id` a tool usa a sessão ativa.
-- Teste de regressão obrigatório (RD Sentinel: mudança de VM e de sessão): duas sessões com estado isolado (uma sessão não vê classes, prefs nem `HostOut` da outra) e roteamento de toque para a sessão certa.
+- Teste de regressão obrigatório (convenção do RD Sentinel, retirado pela ADR 010: mudança de VM e de sessão): duas sessões com estado isolado (uma sessão não vê classes, prefs nem `HostOut` da outra) e roteamento de toque para a sessão certa.
 - A etapa 2 (composição visual com janela transparente, `rd-render` com duas camadas) não é coberta por esta ADR. Ela ganha ADR própria quando começar.
 - Fora do escopo: threads por sessão, sessões em processos separados e compartilhamento de heap.
 

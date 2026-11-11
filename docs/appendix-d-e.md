@@ -283,10 +283,8 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
     reduzido por R8 8.7.18 com regras keep. Tem 23 KB e está em
     `crates/rd-vm/tests/fixtures/rxjava3/`. A regeneração reproduz o SHA-256
     `4023c229…` (`scripts/gen-rxjava3-fixture.sh`). Proveniência e licenças no README.
-  - Exceção de política: `.dex` é bloqueante no RD Sentinel. A exceção datada, com
-    escopo de um único arquivo e validade até 2027-02-05, está em
-    `docs/adr/036-excecao-fixture-dex-rxjava.md`. Ela depende de um mantenedor aplicar
-    `sentinel:policy-approved`. Não foi aplicada por mim.
+  - Exceção de política (histórica): enquanto o RD Sentinel estava ativo, `.dex` era bloqueante. Ele foi retirado (ADR 010). A exceção datada, com escopo de um único arquivo e validade até 2027-02-05, está em
+    `docs/adr/036-excecao-fixture-dex-rxjava.md`; sem gate ativo, ela não tem efeito técnico, e manter ou não é decisão do mantenedor.
   - Testes: 5 em `crates/rd-vm/tests/jetpack_rxjava.rs`. Cobrem `just` + `subscribe`
     → disposed; `never` → não disposed; `dispose()` → disposed; `empty` → disposed;
     e sem o DEX da biblioteca no Engine a chamada falha.
@@ -330,7 +328,7 @@ Getters novos (somente leitura): `gms_nearby_is_discovering`, `gms_nearby_connec
     `--min-api 26`). `scripts/gen-room-fixture.sh` regenera tudo a partir do Google
     Maven (AndroidX não existe no Maven Central), com `platform-35` para o
     `android.jar`. O SHA-256 gerado nesta rodada foi `134e9ab7…`.
-  - O DEX **não** é versionado: `.dex` é bloqueante no RD Sentinel e a exceção da
+  - O DEX **não** é versionado: a regra vinha do RD Sentinel (retirado, ADR 010) e a exceção da
     ADR 036 cobre só o fixture do RxJava. Por isso `crates/rd-vm/tests/jetpack_room.rs`
     (3 testes) é `#[ignore]` e exige `RD_ROOM_FIXTURE_DEX`. Rodar no CI exige uma
     exceção de política nova, que é decisão de mantenedor.
@@ -698,7 +696,7 @@ e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo d
 
 - **Cast** (`gms-cast`): `gms_cast_set_connect_failure(code)` faz a tentativa falhar sem criar sessão (estado
   NO_DEVICES); o erro fica em `gms_cast_last_error` e a tentativa seguinte bem-sucedida o limpa. Testes no mesmo arquivo.
-- **Nearby** (`gms-nearby`): critério já atendido por testes existentes em `tests/gms.rs` (ENDPOINT_UNKNOWN para
+- **Nearby** (`gms-nearby`): critério já atendido por testes existentes em `crates/rd-vm/tests/gms.rs` (ENDPOINT_UNKNOWN para
   endpoint não descoberto; ciclo de descoberta, conexão e encerramento). Nenhuma mudança de código.
 - **Analytics** (`firebase-analytics`): nome de evento (até 40), parâmetro (até 40) e propriedade de usuário (até 24)
   inválidos pela regra documentada do Firebase são rejeitados e contados em `gms_analytics_rejected`. Parâmetro

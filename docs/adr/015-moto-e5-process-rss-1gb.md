@@ -10,9 +10,9 @@
 
 ## Context
 
-The `moto-e5` hardware-floor profile capped the RustyDroid process at **512 MB RSS** (`rd perf` fails closed above it; Sentinel perf campaigns read the same profile). The owner wants RustyDroid to run APKs of up to **1 GB**.
+The `moto-e5` hardware-floor profile capped the RustyDroid process at **512 MB RSS** (`rd perf` fails closed above it; as campanhas de perf do RD Sentinel, retirado pela ADR 010, liam o mesmo perfil). The owner wants RustyDroid to run APKs of up to **1 GB**.
 
-#216 already removes the *file-size* barrier: archives over 512 MiB are opened in paged mode, up to 16 GiB, and are never read whole. What remains is the *process* budget. Large real apps (big DEX sets, large decoded resources, native libraries) can need more than 512 MB of resident memory while running, even though paging keeps the APK bytes themselves out of RSS.
+# 216 already removes the *file-size* barrier: archives over 512 MiB are opened in paged mode, up to 16 GiB, and are never read whole. What remains is the *process* budget. Large real apps (big DEX sets, large decoded resources, native libraries) can need more than 512 MB of resident memory while running, even though paging keeps the APK bytes themselves out of RSS.
 
 ## Decision
 

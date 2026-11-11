@@ -133,6 +133,7 @@ fn mdbook_summary_and_config_are_consistent_and_resolvable() {
     }
 
     // Core generated scoreboards and foundational guides must remain indexed.
+    // RD Sentinel was removed (08ae54f, 46af515); its doc is kept only under archive/.
     for core in [
         "./index.md",
         "./ROADMAP.md",
@@ -142,7 +143,7 @@ fn mdbook_summary_and_config_are_consistent_and_resolvable() {
         "./gms.md",
         "./engine-registry.md",
         "./mcp-tools.md",
-        "./rd-sentinel.md",
+        "./archive/rd-sentinel.md",
     ] {
         assert!(
             targets.iter().any(|t| t == core),

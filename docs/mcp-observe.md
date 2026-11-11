@@ -114,7 +114,7 @@ delegation and bounded rectilinear Region clipping.
 
 ## Live viewer: routes and page (`rd mcp --live`)
 
-Served by `live_serve_conn` in `crates/rd-agent/src/observe.rs` (`observe.rs:710`; std-only HTTP, one thread per connection, `Connection: close`). The address comes from `rd mcp --live <addr>` or `RD_MCP_LIVE` (`crates/rd-cli/src/main.rs:590`, `crates/rd-agent/src/mcp.rs:3195`). The viewer is started in `serve_stdio_with` (`crates/rd-agent/src/mcp.rs:3201-3212`) and logs `[rd mcp] live viewer: http://<addr>/` to stderr.
+Served by `live_serve_conn` in `crates/rd-agent/src/observe.rs` (std-only HTTP, one thread per connection, `Connection: close`). The address comes from `rd mcp --live <addr>` (handled in `crates/rd-cli/src/main.rs`) or `RD_MCP_LIVE` (read in `crates/rd-agent/src/mcp.rs`). The viewer is started in `serve_stdio_with` (`crates/rd-agent/src/mcp.rs`) and logs `[rd mcp] live viewer: http://<addr>/` to stderr.
 
 | Route | Response | Notes |
 |---|---|---|

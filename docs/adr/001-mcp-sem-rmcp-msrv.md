@@ -3,7 +3,6 @@
 - **Status:** aceito e implementado; revisto pelo ADR 023 (múltiplas sessões por processo)
 - **Data:** data de aceite não registrada no ADR original
 
-
 ## Contexto
 
 A spec (RustyDroid.md, "DECISÕES TÉCNICAS JÁ TOMADAS") fixa `rmcp p/ MCP;

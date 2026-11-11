@@ -1,3 +1,8 @@
+> **ARQUIVADO em 2026-11-11: checkpoint histórico.** Registra o estado do
+> branch `feat/comprix-e2e` (PR #160) em 2026-10-20. Não descreve `main` atual.
+> Para o estado vigente, ver [Appendix G integration](../appendix-g-integration.md)
+> e [Comprix v1.6.0 E2E](../comprix-e2e.md).
+
 # Runtime integration validation — 2026-10-20
 
 Branch: `feat/comprix-e2e` · target: `main` · PR #160.

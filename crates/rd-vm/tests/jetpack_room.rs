@@ -3,7 +3,7 @@
 //!
 //! O DEX é gerado por `scripts/gen-room-fixture.sh` a partir de
 //! `tests/fixtures/room/src` (javac + processador do Room 2.6.1, depois D8).
-//! Não é versionado (`.dex` é bloqueante no RD Sentinel, ver ADR 036): rode
+//! Não é versionado (regra herdada do RD Sentinel, retirado pela ADR 010; ver ADR 036): rode
 //! `scripts/gen-room-fixture.sh` e depois
 //! `RD_ROOM_FIXTURE_DEX=target/room-fixture/classes.dex cargo test -p rd-vm --test jetpack_room -- --ignored`.
 //!

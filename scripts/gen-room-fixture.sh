@@ -4,7 +4,7 @@
 # com as bibliotecas de runtime. Fontes: crates/rd-vm/tests/fixtures/room/src.
 #
 # Saída: $OUT (padrão: target/room-fixture/classes.dex). O DEX NÃO é versionado:
-# `.dex` é bloqueante no RD Sentinel (ver docs/adr/036). O teste
+# A regra vem do RD Sentinel, retirado pela ADR 010 (ver docs/adr/036). O teste
 # `crates/rd-vm/tests/jetpack_room.rs` lê o caminho em RD_ROOM_FIXTURE_DEX.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

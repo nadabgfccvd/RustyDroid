@@ -40,7 +40,7 @@ in `data/` via `cargo xtask` and checked against drift in CI:
 - **M10 Programmable Virtual Devices:** [`m10.md`](./m10.md)
 - **Generational Garbage Collector:** [`gc.md`](./gc.md)
 - **Parser Fuzzing:** [`FUZZING.md`](./FUZZING.md)
-- **RD Sentinel Anti-Regression Bot:** [`rd-sentinel.md`](./rd-sentinel.md)
+- **Histórico:** documentos arquivados (incluindo o RD Sentinel, retirado): [`archive/`](./archive/README.md)
 
 ## Building This Book Locally
 

@@ -1,3 +1,8 @@
+> **ARQUIVADO em 2026-11-11: medição histórica.** Os números valem para o
+> commit e a máquina de 2026-10-20. Não são a baseline atual. Para o GC vigente,
+> ver [gc.md](../gc.md) e [ADR 006](../adr/006-generational-gc-and-live-frame-roots.md).
+> Evidência bruta preservada em `tests/performance/20261020/`.
+
 # GC and runtime efficiency verification — 2026-10-20
 
 ## Scope and quality constraints
@@ -74,7 +79,7 @@ paired ratios 1.030 [1.022, 1.036] and 1.027 [1.025, 1.030]. No JIT algorithm wa
 changed and no JIT-specific speedup is a headline claim.
 
 Raw pairs, generated summary, hierarchy proof and supplemental JIT summary are
-in [the performance evidence directory](../tests/performance/20261020).
+in [the performance evidence directory](../../tests/performance/20261020).
 
 ## Real-app and quality evidence
 
@@ -135,4 +140,4 @@ performance optimum. Headless emulation is not physical-device validation.
 The mandatory source-language CI gate rebuilds SHA-pinned signed APKs, executes
 all three ABIs with JIT off/on, requires positive coverage of every MCP tool,
 and rejects nine corrupted ELF inputs. It uploads provenance/evidence but not
-the generated private debug signing key. See [native languages](native-languages.md).
+the generated private debug signing key. See [native languages](../native-languages.md).

@@ -47,7 +47,7 @@ Resumo: **9 módulos** com `thread_local!` e **1 `static`** de processo. Dos 9 m
 
 1. A premissa "um `Engine` vivo por thread" fica **explicitamente revogada** para o caminho de sessões (ADR 023), mas o código continua valendo até a migração do item 3.
 2. Caminho escolhido: **opção A**. Migrar as 8 tabelas com `ObjRef` ou contadores, mais `APP_STDOUT`, para `HostState`. `jregex::CACHE` fica como está.
-3. Ordem de PRs (cada um com testes de regressão, RD Sentinel):
+3. Ordem de PRs (cada um com testes de regressão; a exigência vinha do RD Sentinel, retirado pela ADR 010):
    1. Mover `APP_STDOUT` para `HostState`. Teste: dois engines com saídas separadas.
    2. Mover as tabelas de `ObjRef` (spannable, jrandom, jregex matchers, uri, xml, annotations, io). Teste: dois engines intercalados na mesma thread, cada um com objetos com o mesmo `ObjRef` numérico, sem vazamento.
    3. Mover `UNIQ`, `PARSER_HOST_BYTES` e a semente de UUID. Teste: determinismo (Lei 4 / PRF-04) não depende da história da thread.

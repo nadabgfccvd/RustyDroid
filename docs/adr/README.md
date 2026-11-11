@@ -18,7 +18,7 @@ que revisa uma anterior entra como ADR novo que a referencia.
 | [007](007-cranelift-leaf-jit.md) | opt-in Cranelift integer & control-flow JIT (`MethodJit`) | — | accepted and upgraded from straight-line leaf prototype… |
 | [008](008-15gb-apk-and-1500ms-cold-start.md) | 15 GB APK support with ≤ 1,500 ms cold start on the Moto E5 floor | 2026-10-21 | Accepted |
 | [009](009-process-cold-26ms.md) | Process-cold < 26 ms to first frame (live mode, all heavy features) | — | Accepted |
-| [010](010-rd-sentinel-anti-regression-bot.md) | RD Sentinel: Dependabot-like anti-regression bot beyond CI | — | Accepted for implementation |
+| [010](010-rd-sentinel-anti-regression-bot.md) | RD Sentinel: Dependabot-like anti-regression bot beyond CI | — | retirada |
 | [011](011-m10-virtual-devices.md) | M10 virtual devices, sensors, media & deterministic agent controls | 2026-10-25 | aceito e implementado |
 | [012](012-appendix-d-e-registries.md) | Registros executáveis dos Apêndices D e E | 2026-10-25 | aceito; runtime de shims em implementação incremental so… |
 | [013](013-m11-engine-execution-strategy.md) | Estratégia de execução de engines do M11 | 2026-10-25 | proposto |
@@ -26,7 +26,7 @@ que revisa uma anterior entra como ADR novo que a referencia.
 | [015](015-moto-e5-process-rss-1gb.md) | moto-e5 process RSS cap raised from 512 MB to 1024 MB | 2026-10-25 | accepted. This is an owner decision |
 | [016](016-api-floor-9.md) | Piso de API de execução: minSdk 26 → 9 (tier T0 best-effort) | 2026-10-25 | proposto |
 | [017](017-host-thread-local-state-engine-boundary.md) | Estado host thread-local: fronteira de `Engine`, pacote e sessão | 2026-10-25 | proposto |
-| [018](018-restore-rd-sentinel-after-accidental-deletion.md) | Restaurar o RD Sentinel após exclusão acidental (`4489813`) | — | Accepted |
+| [018](018-restore-rd-sentinel-after-accidental-deletion.md) | Restaurar o RD Sentinel após exclusão acidental (`4489813`) | — | histórico |
 | [019](019-renderer-tiny-skia-pendente.md) | Renderer M4: tiny-skia + shaping (spec) vs. rasterizador próprio atual | — | Aceito |
 | [020](020-m11-s2-react-native.md) | M11 S2: React Native (LANG-05) — estratégia de execução | 2026-11-01 | proposto |
 | [021](021-apk-layering.md) | Layering: executar dois APKs ao mesmo tempo (um por cima do outro) | 2026-11-02 | proposto |
@@ -44,6 +44,6 @@ que revisa uma anterior entra como ADR novo que a referencia.
 | [033](033-layout-de-campos-por-classe.md) | Layout de campos de instância por classe | 2026-11-04 | proposto |
 | [034](034-caminho-quente-de-invoke.md) | Caminho quente de `invoke` (cache por site e alocações por chamada) | 2026-11-04 | proposto |
 | [035](035-identidades-inteiras-no-caminho-quente.md) | Identidades inteiras (classe, campo, método) no caminho quente | 2026-11-04 | proposto |
-| [036](036-excecao-fixture-dex-rxjava.md) | Exceção datada: fixture DEX reduzido do RxJava 3 | 2026-11-05 | proposta, aguarda aplicação do label `sentinel:policy-ap… |
+| [036](036-excecao-fixture-dex-rxjava.md) | Exceção datada: fixture DEX reduzido do RxJava 3 | 2026-11-05 | proposta. Não há gate ativo: o RD Sentinel foi retirado |
 | [037](037-stubs-android-dirigidos-por-tabela.md) | Stubs Android dirigidos por tabela, sem relocação e com erro delgado | 2026-11-10 | implementado |
 | [038](038-gate-de-benchmark-invariante-ao-runner.md) | Gate de benchmark por contagem de instruções (não por tempo de parede) | 2026-11-10 | implementado |

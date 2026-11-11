@@ -29,7 +29,7 @@ O F-Droid chega em `WorkManagerImpl.getInstance` e falha com `lateinit property 
 
 ## Decisão proposta
 
-1. Caminho **A**, em etapas, cada uma com teste de regressão (RD Sentinel: mudança de VM):
+1. Caminho **A**, em etapas, cada uma com teste de regressão (convenção do RD Sentinel, retirado pela ADR 010: mudança de VM):
    1. Fazer `room_builder` chamar `init` com um `DatabaseConfiguration` real, usando o helper de framework. Teste: `RoomDatabase.connectionManager` não é nulo após `build()`, e um `SELECT` simples de um DAO devolve linhas.
    2. Suportar `runInTransaction`/`beginTransaction` e o invalidation tracker. Teste: uma escrita dispara a invalidação observada.
    3. Validar com o F-Droid: `WorkDatabase.systemIdInfoDao()` funciona sem exceção.
@@ -116,4 +116,3 @@ O dono mandou seguir todos os passos. Executado A1, com limite de passos. Nenhum
 **Regressão.** `crates/rd-cli/tests/fdroid_oncreate_e2e.rs` falha se `App.onCreate`, o lateinit do Room ou o `scheduleOrCancel` voltarem a lançar exceção. Os testes unitários de `m8.rs` cobrem os helpers de builder.
 
 **Limites desta etapa.** Não foi medida invalidação de tabelas nem transação do Room sobre o VM. Layering (ADR 021, etapa 1 "sessions") não foi iniciado.
-
