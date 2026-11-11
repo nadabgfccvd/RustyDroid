@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794262334030,
+  "lastUpdate": 1794359610835,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6659,6 +6659,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2771,
             "range": "± 51",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c4099e0999323b6311d3561566a99de588ca90be",
+          "message": "perf(rd-vm): stubs Android dirigidos por tabela sem relocação — −743 KB no binário release (#627)\n\nFecha #227.\n\nandroid_stub_surfaces passa a ser dirigido por tabela (android_stub_tables.rs novo):\nSTR_POOL plano + StrId sem relocação PIE, StubExit(Box<VmExit>) como canal de\nerro delgado, varg + 33 auxiliares outlined, 120 formatadores cold.\n\nrelease rd --all-features: 24329936 -> 23586896 B (-743040 B / -0.709 MB)\n228 lib + 109 android_stub_surfaces + 12/12 lang + wasm verdes, clippy/fmt\nlimpos, rd perf moto-e5 cold p50 20.4 ms. ADR 037.",
+          "timestamp": "2026-11-10T22:13:01-03:00",
+          "tree_id": "de6f597354a1177d37132d9eb6cabf626321d10b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/c4099e0999323b6311d3561566a99de588ca90be"
+        },
+        "date": 1794359610087,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1884,
+            "range": "± 129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1815,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
