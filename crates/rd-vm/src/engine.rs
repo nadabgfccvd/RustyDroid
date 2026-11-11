@@ -169,6 +169,24 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
                     // processo abortava. O piso agora nunca passa de 1/8 da VMA,
                     // que é quanto sobra garantido depois de reservar o resto.
                     let floor = MIN_NATIVE_STACK_BUDGET.min((hi.saturating_sub(lo)) / 8);
+                    // #643: o piso não pode FABRICAR espaço que não existe.
+                    // `free` (folga menos o headroom de 1 MiB) já é 0 em
+                    // pilhas de 256–512 KiB, e o piso devolvia 64 KiB — mais
+                    // pilha do que há entre o SP e a guard page. O guard em
+                    // bytes então nunca disparava antes do SO e a thread
+                    // abortava com SIGABRT (flake #637 no job NDK do CI:
+                    // depende do layout de VMA/mmap do processo — por isso
+                    // intermitente). O piso existe para evitar orçamento
+                    // DEGENERADO (0/1 frame que rejeitaria até chamada
+                    // trivial); ele não é um mínimo garantido de pilha e se
+                    // subordina à folga que resta de verdade. `MIN_DEPTH_FLOOR`
+                    // continua garantindo 16 frames de `entry_depth_cap` mesmo
+                    // com o orçamento no piso absoluto de 64 KiB, e o limite
+                    // combinado de `enter_stack_frame` continua valendo, então
+                    // uma pilha realmente minúscula falha FECHADA com
+                    // `StackOverflowError` tipado em vez de SIGABRT.
+                    let free_raw = sp_now.saturating_sub(lo);
+                    let floor = floor.min(free_raw);
                     return free.min(ceiling).max(floor);
                 }
             }
@@ -1843,6 +1861,52 @@ mod native_stack_budget_tests {
             );
         }
         assert!(budget >= 256 * 1024, "orçamento {budget} B abaixo do piso");
+    }
+
+    /// #643 (flake do job NDK no CI): o piso do orçamento nunca pode exceder a
+    /// folga REAL entre o SP e a base da pilha. Antes do fix, em threads de
+    /// 320 KiB o orçamento vinha no piso absoluto (64 KiB) enquanto a folga
+    /// restante podia ser menor — o guard em bytes não disparava antes da
+    /// guard page do SO e o processo abortava com SIGABRT (#637 intermitente:
+    /// dependia do layout de VMA/mmap do runner). Aqui a invariante é direta:
+    /// `budget ≤ free_raw` para qualquer pilha de thread detectável.
+    #[test]
+    fn budget_floor_never_exceeds_real_stack_headroom_643() {        for kib in [256usize, 320, 512, 2048] {
+            let handle = std::thread::Builder::new()
+                .name(format!("budget-643-{kib}"))
+                .stack_size(kib * 1024)
+                .spawn(move || {
+                    let sp = current_stack_addr();
+                    let maps =
+                        std::fs::read_to_string("/proc/thread-self/maps").unwrap_or_default();
+                    let lo = maps
+                        .lines()
+                        .filter_map(|l| {
+                            let (range, rest) = l.split_once(' ')?;
+                            let (lo_hex, hi_hex) = range.split_once('-')?;
+                            let (lo, hi) = (
+                                usize::from_str_radix(lo_hex, 16).ok()?,
+                                usize::from_str_radix(hi_hex, 16).ok()?,
+                            );
+                            (rest.starts_with("rw") && sp >= lo && sp <= hi)
+                                .then_some((lo, hi))
+                        })
+                        .next();
+                    match lo {
+                        Some((lo, _hi)) => Some((detect_native_stack_budget(sp), sp - lo)),
+                        None => None,
+                    }
+                })
+                .expect("spawn budget probe thread");
+            let probed = handle.join().expect("join budget probe thread");
+            if let Some((budget, free_raw)) = probed {
+                assert!(
+                    budget <= free_raw,
+                    "{kib} KiB: orçamento {budget} B excede a folga real de {free_raw} B — \
+                     o piso não pode fabricar pilha que não existe"
+                );
+            }
+        }
     }
 }
 
