@@ -1871,7 +1871,8 @@ mod native_stack_budget_tests {
     /// dependia do layout de VMA/mmap do runner). Aqui a invariante é direta:
     /// `budget ≤ free_raw` para qualquer pilha de thread detectável.
     #[test]
-    fn budget_floor_never_exceeds_real_stack_headroom_643() {        for kib in [256usize, 320, 512, 2048] {
+    fn budget_floor_never_exceeds_real_stack_headroom_643() {
+        for kib in [256usize, 320, 512, 2048] {
             let handle = std::thread::Builder::new()
                 .name(format!("budget-643-{kib}"))
                 .stack_size(kib * 1024)
@@ -1879,8 +1880,7 @@ mod native_stack_budget_tests {
                     let sp = current_stack_addr();
                     let maps =
                         std::fs::read_to_string("/proc/thread-self/maps").unwrap_or_default();
-                    let lo = maps
-                        .lines()
+                    maps.lines()
                         .filter_map(|l| {
                             let (range, rest) = l.split_once(' ')?;
                             let (lo_hex, hi_hex) = range.split_once('-')?;
@@ -1888,18 +1888,13 @@ mod native_stack_budget_tests {
                                 usize::from_str_radix(lo_hex, 16).ok()?,
                                 usize::from_str_radix(hi_hex, 16).ok()?,
                             );
-                            (rest.starts_with("rw") && sp >= lo && sp <= hi)
-                                .then_some((lo, hi))
+                            (rest.starts_with("rw") && sp >= lo && sp <= hi).then_some((lo, hi))
                         })
-                        .next();
-                    match lo {
-                        Some((lo, _hi)) => Some((detect_native_stack_budget(sp), sp - lo)),
-                        None => None,
-                    }
+                        .next()
+                        .map(|(lo, _hi)| (detect_native_stack_budget(sp), sp - lo))
                 })
                 .expect("spawn budget probe thread");
-            let probed = handle.join().expect("join budget probe thread");
-            if let Some((budget, free_raw)) = probed {
+            if let Some((budget, free_raw)) = handle.join().expect("join budget probe thread") {
                 assert!(
                     budget <= free_raw,
                     "{kib} KiB: orçamento {budget} B excede a folga real de {free_raw} B — \
