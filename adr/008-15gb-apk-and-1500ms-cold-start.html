@@ -1,0 +1,563 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>ADR 008 — 15 GB APK support with ≤ 1,500 ms cold start on the Moto E5 floor - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "../searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./adr/008-15gb-apk-and-1500ms-cold-start.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="adr-008--15-gb-apk-support-with--1500-ms-cold-start-on-the-moto-e5-floor"><a class="header" href="#adr-008--15-gb-apk-support-with--1500-ms-cold-start-on-the-moto-e5-floor">ADR 008 — 15 GB APK support with ≤ 1,500 ms cold start on the Moto E5 floor</a></h1>
+<ul>
+<li><strong>Status:</strong> Accepted (design); Stage 1 (partial) + Stage 2 (prototype) implemented in the landing PR; Stages 1b/3/4/5 specified for follow-up PRs.</li>
+<li><strong>Date:</strong> 2026-10-21 · <strong>Scope:</strong> <code>rd-apk</code>, <code>rd-dex</code>, <code>rd-vm</code>, <code>rd-agent</code>, <code>rd-render</code>, <code>rd-cli</code>, <code>rd-ndk</code>, <code>rd-engine-registry</code>, workspace <code>Cargo.toml</code>.</li>
+<li><strong>Identity (non-negotiable):</strong> Rust-native runtime, no VM/KVM/guest kernel, no boot; Moto E5 floor (<code>data/devices.toml</code>: Snapdragon 425, <code>cpu_single_thread_factor=0.25</code>, <code>cpu_quota_cores=1.0</code>, <code>ram_process_cap_mb=512</code>, <code>ram_app_heap_mb=256</code>, 720×1440@280dpi, minSdk 26); MCP plane (47 tools, ADR 001) contract unchanged; determinism (execution, GC, PNG); MSRV 1.76; <code>unsafe_code="forbid"</code> except <code>rd-ndk</code>/<code>rd-jni</code> (deny + local allow + ADR).</li>
+<li><strong>Laws:</strong> Law 1 structured <code>RdError{code,cause,suggestion,module_id}</code>; Law 2 raw offsets preserved (<code>rd inspect</code>/<code>rd dex</code>); Law 4 deterministic output.</li>
+</ul>
+<h2 id="1-problem--measured-root-causes"><a class="header" href="#1-problem--measured-root-causes">1. Problem &amp; measured root causes</a></h2>
+<p><code>rd perf</code> (<code>crates/rd-cli/src/perf.rs:183 timed_launch_frame</code>) times <code>launch</code>+<code>screenshot</code> on a fresh <code>AgentSession</code> after <code>install</code>; <code>emulated = host/0.25 = host×4</code>.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Gate</th><th>Emulated</th><th>Host</th></tr>
+</thead>
+<tbody>
+<tr><td>Measured 2026-10-21, 11 MB Primftpd, before this ADR</td><td>p50 2,190 / max 2,356 ms</td><td>p50 548 / max 589 ms</td></tr>
+<tr><td>Hard target</td><td>max &lt; 1,500 ms</td><td><strong>max &lt; 375 ms</strong></td></tr>
+<tr><td>Design point</td><td>p50 ≤ 1,040 ms</td><td><strong>p50 ≤ 260 ms</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p>Root causes (verified in tree):</p>
+<ol>
+<li>Whole-file read: <code>Apk::MAX_INPUT_BYTES=512MiB</code> (<code>rd-apk/src/lib.rs:63</code>), <code>fs::read</code> in <code>Apk::open</code> + <code>tool_install</code> (<code>rd-agent/src/mcp.rs:1213</code>), <code>Zip{data:Vec&lt;u8&gt;}</code> (<code>rd-apk/src/zip.rs:41</code>). 15 GB impossible; RSS grows with APK size before any code runs.</li>
+<li>Deep clone per cold launch: <code>app.apk.clone()</code> (<code>mcp.rs:1390</code>, fixed by this ADR).</li>
+<li>Eager DEX: <code>dexes_of_apk</code> (<code>mcp.rs:480</code>) inflates+CRC32s every DEX; <code>Dex::parse</code> (<code>rd-dex/src/dex.rs:252</code>) decodes <strong>all</strong> MUTF-8 strings (<code>strings.rs</code>) and id tables; first <code>find_class</code> builds <code>OnceLock&lt;HashMap&lt;String,usize&gt;&gt;</code> (<code>dex.rs:500</code>). Cold path touches &lt;2–5% of classes/strings.</li>
+<li>Eager ARSC: <code>Arsc::parse</code>/<code>StringPool::parse</code> (<code>rd-apk/src/arsc.rs</code>, <code>pool.rs</code>) decode all pools + <code>BTreeMap&lt;u32,Vec&lt;ResEntry&gt;&gt;</code> over all configs.</li>
+<li>String-heavy VM: <code>Classpath::method_ref/field_ref/resolve_method</code> (<code>rd-vm/src/classpath.rs</code>), <code>Engine::statics: HashMap&lt;(String,String),Value&gt;</code>, <code>HeapObj::Instance{class:String, fields:Vec&lt;(String,Value)&gt;}</code> (<code>rd-vm/src/heap.rs</code>); <code>CodeItem</code> decodes to <code>Vec&lt;(usize,Insn)&gt;</code> (<code>rd-dex/src/code.rs</code>, <code>rd-vm/src/interp.rs</code>).</li>
+<li>Conservative GC roots via <code>Debug</code> formatting of ~40 host tables (<code>rd-vm/src/gc.rs:184 write_gc_roots</code>).</li>
+<li>Engine detection caps at 100k entries (<code>rd-engine-registry/src/detect.rs</code> <code>DETECTION_LIMIT</code>); native <code>.so</code> payloads risk JSON serialization to <code>native_worker.py</code> (<code>rd-ndk</code>).</li>
+<li>Profiling OOM: <code>[profile.release] lto="thin", codegen-units=1</code> over <code>rd-vm</code> (60+ modules) OOMs a symbols build in 2 GB (observed SIGKILL).</li>
+</ol>
+<h2 id="2-decision-summary"><a class="header" href="#2-decision-summary">2. Decision summary</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Pillar</th><th>Decision</th></tr>
+</thead>
+<tbody>
+<tr><td>ZIP/APK I/O</td><td>Safe positional I/O only (<code>FileExt::read_at</code>/<code>pread64</code>) + bounded LRU page cache (64 KiB pages, 16 MiB cap). <strong>No mmap in the default path</strong> (see §3). <code>MAX_APK_BYTES = 16 GiB</code> (ZIP64).</td></tr>
+<tr><td>DEX</td><td><code>LazyDex</code>: O(1) header/map validation, on-demand fixed-stride table reads, raw-MUTF-8 compare, binary search over sorted <code>string_ids</code>/<code>class_defs</code>; no eager <code>Vec&lt;String&gt;</code>, no <code>HashMap&lt;String,usize&gt;</code>.</td></tr>
+<tr><td>Resources</td><td><code>LazyStringPool</code> + <code>LazyArsc</code> with config-filtered O(1) <code>0xPPTTEEEE</code> resolution.</td></tr>
+<tr><td>Install</td><td>Session-scoped <code>InstalledApkIndex</code> (manifest, LAUNCHER, multi-DEX class directory by u64 descriptor hash, STORED-DEX direct slices / DEFLATE checkpoints).</td></tr>
+<tr><td>Launch</td><td><code>Arc&lt;Apk&gt;</code> end-to-end (<strong>done</strong>), pre-mounted DEX from the install index.</td></tr>
+<tr><td>VM</td><td><code>SymbolId</code> interning, <code>ClassLayout</code> slot tables, flat resolution cache, lazy/arena <code>CodeItem</code>, <code>TraceRoots</code> GC trait, startup GC watermark.</td></tr>
+<tr><td>Assets/NDK</td><td>Streaming <code>AssetManager</code> (<code>openFd</code> slices), file-path+offset <code>PT_LOAD</code> descriptors to the native worker, streaming engine detection (2M+ entries, O(1)).</td></tr>
+<tr><td>Render/PNG</td><td>Pre-allocated framebuffer reuse; identical-row Up-filter fast path (<strong>done</strong>, byte-identical).</td></tr>
+<tr><td>Telemetry</td><td><code>rd perf</code> phase fields (<strong>done</strong>: <code>install_ms</code>, <code>launch_ms</code>, <code>screenshot_ms</code>, <code>rss_after_mb</code> per run + ADR sub-phases in VM behind a zero-cost-when-off hook, Stage 1b).</td></tr>
+<tr><td>Profiling</td><td><code>[profile.profiling]</code> (<strong>done</strong>): <code>lto=false, codegen-units=16, debug=1, strip="none"</code>; documented <code>CARGO_BUILD_JOBS=1</code>, optional <code>-Wl,--no-keep-memory</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="3-the-mmaprss-trap-why-pread64-wins"><a class="header" href="#3-the-mmaprss-trap-why-pread64-wins">3. The mmap/RSS trap (why pread64 wins)</a></h2>
+<p><code>peak_rss_mb()</code> reads <code>VmHWM</code> from <code>/proc/self/status</code>. File-backed mmap pages faulted in count toward <code>VmRSS</code>/<code>VmHWM</code>; scanning &gt;512 MB of a mapped 15 GB APK fails the 512 MB gate, and <code>MADV_DONTNEED</code> eviction is racy, platform-specific, and requires <code>unsafe</code> (forbidden). <code>pread64</code> copies only requested ranges into a user-space cache whose size we choose: with 64 KiB × 256 pages the APK layer can pin <strong>at most 16 MiB</strong>, mathematically, forever — independent of APK size. Any future windowed-mmap fast path needs its own ADR, an RSS-eviction hard cap, and may never be the default.</p>
+<h2 id="4-quantitative-budgets"><a class="header" href="#4-quantitative-budgets">4. Quantitative budgets</a></h2>
+<h3 id="41-cold-start-latency-host-ms-4--emulated-design-point-p50--260-hard-max--375-size-independent"><a class="header" href="#41-cold-start-latency-host-ms-4--emulated-design-point-p50--260-hard-max--375-size-independent">4.1 Cold-start latency (host ms; ×4 = emulated). Design point p50 ≤ 260, hard max &lt; 375, size-independent.</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Phase</th><th>11 MB today</th><th>11 MB target</th><th>15 GB target</th><th>Why size-independent</th></tr>
+</thead>
+<tbody>
+<tr><td>install (off-timer, reported)</td><td>14–52</td><td>≤ 80</td><td>≤ 300</td><td>Tail+CD stream + class-def scan only; assets/DEX bodies untouched</td></tr>
+<tr><td>dex_mount (in launch)</td><td>~180 (est. in launch)</td><td>≤ 25</td><td>≤ 25</td><td>STORED = offset slice; DEFLATE paid at install (checkpoint/cache)</td></tr>
+<tr><td>app_clinit_oncreate</td><td>—</td><td>≤ 90</td><td>≤ 90</td><td>Bounded by guest code, not container size</td></tr>
+<tr><td>activity_lifecycle</td><td>—</td><td>≤ 70</td><td>≤ 70</td><td>idem</td></tr>
+<tr><td>inflate_layout</td><td>—</td><td>≤ 45</td><td>≤ 45</td><td><code>LazyArsc</code> resolves only inflated IDs</td></tr>
+<tr><td>render_raster</td><td>—</td><td>≤ 20</td><td>≤ 20</td><td>720×1440 surface, reused framebuffer</td></tr>
+<tr><td>png_encode</td><td>—</td><td>≤ 10</td><td>≤ 10</td><td>Identical-row fast path + reused scanline buffers</td></tr>
+<tr><td><strong>launch+screenshot total</strong></td><td><strong>536 p50 / 557 max</strong></td><td><strong>≤ 260 p50</strong></td><td><strong>≤ 260 p50</strong></td><td>APK size never enters the timed path</td></tr>
+</tbody>
+</table>
+</div>
+<p>Remaining lever, measured after this PR’s telemetry: <code>launch ≈ 405 ms</code>, <code>screenshot ≈ 120–148 ms</code>, <code>install ≈ 14–52 ms</code> on the 11 MB APK. <code>dex_mount</code>+eager parse dominates <code>launch</code>; Stage 1b (§8) is therefore the critical path to ≤1,500 ms, not further PNG work.</p>
+<h3 id="42-rss-vmhwm--512-mb-target--380-mb-for-a-15-gb-apk"><a class="header" href="#42-rss-vmhwm--512-mb-target--380-mb-for-a-15-gb-apk">4.2 RSS (<code>VmHWM ≤ 512 MB</code>, target &lt; 380 MB) for a 15 GB APK</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Component</th><th>Cap (MB)</th><th>Mechanism</th></tr>
+</thead>
+<tbody>
+<tr><td><code>rd</code> binary + runtime baseline</td><td>70</td><td>measured 83 MB total today on 11 MB APK</td></tr>
+<tr><td>ZIP page cache</td><td>16</td><td>hard LRU cap (prototype <code>cached_bytes()</code> asserts this)</td></tr>
+<tr><td>Compact CD index (2M entries)</td><td>48</td><td>24 B/entry flat records + name arena (§5)</td></tr>
+<tr><td>DEX mount (touched DEX only)</td><td>32</td><td>STORED slices share cache pages; DEFLATE window bounded</td></tr>
+<tr><td>ARSC lazy (hot pools/config)</td><td>16</td><td>memoized decoded strings only</td></tr>
+<tr><td>App heap (separate gate)</td><td>≤ 256</td><td>arena watermark, unchanged (<code>heap_peak_bytes</code>)</td></tr>
+<tr><td>Native worker descriptors</td><td>8</td><td>file offset + <code>PT_LOAD</code>, never payload JSON</td></tr>
+<tr><td>Headroom/fragmentation</td><td>~140</td><td>—</td></tr>
+<tr><td><strong>Total design VmHWM</strong></td><td><strong>&lt; 380</strong></td><td>vs 512 gate</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="5-concrete-rust-designs-exact-types-msrv-176-no-new-unsafe"><a class="header" href="#5-concrete-rust-designs-exact-types-msrv-176-no-new-unsafe">5. Concrete Rust designs (exact types; MSRV 1.76, no new unsafe)</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// rd-apk/src/zip.rs — replaces Zip { data: Vec&lt;u8&gt;, .. }
+pub enum ZipSource {
+    InMemory(std::sync::Arc&lt;[u8]&gt;),                    // unit-test fixtures only
+    Paged { file: std::sync::Arc&lt;std::fs::File&gt;, len: u64,
+            cache: std::sync::Mutex&lt;LruPageCache&gt; },   // production path
+}
+impl ZipSource {
+    pub fn read_at(&amp;self, off: u64, buf: &amp;mut [u8]) -&gt; RdResult&lt;()&gt;;
+    pub fn slice(&amp;self, off: u64, len: usize) -&gt; RdResult&lt;std::borrow::Cow&lt;'_, [u8]&gt;&gt;;
+    pub fn len(&amp;self) -&gt; u64;
+}
+pub struct LruPageCache { /* 64 KiB pages, VecDeque&lt;(u64 page, Box&lt;[u8]&gt;)&gt;, cap 256 pages = 16 MiB */ }
+impl LruPageCache { pub fn read_exact_at(&amp;mut self, f: &amp;std::fs::File, off: u64, buf: &amp;mut [u8]) -&gt; RdResult&lt;()&gt;; pub fn pinned_bytes(&amp;self) -&gt; usize; }
+
+#[repr(C)]
+pub struct CdRecord { pub name_off: u32, pub name_len: u16, pub method: u16,
+    pub crc32: u32, pub comp_size: u64, pub uncomp_size: u64, pub local_off: u64 } // 32 B
+pub struct CompactCdIndex { pub records: Vec&lt;CdRecord&gt;, pub names: Vec&lt;u8&gt;, // flat arena
+    pub by_hash: Vec&lt;(u64, u32)&gt;,                       // sorted (name-hash, record idx): binary search, no HashMap&lt;String,_&gt;
+    pub boot: BootEntries }                             // manifest/arsc/dex/.so record indices found during the CD pass
+impl CompactCdIndex { pub fn find(&amp;self, name: &amp;str) -&gt; Option&lt;&amp;CdRecord&gt;; pub fn stream_build(src: &amp;ZipSource) -&gt; RdResult&lt;Self&gt;; }
+
+// rd-apk/src/signing.rs — windowed v2/v3 detection
+pub fn detect_paged(src: &amp;ZipSource, cd_offset: u64) -&gt; RdResult&lt;SigningInfo&gt;; // 32 B footer + block header via read_at only
+
+// rd-dex/src/lazy.rs
+pub struct LazyDex { src: DexBacking, hdr: Header, map: Vec&lt;MapItem&gt;, // small, validated O(1)
+    str_cache: Vec&lt;Option&lt;std::sync::Arc&lt;str&gt;&gt;&gt;, type_cache: Vec&lt;Option&lt;u32&gt;&gt; }
+pub enum DexBacking { StoredSlice { zip: ZipSource, off: u64, len: u64 }, Owned(std::sync::Arc&lt;[u8]&gt;) }
+impl LazyDex {
+    pub fn mount(backing: DexBacking) -&gt; RdResult&lt;Self&gt;;              // &lt; 0.2 ms: header+map bounds only
+    pub fn string(&amp;self, idx: u32) -&gt; RdResult&lt;std::borrow::Cow&lt;'_, str&gt;&gt;; // decode-on-demand + memo
+    pub fn string_eq(&amp;self, idx: u32, s: &amp;str) -&gt; RdResult&lt;bool&gt;;     // raw MUTF-8 compare, zero alloc
+    pub fn find_class(&amp;self, desc: &amp;str) -&gt; Option&lt;ClassDef&gt;;         // binary search: string_ids sorted (UTF-16), type_ids sorted by string idx, class_defs by type idx
+    pub fn method_id(&amp;self, idx: u32) -&gt; RdResult&lt;MethodId&gt;;          // base + idx*8, checked
+}
+// rd-apk/src/arsc.rs + pool.rs
+pub struct LazyStringPool { src: ZipSource, off: u64, count: u32, utf8: bool, memo: Vec&lt;Option&lt;String&gt;&gt; }
+pub struct LazyArsc { pools: Vec&lt;LazyStringPool&gt;, types: Vec&lt;TypeChunkIndex&gt; } // chunk headers only at mount
+impl LazyArsc { pub fn resolve(&amp;self, id: u32, cfg: &amp;DeviceProfile) -&gt; RdResult&lt;Option&lt;ResValue&gt;&gt;; } // O(1): winning type offset table
+
+// rd-agent/src/mcp.rs — built in tool_install, consumed by tool_launch
+pub struct InstalledApkIndex { pub manifest: Manifest, pub launcher: ComponentName,
+    pub application_desc: Option&lt;String&gt;,
+    pub class_dir: Vec&lt;(u64 /*desc hash*/, u16 /*dex*/, u32 /*class_def*/)&gt;, // sorted, binary search
+    pub dex_mounts: Vec&lt;DexMount&gt; } // StoredSlice | DeflateCheckpoint{..}
+pub enum DexMount { Stored { entry: u32 }, Inflated(std::sync::Arc&lt;[u8]&gt;) }
+
+// rd-vm: interning, layouts, GC (Stage 4)
+pub struct SymbolTable { map: std::collections::HashMap&lt;Box&lt;str&gt;, u32&gt;, rev: Vec&lt;Box&lt;str&gt;&gt; }
+pub struct ClassLayout { pub desc: SymbolId, pub fields: Vec&lt;(SymbolId, FieldKind)&gt; } // slot = index
+pub struct ResolvedCache { /* Vec-keyed (class,name,proto) SymbolIds -&gt; ResolvedMethod, generation-stamped */ }
+pub trait TraceRoots { fn trace_roots(&amp;self, out: &amp;mut RootSet); } // replaces Debug-stream scanning in gc.rs
+<span class="boring">}</span></code></pre>
+<p>Invariants: every fixed-stride read is bounds-checked with <code>base + idx*stride</code> overflow checks returning <code>RdError</code> (Law 1); raw offsets retained on all records (Law 2); caches are insertion-ordered/LRU-deterministic, never hash-iteration-ordered (Law 4); <code>crc32</code> still verified on any entry actually extracted; inflate budget (512 MB declared) unchanged.</p>
+<h2 id="6-pillar-by-pillar-specification"><a class="header" href="#6-pillar-by-pillar-specification">6. Pillar-by-pillar specification</a></h2>
+<ol>
+<li><strong>ZIP64 VFS (Stage 2):</strong> tail read ≤ 64 KiB+22 B locates EOCD → ZIP64 locator/EOCD; CD streamed entry-by-entry through the page cache (prototype <code>rd-apk/src/paged.rs: PagedZip</code>, landed: 25 rd-apk tests incl. 600 MiB sparse container opened/looked-up with ≤ 256 KiB pinned). <code>signing::detect_paged</code> reads only the footer/header window before <code>cd_offset</code>. <code>Arc&lt;Apk&gt;</code>/<code>set_resources_arc</code> eliminates the launch clone (<strong>landed</strong>; RSS 99.7→83.3 MB measured). Full swap of <code>Apk.zip</code> to <code>ZipSource</code> + <code>CompactCdIndex</code> remains Stage 2b (API-compatible <code>read/find/names</code> surface preserved).</li>
+<li><strong>LazyDex (Stage 1b):</strong> mount = header (112 B) + map validation; <code>find_class</code> = 2 binary searches + 1 def read; strings decode on first use into <code>str_cache</code>; multi-DEX directory from the install index means launch mounts only DEX files containing touched classes. Expected: <code>dex_mount</code> ~180 ms → ≤25 ms on Primftpd-class APKs.</li>
+<li><strong>LazyArsc (Stage 3):</strong> pool header (28 B) + offsets validated O(1); type chunks indexed by header scan; config ranked against <code>moto-e5</code> (720×1440, 280 dpi, API 36-capped); resolution indexes the winning offset table directly. <code>rd inspect</code> keeps full-fidelity offsets.</li>
+<li><strong>Install index (Stage 1b/2b):</strong> <code>install</code> pays CD+class-def scans once (off the perf timer today, reported via <code>install_ms</code>); <code>launch</code> reuses mounts. <code>.rdcache</code> on-disk persistence is explicitly <strong>out of scope</strong> (session-scoped only) until a cache-integrity ADR exists.</li>
+<li><strong>VM (Stage 4):</strong> <code>SymbolId</code> interning in <code>Classpath</code>, slot-indexed instance fields, flat method cache; <code>CodeItem</code> decoded into a reusable slab, raw-code-unit interpreter fallback for one-shot <code>&lt;clinit&gt;</code> methods; <code>TraceRoots</code> for the ~40 host tables in <code>gc.rs</code>; minor GC suppressed below a startup slot watermark unless pressure demands.</li>
+<li><strong>Assets/NDK/registry (Stage 3):</strong> <code>AssetManager</code> streaming over <code>ZipSource::read_at</code> (<code>openFd</code> = offset/len slice, O(1) RAM); native worker receives <code>{path, file_offset, pt_load[]}</code> instead of payload bytes; <code>detect.rs</code> becomes a streaming CD visitor (bounded counters, 4-sample cap, 2M+ entries).</li>
+<li><strong>Raster/PNG (Stage 1, landed):</strong> identical consecutive rows emit the all-zero Up row in O(stride) memcmp — byte-identical to the adaptive heuristic’s choice (score 0), proven by md5-stable screenshots across runs and the rd-render suite; buffer reuse in <code>AgentSession</code> follows in Stage 3.</li>
+</ol>
+<h2 id="7-profiling-without-oom-landed"><a class="header" href="#7-profiling-without-oom-landed">7. Profiling without OOM (landed)</a></h2>
+<ul>
+<li><code>[profile.profiling]</code> in workspace <code>Cargo.toml</code>: <code>inherits="release", lto=false, codegen-units=16, debug=1, strip="none"</code>. Verified: <code>CARGO_BUILD_JOBS=2 cargo check --profile profiling -p rd-apk</code> finishes in 24.5 s in this 2 GB sandbox (the equivalent release+symbols build was SIGKILLed). Recommended full build: <code>CARGO_BUILD_JOBS=1 cargo build --profile profiling -p rd-cli</code> (optionally <code>RUSTFLAGS="-C link-arg=-Wl,--no-keep-memory"</code>).</li>
+<li><code>rd perf --json</code> per-run phases (landed): <code>install_ms</code>, <code>launch_ms</code>, <code>screenshot_ms</code>, <code>rss_after_mb</code>. Stage 1b adds VM sub-phases (<code>dex_mount_ms</code>, <code>app_clinit_oncreate_ms</code>, <code>activity_lifecycle_ms</code>, <code>inflate_layout_ms</code>, <code>render_raster_ms</code>, <code>png_encode_ms</code>) via a counters struct read after the frame — zero cost when not queried (single atomic-free struct fill per phase boundary).</li>
+</ul>
+<h2 id="8-five-stage-execution-plan-each-stage-full-workspace-tests--clippy--golden-150150-must-stay-green"><a class="header" href="#8-five-stage-execution-plan-each-stage-full-workspace-tests--clippy--golden-150150-must-stay-green">8. Five-stage execution plan (each stage: full workspace tests + clippy + golden 150/150 must stay green)</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Stage</th><th>Content</th><th>Exit gate</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>1 (this PR, partial)</strong></td><td><code>Arc&lt;Apk&gt;</code> launch, perf phase telemetry, PNG identical-row fast path, <code>[profile.profiling]</code>, <code>PagedZip</code> prototype</td><td>Paired perf published (§9); workspace 680/696 tests pass</td></tr>
+<tr><td><strong>1b</strong></td><td><code>InstalledApkIndex</code> in <code>tool_install</code>; <code>LazyDex</code> + binary-search <code>find_class</code>; launch mounts touched DEX only; VM sub-phase counters</td><td>Primftpd cold host p50 ≤ 260 ms (≤1,040 emu); <code>rd-vm</code>/<code>rd-dex</code> suites green</td></tr>
+<tr><td><strong>2</strong></td><td><code>ZipSource</code> swap in <code>Apk</code>, <code>CompactCdIndex</code>, 16 GiB ceiling replaces <code>MAX_INPUT_BYTES</code>, windowed signing, streaming engine detection</td><td>600 MiB sparse + ZIP64 fixtures; <code>inspect</code> byte-identical vs legacy reader on corpus</td></tr>
+<tr><td><strong>3</strong></td><td><code>LazyArsc</code>/<code>LazyStringPool</code>, streaming assets, NDK offset descriptors, framebuffer reuse</td><td>15 GB sparse APK (§8 Stage 5 fixture) launches; VmHWM &lt; 380 MB</td></tr>
+<tr><td><strong>4</strong></td><td><code>SymbolId</code>/<code>ClassLayout</code>/<code>ResolvedCache</code>, <code>TraceRoots</code> GC, lazy <code>CodeItem</code> slab</td><td>Interpreter suites + GC determinism tests unchanged-green; launch ≤ 200 ms host</td></tr>
+<tr><td><strong>5</strong></td><td>CI gate: deterministic 15 GB sparse ZIP64 APK fixture (sparse file, generated in-test, no binary blob committed); <code>STARTUP_BUDGET_EMULATED_MS: 2000 → 1500</code> in <code>rd-cli/src/perf.rs</code></td><td><code>rd perf</code> gate green on fixture + Primftpd; budget lowered in the same PR</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="9-measured-results-of-this-pr-paired-same-host-primftpd-11-mb---runs-3"><a class="header" href="#9-measured-results-of-this-pr-paired-same-host-primftpd-11-mb---runs-3">9. Measured results of this PR (paired, same host, Primftpd 11 MB, <code>--runs 3</code>)</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Metric</th><th>Before</th><th>After</th><th>Δ</th></tr>
+</thead>
+<tbody>
+<tr><td>Cold host p50 / max</td><td>548 / 589 ms</td><td><strong>536 / 557 ms</strong></td><td>−2% / −5%</td></tr>
+<tr><td>Cold emulated p50 / max</td><td>2,190 / 2,356 ms</td><td><strong>2,143 / 2,228 ms</strong></td><td>—</td></tr>
+<tr><td>Warm emulated p50</td><td>603 ms</td><td><strong>545 ms</strong></td><td>−10%</td></tr>
+<tr><td>Peak RSS (VmHWM)</td><td>99.7 MB</td><td><strong>83.3 MB</strong></td><td>−16 MB (Arc clone removal)</td></tr>
+<tr><td>App heap peak</td><td>3.7 MB</td><td>3.7 MB</td><td>=</td></tr>
+<tr><td>New phase split</td><td>—</td><td>install 14–52 ms · launch ~405 ms · screenshot ~120–148 ms</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Honest status vs the ≤1,500 ms bar: NOT yet met (2,143 ms emulated).</strong> This PR lands the architecture, the RSS-critical clone removal, the paged-I/O proof, the telemetry that names the remaining bottleneck (eager DEX inside <code>launch ≈ 405 ms</code>), and the profiling profile. Stage 1b (<code>LazyDex</code> + install index) is the designed, budgeted path from 405 ms → ≤25 ms mount + reduced parse, which is what closes ≤1,500 ms; claiming the goal now would be false. 15 GB <em>opening/lookup</em> is proven at prototype level (600 MiB sparse, ≤256 KiB pinned; design cap 16 MiB at any size); full 15 GB <em>launch</em> lands with Stages 2–3/5.</p>
+<h3 id="91-stage-5-completion-addendum-same-pr-follow-up-commits"><a class="header" href="#91-stage-5-completion-addendum-same-pr-follow-up-commits">9.1 Stage 5 completion addendum (same PR, follow-up commits)</a></h3>
+<p>The ≤1,500 ms gate on the M7 APK is now <strong>MET</strong>, via the Stage 1b hot-path
+subset (measured on the final binary, Primftpd 11 MB, <code>--runs 3</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Metric</th><th>Before (this PR, §9)</th><th>Final</th><th>Δ</th></tr>
+</thead>
+<tbody>
+<tr><td>Cold host runs</td><td>536 ms p50</td><td><strong>310–356 ms</strong> (3 runs)</td><td>—</td></tr>
+<tr><td>Cold emulated p50 / max</td><td>2,143 / 2,228 ms</td><td><strong>1,271–1,286 / 1,326–1,425 ms</strong></td><td><strong>−41%</strong></td></tr>
+<tr><td>Warm emulated p50</td><td>545 ms</td><td><strong>404–418 ms</strong></td><td>−25%</td></tr>
+<tr><td>Peak RSS (VmHWM)</td><td>83.3 MB</td><td><strong>96–108 MB</strong></td><td>≤512 MB budget kept</td></tr>
+<tr><td>App heap peak</td><td>3.7 MB</td><td>2.4 MB</td><td>=</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>STARTUP_BUDGET_EMULATED_MS</code> lowered 2000 → 1500 in <code>rd-cli/src/perf.rs</code>
+(with <code>startup_budget_is_strict</code> updated); <code>rd perf</code> reports <code>pass=true</code>
+against the tightened budget. Screenshot PNG is byte-identical to the
+pre-optimization baseline (md5 <code>2d9d1d07…</code>), so Law 4 determinism held
+throughout. Workspace gates: fmt clean, clippy <code>-D warnings</code> clean,
+680/680 tests (default), 696/696 (all-features), markdown links OK.</p>
+<p>What actually closed the gap (profile-driven, in order of impact):</p>
+<ol>
+<li><code>jannotations::method_annotations</code> scanned <strong>all</strong> method_ids (50k+)
+per call to find one declared method; it now searches only the
+declaring class’s <code>ClassData</code> (the single largest win, ≈50 ms).</li>
+<li>Parallel DEX mount in <code>dexes_of_apk</code> (scoped threads, declaration
+order preserved, deterministic <code>Vec&lt;Dex&gt;</code>) + slicing-by-8 CRC32
+(bit-identical). Note this partially revises §10: parallel <em>mount</em> of
+the few DEX files proved deterministic and within the 1-core quota;
+eager <em>parse</em> remains the Stage 1b target.</li>
+<li>Classpath caches: <code>method_ref</code> / <code>field_ref</code> / <code>resolve_method</code>
+memoization (DEX sets are immutable per Engine) + a <code>find_class</code>
+index memo re-borrowed from the live DEX per call.</li>
+<li>Android-style <code>measure()</code> short-circuit (same specs + no bubbled
+<code>requestLayout</code> ⇒ skip <code>onMeasure</code>) and a zero-allocation fast path
+in <code>do_invoke</code> when no wide register is present.</li>
+</ol>
+<p>Two documented dead ends, kept here so they are not retried: (a) binary
+-search <code>find_class</code> (<code>type_ids</code> + sorted-<code>class_idx</code> index) was
+<em>slower</em> end-to-end (cross-DEX misses and per-call string compares) and
+was reverted to the lazy <code>HashMap</code> build; (b) memoizing <code>is_subtype</code>
+results is unsound — a differential test deliberately mutates DEX
+metadata in place and asserts subtype answers stay live.</p>
+<p>Still outstanding (unchanged from §8): full <code>LazyDex</code> mount, the
+<code>ZipSource</code>/<code>CompactCdIndex</code> swap (Stage 2), <code>LazyArsc</code> (Stage 3),
+Stage 4 VM internals, and the 15 GB sparse <em>launch</em> fixture — the
+≤1,500 ms bar above is met on the M7 gate APK, not yet on a 15 GB APK.</p>
+<h3 id="92-stage-1b-lazydex-pagedstringcache--rawclassindex-addendum-2026-10-25"><a class="header" href="#92-stage-1b-lazydex-pagedstringcache--rawclassindex-addendum-2026-10-25">9.2 Stage 1b <code>LazyDex</code>, <code>PagedStringCache</code> &amp; <code>RawClassIndex</code> addendum (2026-10-25)</a></h3>
+<p>Stage 1b’s <code>rd-dex</code> lazy decoding and zero-allocation class directory are now
+implemented in <code>crates/rd-dex</code>:</p>
+<ol>
+<li><strong><code>LazyDex</code> + <code>DexBacking</code> (<code>crates/rd-dex/src/lazy.rs</code>):</strong> O(1) header +
+<code>map_list</code> + fixed-stride section bounds validation (<code>LazyDex::mount</code>
+measured at <code>4–8 µs</code> on 9 MB DEX files with 65k strings and 9.5k classes),
+positional <code>DexBacking::Slice</code> window support, raw MUTF-8 zero-alloc
+<code>string_eq</code>, and on-demand fixed-stride readers (<code>method_id</code>, <code>field_id</code>,
+<code>proto_id</code>, <code>class_def</code>, <code>find_class</code>, <code>class_data</code>, <code>code</code>).</li>
+<li><strong>2-level <code>PagedStringCache</code> (<code>crates/rd-dex/src/strings.rs</code>) wired into
+<code>Dex::parse_unverified</code> / <code>Dex::parse_lazy</code>:</strong> validates <code>string_ids</code>
+offsets at mount without decoding untouched strings (<code>256</code> slots/page via
+<code>OnceLock&lt;Box&lt;str&gt;&gt;</code>, ~4 KiB top-level directory for a 65k-string DEX vs
+~1.5 MiB eager <code>Vec&lt;String&gt;</code> + heap strings). <code>Dex::parse</code> remains eager for
+<code>rd inspect</code> / <code>api_usage</code> / fuzz parity.</li>
+<li><strong>Cache-colocated <code>RawClassIndex</code> (<code>16 B</code> open-addressing <code>ClassSlot { hash, str_off, class_def_idx }</code> + 8-byte SWAR MUTF-8 hashing):</strong> eliminates all
+per-class <code>String</code> allocations on first <code>find_class</code> while preserving
+first-definition-wins semantics and keeping <code>warm_p50</code> faster than
+<code>HashMap&lt;String, usize&gt;</code> (<code>442–450 ms</code> vs <code>450–547 ms</code> emulated on
+<code>org.primftpd_71.apk</code>).</li>
+<li><strong>Measured before/after (<code>org.primftpd_71.apk</code>, 5 DEXs / 20.04 MB raw DEX /
+135,777 strings / 17,809 classes, <code>profiling</code> profile, <code>moto-e5</code>):</strong>
+<ul>
+<li><code>dex_parse:classes.dex</code> (<code>9.36 MB</code>): <code>10.0–12.5 ms</code> → <strong><code>0.47–0.97 ms</code></strong> (<code>&gt;10×</code> faster)</li>
+<li><code>dex_parse:classes4.dex</code> (<code>9.05 MB</code>): <code>7.4–10.5 ms</code> → <strong><code>0.93–1.14 ms</code></strong> (<code>~9×</code> faster)</li>
+<li><code>dex_parse:classes5.dex</code> (<code>1.62 MB</code>): <code>1.0–11.3 ms</code> → <strong><code>0.06–0.37 ms</code></strong></li>
+<li>Process peak RSS (<code>VmHWM</code>): <code>108–111 MB</code> → <strong><code>88.7–89.3 MB</code></strong> (<code>−21.7 MB</code> / <code>−19.6%</code>)</li>
+<li>Disassembly (<code>rd dex disasm</code>): <strong>100% byte-for-byte identical</strong> to eager <code>Dex::parse</code>.</li>
+</ul>
+</li>
+</ol>
+<h2 id="10-alternatives-considered"><a class="header" href="#10-alternatives-considered">10. Alternatives considered</a></h2>
+<ul>
+<li><strong>mmap (even windowed):</strong> rejected as default (§3, RSS trap + unsafe ban); may return via dedicated ADR with hard eviction accounting.</li>
+<li><strong>On-disk <code>.rdcache</code>:</strong> deferred — cache integrity/versioning is its own trust problem; session-scoped index captures the perf win first.</li>
+<li><strong>Raising <code>MAX_INPUT_BYTES</code> only:</strong> rejected — removes the error, not the O(n) RSS/time blow-up.</li>
+<li><strong>Forking DEX parsing to threads:</strong> rejected for now — determinism (Law 4) and the 1-core quota make lazy mounting strictly better than parallel eager mounting.</li>
+</ul>
+<h2 id="11-addendum-2026-10-25-stage-2-integration-and-the-zipraw_bytes-contract-change"><a class="header" href="#11-addendum-2026-10-25-stage-2-integration-and-the-zipraw_bytes-contract-change">11. Addendum (2026-10-25): Stage 2 integration and the <code>Zip::raw_bytes</code> contract change</a></h2>
+<p><strong>Context.</strong> Stage 2 moved from a prototype to integration (PR #216). <code>Zip</code> now holds a private <code>ZipSource</code> with two variants:</p>
+<ul>
+<li><code>Whole(Vec&lt;u8&gt;)</code>: the legacy in-memory container;</li>
+<li><code>Paged(Arc&lt;PagedZip&gt;)</code>: payloads stay on disk behind the 16 MiB LRU page cache.</li>
+</ul>
+<p><code>Apk::open</code> routes any file above <code>Apk::MAX_INPUT_BYTES</code> to <code>Zip::open_paged</code> instead of rejecting it, so the issue #38 <code>INVALID_FORMAT</code> path is gone.</p>
+<p><strong>Contract change.</strong> <code>Zip::raw_bytes</code> changes from <code>pub fn raw_bytes(&amp;self) -&gt; &amp;[u8]</code> to <code>pub fn raw_bytes(&amp;self) -&gt; Option&lt;&amp;[u8]&gt;</code>. A paged container has no contiguous in-memory image to borrow. The alternatives were:</p>
+<ul>
+<li>materialize the file, which defeats Stage 2 and breaks the RSS cap;</li>
+<li>panic in paged mode, which is banned on production paths;</li>
+<li>return an empty slice, which silently lies to callers.</li>
+</ul>
+<p><code>None</code> makes paged mode explicit at the type level.</p>
+<p>New public surface, all mode-agnostic:</p>
+<ul>
+<li><code>Zip::is_paged()</code>;</li>
+<li><code>Zip::file_len()</code>;</li>
+<li><code>Zip::read_range(off, len)</code>, which copies from memory in whole mode and reads through the page cache in paged mode;</li>
+<li><code>PagedZip::read_range</code>.</li>
+</ul>
+<p><strong>Callers.</strong> The only in-tree caller of <code>raw_bytes</code> is <code>rd_apk::detect_signing</code>:</p>
+<ul>
+<li>whole mode keeps the original full-buffer <code>signing::detect</code>;</li>
+<li>paged mode reads only the 24-byte APK Signing Block trailer and then the block window before <code>cd_offset</code>.</li>
+</ul>
+<p>The paged window is capped at 64 MiB. A malformed trailer or an adversarial <code>block_size</code> degrades to <em>v1-only</em> and never allocates or panics.</p>
+<p><strong>Concurrency.</strong> <code>PagedZip</code>’s cache moved from <code>RefCell</code> to <code>Mutex</code>, so paged <code>Zip</code>/<code>Apk</code> stay <code>Send + Sync</code> like the whole-file path. <code>Arc&lt;Apk&gt;</code> crosses the agent’s threads. Lock poisoning is not a panic path: the cache only memoizes immutable file pages, and payloads are CRC-checked again on extraction. On poison, the pages are dropped and refilled from disk.</p>
+<p><strong>Evidence.</strong> The <code>rd-apk</code> tests cover:</p>
+<ul>
+<li>whole × paged parity on the same container: entries, duplicates (#84), STORED and DEFLATE reads, raw windows, <code>is_paged</code>/<code>raw_bytes</code> mode signals;</li>
+<li>a sparse container above 512 MiB that opens paged without being materialized;</li>
+<li><code>Apk::open</code> routing above the whole-file cap.</li>
+</ul>
+<p><strong>Out of scope.</strong> <code>CompactCdIndex</code> (Stage 2b) and the 15 GiB end-to-end launch remain follow-ups.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../adr/007-cranelift-leaf-jit.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../adr/009-process-cold-26ms.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../adr/007-cranelift-leaf-jit.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../adr/009-process-cold-26ms.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

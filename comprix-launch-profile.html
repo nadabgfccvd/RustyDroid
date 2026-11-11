@@ -1,0 +1,536 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Comprix v1.6.0 — Launch Profile - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./comprix-launch-profile.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="comprix-v160-perfil-do-lançamento-2026-11-05"><a class="header" href="#comprix-v160-perfil-do-lançamento-2026-11-05">Comprix v1.6.0: perfil do lançamento (2026-11-05)</a></h1>
+<p>Complemento de <code>docs/comprix-latency.md</code> (PR #553). Aqui fica a análise do
+lançamento (<code>launch</code>, observe desligado), que está em ~640 ms contra a meta de 450 ms.</p>
+<h2 id="condições"><a class="header" href="#condições">Condições</a></h2>
+<ul>
+<li>Binário: <code>rd</code> perfil <code>profiling</code> (LTO off, codegen-units=32, debug=0), 2 vCPU, ~2 GB.
+O perfil <code>release</code> foi morto por falta de memória (SIGKILL) durante a compilação do <code>rd_vm</code>.</li>
+<li>Telemetria: <code>RD_PHASES=1 RD_LAUNCH_TRACE=1</code> (stderr do <code>rd mcp</code>).</li>
+<li>Profiler: <code>perf record -F 2000 -g</code> (linux-perf 6.12, <code>perf_event_paranoid=2</code>).
+O binário mantém símbolos (<code>strip = "none"</code> no perfil <code>profiling</code>).</li>
+</ul>
+<h2 id="telemetria-por-fase-uma-execução"><a class="header" href="#telemetria-por-fase-uma-execução">Telemetria por fase (uma execução)</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>fase</th><th style="text-align: right">ms</th><th style="text-align: right">chamadas</th></tr>
+</thead>
+<tbody>
+<tr><td><code>install</code> (leitura do DEX)</td><td style="text-align: right">40,7</td><td style="text-align: right">—</td></tr>
+<tr><td><code>launch_app_cold</code> (total)</td><td style="text-align: right">644,6</td><td style="text-align: right">—</td></tr>
+<tr><td>intrínsecos (inclusivo)</td><td style="text-align: right">516,0</td><td style="text-align: right">120.957</td></tr>
+<tr><td><code>&lt;clinit&gt;</code></td><td style="text-align: right">71,4</td><td style="text-align: right">1.423</td></tr>
+<tr><td>resolução de método/classe</td><td style="text-align: right">16,0</td><td style="text-align: right">62.352</td></tr>
+<tr><td>strings</td><td style="text-align: right">3,6</td><td style="text-align: right">23.526</td></tr>
+</tbody>
+</table>
+</div>
+<p>Fuel consumido: 1.394.701.</p>
+<h2 id="intrínsecos-inclusivo--exclusivo-por-classe"><a class="header" href="#intrínsecos-inclusivo--exclusivo-por-classe">Intrínsecos: inclusivo × exclusivo por classe</a></h2>
+<p>A telemetria v3 (<code>LaunchTrace::intrinsic_by_class</code>) separa o tempo <strong>inclusivo</strong>
+(inclui intrínsecos aninhados) do <strong>exclusivo</strong> (sem os intrínsecos filhos diretos).
+O exclusivo ainda inclui o trabalho guest que o intrínseco executa (interpretação,
+<code>&lt;clinit&gt;</code>, resolução), porque esses contadores são outra categoria.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>classe declarante</th><th style="text-align: right">exclusivo ms</th><th style="text-align: right">inclusivo ms</th><th style="text-align: right">chamadas</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Ljava/util/concurrent/Executor;</code></td><td style="text-align: right">238,4</td><td style="text-align: right">301,7</td><td style="text-align: right">25</td></tr>
+<tr><td><code>Ljava/lang/Object;</code></td><td style="text-align: right">25,1</td><td style="text-align: right">25,1</td><td style="text-align: right">7.622</td></tr>
+<tr><td><code>LU3/i;</code></td><td style="text-align: right">18,1</td><td style="text-align: right">18,1</td><td style="text-align: right">24.045</td></tr>
+<tr><td><code>Ljava/util/ArrayList;</code></td><td style="text-align: right">10,8</td><td style="text-align: right">10,9</td><td style="text-align: right">3.749</td></tr>
+<tr><td><code>Landroid/database/Cursor;</code></td><td style="text-align: right">10,2</td><td style="text-align: right">10,2</td><td style="text-align: right">2.549</td></tr>
+<tr><td><code>Ljava/util/concurrent/atomic/AtomicReferenceFieldUpdater;</code></td><td style="text-align: right">10,1</td><td style="text-align: right">10,1</td><td style="text-align: right">3.467</td></tr>
+</tbody>
+</table>
+</div>
+<p>Leitura: quase metade do intrínseco está em <code>Executor</code> (25 chamadas). Ele roda os
+runnables postados, então o exclusivo dele é o trabalho guest desses runnables
+(primeira composição e o caminho do Room). Não é custo de despacho de host.
+Os outros intrínsecos somam poucos ms cada.</p>
+<h2 id="perfil-de-cpu-perf-report---comm-rd-plano"><a class="header" href="#perfil-de-cpu-perf-report---comm-rd-plano">Perfil de CPU (<code>perf report --comm rd</code>, plano)</a></h2>
+<p>O perfil é <strong>plano</strong>: nenhum símbolo passa de ~4,5% das amostras. Os primeiros:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>símbolo</th><th style="text-align: right">%</th></tr>
+</thead>
+<tbody>
+<tr><td><code>interp::exec_frame</code></td><td style="text-align: right">4,43</td></tr>
+<tr><td><code>miniz_oxide::inflate</code> (leitura do APK)</td><td style="text-align: right">3,27</td></tr>
+<tr><td><code>interp::exec_frame_regs::exec_leaf_insn</code></td><td style="text-align: right">2,98</td></tr>
+<tr><td><code>malloc</code></td><td style="text-align: right">2,18</td></tr>
+<tr><td><code>intrinsics::instance_intrinsic_dispatch_full</code></td><td style="text-align: right">1,96</td></tr>
+<tr><td><code>FxHash</code> (<code>hash_one</code>)</td><td style="text-align: right">1,89</td></tr>
+<tr><td><code>free</code> (cfree)</td><td style="text-align: right">1,81</td></tr>
+<tr><td><code>Classpath::is_subtype</code></td><td style="text-align: right">1,67</td></tr>
+<tr><td><code>hashbrown</code> <code>Equivalent&lt;String&gt;</code></td><td style="text-align: right">1,67</td></tr>
+<tr><td><code>jsqlite::unb64</code></td><td style="text-align: right">1,52</td></tr>
+<tr><td><code>intrinsics::call_static_intrinsic_rooted</code></td><td style="text-align: right">1,38</td></tr>
+<tr><td><code>interp::resolve_or_run_host_invoke</code></td><td style="text-align: right">1,31</td></tr>
+<tr><td><code>Classpath::field_ref_shared</code></td><td style="text-align: right">1,09</td></tr>
+<tr><td><code>Engine::call</code></td><td style="text-align: right">1,02</td></tr>
+<tr><td><code>Classpath::method_ref</code></td><td style="text-align: right">0,94</td></tr>
+<tr><td><code>Heap::gc_host_enter</code></td><td style="text-align: right">0,94</td></tr>
+</tbody>
+</table>
+</div>
+<p>Interpretação: o custo está espalhado pelo despacho e pelas buscas por chave <code>String</code>
+(hash, comparação, <code>malloc</code>/<code>free</code>, <code>is_subtype</code>, <code>method_ref</code>, <code>field_ref</code>) em
+cada instrução ou chamada, e não em um único ponto. Não há um gargalo isolado para
+corrigir com um patch pequeno. Com mais 30% de corte necessário (de 640 para 450 ms),
+é preciso trabalho estrutural no interpretador.</p>
+<h2 id="próximos-passos-ordem-sugerida"><a class="header" href="#próximos-passos-ordem-sugerida">Próximos passos (ordem sugerida)</a></h2>
+<ol>
+<li>Eliminar <code>String</code> nas chaves de lookup do caminho quente: resolver <code>method_ref</code>/
+<code>field_ref</code>/<code>is_subtype</code> uma vez por site de invoke (cache por índice, não por nome).</li>
+<li>Remover alocações por chamada de intrínseco (<code>instance_intrinsic_dispatch_full</code> e a
+cadeia <code>if class == ...</code> de <code>call_static_intrinsic_rooted</code>).</li>
+<li>Inspecionar o que o <code>Executor</code> executa no lançamento (runnables postados): esse
+exclusivo de 238 ms é o maior bloco isolado.</li>
+<li>Medir de novo com <code>perf record --call-graph dwarf</code> para ter a visão inclusiva por função.</li>
+<li>Medir com perfil <code>release</code> numa máquina com mais de 2 GB (não é possível nesta sandbox).</li>
+</ol>
+<p>Nenhuma destas mudanças foi aplicada. Esta página só registra o perfil e a telemetria.</p>
+<h2 id="perfil-do-golden-completo-e-ab-do-gc-2026-11-05"><a class="header" href="#perfil-do-golden-completo-e-ab-do-gc-2026-11-05">Perfil do golden completo e A/B do GC (2026-11-05)</a></h2>
+<ul>
+<li><code>perf</code> do golden inteiro (thread da VM <code>rd-main</code>, 9.176 amostras): ainda plano.
+Os maiores: <code>exec_frame</code> 6,7%, <code>exec_leaf_insn</code> 5,1%, <code>instance_intrinsic_dispatch_full</code> 2,6%,
+<code>resolve_or_run_host_invoke</code> 2,3%, <code>malloc</code> 2,3%, <code>Classpath::is_subtype</code> 2,0%,
+<code>call_static_intrinsic_rooted</code> 2,0%, <code>free</code> 1,6%, <code>Classpath::field_ref_shared</code> 1,6%,
+<code>Heap::gc_host_enter</code> 1,5%.</li>
+<li>A/B com <code>RD_GC=off</code> (2 execuções por modo): <strong>não</strong> é mais rápido. Criar lista ~3,2 s com GC
+desligado contra ~2,6 s com GC ligado. O GC não é a alavanca de latência; não se deve desligá-lo.</li>
+<li>Nota: o <code>perf</code> mostra a VM na thread <code>rd-main</code>, não no processo <code>rd</code>; use <code>--comm rd-main</code>.</li>
+</ul>
+<h2 id="perfil-do-golden-por-categoria-2026-11-05-perf-record--f-1500--g"><a class="header" href="#perfil-do-golden-por-categoria-2026-11-05-perf-record--f-1500--g">Perfil do golden por categoria (2026-11-05, <code>perf record -F 1500 -g</code>)</a></h2>
+<p>Binário <code>target/profiling/rd</code> (<code>codegen-units=256</code>, LTO off). Golden passou (GOLDEN PASSOU).
+Amostragem: <code>perf report --comm rd-main --no-children</code>, 787 símbolos, 98,7% do tempo.
+Agrupamento aproximado por nome de símbolo (não por módulo; é uma leitura, não um inventário):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Grupo</th><th>%</th></tr>
+</thead>
+<tbody>
+<tr><td>Laço do interpretador (<code>exec_frame</code>, <code>exec_leaf_insn</code>, <code>exec_frame_regs</code>)</td><td>17,3</td></tr>
+<tr><td>Outros símbolos <code>rd_*</code> (inclui <code>engine::call</code>, <code>heap</code>, <code>dex</code>)</td><td>17,0</td></tr>
+<tr><td>Símbolos sem nome (<code>0x…</code> em bibliotecas sem símbolo)</td><td>11,5</td></tr>
+<tr><td>Intrínsecos e stubs de host (<code>instance_intrinsic_dispatch_full</code>, <code>call_static_intrinsic_rooted</code>, <code>android_stub_surfaces</code>)</td><td>12,5</td></tr>
+<tr><td>Heap e GC (<code>gc_due_slow</code>, <code>gc_host_enter</code>, <code>class_of</code>, <code>get_field</code>)</td><td>11,3</td></tr>
+<tr><td>Classpath (<code>is_subtype</code>, <code>field_ref_shared</code>, <code>method_ref</code>)</td><td>7,7</td></tr>
+<tr><td>Hashing (<code>FxBuildHasher</code>, <code>RandomState</code>)</td><td>5,0</td></tr>
+<tr><td><code>malloc</code> / <code>free</code> / <code>cfree</code> (símbolos de libc)</td><td>~4</td></tr>
+<tr><td>Demais</td><td>1,8</td></tr>
+</tbody>
+</table>
+</div>
+<p>Correção à leitura anterior: o grupo “malloc/free” de 14,6% estava inflado, porque também
+contava funções Rust monomorfizadas com <code>alloc</code> no nome. O <code>malloc</code> da libc, sozinho, fica em torno de 4%.</p>
+<p>Observações de código (cada uma ~1%, sem alavanca única):</p>
+<ul>
+<li><code>Heap::gc_due</code> cai em <code>gc_due_slow</code> por instrução sempre que <code>gc_frames</code> está vazio, porque o
+caminho rápido exige <code>!gc_frames.is_empty()</code>.</li>
+<li><code>Heap::gc_host_enter</code> roda por chamada de host e empilha um <code>Vec</code> e um corte em <code>existing_cutoffs</code>.</li>
+</ul>
+<p>Conclusão: o custo é difuso. Não há um gargalo que, sozinho, leve as ferramentas MCP de ~1,2 s
+para perto de 345 ms. Atacar isso exige mudanças estruturais no interpretador ou no despacho de
+intrínsecos, e não ajustes pontuais.</p>
+<p>Não reutilizar a gravação <code>perf</code> de <code>/tmp/perf_g2.data</code> anterior: a primeira tentativa desta janela
+falhou porque <code>perf</code> não estava instalado após o restore (<code>apt-get install linux-perf</code> resolveu).</p>
+<h2 id="renderização-da-sheet-compra-do-mês-verificação"><a class="header" href="#renderização-da-sheet-compra-do-mês-verificação">Renderização da sheet “Compra do Mês” (verificação)</a></h2>
+<p>A suspeita de render congelado (screenshots com MD5 idêntico) não se confirmou. Com o fluxo
+correto (Pular → Nova lista → chip “Compra do Mês” → “Criar e adicionar itens” → campo →
+<code>type_text</code> com <code>replace</code>), a tela mostra o texto digitado (“2 kg de arroz”) no campo “Adição
+rápida”. Os MD5 iguais vinham de um roteiro que não passava pelo chip, então a tela não mudava.</p>
+<h2 id="telemetria-por-passo-rd_launch_trace-2026-11-05"><a class="header" href="#telemetria-por-passo-rd_launch_trace-2026-11-05">Telemetria por passo (<code>RD_LAUNCH_TRACE</code>, 2026-11-05)</a></h2>
+<p><code>RD_LAUNCH_TRACE=1</code> agora imprime, a cada chamada MCP, uma linha <code>[step &lt;ferramenta&gt;]</code> no stderr
+com o relatório zerado no início da chamada. Antes, o relatório saía só no launch. <code>clinit_top</code>
+lista as classes com maior <code>&lt;clinit&gt;</code> inclusivo (inclui o trabalho aninhado).</p>
+<p>Golden com o binário novo (<code>/tmp/golden_stderr.txt</code> é gerado por uma cópia do roteiro que não
+envia o stderr para <code>DEVNULL</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Passo</th><th>Intrínsecos (chamadas)</th><th><code>clinit</code></th><th>Observação</th></tr>
+</thead>
+<tbody>
+<tr><td>“Pular” (<code>tap_text</code>)</td><td>725 ms / 340 mil</td><td>1,9 ms / 144</td><td>~1,15 s no total; custo dominado por intrínsecos</td></tr>
+<tr><td>“Criar e adicionar itens”</td><td>1,98 s / 859 mil (<code>tap_text</code>)</td><td>3,5 ms</td><td>intrínsecos domina</td></tr>
+<tr><td>ENTER (<code>key</code>)</td><td>1,37 s / 478 mil</td><td><strong>483 ms / 79</strong></td><td><code>clinit</code> concentrado em duas classes</td></tr>
+</tbody>
+</table>
+</div>
+<p>Causa do <code>clinit</code> no ENTER (uma vez por processo, na primeira vez que o item é processado):</p>
+<ul>
+<li><code>Lm2/A;</code> (catálogo de unidades): 240 ms inclusivo.</li>
+<li><code>Lm2/n;</code> (catálogo de hortifruti, aninhado em <code>m2/A</code>): 227 ms inclusivo.</li>
+<li>Ambos são <code>&lt;clinit&gt;</code> com ~1.400 e ~3.900 linhas de smali, montados com <code>listOf</code>, <code>Pair</code>,
+<code>mapOf</code> e <code>Lm2/n;-&gt;c/e/a</code> (cerca de 300 entradas). O custo é execução de bytecode no
+interpretador (~2 M de instruções a ~250 ns), não uma operação cara isolada.</li>
+</ul>
+<p>Decisões e limites:</p>
+<ul>
+<li>Mover esses <code>&lt;clinit&gt;</code> para o launch reduziria o passo ENTER, mas é uma troca de onde o custo
+cai na medição, e não uma redução de trabalho. Não foi feito; depende de decisão sobre a
+métrica.</li>
+<li>Acelerar <code>listOf</code>/<code>Pair</code>/<code>mapOf</code> com intrínsecos do stdlib do Kotlin: no <code>&lt;clinit&gt;</code> do <code>m2/n</code>,
+<code>listOf</code> e <code>Ls0/c;-&gt;L</code> são ~317 dos ~650 sites de invoke estáticos (contagem estática, não
+execução). Exige cuidado com a semântica das listas; o ganho real não foi medido.</li>
+<li>O ganho grande exige reduzir o custo por instrução do interpretador, o que segue difuso
+(ver a seção de categorias acima).</li>
+</ul>
+<h2 id="primeiro-toque-primeiro-frame-e-swipe-2026-11-05"><a class="header" href="#primeiro-toque-primeiro-frame-e-swipe-2026-11-05">Primeiro toque, primeiro frame e swipe (2026-11-05)</a></h2>
+<p>Medido com <code>RD_LAUNCH_TRACE=1</code> (um relatório por chamada e uma linha <code>[frame-phase]</code> por frame).</p>
+<p><strong><code>observe</code> não adiciona custo: revela o frame.</strong> Sonda em duas partes (<code>install → launch → tap "Pular"</code>
+sem <code>observe</code>, depois <code>observe</code> sozinho):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Chamada</th><th>Tempo</th><th>Observação</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tap_text "Pular"</code> sem <code>observe</code></td><td>328 ms</td><td>fuel 2,72 M</td></tr>
+<tr><td><code>observe</code> (primeiro, tela nova)</td><td>1.110 ms</td><td>fuel 5,24 M</td></tr>
+<tr><td><code>observe</code> sem mudança</td><td>0,2 ms</td><td>nada a redesenhar</td></tr>
+</tbody>
+</table>
+</div>
+<p>O total (~1,44 s) é o mesmo com ou sem <code>observe</code>. O primeiro <code>observe</code> paga o frame que ficou pendente.</p>
+<p><strong>Decomposição do primeiro frame</strong> (<code>[frame-phase]</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Fase de <code>draw_frame</code></th><th>Fuel</th><th>Tempo</th></tr>
+</thead>
+<tbody>
+<tr><td><code>layout_roots</code></td><td>0,78 M</td><td>167–198 ms</td></tr>
+<tr><td><code>advance_clock(16)</code> (drena o looper)</td><td><strong>4,84 M</strong></td><td><strong>989–1.123 ms</strong></td></tr>
+<tr><td><code>record_view</code></td><td>0,14 M</td><td>28–34 ms</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>O que se sabe sobre o custo dentro de <code>advance_clock</code> (correção desta seção):</strong> a leitura
+inicial de que o trampoline do Compose (<code>LB0/k0</code>) era a causa <strong>não se sustenta</strong>. Esse runnable
+aparece repetido com <code>quando 64 &lt;= 64</code>, <code>96 &lt;= 96</code> etc., mas limitar as execuções dele no mesmo
+instante virtual <strong>não mudou o fuel</strong> (4.837.700 sem limite; 4.838.098 com limite 1; 4.838.200 com
+limite 3). O experimento não foi commitado.</p>
+<p>Medido com <code>[adv]</code> (telemetria por tick de <code>advance_clock</code>, <code>RD_LAUNCH_TRACE=1</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Tick (ms virtuais)</th><th>Trabalho</th><th>Fuel</th><th>Tempo</th></tr>
+</thead>
+<tbody>
+<tr><td>48</td><td>drenagem</td><td>7 mil</td><td>3 ms</td></tr>
+<tr><td>48</td><td>traversal</td><td>11 mil</td><td>3 ms</td></tr>
+<tr><td><strong>64</strong></td><td><strong>drenagem</strong></td><td><strong>4,46 M</strong></td><td><strong>900 ms</strong></td></tr>
+<tr><td>64</td><td>traversal</td><td>369 mil</td><td>84 ms</td></tr>
+<tr><td>96</td><td>drenagem</td><td>963 mil</td><td>210 ms</td></tr>
+<tr><td>96</td><td>traversal</td><td>356 mil</td><td>79 ms</td></tr>
+</tbody>
+</table>
+</div>
+<p>O custo está na <strong>drenagem de t=64</strong>, não no traversal. Com <code>RD_TRACE_METHOD=/</code> nessa janela há
+~372 mil chamadas de método. O código do app é uma fração mínima (~50 chamadas de
+<code>ConfiguracoesApp</code>, <code>Categoria</code>, <code>Nutriente</code>). O resto é runtime de biblioteca ofuscado:
+<code>LU3/i</code> (assinaturas de checagem de null do Kotlin, provavelmente <code>kotlin.jvm.internal.Intrinsics</code>),
+<code>LP/C0</code>, <code>LU/m</code> e <code>LA0/v</code> (não identificados com certeza). A drenagem é a retomada de um
+continuation do kotlinx.coroutines (<code>Lj4/h</code>, <code>DispatchedContinuation</code>) no looper principal.</p>
+<p>Conclusão: o primeiro frame é <strong>composição de UI rodando interpretada</strong>, com muitas chamadas
+pequenas, e não um gargalo único do app. Reduzi-lo exige diminuir o custo por chamada no
+interpretador ou evitar essa composição no primeiro frame. Nenhuma das duas foi feita.</p>
+<p><strong>Swipe na lista</strong> (uma lista com 1 item, sonda <code>/tmp/swipe_probe.py</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Gesto</th><th>Sem <code>observe</code></th><th>Com <code>observe</code></th></tr>
+</thead>
+<tbody>
+<tr><td>vertical (1000→400)</td><td>295 ms</td><td>525 ms</td></tr>
+<tr><td>horizontal (900 → 60)</td><td>68 ms</td><td>220 ms</td></tr>
+</tbody>
+</table>
+</div>
+<p>Não reproduz os ~1,5 s relatados. A hipótese é que o número relatado veio de uma lista com mais itens,
+ou de um frame pendente. Não investigado além disso.</p>
+<p><strong>Ambiente:</strong> a segunda tentativa de build do <code>rd_vm</code> foi morta pelo OOM do kernel (<code>rustc</code> com
+~1,47 GB de RSS em 2 GB de RAM). Um swapfile de 3 GB resolveu. Não é mudança de código; relevante
+para reproduzir medições.</p>
+<h2 id="otimização-por-chamada-resultados-negativos-2026-11-05-rodada-de-1700-utc"><a class="header" href="#otimização-por-chamada-resultados-negativos-2026-11-05-rodada-de-1700-utc">Otimização por chamada: resultados negativos (2026-11-05, rodada de 17:00 UTC)</a></h2>
+<p>Medição com <code>scripts/comprix_latency.py --runs 3</code> (mediana), mesmo APK v1.6.0,
+binário <code>profiling</code> (<code>codegen-units=256</code>, <code>lto=off</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>chamada</th><th style="text-align: right">base (<code>8e7b053</code>)</th><th style="text-align: right"><code>RD_FW_DEBUG</code> lido uma vez</th><th style="text-align: right">meta</th></tr>
+</thead>
+<tbody>
+<tr><td>launch (observe off)</td><td style="text-align: right">509,7 ms</td><td style="text-align: right">519,7 ms</td><td style="text-align: right">450 ms</td></tr>
+<tr><td>launch (observe on)</td><td style="text-align: right">767,8 ms</td><td style="text-align: right">773,0 ms</td><td style="text-align: right">345 ms</td></tr>
+<tr><td>tap “Pular”</td><td style="text-align: right">1035,0 ms</td><td style="text-align: right">1046,8 ms</td><td style="text-align: right">345 ms</td></tr>
+<tr><td>tap “Nova lista”</td><td style="text-align: right">467,9 ms</td><td style="text-align: right">496,2 ms</td><td style="text-align: right">345 ms</td></tr>
+<tr><td>swipe</td><td style="text-align: right">1292,2 ms</td><td style="text-align: right">1255,5 ms</td><td style="text-align: right">345 ms</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong>Hipótese refutada:</strong> <code>call_host_instance_rooted</code> fazia <code>env::var("RD_FW_DEBUG")</code>
+a cada despacho de host (um por intrínseco de instância). Trocar por um
+<code>OnceLock</code> não reduziu o tempo dentro da faixa de ruído (±5%). Mudança não
+mesclada; o custo de <code>env::var</code> com poucas variáveis é baixo.</li>
+<li><strong>Perfil de CPU atual</strong> (<code>perf record -F 999 -g</code>, um run do golden de
+latência, filtrado por <code>--comm rd-main</code>): o custo é espalhado. Maiores
+símbolos de tempo próprio: <code>exec_frame</code> 7,0%; <code>exec_leaf_insn</code> 5,7%;
+<code>instance_intrinsic_dispatch_full</code> 2,2%; <code>resolve_or_run_host_invoke</code> 2,1%;
+<code>malloc</code> 2,1%; <code>Engine::call</code> 1,9%; <code>Classpath::is_subtype</code> 1,9%; <code>cfree</code> 1,9%;
+hashing de <code>String</code> (hashbrown) 1,7%. Nenhum item acima de 7%.</li>
+<li><strong>Conclusão:</strong> a diferença para as metas (lançamento ~510 → 450 ms;
+ferramentas ~470–1290 → 345 ms) é de 1,1× a 3,7×. Não se fecha com trocas
+locais de 1–2%. Caminhos com algum ganho possível exigem mudança de desenho
+(menos chamadas do runtime de UI interpretado, menos alocação por invocação,
+ou cache de resolução de invoke por índice em vez de <code>String</code>), e cada um
+precisa de A/B com 3 rodadas antes de merge.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="comprix-e2e.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="comprix-latency.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="comprix-e2e.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="comprix-latency.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

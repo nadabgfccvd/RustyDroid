@@ -1,0 +1,619 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Language &amp; Engine Registry — Appendix G - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./engine-registry.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="registro-de-engines--apêndice-g"><a class="header" href="#registro-de-engines--apêndice-g">Registro de engines — Apêndice G</a></h1>
+<blockquote>
+<p><strong>GERADO</strong> por <code>cargo xtask engine-report</code> a partir de <code>data/engines.toml</code>.
+Escopo: <strong>registro/detecção dos 28 itens</strong>, não implementação de runtimes.</p>
+</blockquote>
+<p>DEX/ELF não identificam a linguagem de origem. <code>signature</code> é uma
+heurística de nomes/manifest, não validação binária; <code>candidate</code> é
+compatibilidade de formato; <code>not_detected</code> não exclui um framework.
+Um APK híbrido pode ter várias assinaturas. Nenhuma autoriza execução.</p>
+<h2 id="consulta"><a class="header" href="#consulta">Consulta</a></h2>
+<pre><code class="language-sh">cargo build -p rd-cli
+./target/debug/rd engine list --json
+./target/debug/rd engine detect app.apk --json
+./target/debug/rd engine check flutter --json # exit 2, NOT_IMPLEMENTED
+./target/debug/rd inspect app.apk --json     # campo engines
+</code></pre>
+<p>A tool MCP <code>app_info</code> expõe o mesmo relatório em <code>engines</code>; não há
+nova tool. O catálogo/relatório funciona no build mínimo, sem features
+opcionais. <code>--data</code> / <code>RD_DATA_DIR</code> explícitos exigem <code>engines.toml</code>;
+arquivo ausente, inválido ou schema desconhecido retorna erro tipado,
+nunca fallback silencioso. Sem override, o catálogo embutido permite
+distribuir o binário sozinho. MCP usa o catálogo embutido.</p>
+<h2 id="matriz-completa"><a class="header" href="#matriz-completa">Matriz completa</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>#</th><th>Linguagem/Framework</th><th>Artefato no APK</th><th>Módulo</th><th>Estratégia</th><th>Status</th></tr>
+</thead>
+<tbody>
+<tr><td>1</td><td>Java</td><td>classes*.dex</td><td>LANG-01</td><td>VM DEX própria</td><td>Registro ✅; runtime DEX parcial</td></tr>
+<tr><td>2</td><td>Kotlin</td><td>classes*.dex</td><td>LANG-01</td><td>VM DEX; coroutines/threads dependem da cobertura da VM</td><td>Registro ✅; runtime DEX parcial</td></tr>
+<tr><td>3</td><td>Kotlin Multiplatform / Compose MP</td><td>DEX; recursos Compose; klib nem sempre é distribuída</td><td>LANG-10</td><td>Shared DEX + futuro render Compose MP</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>4</td><td>Scala / Clojure / Groovy</td><td>classes*.dex</td><td>LANG-01</td><td>VM DEX; invocações dinâmicas conforme cobertura</td><td>Registro ✅; runtime DEX parcial</td></tr>
+<tr><td>5</td><td>C (NDK)</td><td>lib/<abi>/*.so</abi></td><td>LANG-02</td><td>ELF + JNI</td><td>Registro ✅; runtime ELF/JNI parcial (native)</td></tr>
+<tr><td>6</td><td>C++ (NDK)</td><td>lib/<abi>/*.so; STL opcional</abi></td><td>LANG-02</td><td>ELF + JNI + STL</td><td>Registro ✅; runtime ELF/JNI parcial (native)</td></tr>
+<tr><td>7</td><td>Rust (cargo-ndk/xbuild)</td><td>lib/<abi>/*.so</abi></td><td>LANG-03</td><td>ELF + JNI</td><td>Registro ✅; runtime ELF/JNI parcial (native)</td></tr>
+<tr><td>8</td><td>Go (gomobile)</td><td>lib/<abi>/*.so; wrappers bind</abi></td><td>LANG-09</td><td>ELF + JNI + gomobile bind</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>9</td><td>Objective-C/C (cross via NDK)</td><td>lib/<abi>/*.so</abi></td><td>LANG-02</td><td>ELF + JNI; runtime ObjC se necessário</td><td>Registro ✅; runtime ELF/JNI parcial (native)</td></tr>
+<tr><td>10</td><td>Zig / outras linguagens LLVM</td><td>lib/<abi>/*.so</abi></td><td>LANG-02</td><td>ELF + JNI</td><td>Registro ✅; runtime ELF/JNI parcial (native)</td></tr>
+<tr><td>11</td><td>Dart / Flutter</td><td>libapp.so; libflutter.so; flutter_assets</td><td>LANG-04</td><td>Dart AOT + engine Flutter headless futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>12</td><td>JS/TS (React Native / Expo)</td><td>bundle JS; Hermes bytecode/JSC; libs RN</td><td>LANG-05</td><td>Engine JS + RN/Expo bridge futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>13</td><td>HTML/JS (Cordova / Capacitor / Ionic)</td><td>assets/www/ ou assets/public/; configs bridge</td><td>LANG-06</td><td>WebView headless + bridges futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>14</td><td>HTML/JS (TWA / PWA)</td><td>Manifest/URL; pode não haver payload web local</td><td>LANG-06</td><td>WebView/TWA futuro; rede não consultada</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>15</td><td>JS/TS (NativeScript)</td><td>assets/app/; libNativeScript.so</td><td>LANG-05+LANG-02</td><td>Engine JS + JNI + views futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>16</td><td>JS/TS (Tauri v2)</td><td>assets web + Rust .so; markers Tauri opcionais</td><td>LANG-06+LANG-03</td><td>WebView + Rust JNI futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>17</td><td>C# (.NET MAUI / Xamarin)</td><td>assemblies/*.dll; Mono; blobs de assemblies</td><td>LANG-07</td><td>Mono/IL + bridges futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>18</td><td>C# (Unity Mono)</td><td>Assembly-CSharp.dll; libunity.so</td><td>LANG-08</td><td>Mono + stubs/render Unity futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>19</td><td>C# (Unity IL2CPP)</td><td>libil2cpp.so; global-metadata.dat</td><td>LANG-08</td><td>Interp nativo + stubs/render Unity futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>20</td><td>C++ (Unreal)</td><td>libUE4.so / libUnreal.so; pak/obb</td><td>LANG-09</td><td>Engine/stubs Unreal futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>21</td><td>GDScript/C# (Godot 3/4)</td><td>libgodot*.so; .pck/assets</td><td>LANG-09</td><td>Godot headless embed futuro</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>22</td><td>Lua (Defold / Solar2D / Cocos2d-x)</td><td>Lua source/bytecode; assets; libs engine</td><td>LANG-09</td><td>Lua embed + bridges específicos futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>23</td><td>Python (Kivy / Buildozer / Chaquopy / BeeWare)</td><td>Python source/bytecode; libs; payloads compactados</td><td>LANG-09</td><td>CPython/PyO3 + bridges específicos futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>24</td><td>Haxe (OpenFL / Heaps)</td><td>DEX ou lib/<abi>/*.so</abi></td><td>LANG-01+LANG-02</td><td>VM DEX ou ELF/JNI; bridge Haxe futuro</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>25</td><td>Qt / QML (C++)</td><td>libQt*.so; QML assets/recursos</td><td>LANG-09</td><td>Qt headless + JNI futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>26</td><td>Avalonia (C#)</td><td>assemblies Avalonia; runtime managed</td><td>LANG-07</td><td>Mono + render próprio futuros</td><td>Registro ✅; runtime NOT_IMPLEMENTED</td></tr>
+<tr><td>27</td><td>B4X / App Inventor / Thunkable</td><td>classes*.dex</td><td>LANG-01+LANG-11</td><td>VM DEX; fixtures específicas futuras</td><td>Registro ✅; runtime DEX parcial</td></tr>
+<tr><td>28</td><td>WebAssembly in-app</td><td>assets/*.wasm (ou containers opacos)</td><td>LANG-12</td><td>Runtime WASM + bridge JNI/JS futuros</td><td>Registro ✅; runtime WASM parcial (WasmBridge)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="features-e-dependências"><a class="header" href="#features-e-dependências">Features e dependências</a></h2>
+<p>Features LANG selecionam contratos. <code>native-engines</code> habilita adapters reais e limitados de C/C++/Rust, sem baixar engines automaticamente. Os contratos LANG são
+opt-in; o registro não possui features default. CLI/agente preservam
+advanced-components como default e native/jit continuam opt-in. Dependências são transitivas e propagadas
+pelo <code>rd-cli</code>/<code>rd-agent</code>; o catálogo permanece completo em qualquer build.
+O MCP aceita seleção explícita <code>launch.engine</code>; consulte <a href="native-languages.html">C/C++/Rust</a>.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Módulo</th><th>Cargo feature</th><th>Dependências diretas</th><th>Nota</th></tr>
+</thead>
+<tbody>
+<tr><td>LANG-01</td><td><code>lang-01</code></td><td>—</td><td>DEX compartilhado; VM existente tem cobertura parcial.</td></tr>
+<tr><td>LANG-02</td><td><code>lang-02</code></td><td>LANG-01</td><td>ELF/JNI parcial via feature native (x86_64/ARM64/ARMv7); não é NDK/Android completo nem adaptador do registro.</td></tr>
+<tr><td>LANG-03</td><td><code>lang-03</code></td><td>LANG-02</td><td>Rust NDK reutiliza a fronteira ELF/JNI.</td></tr>
+<tr><td>LANG-04</td><td><code>lang-04</code></td><td>LANG-02</td><td>Flutter: Dart AOT e engine/render próprio pendentes.</td></tr>
+<tr><td>LANG-05</td><td><code>lang-05</code></td><td>LANG-02</td><td>JS/RN/NativeScript: engine JS e bridges pendentes.</td></tr>
+<tr><td>LANG-06</td><td><code>lang-06</code></td><td>LANG-01</td><td>WebView/bridges Android; não baixa páginas na detecção.</td></tr>
+<tr><td>LANG-07</td><td><code>lang-07</code></td><td>LANG-02</td><td>Mono/IL e render de MAUI/Avalonia pendentes.</td></tr>
+<tr><td>LANG-08</td><td><code>lang-08</code></td><td>LANG-07</td><td>União das rotas Unity Mono e IL2CPP; não implica suporte gráfico.</td></tr>
+<tr><td>LANG-09</td><td><code>lang-09</code></td><td>LANG-02</td><td>Pontes independentes de engines; não embute engines no registro.</td></tr>
+<tr><td>LANG-10</td><td><code>lang-10</code></td><td>LANG-01</td><td>Shared DEX é possível; render Compose MP exige trabalho adicional.</td></tr>
+<tr><td>LANG-11</td><td><code>lang-11</code></td><td>LANG-01</td><td>Java gerado; só o subconjunto DEX já disponível.</td></tr>
+<tr><td>LANG-12</td><td><code>lang-12</code></td><td>LANG-01</td><td>WASM in-app; bridge JNI/JS escolhida na implementação futura.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Exemplo: <code>cargo build -p rd-cli --no-default-features --features lang-04</code>
+seleciona LANG-04 → LANG-02 → LANG-01. O campo <code>feature_enabled</code> confirma
+seleção, enquanto <code>registry_adapter_status</code> continua <code>NOT_IMPLEMENTED</code>.
+LANG-08 representa a união Mono/IL2CPP; selecionar o módulo inclui LANG-07.
+A VM já renderiza um subconjunto Compose Android; a feature native executa
+ELF/JNI limitados em x86_64/ARM64/ARMv7. <code>native-engines</code> acrescenta os adapters <code>c-ndk</code>, <code>cpp-ndk</code>, <code>rust-ndk</code> sobre essa rota.
+Não implementa Compose Multiplatform, NDK/Android completo nem bridges WebView.
+Essas rotas existentes e seus limites estão nos ADRs 004, 006 e 007.
+runtime_status descreve cobertura existente, não disponibilidade neste build;
+feature_enabled informa somente os contratos LANG. native/jit são seleções
+independentes. <code>AVAILABLE_BOUNDED</code> informa existência do adapter, não execução observada.
+Metadados mantêm <code>execution_claimed=false</code>; o relatório do runtime mede instruções reais.</p>
+<h2 id="regras-de-detecção-e-rotas"><a class="header" href="#regras-de-detecção-e-rotas">Regras de detecção e rotas</a></h2>
+<p><code>all</code> exige todas as pistas; <code>any</code> exige pelo menos uma quando não vazio.
+Regras só usam nomes ZIP canônicos (case-sensitive) e classes/metadados
+de componentes do manifest. Bibliotecas nativas exigem exatamente
+<code>lib/&lt;abi&gt;/&lt;arquivo&gt;.so</code>; DEX exige <code>classes.dex</code> ou <code>classesN.dex</code> (N ≥ 2).
+Nenhum asset/lib é descomprimido, extraído, carregado ou executado.</p>
+<h3 id="1--java"><a class="header" href="#1--java">1 — <code>java</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-vm</code></li>
+<li><strong>Runtime:</strong> DEX parcial (rd-vm); adaptador do registro ausente</li>
+<li><strong>Limite:</strong> DEX tem suporte parcial, não execução universal de Java.</li>
+<li><strong>candidate:</strong> all=[<code>root-dex</code>]; any=[] — DEX é compartilhado: não identifica a linguagem de origem.</li>
+</ul>
+<h3 id="2--kotlin"><a class="header" href="#2--kotlin">2 — <code>kotlin</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-vm</code></li>
+<li><strong>Runtime:</strong> DEX parcial (rd-vm); adaptador do registro ausente</li>
+<li><strong>Limite:</strong> Dependências Kotlin não provam que o app foi escrito em Kotlin.</li>
+<li><strong>candidate:</strong> all=[<code>root-dex</code>]; any=[] — DEX é compartilhado: não identifica a linguagem de origem.</li>
+</ul>
+<h3 id="3--kotlin-multiplatform"><a class="header" href="#3--kotlin-multiplatform">3 — <code>kotlin-multiplatform</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-compose-mp</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Não é possível distinguir KMP/Compose MP apenas pela presença de DEX.</li>
+<li><strong>candidate:</strong> all=[<code>root-dex</code>]; any=[] — DEX é compartilhado: não identifica a linguagem de origem.</li>
+<li><strong>candidate:</strong> all=[<code>suffix:.klib</code>]; any=[] — klib é pista, não prova render Compose Multiplatform.</li>
+</ul>
+<h3 id="4--jvm-dynamic"><a class="header" href="#4--jvm-dynamic">4 — <code>jvm-dynamic</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-vm</code></li>
+<li><strong>Runtime:</strong> DEX parcial (rd-vm); adaptador do registro ausente</li>
+<li><strong>Limite:</strong> invoke-custom/method handles e runtimes dinâmicos não são declarados completos.</li>
+<li><strong>candidate:</strong> all=[<code>root-dex</code>]; any=[] — DEX é compartilhado: não identifica a linguagem de origem.</li>
+</ul>
+<h3 id="5--c-ndk"><a class="header" href="#5--c-ndk">5 — <code>c-ndk</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-ndk/rd-jni</code></li>
+<li><strong>Runtime:</strong> ELF/JNI parcial; disponibilidade do adaptador depende da engine/feature</li>
+<li><strong>Limite:</strong> C não pode ser atribuído a uma .so genérica. Adapter c-ndk real e limitado exige native-engines; fonte/compilador auditáveis atribuem o idioma.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+</ul>
+<h3 id="6--cpp-ndk"><a class="header" href="#6--cpp-ndk">6 — <code>cpp-ndk</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-ndk/rd-jni</code></li>
+<li><strong>Runtime:</strong> ELF/JNI parcial; disponibilidade do adaptador depende da engine/feature</li>
+<li><strong>Limite:</strong> Adapter cpp-ndk real e limitado exige native-engines. O APK de prova compila C++20 com std::array e sem libc++_shared; não implementa exceções nem STL/NDK completos.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+</ul>
+<h3 id="7--rust-ndk"><a class="header" href="#7--rust-ndk">7 — <code>rust-ndk</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-ndk/rd-jni</code></li>
+<li><strong>Runtime:</strong> ELF/JNI parcial; disponibilidade do adaptador depende da engine/feature</li>
+<li><strong>Limite:</strong> Nome .so e símbolos removidos não provam Rust. Adapter rust-ndk real com native-engines, validado por APK Android no_std source-built; não implica std/async.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+</ul>
+<h3 id="8--go-mobile"><a class="header" href="#8--go-mobile">8 — <code>go-mobile</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-gomobile</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Marcador gojni é uma assinatura heurística, não análise de símbolos.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+<li><strong>signature:</strong> all=[<code>native:libgojni.so</code>]; any=[] — Marcador de bind gomobile.</li>
+</ul>
+<h3 id="9--objective-c-ndk"><a class="header" href="#9--objective-c-ndk">9 — <code>objective-c-ndk</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-ndk/rd-jni</code></li>
+<li><strong>Runtime:</strong> ELF/JNI parcial; disponibilidade do adaptador depende da engine/feature</li>
+<li><strong>Limite:</strong> Somente a rota ELF/JNI é parcial; runtime Objective-C não é implementado. Uma .so genérica só produz candidato.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+</ul>
+<h3 id="10--zig-llvm"><a class="header" href="#10--zig-llvm">10 — <code>zig-llvm</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-ndk/rd-jni</code></li>
+<li><strong>Runtime:</strong> ELF/JNI parcial; disponibilidade do adaptador depende da engine/feature</li>
+<li><strong>Limite:</strong> ELF não preserva necessariamente a linguagem do compilador.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+</ul>
+<h3 id="11--flutter"><a class="header" href="#11--flutter">11 — <code>flutter</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-flutter</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Não interpreta Dart AOT nem converte widgets nesta entrega.</li>
+<li><strong>signature:</strong> all=[<code>native:libflutter.so</code>, <code>prefix:assets/flutter_assets/</code>]; any=[] — Engine Flutter acompanhado de assets.</li>
+<li><strong>candidate:</strong> all=[<code>native:libapp.so</code>]; any=[] — libapp.so isolada não prova Flutter.</li>
+</ul>
+<h3 id="12--react-native"><a class="header" href="#12--react-native">12 — <code>react-native</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-react-native</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Hermes sozinho não prova React Native; não valida bytecode.</li>
+<li><strong>signature:</strong> all=[<code>path:assets/index.android.bundle</code>]; any=[<code>native:libreactnativejni.so</code>, <code>native:libreactnative.so</code>] — Lib React Native acompanhada de bundle.</li>
+<li><strong>candidate:</strong> all=[<code>path:assets/index.android.bundle</code>]; any=[] — Bundle convencional isolado é apenas candidato.</li>
+<li><strong>candidate:</strong> all=[<code>native:libhermes.so</code>]; any=[] — Hermes pode ser usado fora de React Native.</li>
+</ul>
+<h3 id="13--cordova"><a class="header" href="#13--cordova">13 — <code>cordova</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-webview</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Assets web sem marcador específico são candidatos, não framework confirmado.</li>
+<li><strong>signature:</strong> all=[<code>prefix:assets/www/</code>, <code>path:assets/www/cordova.js</code>]; any=[] — www com bootstrap Cordova.</li>
+<li><strong>signature:</strong> all=[<code>prefix:assets/public/</code>, <code>path:assets/capacitor.config.json</code>]; any=[] — Assets web com configuração Capacitor.</li>
+<li><strong>candidate:</strong> all=[<code>prefix:assets/www/</code>]; any=[] — Assets HTML compatíveis com engines web.</li>
+<li><strong>candidate:</strong> all=[<code>prefix:assets/public/</code>]; any=[] — Assets HTML compatíveis com engines web.</li>
+</ul>
+<h3 id="14--twa-pwa"><a class="header" href="#14--twa-pwa">14 — <code>twa-pwa</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-webview</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Ausência de payload local não descarta TWA/PWA.</li>
+<li><strong>signature:</strong> all=[]; any=[<code>class:com.google.androidbrowserhelper.trusted.</code>, <code>class:android.support.customtabs.trusted.</code>, <code>metadata:android.support.customtabs.trusted.DEFAULT_URL</code>, <code>metadata:asset_statements</code>] — Launcher/metadata de Trusted Web Activity (asset_statements declara os Digital Asset Links no <application>).</application></li>
+</ul>
+<h3 id="15--nativescript"><a class="header" href="#15--nativescript">15 — <code>nativescript</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-nativescript</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Nenhum bridge JS/Android é executado pelo registro.</li>
+<li><strong>signature:</strong> all=[<code>native:libNativeScript.so</code>, <code>prefix:assets/app/</code>]; any=[] — Lib NativeScript e payload app.</li>
+</ul>
+<h3 id="16--tauri"><a class="header" href="#16--tauri">16 — <code>tauri</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-tauri</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Sem configuração Tauri, Rust+WebView não identifica Tauri unicamente.</li>
+<li><strong>signature:</strong> all=[<code>path:assets/tauri.conf.json</code>]; any=[<code>prefix:assets/www/</code>, <code>prefix:assets/public/</code>] — Config Tauri embarcada acompanhada de assets web.</li>
+<li><strong>signature:</strong> all=[]; any=[<code>native:libtauri_android.so</code>, <code>native:libwry.so</code>] — Build real Tauri v2 mobile via cargo-ndk embarca as libs Rust do framework (tauri_android/wry); o APK final não carrega tauri.conf.json nem assets/www (a webview vem do sistema).</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[<code>prefix:assets/www/</code>, <code>prefix:assets/public/</code>] — Combinação de lib nativa e assets web é ambígua.</li>
+</ul>
+<h3 id="17--dotnet-maui"><a class="header" href="#17--dotnet-maui">17 — <code>dotnet-maui</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-mono</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Assembly stores comprimidos/renomeados podem não ter .dll visível.</li>
+<li><strong>signature:</strong> all=[<code>prefix:assemblies/</code>]; any=[<code>native:libmonodroid.so</code>, <code>native:libmonosgen-2.0.so</code>] — Payload managed acompanhado de runtime Mono.</li>
+<li><strong>candidate:</strong> all=[<code>prefix:assemblies/</code>]; any=[] — Assemblies indicam payload managed, não MAUI unicamente.</li>
+</ul>
+<h3 id="18--unity-mono"><a class="header" href="#18--unity-mono">18 — <code>unity-mono</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-unity</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Identifica a rota Mono por marcadores, não executa o jogo.</li>
+<li><strong>signature:</strong> all=[<code>native:libunity.so</code>, <code>path:assets/bin/Data/Managed/Assembly-CSharp.dll</code>]; any=[] — Unity com Assembly-CSharp managed.</li>
+<li><strong>candidate:</strong> all=[<code>path:assets/bin/Data/Managed/Assembly-CSharp.dll</code>]; any=[] — Assembly-CSharp isolado é apenas candidato.</li>
+</ul>
+<h3 id="19--unity-il2cpp"><a class="header" href="#19--unity-il2cpp">19 — <code>unity-il2cpp</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-unity</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Não interpreta IL2CPP nem valida versão de global-metadata.</li>
+<li><strong>signature:</strong> all=[<code>native:libil2cpp.so</code>, <code>path:assets/bin/Data/Managed/Metadata/global-metadata.dat</code>]; any=[] — IL2CPP acompanhado de metadata.</li>
+<li><strong>candidate:</strong> all=[<code>native:libil2cpp.so</code>]; any=[] — Lib IL2CPP sem metadata é assinatura incompleta.</li>
+</ul>
+<h3 id="20--unreal"><a class="header" href="#20--unreal">20 — <code>unreal</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-unreal</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Dados também podem vir de OBB fora do APK.</li>
+<li><strong>signature:</strong> all=[]; any=[<code>native:libUE4.so</code>, <code>native:libUnreal.so</code>] — Marcador de biblioteca Unreal.</li>
+</ul>
+<h3 id="21--godot"><a class="header" href="#21--godot">21 — <code>godot</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-godot</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> PCK isolado é candidato; C# demanda Mono além de Godot.</li>
+<li><strong>signature:</strong> all=[<code>suffix:.pck</code>]; any=[<code>native:libgodot_android.so</code>, <code>native:libgodot.so</code>] — Biblioteca Godot e pacote/descritor do projeto.</li>
+<li><strong>signature:</strong> all=[<code>path:assets/project.binary</code>]; any=[<code>native:libgodot_android.so</code>, <code>native:libgodot.so</code>] — Biblioteca Godot e project.binary.</li>
+<li><strong>candidate:</strong> all=[<code>suffix:.pck</code>]; any=[] — Pacote .pck isolado não prova Godot.</li>
+</ul>
+<h3 id="22--lua-engines"><a class="header" href="#22--lua-engines">22 — <code>lua-engines</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-lua</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Bytecode/containers podem ser comprimidos; .lua é apenas candidato.</li>
+<li><strong>signature:</strong> all=[]; any=[<code>native:libcorona.so</code>, <code>native:libdmengine.so</code>] — Marcador de engine Lua (Solar2D libcorona; Defold real embarca libdmengine.so — libdefold.so nunca existiu na build oficial).</li>
+<li><strong>candidate:</strong> all=[<code>suffix:.lua</code>]; any=[] — Payload Lua não distingue Defold/Solar2D/Cocos2d-x.</li>
+<li><strong>candidate:</strong> all=[<code>suffix:.luac</code>]; any=[] — Bytecode Lua apenas por extensão; conteúdo não validado.</li>
+<li><strong>candidate:</strong> all=[<code>native:libcocos2dcpp.so</code>]; any=[] — Cocos2d-x não implica uso de Lua.</li>
+</ul>
+<h3 id="23--python-engines"><a class="header" href="#23--python-engines">23 — <code>python-engines</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-python</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Não descompacta private.mp3/stdlib.zip nem executa Python.</li>
+<li><strong>signature:</strong> all=[<code>prefix:assets/chaquopy/</code>]; any=[] — Marcador de payload Chaquopy.</li>
+<li><strong>candidate:</strong> all=[]; any=[<code>suffix:.py</code>, <code>suffix:.pyc</code>] — Payload Python identificável por extensão.</li>
+<li><strong>candidate:</strong> all=[<code>path:assets/private.mp3</code>]; any=[] — Container convencional python-for-android; conteúdo não verificado.</li>
+</ul>
+<h3 id="24--haxe"><a class="header" href="#24--haxe">24 — <code>haxe</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-haxe</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Formato DEX/ELF não identifica Haxe; ambas as rotas são candidatos.</li>
+<li><strong>candidate:</strong> all=[<code>root-dex</code>]; any=[] — DEX é compartilhado: não identifica a linguagem de origem.</li>
+<li><strong>candidate:</strong> all=[<code>native-so</code>]; any=[] — ELF é compartilhado: não identifica a linguagem de origem nem valida ABI/payload.</li>
+</ul>
+<h3 id="25--qt-qml"><a class="header" href="#25--qt-qml">25 — <code>qt-qml</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-qt</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> QML pode estar em recursos compilados, fora de assets visíveis.</li>
+<li><strong>signature:</strong> all=[<code>suffix:.qml</code>]; any=[<code>native-prefix:libQt5Core</code>, <code>native-prefix:libQt6Core</code>] — Runtime Qt e payload QML.</li>
+<li><strong>candidate:</strong> all=[]; any=[<code>native-prefix:libQt5Core</code>, <code>native-prefix:libQt6Core</code>] — Runtime Qt por nome de lib.</li>
+<li><strong>candidate:</strong> all=[<code>suffix:.qml</code>]; any=[] — QML isolado é candidato.</li>
+</ul>
+<h3 id="26--avalonia"><a class="header" href="#26--avalonia">26 — <code>avalonia</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-avalonia</code></li>
+<li><strong>Runtime:</strong> NOT_IMPLEMENTED</li>
+<li><strong>Limite:</strong> Assemblies em stores opacos podem não ser identificáveis.</li>
+<li><strong>signature:</strong> all=[]; any=[<code>path:assemblies/Avalonia.Android.dll</code>, <code>path:assemblies/Avalonia.Base.dll</code>] — Assembly Avalonia embarcada.</li>
+<li><strong>candidate:</strong> all=[<code>prefix:assemblies/</code>]; any=[] — Payload managed genérico não prova Avalonia.</li>
+</ul>
+<h3 id="27--generated-java"><a class="header" href="#27--generated-java">27 — <code>generated-java</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-vm</code></li>
+<li><strong>Runtime:</strong> DEX parcial (rd-vm); adaptador do registro ausente</li>
+<li><strong>Limite:</strong> Java gerado não é distinguível de Java escrito à mão apenas pelo formato.</li>
+<li><strong>candidate:</strong> all=[<code>root-dex</code>]; any=[] — DEX é compartilhado: não identifica a linguagem de origem.</li>
+</ul>
+<h3 id="28--wasm"><a class="header" href="#28--wasm">28 — <code>wasm</code></a></h3>
+<ul>
+<li><strong>Rota existente/futura:</strong> <code>rd-engine-wasm</code></li>
+<li><strong>Runtime:</strong> WASM hospedado pelo RustyDroid via bridge documentada (WasmBridge, i32 MVP); adaptador depende da feature wasm-execution</li>
+<li><strong>Limite:</strong> WASM hospedado pelo RustyDroid via bridge documentada: APK com DEX + assets/*.wasm roda pela VM e pelo WasmBridge (feature wasm-execution, M11 S1c): i32, fuel por chamada, sem WASI, threads, JS/JNI bridge nem loader .wasm standalone. Extensão .wasm sozinha não prova execução.</li>
+<li><strong>candidate:</strong> all=[<code>suffix:.wasm</code>]; any=[] — Arquivo com extensão WASM; payload não validado.</li>
+</ul>
+<h2 id="contrato-e-erros"><a class="header" href="#contrato-e-erros">Contrato e erros</a></h2>
+<p><code>EngineAdapter</code> define <code>parse(Artifact) -&gt; Process</code>, <code>event(process, event)</code>
+e <code>syscall(process, call)</code>. Os 28 adaptadores do registro são indisponíveis:
+toda operação retorna <code>{code, cause, suggestion, module_id}</code> com
+<code>code: NOT_IMPLEMENTED</code> e <code>module_id: LANG-xx</code>. Nenhum processo fictício é
+retornado, mesmo com <code>--all-features</code>. A cobertura DEX existente pertence a
+<code>rd-vm</code>, pelas rotas <code>rd vm</code>/<code>rd app</code>, não a estes adaptadores.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Código</th><th>Situação</th></tr>
+</thead>
+<tbody>
+<tr><td><code>NOT_IMPLEMENTED</code></td><td>Operação de runtime/contrato ainda ausente (CLI exit 2)</td></tr>
+<tr><td><code>UNKNOWN_ENGINE</code></td><td>ID não registrado (exit 1)</td></tr>
+<tr><td><code>INVALID_ENGINE_CATALOG</code></td><td>Schema, IDs, módulos, ciclos, regras ou status inválidos</td></tr>
+<tr><td><code>CATALOG_TOO_LARGE</code></td><td>Catálogo maior que 1 MiB</td></tr>
+<tr><td><code>DETECTION_LIMIT</code></td><td>Mais de 100.000 entradas ZIP</td></tr>
+<tr><td><code>IO_ERROR</code></td><td>Arquivo de catálogo/APK inacessível</td></tr>
+</tbody>
+</table>
+</div>
+<p>Ao exceder o limite de entradas, <code>rd engine detect</code> continua falhando
+com <code>DETECTION_LIMIT</code>. <code>inspect --json</code> e MCP <code>app_info</code> preservam os dados
+básicos; <code>engines</code> contém <code>analysis_status: not_analyzed</code> e <code>error</code> tipado,
+não uma lista vazia que fingiria ausência de assinaturas. Catálogo explícito
+inválido continua sendo erro, nunca fallback silencioso.</p>
+<p>Diagnósticos do relatório: <code>DUPLICATE_ZIP_ENTRY</code>,
+<code>NON_CANONICAL_ARTIFACT_PATH</code>, <code>UNKNOWN_ABI</code>, <code>AMBIGUOUS_SOURCE_LANGUAGE</code>.
+Nomes duplicados contam uma vez. Evidências/diagnósticos contêm no máximo
+4 amostras por predicado/diagnóstico, mantendo a contagem total.
+Todos os 28 IDs aparecem, inclusive <code>not_detected</code>; ordem e amostras são
+determinísticas. <code>execution_claimed: false</code> e
+<code>artifact_validation: not-performed</code> são contratos explícitos.</p>
+<h2 id="testes-e-definição-de-conclusão"><a class="header" href="#testes-e-definição-de-conclusão">Testes e definição de conclusão</a></h2>
+<ul>
+<li><code>tests/engines/signatures.json</code>: exatamente 28 casos golden de DETECÇÃO,
+um por ID. Fixtures APK/AXML/ZIP são geradas em memória; nenhum binário
+é commitado. Testes cobrem híbridos, pistas incompletas, ambiguidades,
+paths hostis, duplicatas, teto de entradas e amostragem.</li>
+<li>Tests de contrato exercitam parse/event/syscall para os 28 itens: sempre
+erro tipado. Builds mínimo, features individuais e todas são independentes.</li>
+<li><code>cargo xtask engine-report</code> regenera este arquivo;
+<code>cargo xtask engine-spec</code> regenera apenas a tabela marcada no Apêndice G;
+<code>cargo xtask compat-report</code> atualiza o placar oficial. Testes barram drift.</li>
+<li>Integração OSS explícita: baixe um APK com <code>golden-apks/fetch.sh</code> e rode
+<code>RD_TEST_APK=/caminho/app.apk cargo test -p rd-engine-registry --test registry real_oss_apk_inventory -- --ignored</code>. Sem a variável/arquivo, o teste falha;
+não há falso sucesso por pular a fixture. No teste normal ele é <code>ignored</code>.</li>
+</ul>
+<p><strong>Registro/detecção concluídos ≠ runtime concluído.</strong> Uma engine só pode
+mudar de <code>NOT_IMPLEMENTED</code> após crate/adaptador real feature-gated, ADR,
+parse/event/syscall funcionais, golden flow com APK OSS e gate Moto E5.
+As capacidades parciais de M9 já existentes não equivalem às engines de M11. Veja <a href="adr/003-appendix-g-engine-registry.html">ADR 003</a>
+e <a href="ROADMAP.html">ROADMAP</a>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="appendix-d-e.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="mcp-tools.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="appendix-d-e.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="mcp-tools.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

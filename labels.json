@@ -1,0 +1,70 @@
+{
+  "_note": "Export das labels EM USO no servidor (criadas out-of-band na resolucao da issue #1). Fresh clones/forks podem recriar com: gh label create <name> --color <color> --description <description>. Issue #38.",
+  "labels": [
+    {
+      "name": "accessibility",
+      "color": "f143ab",
+      "description": "Barrier affecting people with disabilities"
+    },
+    {
+      "name": "bug",
+      "color": "d73a4a",
+      "description": "Something isn't working"
+    },
+    {
+      "name": "compat-gap",
+      "color": "D93F0B",
+      "description": "divergence between RustyDroid behavior and real Android"
+    },
+    {
+      "name": "documentation",
+      "color": "0075ca",
+      "description": "Improvements or additions to documentation"
+    },
+    {
+      "name": "duplicate",
+      "color": "cfd3d7",
+      "description": "This issue or pull request already exists"
+    },
+    {
+      "name": "enhancement",
+      "color": "a2eeef",
+      "description": "New feature or request"
+    },
+    {
+      "name": "good first issue",
+      "color": "7057ff",
+      "description": "Good for newcomers"
+    },
+    {
+      "name": "help wanted",
+      "color": "008672",
+      "description": "Extra attention is needed"
+    },
+    {
+      "name": "invalid",
+      "color": "e4e669",
+      "description": "This doesn't seem right"
+    },
+    {
+      "name": "perf-regression",
+      "color": "F9D0C4",
+      "description": "performance regression vs budget (moto-e5 floor)"
+    },
+    {
+      "name": "question",
+      "color": "d876e3",
+      "description": "Further information is requested"
+    },
+    {
+      "name": "triage",
+      "color": "BFD4F2",
+      "description": "needs maintainer triage"
+    },
+    {
+      "name": "wontfix",
+      "color": "ffffff",
+      "description": "This will not be worked on"
+    }
+  ]
+}

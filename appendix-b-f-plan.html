@@ -1,0 +1,709 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Appendices B–F — Implementation Plan &amp; Verified State - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./appendix-b-f-plan.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="apêndices-bf--plano-de-implementação-e-estado-verificado"><a class="header" href="#apêndices-bf--plano-de-implementação-e-estado-verificado">Apêndices B–F — plano de implementação e estado verificado</a></h1>
+<p>Este documento é o plano executável dos Apêndices B, C, D, E e F de <code>RustyDroid.md</code>.
+A spec é um rascunho: a fonte de verdade do estado é o código, os registros em
+<code>data/</code> e os testes. Cada afirmação de “feito” aponta para um teste ou arquivo.
+Nada aqui promove um status em <code>data/*.toml</code>; isso só acontece no PR que muda o código.</p>
+<p>Estado de referência: <code>origin/main</code> após o PR #541 (<code>1130a44</code>), mais o PR desta rodada.</p>
+<h2 id="1-critério-de-conclusão-por-apêndice"><a class="header" href="#1-critério-de-conclusão-por-apêndice">1. Critério de conclusão por apêndice</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Apêndice</th><th>Fonte executável</th><th>Critério de “completo” (o que precisa ser verdade)</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>B</strong> Permissões</td><td><code>data/permissions.toml</code>, <code>rd-framework::fd_permissions</code>, <code>rd-vm::perms</code>, <code>rd-agent::mcp</code></td><td>Toda permissão da tabela tem estado correto por nível/flag/alvo; toda flag listada na B1 tem efeito verificado por teste <strong>ou</strong> está registrada como bloqueio com fonte; fluxos runtime, negativas, justificativas, auto-revoke e roles têm chamador e teste.</td></tr>
+<tr><td><strong>C</strong> Superfície <code>android.*</code></td><td><code>data/api-coverage.toml</code>, <code>docs/appendix-c-literal-completion.md</code></td><td>“Literal”: cada classe/método/campo público de API 26–36 de cada prefixo registrado está implementado e testado <strong>ou</strong> listado como bloqueio. Qualquer item não auditado conta como bloqueio.</td></tr>
+<tr><td><strong>D</strong> AndroidX/Jetpack</td><td><code>data/jetpack.toml</code>, <code>docs/appendix-d-e.md</code></td><td>Cada biblioteca da tabela tem estratégia (<code>dex-passthrough</code>, <code>host-shim</code>, <code>host-native</code>) e status honesto; <code>supported</code> só para o subconjunto documentado com teste.</td></tr>
+<tr><td><strong>E</strong> GMS/Firebase</td><td><code>data/gms.toml</code>, <code>docs/appendix-d-e.md</code></td><td>Modo <code>no-gms-honest</code> validado; cada serviço tem shim programável com teste; nenhum serviço finge backend real.</td></tr>
+<tr><td><strong>F</strong> Componentes &amp; manifest</td><td><code>rd-apk::manifest</code></td><td>Os 4 componentes e as extensões da tabela F são modelados; cada elemento de manifest listado tem parse e comportamento; cada extensão tem action string <strong>verificado</strong>.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="2-linha-de-base-verificada-contagens-do-código-não-da-spec"><a class="header" href="#2-linha-de-base-verificada-contagens-do-código-não-da-spec">2. Linha de base verificada (contagens do código, não da spec)</a></h2>
+<p>Os números do texto da spec estão defasados. Valores medidos neste commit:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Registro</th><th>Total</th><th>Estado</th></tr>
+</thead>
+<tbody>
+<tr><td><code>api-coverage.toml</code> (C)</td><td>106 superfícies, 17 domínios</td><td>4 supported · 102 partial · 0 stub · 0 not_implemented</td></tr>
+<tr><td><code>jetpack.toml</code> (D)</td><td>46 bibliotecas, 6 categorias</td><td>25 partial · 3 stub · 18 not_implemented (medido em 2026-11-06)</td></tr>
+<tr><td><code>gms.toml</code> (E)</td><td>21 serviços, 3 categorias</td><td>20 partial · 1 not_implemented (ML Kit, fora de escopo por decisão do usuário)</td></tr>
+<tr><td><code>permissions.toml</code> (B)</td><td>195 permissões, 13 roles</td><td>6 com <code>hardRestricted</code> (inclui ACCESS_BACKGROUND_LOCATION); 5 com <code>role = "SMS"</code> (após este PR)</td></tr>
+<tr><td>Catálogo MCP</td><td>52 tools</td><td>inclui <code>permissions_auto_revoke</code> e <code>permissions_role</code> (Apêndice B6)</td></tr>
+</tbody>
+</table>
+</div>
+<p>O inventário literal de C está medido e commitado em <code>docs/appendix-c-inventory.md</code>
+(API 26–36, gerado de <code>android.jar</code> oficiais). Em 2026-11-06 os 11 jars foram baixados
+de <code>dl.google.com/android/repository</code> (pacotes <code>platform-NN</code>; o Maven do Google só publica
+<code>com.google.android:android</code> 4.1.1.4) e o script <code>scripts/appendix_c_inventory.py</code>
+regenerou os CSVs e o Markdown byte a byte iguais aos commitados. Ver §5, Apêndice C.</p>
+<h2 id="3-apêndice-b--estado"><a class="header" href="#3-apêndice-b--estado">3. Apêndice B — estado</a></h2>
+<h3 id="implementado-com-teste"><a class="header" href="#implementado-com-teste">Implementado (com teste)</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item da spec (B1–B6)</th><th>Implementação</th><th>Teste</th></tr>
+</thead>
+<tbody>
+<tr><td>Níveis normal/dangerous/signature/internal</td><td><code>initial_state</code></td><td><code>install_classifies_by_level</code></td></tr>
+<tr><td>Flag <code>runtime</code> (diálogo)</td><td><code>RuntimePending</code>, <code>grant</code>/<code>deny</code></td><td><code>grant_deny_revoke_lifecycle</code></td></tr>
+<tr><td>Flag <code>special</code> / <code>appop</code></td><td><code>SpecialPending</code></td><td><code>table_matches_documented_counts</code></td></tr>
+<tr><td>Flag <code>development</code> / <code>systemApp</code> (BATTERY_STATS)</td><td><code>DeniedSystem</code> fora da whitelist b5</td><td><code>battery_stats_is_denied_system_outside_b5_whitelist</code></td></tr>
+<tr><td>B5 whitelist de signature</td><td><code>is_b5</code></td><td><code>signature_entries_are_partitioned_by_b5_whitelist</code></td></tr>
+<tr><td>Gating por targetSdk / maxSdk / since_api</td><td><code>NotRequested</code></td><td><code>max_sdk_version_gates_not_requested</code>, <code>since_api_gates_not_requested</code></td></tr>
+<tr><td>Negativas, justificativa, “não perguntar de novo”</td><td><code>denials</code>, <code>shows_rationale</code>, <code>is_permanently_denied</code></td><td><code>first_denial_shows_rationale_second_is_dont_ask_again</code></td></tr>
+<tr><td>Justificativa no VM e no MCP</td><td><code>rationale_names</code> → <code>permission_rationale</code></td><td><code>rationale_names_lists_only_single_denials</code> (unitário); ver lacuna abaixo</td></tr>
+<tr><td>Auto-revoke por app sem uso (B6)</td><td><code>auto_revoke_unused</code> + tool <code>permissions_auto_revoke</code></td><td><code>auto_revoke_only_for_target_30_plus_and_only_after_threshold</code>; <code>permissions_auto_revoke_follows_target_sdk_and_threshold</code> (MCP)</td></tr>
+<tr><td>Acesso parcial a mídia API 34+</td><td><code>grant_partial_media</code></td><td><code>partial_media_grants_visual_selection_only_on_api_34_plus</code></td></tr>
+<tr><td>Flag <code>hardRestricted</code> (SMS/MMS)</td><td><code>grant</code> recusado sem allowlist ou role</td><td><code>hard_restricted_sms_is_refused_until_installer_allowlists_it</code></td></tr>
+<tr><td>Flag <code>immutable</code></td><td><code>is_frozen</code> em grant/deny/revoke/auto-revoke</td><td><code>immutable_permission_ignores_grant_deny_and_revoke</code></td></tr>
+<tr><td>Roles (B6) — <code>role</code></td><td><code>set_role</code>, <code>roles_held</code>, <code>permissions_role</code> (MCP)</td><td><code>role_holder_gets_role_permissions_and_loses_them_on_exit</code>; <code>role_holding_satisfies_hard_restriction_without_allowlist</code>; <code>role_grant_takes_precedence_over_an_earlier_denial</code>; <code>unknown_role_is_rejected</code>; <code>permissions_role_grants_sms_permissions_while_held</code></td></tr>
+<tr><td>Flag <code>softRestriction</code> (2a) — política da plataforma para READ/WRITE_EXTERNAL_STORAGE</td><td><code>soft_may_grant</code>, <code>soft_weak_form</code>, recusa em <code>grant()</code> (<code>soft_blocked</code>); flag em <code>data/permissions.toml</code> para as duas permissões</td><td><code>soft_restricted_storage_is_refused_below_q_without_allowlist</code>; <code>soft_restricted_storage_is_granted_in_full_from_api_29</code>; <code>soft_restricted_permission_without_platform_rule_keeps_full_grant</code>. Mutação (sem a recusa) derruba o primeiro teste.</td></tr>
+<tr><td>Flag <code>instant</code> + modo de app instantâneo (2c)</td><td>flag <code>instant</code> em 26 permissões do <code>core/res</code> do AOSP (<code>data/permissions.toml</code>); <code>install</code> com <code>instant</code> (opt-in, default false) → <code>PermissionEngine::set_instant</code>: permissão sem a flag vira <code>DeniedSystem</code>; <code>grant</code>, <code>set_role</code>, <code>grant_partial_media</code> e <code>update</code> respeitam; <code>isInstantApp</code> lê <code>Engine::instant_app</code></td><td><code>instant_flag_in_table_matches_framework_manifest</code>; <code>instant_app_keeps_only_instant_capable_grants</code>; <code>instant_app_cannot_be_granted_non_instant_permission</code>; <code>instant_rule_applies_to_permissions_requested_by_update</code>; <code>instant_app_cannot_receive_non_instant_role_permissions</code>; <code>install_as_instant_app_limits_grants_and_fixes_mode</code> (MCP); <code>is_instant_app_follows_install_mode</code> (VM)</td></tr>
+<tr><td><code>revokeWhenRequested</code> + split permissions (2b)</td><td><code>[[split]]</code> em <code>data/permissions.toml</code> (tabela do <code>platform.xml</code>); <code>implicit_permissions</code>, <code>apply_implicit</code> no <code>install</code>; <code>PermissionEngine::update</code> (ciclo de update, chamado pelo <code>install</code> do agente quando o pacote já existe); <code>grant</code> limpa a flag</td><td><code>implicit_grant_is_revoked_when_updated_app_requests_it_explicitly</code>; <code>implicit_grant_is_kept_while_app_still_does_not_request_it</code>; <code>explicit_request_below_m_drops_flag_without_revoking</code>; <code>nearby_devices_grant_is_preserved_when_background_location_is_granted</code>; <code>user_grant_clears_revoke_when_requested_flag</code>; <code>split_implicit_permissions_depend_on_target_sdk</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="resolvido-após-a-pesquisa-2026-11-07-prs-581583"><a class="header" href="#resolvido-após-a-pesquisa-2026-11-07-prs-581583">Resolvido após a pesquisa (2026-11-07, PRs #581–#583)</a></h3>
+<p>Os três bloqueios desta seção foram resolvidos com as decisões do usuário (§6, itens 2a–2c).
+A pesquisa original (fontes e pré-requisitos) continua abaixo, como registro.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Decisão</th><th>Implementação</th><th>Testes</th></tr>
+</thead>
+<tbody>
+<tr><td><code>softRestriction</code> (2a)</td><td>Forma fraca decidida pela pesquisa: política da plataforma (<code>SoftRestrictedPermissionPolicy</code>) só para <code>READ/WRITE_EXTERNAL_STORAGE</code>; demais permissões mantêm concessão plena</td><td><code>soft_may_grant</code>, <code>soft_weak_form</code>, recusa em <code>grant()</code> (<code>soft_blocked</code>); flag em <code>data/permissions.toml</code> (#581)</td><td><code>soft_restricted_storage_is_refused_below_q_without_allowlist</code>; <code>soft_restricted_storage_is_granted_in_full_from_api_29</code>; <code>soft_restricted_permission_without_platform_rule_keeps_full_grant</code></td></tr>
+<tr><td><code>revokeWhenRequested</code> (2b)</td><td>Aprovado: ciclo de update de pacote e conjunto de permissões implícitas por versão</td><td><code>[[split]]</code> em <code>data/permissions.toml</code> (tabela do <code>platform.xml</code>); <code>implicit_permissions</code>, <code>apply_implicit</code> no <code>install</code>; <code>PermissionEngine::update</code>; <code>grant</code> limpa a flag (#582)</td><td><code>implicit_grant_is_revoked_when_updated_app_requests_it_explicitly</code>; <code>implicit_grant_is_kept_while_app_still_does_not_request_it</code>; <code>revoke_when_requested</code></td></tr>
+<tr><td><code>instant</code> (2c)</td><td>Aprovado: modelo de app instantâneo, opt-in por instalação (default falso)</td><td>Flag <code>instant</code> em 26 permissões do <code>core/res</code> do AOSP; <code>PermissionEngine::set_instant</code>; permissão sem a flag vira <code>DeniedSystem</code>; <code>grant</code>, <code>set_role</code>, <code>grant_partial_media</code> e <code>update</code> respeitam; <code>isInstantApp</code> lê <code>Engine::instant_app</code> (#583)</td><td><code>instant_app_cannot_be_granted_non_instant_permission</code>; <code>instant_app_keeps_only_instant_capable_grants</code>; <code>instant_app_cannot_receive_non_instant_role_permissions</code>; <code>instant_flag_in_table_matches_framework_manifest</code>; <code>instant_rule_applies_to_permissions_requested_by_update</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="validação-prática-de-2a2c-2026-11-08"><a class="header" href="#validação-prática-de-2a2c-2026-11-08">Validação prática de 2a–2c (2026-11-08)</a></h3>
+<p>Cada flag foi exercitada ponta a ponta pelo <code>rd mcp</code> (stdio JSON-RPC), com APKs
+de teste gerados pelo <code>rd-testsupport::apkfix</code> e sem alteração de código de
+produto. Os testes MCP abaixo repetem os cenários da validação:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Cenário</th><th>Resultado observado</th><th>Teste automatizado</th></tr>
+</thead>
+<tbody>
+<tr><td>2a <code>softRestriction</code></td><td>target 28 pede WRITE; <code>permissions_grant</code></td><td><code>runtime-pending</code> (recusado)</td><td><code>soft_restricted_storage_grant_follows_target_sdk_via_mcp</code></td></tr>
+<tr><td>2a</td><td>target 29 pede WRITE; <code>permissions_grant</code></td><td><code>granted</code></td><td>idem</td></tr>
+<tr><td>2a</td><td>target 28 pede READ; <code>permissions_grant</code></td><td><code>runtime-pending</code> (grant recusado, como WRITE); forma fraca <code>MediaCollectionsOnly</code> via <code>soft_weak_form</code></td><td><code>soft_restricted_storage_is_refused_below_q_without_allowlist</code> (framework)</td></tr>
+<tr><td>2b <code>revokeWhenRequested</code></td><td>v1 target 22 pede WRITE → READ implícita <code>granted</code>; update v2 target 23 pede READ</td><td>install devolve <code>revoked_on_update: [READ]</code>; READ vai a <code>runtime-pending</code></td><td><code>reinstall_is_an_update_that_revokes_implicit_grant_now_requested</code></td></tr>
+<tr><td>2c <code>instant</code></td><td><code>install</code> com <code>instant=true</code>; grant CAMERA (tem flag) e WRITE (sem flag)</td><td>CAMERA <code>granted</code>; WRITE <code>denied-system</code>. Controle sem <code>instant</code>: WRITE <code>granted</code></td><td><code>install_as_instant_app_limits_grants_and_fixes_mode</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Limitação conhecida: o MCP e o CLI mostram só o estado do grant. A forma fraca de
+READ (só coleções de mídia) existe no motor (<code>soft_weak_form</code>), mas não aparece
+na saída de <code>permissions_list</code>/<code>permissions_grant</code>.</p>
+<p>Desvio conhecido: <code>isInstantApp</code> só muda quando o VM é configurado como app instantâneo;
+o padrão continua <code>false</code>, então apps existentes não mudam de comportamento.</p>
+<h4 id="segunda-rodada-de-pesquisa-2026-11-06-fontes-lidas-e-pré-requisitos"><a class="header" href="#segunda-rodada-de-pesquisa-2026-11-06-fontes-lidas-e-pré-requisitos">Segunda rodada de pesquisa (2026-11-06): fontes lidas e pré-requisitos</a></h4>
+<p>A pesquisa anterior parou no trecho de revogação de <code>PermissionManagerServiceImpl.java</code>. Nesta
+rodada o arquivo inteiro (5368 linhas, <code>services/core/java/com/android/server/pm/permission/</code>,
+branch <code>main</code>) e <code>PackageManager.java</code> foram baixados de <code>android.googlesource.com</code> (<code>?format=TEXT</code>)
+e lidos. Cópias locais fora do repositório: <code>/home/user/appc/aosp/</code>.</p>
+<ul>
+<li><strong><code>revokeWhenRequested</code> (fonte completa do comportamento):</strong>
+<ul>
+<li>Doc da flag (<code>PackageManager.java:5335</code>): “The permission has not been explicitly requested by the
+app but has been added automatically by the system. Revoke once the app does explicitly request it.”</li>
+<li>Revogação em <code>revokePermissionsNoLongerImplicitLocked</code> (PMSI ~2984–3045). Chamada em
+<code>updatePermissions</code> de cada pacote (~2953), com o conjunto de permissões implícitas do pacote.
+Revoga só se: permissão concedida e runtime; flag <code>REVOKE_WHEN_REQUESTED</code> setada; não está em
+<code>BLOCKING_PERMISSION_FLAGS</code> (system fixed, policy fixed, granted by default); target SDK do UID &gt;= 23;
+e não é a preservação de “Nearby devices” com <code>ACCESS_BACKGROUND_LOCATION</code> concedida. Ao final,
+a flag é removida sempre; as flags do usuário só se houve revogação.</li>
+<li>A flag é setada na migração de permissão split (PMSI ~3188), exceto <code>ACTIVITY_RECOGNITION</code> e
+permissões de mídia aural/visual. Herança em ~4800–4870 (merge de flags entre fontes).</li>
+<li><strong>Pré-requisito que falta no VM:</strong> não existe ciclo de update de pacote (o motor é construído
+uma vez em <code>PermissionEngine::install</code>) e não há conjunto de permissões implícitas por versão.
+Sem o gatilho de update, a função de revogação não teria chamador. Adicionar esse ciclo muda o
+comportamento de todo app com permissão split, então precisa de decisão do usuário (ver §6).</li>
+</ul>
+</li>
+<li><strong><code>instant</code> (fonte completa do comportamento no framework):</strong>
+<ul>
+<li><code>checkSinglePermissionInternalLocked</code> (PMSI ~988–999): para app instantâneo, uma permissão concedida
+só conta se <code>Permission.isInstant()</code>.</li>
+<li><code>grantRuntimePermission</code> (PMSI ~1470–1472): concessão de permissão não-instant a app instantâneo
+lança <code>SecurityException</code> (“Cannot grant non-ephemeral permission”).</li>
+<li><strong>Pré-requisito que falta no VM:</strong> não existe estado de app instantâneo. <code>isInstantApp</code> é fixo em
+<code>false</code> (<code>android_pm.rs:721</code>). Modelar o estado muda a resposta de <code>isInstantApp</code> para
+qualquer app que o VM hospede, então também precisa de decisão do usuário.</li>
+</ul>
+</li>
+<li><strong><code>softRestriction</code> (concessão, fonte parcial):</strong>
+<ul>
+<li><code>grantRuntimePermission</code> (PMSI ~1378–1390 e ~1456): permissão soft restricted só é concedida se
+<code>SoftRestrictedPermissionPolicy.forPermission(...).mayGrantPermission()</code> for verdadeiro; senão a
+concessão é recusada (“Cannot grant soft restricted permission”). A própria política
+(<code>services/core/java/com/android/server/policy/SoftRestrictedPermissionPolicy.java</code>) ainda não foi lida.</li>
+<li>O VM não tem nenhuma modelagem de soft restriction (<code>rd-framework/src/fd_permissions.rs</code>).
+A forma fraca continua na pergunta §6 item 2a.</li>
+</ul>
+</li>
+</ul>
+<p>A flag <code>role</code> foi implementada: a documentação AOSP de roles diz que o role concede as
+permissões declaradas em <code>&lt;permissions&gt;</code> ao holder. A ligação SMS → permissões de
+SMS vem da política do Play (grupo SMS exige default SMS handler). A regra “holder do
+role dispensa <code>hardRestricted</code>” é uma <strong>decisão de modelagem</strong> deste projeto, não um
+fato da documentação do Android; está marcada no código.</p>
+<h3 id="lacuna-conhecida-de-teste"><a class="header" href="#lacuna-conhecida-de-teste">Lacuna conhecida de teste</a></h3>
+<p>A resposta de <code>shouldShowRequestPermissionRationale</code> no VM não tem teste de ponta.
+Tentativa com <code>m10::call_instance</code> em receptor <code>Context</code> retornou <code>None</code> (a intrínseca
+não casou o receptor). Não foi removida a lógica: segue coberta pelo motor
+(<code>rationale_names</code>) e pelo caminho MCP de launch/grant. Próximo passo: achar o despacho
+correto de <code>perms.rs</code> e testar a intrínseca diretamente.</p>
+<h2 id="4-apêndice-f--estado"><a class="header" href="#4-apêndice-f--estado">4. Apêndice F — estado</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Item</th><th>Estado</th></tr>
+</thead>
+<tbody>
+<tr><td>Componentes activity, activity-alias, service, receiver, provider</td><td>Modelados (<code>ComponentKind</code>); testes em <code>appendix_f_tests</code></td></tr>
+<tr><td>Extensões: appwidget-provider, accessibility-service, notification-listener, voice-interaction, print-service, autofill-service, host-apdu, call-redirection, carrier-config, permission-group, permission-tree</td><td>Regras de extensão e <code>build_component</code></td></tr>
+<tr><td>Extensões: device-admin, wallpaper, dream, ime, media-browser, credentials</td><td>Já existiam antes deste trabalho (não re-auditadas nesta rodada)</td></tr>
+<tr><td><strong>offline-device</strong></td><td><strong>Mapeado por decisão do usuário (2026-11-05), com ressalva.</strong> Equivalente adotado: <code>android.app.extra.PROVISIONING_ALLOW_OFFLINE</code> (API 33, <code>DevicePolicyManager</code>), extra de <code>ACTION_PROVISION_MANAGED_DEVICE</code>. Ressalva: é extra de intent de provisionamento, não action de componente nem device feature, e nenhum manifest de app o declara. Por isso <strong>não entra</strong> na tabela <code>extension_kinds</code> (<code>crates/rd-apk/src/manifest.rs</code>), que só casa action de componente; a VM não implementa fluxo de provisionamento, então o status segue <code>not_implemented</code>. A página de offline-first (<code>developer.android.com/topic/architecture/data-layer/offline-first</code>) é de arquitetura e não define action nem elemento de manifest; a busca no <code>cs.android.com</code> não foi concluída nesta rodada.</td></tr>
+<tr><td>Elementos de manifest (uses-permission, permission, uses-feature, queries, instrumentation, etc.)</td><td>Parse existente; não re-auditado item a item nesta rodada.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Auditoria de extensões (rodada F-2, 2026-11-05), contra a documentação oficial do Android:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Extensão</th><th>Achado</th><th>Correção</th></tr>
+</thead>
+<tbody>
+<tr><td>host-apdu</td><td>A action era o nome da classe; a oficial é <code>android.nfc.cardemulation.action.HOST_APDU_SERVICE</code> (<code>SERVICE_INTERFACE</code>)</td><td>Action trocada; teste com a action antiga como negativo</td></tr>
+<tr><td>credentials</td><td>Exige <code>BIND_CREDENTIAL_PROVIDER_SERVICE</code> (API 34, signature); a regra não exigia</td><td>Regra exige a permissão; teste com e sem ela</td></tr>
+<tr><td>appwidget-provider</td><td><code>BIND_APPWIDGET</code> é concedida ao host (launcher); o provider não declara essa permissão. A regra exigia, então providers comuns não contavam</td><td>Regra sem permissão exigida; teste sem permissão</td></tr>
+<tr><td>call-redirection, carrier-config, host-apdu (<code>BIND_NFC_SERVICE</code>)</td><td>Action e permissão confirmadas</td><td>Sem mudança</td></tr>
+</tbody>
+</table>
+</div>
+<p>Mutações das três correções: cada uma derruba o teste correspondente; arquivo restaurado e comparado byte a byte.
+A permissão <code>BIND_CREDENTIAL_PROVIDER_SERVICE</code> não entrou em <code>data/permissions.toml</code>: a regra de extensão não lê essa tabela, e
+adicioná-la muda a contagem de 175 que <code>table_matches_documented_counts</code> fixa junto com README e ROADMAP.
+Essa mudança fica para uma rodada própria da tabela de permissões.</p>
+<p>Auditoria de extensões (rodada F-3, 2026-11-05), para as regras que já existiam:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Extensão</th><th>Achado</th><th>Correção</th></tr>
+</thead>
+<tbody>
+<tr><td>device-admin</td><td>A documentação oficial exige, além da ação <code>android.app.action.DEVICE_ADMIN_ENABLED</code> e de <code>BIND_DEVICE_ADMIN</code>, o <code>&lt;meta-data android:name="android.app.device_admin"&gt;</code>. A plataforma falha com “No android.app.device_admin meta-data” sem ele (<code>DeviceAdminInfo</code>). A regra não exigia o meta-data</td><td><code>build_component</code> só mantém <code>device-admin</code> com o meta-data; teste com e sem ele</td></tr>
+<tr><td>wallpaper, ime</td><td>Ação e <code>BIND_WALLPAPER</code> / <code>BIND_INPUT_METHOD</code> confirmadas</td><td>Sem mudança</td></tr>
+<tr><td>dream, media-browser, voice-interaction, print-service, autofill-service, call-screening, call-redirection, carrier-config</td><td>Conferidas em 2026-11-08 contra developer.android.com (reference de cada serviço): ação e <code>BIND_*</code> batem com a regra. Nota: a doc de <code>CallRedirectionService</code> cita <code>BIND_REDIRECTION_SERVICE</code>, mas o nome usado pela plataforma é <code>BIND_CALL_REDIRECTION_SERVICE</code> (a regra usa esse).</td><td>Sem mudança de regra. Teste <code>every_extension_rule_matches_its_official_action_and_bind_permission</code> cobre as 7 (positivo, sem BIND, BIND de outra extensão); mutação do <code>BIND_CALL_REDIRECTION_SERVICE</code> derruba o teste.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="5-apêndices-c-d-e-e--plano-por-rodadas"><a class="header" href="#5-apêndices-c-d-e-e--plano-por-rodadas">5. Apêndices C, D e E — plano por rodadas</a></h2>
+<p>Estes apêndices não são “completos” nesta rodada. Os números abaixo dizem o tamanho real.</p>
+<h3 id="estado-das-dependências-de-d-atualizado-em-2026-11-05"><a class="header" href="#estado-das-dependências-de-d-atualizado-em-2026-11-05">Estado das dependências de D (atualizado em 2026-11-05)</a></h3>
+<p>Medido no código (não na spec). Nenhum status de biblioteca mudou nesta rodada.</p>
+<ul>
+<li>
+<p><strong>ST-04 (base de <code>security-crypto</code>, host-shim) — implementada em <code>crates/rd-vm/src/jkeystore.rs</code>:</strong>
+provedor <code>AndroidKeyStore</code> (<code>KeyStore.getInstance</code>, <code>load</code>, <code>containsAlias</code>, <code>getKey</code>,
+<code>deleteEntry</code>); <code>KeyGenerator</code> AES com <code>KeyGenParameterSpec</code> (alias e tamanho 128/256);
+<code>Cipher</code> <code>AES/GCM/NoPadding</code> (<code>init</code> nos modos cifrar/decifrar, <code>getIV</code>, <code>updateAAD</code>,
+<code>update</code>, <code>doFinal</code>) com <code>aes-gcm</code> (cripto real, IV de 96 bits, tag de 128 bits);
+<code>GCMParameterSpec</code>; chave <code>AndroidKeyStoreSecretKey</code> sem material exportável
+(<code>getEncoded</code> = null). Erros tipados: <code>NoSuchAlgorithmException</code>, <code>KeyStoreException</code>,
+<code>InvalidKeyException</code>, <code>AEADBadTagException</code>. Testes: vetor NIST SP 800-38D (AES-128-GCM),
+round-trip pelos intrínsecos da VM, chave não exportável, falha após remoção.</p>
+</li>
+<li>
+<p><strong>Ainda não implementado em ST-04:</strong> <code>MasterKey</code>, <code>EncryptedSharedPreferences</code> e
+<code>EncryptedFile</code> (dependem de Tink no security-crypto 1.0.0; a dependência da 1.1.0 não foi
+verificada); <code>KeyGenerator</code> AES fora do AndroidKeyStore (falha tipada); outros modos e
+paddings. <code>security-crypto</code> segue <code>not_implemented</code>: nenhum APK de teste validou o caminho DEX.</p>
+</li>
+<li>
+<p><strong>MEDIA-03 (dependência de <code>camerax</code>, host-shim):</strong> a Camera2 virtual existe e está
+listada como suportada em <code>docs/m10.md</code> (<code>CameraManager</code>, <code>CameraDevice</code>,
+<code>CameraCaptureSession</code>, <code>ImageReader</code>). Falta a camada CameraX (<code>ProcessCameraProvider</code>,
+lifecycle, casos de uso <code>Preview</code>/<code>ImageCapture</code>/<code>ImageAnalysis</code>) e o modelo de cenas da spec.
+O APK do Comprix contém CameraX (<code>ProcessCameraProvider</code>, <code>PreviewView</code>) e serve de alvo de teste.</p>
+<ul>
+<li><strong>Escolha do APK de teste (pesquisa no GitHub, 2026-11-05):</strong> <code>arindamxd/camerax-android</code>
+(Apache-2.0, CameraX 1.6.1, Preview/ImageCapture/ImageAnalysis; o repositório foi renomeado
+e o antigo nome redireciona) não publica APK nas releases (1.7.0, 1.6.8, 1.6.7 sem assets) e
+exige build com Android SDK completo e JDK 17+ (o sandbox tem JDK 11 e só <code>platform-tools</code>).
+<code>carlosgub/CameraX-MLKIT_BarcodeScanning</code> não tem releases. Por isso o alvo continua sendo o
+APK do Comprix v1.6.0, já disponível localmente.</li>
+<li><strong>Caminho de navegação até o scanner (medido):</strong> <code>Pular</code> → <code>Nova lista</code> → chip
+<code>Compra do Mês</code> → <code>Criar e adicionar itens</code> → <code>Escanear um produto</code> → tela “Escanear preço”
+(modos Foto / Vídeo 30 s / Código). Sem permissão, a tela mostra “Câmera desligada” com
+<code>Permitir câmera</code>; tocar nesse botão não abre diálogo na VM. A permissão é concedida com
+<code>permissions_grant</code> (<code>android.permission.CAMERA</code>). Esperas de ~1–2,5 s após cada toque são
+necessárias: sem elas, <code>tap_text</code> falha com <code>VIEW_NOT_FOUND</code>.</li>
+<li><strong>Reprodução em 2026-11-06 (build de <code>origin/main</code> 47e0e26, trace <code>RD_TRACE_METHOD=L</code>):</strong>
+<ul>
+<li>A aba <strong>Scanner</strong> da barra inferior não é a rota diagnóstica: o toque (por rótulo ou por
+coordenada 360,1367) é aceito, mas a tela volta para “Minhas listas” (após Ajustes, o toque
+em Scanner também cai em Listas). Não investigar essa aba como se fosse o scanner de MEDIA-03.</li>
+<li>Rota reproduzida: <code>Pular</code> → <code>Nova lista</code> → <code>Compra do Mês</code> → <code>Criar e adicionar itens</code> →
+<code>Escanear um produto</code>. O trace mostra <code>LG2/C.d</code> executado uma vez (como no diagnóstico
+acima); o <code>observe</code> fica em <code>frame v5</code> sem mudança e <code>find_views</code> por <code>PreviewView</code> retorna 0.
+O toque em “Escanear um produto” é aceito (<code>listener_acionado</code>), mas a tela não avança.</li>
+<li>Harness recriado (não está mais em <code>/tmp</code>): <code>/home/user/appc/camx/lib.py</code> (classe <code>S</code>) e
+<code>route.py</code> e <code>route_obs.py</code> (scripts da rota acima) em <code>/home/user/appc/camx/</code>.
+Fora do repositório; reexecutar a partir deles se a pasta existir.</li>
+<li>Próximo passo (não feito): identificar o job cancelado (<code>Ls0/c.V</code>/<code>K1/l</code>) e a origem do
+<code>Throwable</code> do frame 2, comparando o trace desta rota com <code>LP/u0.p</code>.</li>
+</ul>
+</li>
+<li><strong>Bloqueio observado:</strong> <code>ui_tree</code> não expõe texto do Compose; a navegação depende de
+<code>screenshot</code> e <code>tap_text</code> por rótulo visível.</li>
+<li><strong>Diagnóstico (2026-11-05, com permissão concedida antes do launch):</strong>
+<ol>
+<li><code>Context.getMainExecutor()</code> não tinha implementação; corrigido em #566 (<code>HandlerExecutor</code>).
+A <code>ClassCastException</code> Handler→Executor sumiu dos logs.</li>
+<li>Após o toque em “Escanear um produto”, <code>LG2/C.d</code> (scanner) executa até criar a
+<code>PreviewView</code> e chamar <code>setScaleType</code>/<code>redrawPreview</code>. Não há <code>addView</code> depois disso, e
+<code>ui_tree</code>/<code>observe</code> continuam mostrando a lista (“unchanged since last observe”).</li>
+<li>Só 15 chamadas de <code>Lbr/</code> depois do toque: não há laço de Kotlin. O host registra 97
+<code>Activity.getPackageName()</code> e 108 <code>ViewGroup.getChildAt()</code>; <code>fuel</code> cresce durante a espera.</li>
+<li>Medido com <code>RD_TRACE_DRAW</code> e <code>RD_TRACE_METHOD</code> (2026-11-05, sessão seguinte):
+<ul>
+<li>O laço de acessibilidade (<code>LK0/</code>, <code>getPackageName</code>, <code>getChildAt</code>) já existe na tela
+de lista, antes do toque. Não é a causa.</li>
+<li>O frame do Compose é agendado pelo <code>AndroidUiDispatcher</code> (<code>LB0/k0</code>, que é
+<code>FrameCallback</code> e <code>Runnable</code>). Após o toque, a composição do scanner (<code>LG2/</code>) roda
+dentro de dois frames em 8752 ms, seguida de ~18.000 chamadas <code>LP/</code> (Composer/Recomposer).</li>
+<li>Ao fim desse trabalho, <code>run()</code> do dispatcher remove o callback com <code>removeFrameCallback</code>
+(fila de tarefas vazia). Nenhum frame novo é pedido depois, mesmo com <code>wait</code>.</li>
+<li>Não há <code>addView</code>/<code>requestLayout</code> que insira a <code>PreviewView</code> na árvore (o
+<code>AndroidViewsHandler</code> nunca recebe o holder). Assim a árvore continua na lista.</li>
+<li>Ordem medida com <code>RD_TRACE_METHOD=L</code> (trace completo da janela após o toque):
+<ol>
+<li>Frame 1 (8752 ms): <code>LP/u0.p</code> (recompõe a árvore atual), <code>c()</code>, <code>r()</code> e
+<code>LP/t.e(LQ/a;)V</code> (<code>applyChanges</code>, rótulo <code>Compose:applyChanges</code>). Esse ciclo completa.</li>
+<li>Frame 2 (8752 ms): <code>LP/u0.p</code> inicia a composição que contém o scanner;
+<code>LG2/C.d</code> executa (~99 mil chamadas depois). Depois disso não há <code>c()</code>, <code>r()</code> nem um
+segundo <code>applyChanges</code>. O callback é removido em <code>removeFrameCallback</code> (133 mil).</li>
+</ol>
+<ul>
+<li>Exceções: nenhuma <code>Throwable</code> lançada na janela (só <code>exceptionOrNull</code>).</li>
+<li>Depois do frame 2, a corrotina do scanner recebe cancelamentos (<code>Le4/k0.f(CancellationException)</code>,
+6 ocorrências após o <code>removeFrame</code>, a primeira em ~139 mil chamadas). Não há cancelamento
+entre os frames 1 e 2. Próximo passo: descobrir qual job é cancelado (lançado em <code>Ls0/c.V</code>/<code>K1/l</code>)
+e por quem; é provável que o Recomposer seja cancelado antes do apply.</li>
+</ul>
+</li>
+<li>Hipótese principal (SUPERADA pela causa raiz 6 abaixo): a composição do scanner termina sem o caminho normal de
+retorno de <code>LP/u0.p</code>, então o Recomposer não aplica as mudanças. Por isso a
+<code>PreviewView</code> não é inserida. Próximo passo: verificar por que <code>LP/u0.p</code> do frame 2
+não retorna para <code>c()</code>/<code>r()</code> (ex.: exceção suprimida, <code>abandon</code> ou cancelamento da
+corrotina), comparando com o frame 1. Só então partir para o shim CameraX.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<ol start="6">
+<li><strong>Causa raiz (2026-11-06, substitui a hipótese do Recomposer acima):</strong> a composição do
+scanner não abortava por causa do Recomposer. Cada bloqueio era uma classe ou
+configuração ausente, que lançava exceção e cancelava a corrotina. Em ordem:
+<ul>
+<li><code>android.view.ScaleGestureDetector</code>: <code>NOT_FOUND</code> no <code>&lt;init&gt;</code> (<code>f918dc0</code>). Modelo com
+ponteiro único; pinch e multi-toque ficam como limite documentado.</li>
+<li><code>Resources$NotFoundException</code> sem hierarquia: virava <code>ClassCastException</code> fatal
+(<code>6523e18</code>, <code>=&gt; RUNTIME</code>).</li>
+<li><code>android.R.color.black</code> (<code>0x0106000c</code>): <code>NotFoundException</code> do <code>PreviewView</code>
+(<code>0efea59</code>, tabela <code>FRAMEWORK_COLORS</code>, valores de developer.android.com/reference/android/R.color).</li>
+<li><code>metaData</code> de componente sempre <code>null</code>: CameraX sem <code>CameraXConfig.Provider</code>
+(<code>e063841</code>, aprovado pelo usuário em 2026-11-06 e mesclado na PR #575). Confirmado por trace e por
+<code>rd dex disasm</code>: <code>ComprixApp</code> não implementa a interface.</li>
+<li><code>ThreadPoolExecutor</code> sem modelo (<code>fe73736</code>, executor inline; setters aceitos, getters não modelados).</li>
+<li><code>HandlerThread</code> sem modelo: <code>NOT_FOUND</code> no construtor (<code>8a0b296</code>). Uma Looper por thread, com a
+mesma fila da principal (<code>handler_thread.rs</code>). Corpo da thread = drenagem (desvio documentado).</li>
+<li><code>java.util.logging.Logger.getLogger</code>: o <code>AbstractFuture</code> do Guava empacotado no APK chama isso no
+inicializador estático; <code>NOT_IMPLEMENTED</code> virava <code>ExceptionInInitializerError</code> fatal (<code>63637b3</code>).
+Modelo do subconjunto de String, conforme <code>AndroidHandler</code> da AOSP.</li>
+</ul>
+</li>
+<li><strong>Estado após a correção 6 (build <code>rd-cli</code> de 2026-11-06, <code>build_rd11.log</code>):</strong>
+<ul>
+<li><code>last_error</code> = <code>null</code> (antes: <code>JAVA_EXCEPTION</code>, depois <code>NOT_FOUND</code>). Nenhum erro fatal na VM.</li>
+<li>Scanner renderiza: “Escanear preço”, botões Foto/Vídeo/Código, “Tirar foto” (<code>scanner_sg_fix.png</code>).</li>
+<li><code>find_views</code> com <code>class=PreviewView</code>: 1 match (<code>androidx.camera.view.PreviewView</code>, 720x1016 em y=230).
+Critério de “PreviewView &gt; 0” cumprido.</li>
+</ul>
+</li>
+<li><strong>Ainda não cumprido:</strong> o preview sai preto. O CameraX repete “Retry init” com
+<code>NullPointerException</code> (logs de 2026-11-06). Não há câmera ligada ao CameraX: falta o caminho
+de <code>Camera2</code> (<code>CameraManager</code>, <code>CameraDevice</code>, <code>ImageReader</code>) e um dispositivo de câmera no VM.
+Esse é um modelo de hardware, e a escolha de um feed virtual (ou de câmera vazia) é decisão do
+usuário. <strong>Decisão (2026-11-06): opção (a), Camera2 com câmera virtual</strong>, que muda o comportamento
+de todos os apps com câmera. Ainda não implementado. Próximo passo: identificar a origem do NPE do
+“Retry init” com o trace de <code>CameraX</code>/<code>Camera2</code>, e só então implementar.</li>
+<li><strong>Limite de ambiente (2026-11-06):</strong> a sandbox tem ~2 GB de RAM e sem swap. O <code>rustc</code> do <code>rd-vm</code>
+estoura a memória (OOM) mesmo com <code>CARGO_BUILD_JOBS=1</code>, por causa do <code>src/android_stub_surfaces.rs</code>
+(2,1 MB, código escrito à mão). Por isso não foi possível compilar <code>rd-cli</code> nem rodar o Scanner
+local. Validação passa a ser pelo CI, e a compilação local, só com <code>cargo check</code> ou
+<code>xtask</code>. O restante do MEDIA-03 (câmera) depende desse ambiente ou de um binário de CI.</li>
+</ol>
+</li>
+<li>
+<p><strong>Decisões do usuário (2026-11-05):</strong> ST-04 com crate AES-GCM real (aprovado); MEDIA-03:
+o usuário autorizou escolher um APK de teste no GitHub; latência: parar e registrar a lacuna.</p>
+</li>
+</ul>
+<h3 id="apêndice-c-literal"><a class="header" href="#apêndice-c-literal">Apêndice C (literal)</a></h3>
+<ul>
+<li><strong>Rodada 0 — concluída (2026-11-06):</strong> o <code>android.jar</code> de API 26–36 não está no Maven
+do Google para essas APIs (<code>com.google.android:android</code> tem só 4.1.1.4). Os 11 jars
+oficiais vieram dos pacotes <code>platform-NN</code> em <code>dl.google.com/android/repository</code>
+(26: <code>platform-26_r02</code>, 27: <code>platform-27_r03</code>, 28: <code>platform-28_r06</code>, 29: <code>platform-29_r05</code>,
+30: <code>platform-30_r03</code>, 31: <code>platform-31_r01</code>, 32: <code>platform-32_r01</code>, 33: <code>platform-33-ext3_r03</code>,
+34: <code>platform-34-ext7_r03</code>, 35: <code>platform-35_r02</code>, 36: <code>platform-36_r02</code>).
+<code>scripts/appendix_c_inventory.py --sdk-dir &lt;dir&gt;</code> reproduz <code>docs/appendix-c-inventory.md</code>
+e <code>docs/api-inventory/*.csv</code> sem diferença. Nenhuma superfície mudou de status com isso.
+Contagem do script: 4181 arquivos de classe no API 26 e 6227 no API 36 (brutos); o
+Markdown reporta 4172 e 6222 classes públicas + protegidas.</li>
+<li><strong>Verificação de fonte (2026-11-06, pedido do usuário “baixar do Maven do Google”):</strong>
+<code>maven.google.com</code> e <code>dl.google.com/dl/android/maven2</code> respondem 404 para
+<code>com/google/android/android/</code> (metadados e o POM de 4.1.1.4). O artefato só existe no
+Maven Central (<code>repo1.maven.org</code>), com versões até <code>4.1.1.4</code> (API 4.1, sem nenhuma API 26+).
+Por isso APIs 26–36 vieram dos pacotes <code>platform-NN</code> oficiais (<code>dl.google.com/android/repository</code>),
+que é a fonte oficial do <code>android.jar</code>. Substituição de fonte registrada aqui para decisão do usuário.</li>
+<li><strong>Reprodução em 2026-11-08:</strong> os 11 <code>platform-NN</code> foram baixados de novo de <code>dl.google.com</code>
+(HTTP 200) e o <code>android.jar</code> de cada um foi extraído. As contagens do SDK (classes e membros por API)
+são idênticas às commitadas. A coluna de implementação (<code>rd-vm</code>) subiu porque o código avançou depois
+da geração anterior: por exemplo <code>android.view.ScaleGestureDetector</code> (MEDIA-03) passou a <code>yes</code>. Os CSVs e o Markdown
+foram regenerados com <code>scripts/appendix_c_inventory.py</code>; o <code>.gitattributes</code> normaliza o CRLF do gerador para LF.</li>
+<li><strong>Maven Central, rechecado em 2026-11-08:</strong> a busca por <code>com.google.android:android</code> retorna um único
+artefato (4.1.1.4, sem API 26+). <code>org.robolectric:android-all</code> existe, mas são jars instrumentados, não o
+<code>android.jar</code> oficial; não foram usados como fonte. Para C, a fonte oficial continua sendo <code>dl.google.com</code>.</li>
+<li><strong>Próximo passo de C:</strong> a lacuna é de implementação, não de inventário. Por domínio, com
+maior número de superfícies <code>partial</code> primeiro (<code>android-view</code>, <code>android-widget</code>,
+<code>android-os</code>, <code>android-content</code>, <code>android-graphics</code>), implementar ou marcar bloqueio por item.</li>
+<li>Rodadas seguintes: por domínio, implementar ou marcar bloqueio por item, na ordem do
+maior número de superfícies <code>partial</code> (ver tabela da spec, domínios App/lifecycle e View/UI).</li>
+</ul>
+<h3 id="apêndice-d-androidx"><a class="header" href="#apêndice-d-androidx">Apêndice D (AndroidX)</a></h3>
+<ul>
+<li>Estado medido em 2026-11-06 (<code>data/jetpack.toml</code>, 46 bibliotecas): 25 <code>partial</code>, 3 <code>stub</code>,
+18 <code>not_implemented</code>. Os números anteriores (19/7/20) eram de antes das rodadas S9–S12 de
+<code>docs/appendix-d-e.md</code>.</li>
+<li>Escopo decidido pelo usuário: Room (via ST-02) e as bibliotecas de maior prioridade pelo
+critério da spec. ML Kit fica fora.</li>
+<li>Prioridade da spec (“Room via ST-02, work via SYS-04, navigation via UI-04”): as três já estão
+<code>partial</code> com <code>host-shim</code>. Lacunas que restam:
+<ul>
+<li>Room (S13): o <code>_Impl</code> do processador real roda, e <code>addMigrations</code>, <code>requireMigration</code> e
+<code>close</code> seguem o Room real. Não modelados: <code>fallbackToDestructiveMigrationFrom</code>/<code>OnDowngrade</code>,
+observers do <code>InvalidationTracker</code> e coroutines/Flow (<code>docs/jetpack.md</code>, linha room).</li>
+<li>work e navigation: ver o campo <code>notes</code> de cada entrada em <code>data/jetpack.toml</code>.</li>
+</ul>
+</li>
+<li>Entre as 18 <code>not_implemented</code>, o ST-04 (AES-GCM no AndroidKeyStore, PR #564) não muda o
+status de <code>security-crypto</code>: <code>EncryptedSharedPreferences</code> e <code>MasterKey</code> dependem de Tink, e
+nenhum APK de teste validou o caminho DEX. Continua <code>not_implemented</code>.</li>
+<li>Próximo passo: escolher, entre as 18, a primeira biblioteca com estratégia pronta e teste de
+comportamento real. Não promover nenhuma sem teste.</li>
+<li>3 <code>stub</code> (ConstraintLayout, CoordinatorLayout, material): promover só com teste de comportamento real.</li>
+</ul>
+<h3 id="apêndice-e-gmsfirebase"><a class="header" href="#apêndice-e-gmsfirebase">Apêndice E (GMS/Firebase)</a></h3>
+<ul>
+<li>20 serviços <code>partial</code>. ML Kit <code>not_implemented</code> (extra, fora da tabela da spec) fica fora de
+escopo por decisão do usuário (2026-11-05).</li>
+<li>Demais serviços: critério de shim programável com teste de sucesso, erro e ciclo de vida.</li>
+<li><strong>Etapa 7 concluída (2026-11-08):</strong> os 20 serviços <code>partial</code> têm teste de sucesso, de erro e de
+ciclo de vida (ou o caminho de erro não existe no shim, anotado na tabela de <code>docs/appendix-d-e.md</code>).
+Trabalho por PR: Integrity, Fit e Location (#597); Remote Config (#598); Cast (#599); Analytics (#600);
+Crashlytics (#601); Maps (#602); Messaging (#603); RTDB (#604); SafetyNet (#605); sincronização da
+tabela (#606). Google Ads e Google Sign-In já tinham erro e ciclo cobertos antes desta etapa.</li>
+<li>Nota: a etapa 7 não promove nenhum serviço de <code>partial</code> para <code>complete</code>. Esse status não existe no ledger.</li>
+</ul>
+<h2 id="6-decisões-que-dependem-do-usuário"><a class="header" href="#6-decisões-que-dependem-do-usuário">6. Decisões que dependem do usuário</a></h2>
+<ol>
+<li><strong>offline-device (F): resolvido pelo usuário em 2026-11-05</strong> — mapeado para <code>PROVISIONING_ALLOW_OFFLINE</code> com a ressalva da §4. Se houver uma action de device feature oficial, substituir a linha da §4.</li>
+<li><strong>revokeWhenRequested, instant, softRestriction (B):</strong> resolvido pelo usuário (autonomia para pesquisar e implementar com base em fonte oficial). Resultado da pesquisa na §3.
+2a. <strong>softRestriction (B), forma fraca: resolvido por pesquisa (autonomia do usuário, 2026-11-07).</strong> Fonte da regra: AOSP <code>SoftRestrictedPermissionPolicy.java</code> (regras só para READ/WRITE_EXTERNAL_STORAGE; demais = concessão plena). Forma fraca: READ sem allowlist e target &lt; 29 = só coleções de mídia visual/áudio (doc oficial de <code>READ_EXTERNAL_STORAGE</code>); WRITE sem allowlist e target &lt; 29 = sem acesso (grant recusado). Efeito: apps com target &lt; 29 que pedem storage deixam de receber a forma completa pelo runtime sem allowlist. Mudança registrada no PR de 2a.
+2e. <strong>ACCESS_BACKGROUND_LOCATION: flag corrigida para hardRestricted (decisão do usuário, 2026-11-08).</strong> A doc oficial de <code>Manifest.permission</code> (API 29) diz “hard restricted permission which cannot be held by an app until the installer on record allowlists the permission”. Efeito: <code>grant()</code> recusa a permissão sem allowlist do instalador (<code>allow_hard_restricted</code>). Não alterado nesta rodada: a concessão implícita por split para targetSdk &lt; 29 (<code>apply_implicit</code>) segue como antes; a fonte AOSP para esse caminho não foi verificada.
+2b. <strong>revokeWhenRequested (B): ciclo de update de pacote — aprovado pelo usuário (2026-11-07) e implementado.</strong>
+Gatilho: <code>install</code> do agente com pacote já instalado chama <code>PermissionEngine::update</code> (antes recriava o motor
+e zerava as permissões). Escopo: splits de <code>platform.xml</code> (exceto BODY_SENSORS → <code>health.*</code>, que depende de
+feature flag). Para targetSdk &lt; 23 a implícita concedida é aplicada na instalação (modelagem nossa, o AOSP
+concede na instalação; explícitas pré-M seguem <code>RuntimePending</code>). Efeito colateral aceito: apps com target &lt; 33
+que pedem WRITE/READ ganham entradas <code>READ_MEDIA_*</code> no estado.
+2c. <strong>instant (B): estado de app instantâneo — aprovado pelo usuário (2026-11-07) e implementado.</strong>
+Modelo: opt-in na instalação (<code>install</code> com <code>instant: true</code>), que é o equivalente de <code>adb install --instant</code>.
+Apps instalados sem a opção não mudam (<code>isInstantApp</code> segue <code>false</code> para eles). Fonte da lista de
+permissões com <code>instant</code>: <code>core/res/AndroidManifest.xml</code> do AOSP <code>main</code> (28 entradas; 26 existem na tabela,
+faltam <code>INSTANT_APP_FOREGROUND_SERVICE</code> e <code>FOREGROUND_SERVICE_FILE_MANAGEMENT</code>, lacuna de dado registrada).
+O modo não muda em update (erro <code>INSTANT_MODE_CHANGE</code>). Não modelado: o cache de instalação instantânea
+e o <code>PackageInstaller</code> de app instantâneo.
+2d. <strong>MEDIA-03 (câmera): decisão de escopo tomada em 2026-11-06</strong> — Camera2 com câmera virtual (opção a),
+que altera todos os apps com câmera. <strong>Implementado e mesclado (#577, #578, #579).</strong> Fechamento validado
+com o Scanner: <code>last_error</code> vazio, sem <code>Retry init</code>, <code>PreviewView</code> com frames (screenshot não preta).
+Semânticas aprovadas: <code>ThreadLocal</code> por green thread e executores que honram <code>ThreadFactory</code>.
+Limite documentado: o detector de código de barras do ML Kit é <code>host_stub</code> (Task concluído com lista
+vazia; sem leitura de código de barras no VM), por decisão do usuário.</li>
+<li><strong>Apêndice C literal:</strong> resolvido em 2026-11-06 — o <code>android.jar</code> foi obtido pela rede do sandbox (ver §5, Apêndice C).</li>
+<li><strong>Escopo de D e E: resolvido pelo usuário (2026-11-05)</strong> — Room (via ST-02) e prioridade da spec; ML Kit fora (ver §5).</li>
+<li><strong>DEX do fixture do Room (D, ST-02): resolvido pelo usuário (2026-11-08) — gerar no CI.</strong> Sem versionar <code>.dex</code> e sem nova exceção da ADR 036. Job <code>room-fixture</code> (ver <code>docs/appendix-d-e.md</code>, S15).</li>
+<li><strong>Navegação na raiz (D): resolvido pelo usuário (2026-11-08) — pesquisar e escolher.</strong> Escolhido: alinhar ao AOSP (desempilhar a raiz esvazia a pilha e retorna false). Ver S14.</li>
+<li><strong>ACCESS_BACKGROUND_LOCATION (B, 2e): resolvido pelo usuário (2026-11-08) — corrigir para hardRestricted.</strong> Ver §3 e item 2e.</li>
+</ol>
+<h2 id="7-validação-deste-plano"><a class="header" href="#7-validação-deste-plano">7. Validação deste plano</a></h2>
+<ul>
+<li><code>cargo test -p rd-framework</code>, <code>-p rd-agent</code>, <code>-p rd-cli</code>, <code>-p rd-vm</code>, <code>-p rd-apk</code>: verdes no PR.</li>
+<li><code>cargo fmt --all -- --check</code> e <code>cargo clippy --all-targets</code> nos crates tocados.</li>
+<li><code>rd mcp --gen-docs docs/mcp-tools.md</code> regenerado; teste <code>generated_docs_match_catalog</code> verde.</li>
+<li>Matriz nativa (<code>scripts/native-languages-mcp.py</code>) exige 52 tools com chamada positiva; roda no CI com NDK.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="compat-matrix.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="api-coverage.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="compat-matrix.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="api-coverage.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

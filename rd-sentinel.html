@@ -1,0 +1,606 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>RD Sentinel Anti-Regression Bot - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./rd-sentinel.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="rd-sentinel--anti-regression-bot-operator-guide"><a class="header" href="#rd-sentinel--anti-regression-bot-operator-guide">RD Sentinel — anti-regression bot operator guide</a></h1>
+<p>RD Sentinel is RustyDroid’s dedicated Dependabot-like guardian. Normal CI
+remains the fast, bounded pull-request gate. Sentinel handles the evidence CI
+cannot afford or cannot express at one revision: differential comparisons,
+long campaigns, historic budgets, environment drift, evidence shrinkage, and
+deduplicated GitHub triage.</p>
+<p>The architecture and rationale are recorded in
+<a href="adr/010-rd-sentinel-anti-regression-bot.html">ADR 010</a>.</p>
+<h2 id="what-changed-in-v11"><a class="header" href="#what-changed-in-v11">What changed in v1.1</a></h2>
+<ul>
+<li>Risk is now explainable: every report lists the factors and points behind
+its 0–100 score instead of asking reviewers to trust one opaque number.</li>
+<li>Targeted package selection follows reverse workspace dependencies, so a
+parser change also exercises the workspace consumers above it.</li>
+<li>Public-API checks compare crate-level item inventories, reducing false
+alarms for same-crate moves while still blocking removals/signature changes.</li>
+<li>Workflow changes are linted for mutable action refs, shell template
+injection, persisted checkout credentials, missing permissions, and
+dangerous-trigger candidate checkouts.</li>
+<li>Dependency evidence now includes duplicate/mass-update analysis, reachable
+workspace blast radius, <code>cargo-deny</code>, optional <code>cargo-machete</code>, an OSV batch
+query when network is allowed, and a deterministic CycloneDX SBOM artifact.</li>
+<li>Reports are also emitted as SARIF 2.1.0. The fingerprinted JSON remains the
+authoritative completeness/verdict record.</li>
+<li>A <code>mutants</code> profile runs <code>cargo mutants --in-diff</code> on committed Rust
+changes, asking whether the tests actually catch injected faults.</li>
+<li>Cold26 A/B comparisons include sample counts and median absolute deviation;
+relative deltas must clear a noise-aware floor, while absolute &lt;26 ms
+budgets remain strict.</li>
+</ul>
+<h2 id="what-changed-in-v12"><a class="header" href="#what-changed-in-v12">What changed in v1.2</a></h2>
+<ul>
+<li>Evidence no-shrink checks are named, not only counted: Rust test identities
+are compared by <code>(scope, test name)</code> with duplicate-name counts, and fuzz
+targets are compared by crate-qualified target name. Deleting a meaningful
+test/target and adding an unrelated one no longer looks neutral.</li>
+<li>OSV <code>querybatch</code> pagination is completed per unfinished query (bounded by
+<code>campaigns.osv_max_pages</code>), preserving the package-to-advisory mapping and
+reporting page/pending/truncated metrics instead of silently stopping at the
+first page.</li>
+<li>The trusted publisher now also creates the <code>rd-sentinel/gate</code> Check Run with
+up to GitHub’s per-request annotation batches for findings that carry a file
+and line, and uploads the SARIF rendering to code scanning when a PR report
+has findings. These are presentation layers over the same verified JSON
+report; API rejection there does not replace or weaken the trusted comment,
+labels, or commit status.</li>
+<li>The CLI can consume a raw <code>merge_group</code> event file directly for merge-queue
+reproduction, using the group base/head SHAs without inventing a PR number
+from the queue ref.</li>
+</ul>
+<h2 id="what-runs-where"><a class="header" href="#what-runs-where">What runs where</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Bot part</th><th>Trigger</th><th>Permissions</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td>Dependabot</td><td>weekly/monthly schedule</td><td>GitHub-managed</td><td>proposes Cargo, fuzz-crate, and Actions updates</td></tr>
+<tr><td><code>RD Sentinel</code></td><td>PR, merge queue, manual dispatch</td><td>contents/pull-requests <strong>read</strong></td><td>trusted-base policy audit plus risk-selected campaigns</td></tr>
+<tr><td><code>RD Sentinel Deep</code></td><td>nightly, weekly, manual dispatch</td><td>contents/pull-requests <strong>read</strong></td><td>long and broad campaigns on <code>main</code></td></tr>
+<tr><td><code>RD Sentinel Publish</code></td><td><code>workflow_run</code> completion</td><td>issues/PR/statuses/checks/security-events <strong>write</strong></td><td>verifies the artifact against GitHub, comments, labels, issues, verified status, annotated gate Check Run, code-scanning SARIF upload</td></tr>
+<tr><td><code>RD Sentinel Command</code></td><td>issue comment</td><td>actions/issues/PR <strong>write</strong>, contents read</td><td>maintainer-only campaign dispatch</td></tr>
+</tbody>
+</table>
+</div>
+<p>Candidate-executing analysis jobs never receive a publishing token.</p>
+<h2 id="the-strict-rules"><a class="header" href="#the-strict-rules">The strict rules</a></h2>
+<p>Sentinel fails closed:</p>
+<ul>
+<li><strong>P0/P1 findings block.</strong> Examples: forged/stale report identity, protected
+Sentinel paths without approval, secrets, <code>unsafe</code> outside approved crates,
+fuzz crashes, nondeterministic frames, cold-start median at/above 26 ms,
+incompatible dependency sources.</li>
+<li><strong>Required skipped evidence is not a pass.</strong> In GitHub campaigns it blocks;
+locally it produces <code>incomplete</code> unless <code>--strict-skips</code> is also set.</li>
+<li><strong>Evidence cannot shrink silently.</strong> Test attributes, named Rust tests, JVM
+golden vectors, named fuzz targets, and MCP tool count are compared to both
+the base revision and <code>.github/rd-sentinel/baseline.json</code>.</li>
+<li><strong>Performance budgets cannot be relaxed to hide a regression.</strong> The
+1,500 ms real-execution startup budget and the &lt;26 ms process-cold snapshot
+presentation budget are separate contracts and must stay separate.</li>
+<li><strong>A/B regressions block even when absolute budgets still pass.</strong> The bot
+compares base and candidate <code>inspect</code>, <code>rd perf</code>, snapshot cold start, frame
+hashes, binary size, and paired efficiency workloads.</li>
+<li><strong>Exceptions expire.</strong> Every exception in
+<code>.github/rd-sentinel/policy.json</code> needs an owner, precise scope, reason, and
+expiry date. Expired or incomplete exceptions block.</li>
+<li><strong>The trusted policy and baseline validate themselves.</strong> Weakened blocking
+severities, malformed numeric limits, invalid deep-dependency regexes,
+missing protection for Sentinel’s own policy/baseline/workflow/code,
+duplicate or over-broad exceptions, and malformed corpus contracts are
+findings rather than silent configuration drift.</li>
+<li><strong>Workflow privilege cannot drift quietly.</strong> Sentinel workflow actions are
+pinned to full commit SHAs, and changed workflows are checked for unpinned
+actions, user-controlled expressions in <code>run:</code> scripts, credential
+persistence, and missing explicit permissions.</li>
+</ul>
+<h2 id="campaigns"><a class="header" href="#campaigns">Campaigns</a></h2>
+<h3 id="pr-risk-audit-auto"><a class="header" href="#pr-risk-audit-auto">PR risk audit (<code>auto</code>)</a></h3>
+<p>The diff is classified into parsers, VM core, native/security, agent/protocol,
+render/UI, CLI contract, dependencies/build, CI security, performance, fuzz,
+tests, docs, and Sentinel itself. That classification selects:</p>
+<ul>
+<li>tests for directly changed packages plus their downstream workspace
+dependents;</li>
+<li>relevant Cargo feature combinations derived from the checked-out manifests
+(with the v1.0 matrix retained as an unreadable-manifest fallback);</li>
+<li>repeated tests with named flaky-test extraction and real-APK byte-stability
+probes;</li>
+<li>actual bounded fuzz execution for parser changes;</li>
+<li><code>rd perf</code> and <code>scripts/cold26.py</code> for performance-sensitive changes;</li>
+<li>full A/B and real-APK campaigns for high-risk diffs or <code>sentinel:deep</code>.</li>
+</ul>
+<p>Draft PRs receive the static report without executing expensive campaigns.
+The verdict stays incomplete until a ready/synchronized revision executes
+the plan.</p>
+<p>Use <code>--profile mutants</code> or the <code>sentinel:mutants</code> label to add changed-code
+mutation testing to a PR. Deep runs include it as a required component. A
+test-only diff or an uncommitted worktree cannot provide a trustworthy
+mutation result and is reported as such.</p>
+<h3 id="nightly-deep"><a class="header" href="#nightly-deep">Nightly deep</a></h3>
+<p>Runs Monday-Saturday on <code>main</code>:</p>
+<ul>
+<li><code>cargo test --workspace --all-features</code>;</li>
+<li>broad feature matrix for VM/agent/CLI/registry/JNI/NDK;</li>
+<li>repeated determinism/flaky hunts;</li>
+<li>resolved dependency license/source/MSRV audit, <code>cargo audit</code>,
+<code>cargo-deny</code>, changed-dependency blast-radius analysis, an OSV query when
+network is enabled, and a CycloneDX SBOM artifact;</li>
+<li>beta Rust and Rust 1.76 trials;</li>
+<li>release binary size, <code>rd perf</code>, process-cold snapshot, and real-APK probes;</li>
+<li>all five fuzz targets for the configured bounded duration;</li>
+<li>isolated semver-compatible dependency-update trial in the weekly core job.</li>
+</ul>
+<h3 id="weekly-campaign"><a class="header" href="#weekly-campaign">Weekly campaign</a></h3>
+<p>Runs Sunday on <code>main</code> and adds:</p>
+<ul>
+<li>a longer hosted fuzz campaign;</li>
+<li>base-versus-head A/B performance/efficiency/frame comparisons;</li>
+<li>application-neutral persistent-session MCP endurance on pinned launchable
+APKs (install/launch, observe, UI tree, screenshots, virtual time, app info,
+and runtime health), plus <code>scripts/comprix-regression.py</code> only when a real
+Comprix APK is explicitly supplied;</li>
+<li><code>scripts/mcp-session-soak.py</code> over the signed native-language APK matrix;</li>
+<li>three repetitions of the JVM golden comparison;</li>
+<li>changed-code mutation testing for the weekly base/head range;</li>
+<li>an isolated <code>cargo update</code> trial.</li>
+</ul>
+<p>GitHub-hosted jobs have a six-hour ceiling. Therefore the weekly hosted fuzz
+run is <strong>not</strong> called a 24-hour campaign. For an actual 24-hour run, dispatch
+or run <code>scripts/fuzz-campaign.sh 86400</code> on a self-hosted/read-only runner or a
+maintainer machine and retain the artifacts.</p>
+<h2 id="maintainer-commands"><a class="header" href="#maintainer-commands">Maintainer commands</a></h2>
+<p>Only GitHub author associations OWNER, MEMBER, and COLLABORATOR may use:</p>
+<pre><code class="language-text">/rd-sentinel rerun
+/rd-sentinel deep
+/rd-sentinel perf
+/rd-sentinel fuzz 900
+/rd-sentinel deps
+/rd-sentinel determinism
+/rd-sentinel mutants 45
+/rd-sentinel baseline propose
+/rd-sentinel status
+/rd-sentinel help
+</code></pre>
+<p>Commands only dispatch evidence campaigns. They cannot approve policy, change
+a baseline, push, dismiss reviews, or merge. <code>status</code> links the newest report
+comment authored by <code>github-actions[bot]</code>; a marker planted by another account
+is ignored.</p>
+<p>Approval is deliberately label-based and human-applied:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Label</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sentinel:policy-approved</code></td><td>maintainer reviewed bot code/policy/workflow changes</td></tr>
+<tr><td><code>sentinel:baseline-approved</code></td><td>maintainer reviewed before/after evidence for a baseline change</td></tr>
+<tr><td><code>sentinel:deep</code></td><td>force the deep PR campaign</td></tr>
+<tr><td><code>sentinel:mutants</code></td><td>force changed-code mutation testing</td></tr>
+</tbody>
+</table>
+</div>
+<p>The publisher applies only result/risk labels such as <code>sentinel:pass</code>,
+<code>sentinel:blocked</code>, <code>sentinel:P0</code>, <code>sentinel:perf-risk</code>,
+<code>sentinel:security-risk</code>, <code>sentinel:dependency-risk</code>, <code>sentinel:test-gap</code>,
+<code>sentinel:risk-high</code>, and <code>sentinel:risk-critical</code>. It removes stale Sentinel
+result/risk labels
+when publishing a newer report.</p>
+<p>A live PR that moved on while the audit ran is not an integrity failure
+(issue #233). If the artifact’s head is no longer the PR head, the publisher
+treats it as <strong>superseded</strong> and does not write anything to the PR: the live
+head’s own run owns the comment, labels and gate. If only the base branch
+advanced and the report claims <code>pass</code>, the verdict becomes <strong>stale</strong>. In that
+case the gate is <code>pending</code>, no result label is set (a previous <code>sentinel:pass</code>
+is removed), and the comment asks for <code>/rd-sentinel rerun</code>. A stale report is
+never a pass. Real findings in a non-pass report are published unchanged, and
+any other verification mismatch (changed files, artifact head vs
+<code>workflow_run</code>, unapproved protected paths) is still a P0.</p>
+<h2 id="dependabot-pr-vetting"><a class="header" href="#dependabot-pr-vetting">Dependabot PR vetting</a></h2>
+<p>Dependabot groups Cargo minor/patch updates, separates majors, checks the two
+fuzz workspaces monthly, and updates GitHub Actions weekly. Version updates
+use explicit release-age cooldowns (14 days for Cargo majors, 7 for minors and
+GitHub Actions, and 3 for Cargo patches); security updates are not delayed by
+those cooldowns. Sentinel then:</p>
+<ol>
+<li>parses the exact <code>Cargo.lock</code> delta;</li>
+<li>blocks non-dependency files in a Dependabot PR;</li>
+<li>classifies major/minor/patch/prerelease and 0.x minor-as-major movement;</li>
+<li>checks licenses, crates.io-only sources, and dependency Rust versions
+against MSRV 1.76;</li>
+<li>reports duplicate-version growth and mass updates, then runs feature,
+determinism, and A/B evidence for those wider movements;</li>
+<li>computes direct/reachable workspace consumers and flags changed build,
+proc-macro, build-script, native-link, and widely consumed crates;</li>
+<li>runs <code>cargo-deny</code>, <code>cargo audit</code>, and (with network) OSV, and writes a
+CycloneDX SBOM;</li>
+<li>requires the major-approval label for major movement; and</li>
+<li>never auto-merges.</li>
+</ol>
+<p>If an update only fails on Rust beta or future dependencies, do not ignore it:
+that is tomorrow’s red <code>main</code>. Either pin deliberately in the product PR or
+prepare the migration before the stable release arrives.</p>
+<h2 id="local-use"><a class="header" href="#local-use">Local use</a></h2>
+<p>Static plan (no campaigns executed, therefore not a passing audit):</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py plan \
+  --base origin/main --head HEAD
+</code></pre>
+<p>Executable risk-selected audit:</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py audit \
+  --base origin/main --head HEAD --execute --strict-skips
+</code></pre>
+<p>Audit uncommitted work against the current commit:</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py audit \
+  --base HEAD --head WORKTREE --execute
+</code></pre>
+<p>Bounded fuzz only:</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py audit \
+  --base origin/main --head HEAD --profile fuzz \
+  --component static --component fuzz --Fuzz_SECONDS 600 --execute
+</code></pre>
+<p>Changed-code mutation testing only (requires a clean committed range and
+<code>cargo-mutants</code>):</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py audit \
+  --base origin/main --head HEAD --profile mutants \
+  --component static --component mutation \
+  --mutation-minutes 45 --execute --strict-skips
+</code></pre>
+<p>Validate/render an artifact:</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py validate \
+  --report target/rd-sentinel/rd-sentinel-report.json
+python3 tools/rd-sentinel/rd_sentinel.py render \
+  --report target/rd-sentinel/rd-sentinel-report.json
+python3 tools/rd-sentinel/rd_sentinel.py sarif \
+  --report target/rd-sentinel/rd-sentinel-report.json \
+  --out target/rd-sentinel/rd-sentinel-report.sarif
+</code></pre>
+<p>Generate baseline evidence without modifying the baseline:</p>
+<pre><code class="language-sh">python3 tools/rd-sentinel/rd_sentinel.py baseline-proposal \
+  --base origin/main --head HEAD --execute
+</code></pre>
+<p>Exit codes are <code>0=pass</code>, <code>1=blocked</code>, <code>2=bot/config error</code>, and
+<code>3=incomplete</code>. An incomplete local run still writes JSON, Markdown, and SARIF
+reports, but it must not be quoted as a pass.</p>
+<h2 id="corpus-policy"><a class="header" href="#corpus-policy">Corpus policy</a></h2>
+<p>The pinned launchable corpus currently contains Primftpd 71
+(<code>org.primftpd_71.apk</code>) with its SHA-256 in the baseline. The public F-Droid
+client download is a moving latest build, so Sentinel treats it as a
+structured-behavior/determinism probe, not a pinned launch baseline.</p>
+<p>For the 100 MB+ process-cold gate, set:</p>
+<pre><code class="language-sh">RD_SENTINEL_HEAVY_APK=/path/to/launchable-heavy.apk
+</code></pre>
+<p>A missing heavy corpus is reported as missing evidence. Sentinel does not
+manufacture or imply a heavyweight pass. Never commit the heavy APK.</p>
+<p>The Comprix journey is application-specific, so it is never run against
+Primftpd or another unrelated APK. To include it in a real-APK campaign, set
+<code>RD_SENTINEL_COMPRIX_APK=/path/to/comprix.apk</code>; Sentinel then runs the
+existing Portuguese UI script only against that explicit corpus.</p>
+<h2 id="responding-to-findings"><a class="header" href="#responding-to-findings">Responding to findings</a></h2>
+<h3 id="fuzz-crash"><a class="header" href="#fuzz-crash">Fuzz crash</a></h3>
+<ol>
+<li>Preserve the uploaded artifact before rerunning.</li>
+<li>Reproduce and minimize with the command printed by <code>fuzz-campaign.sh</code>.</li>
+<li>Add the minimized case as a unit/integration/fuzz seed regression.</li>
+<li>Fix the parser without adding a production panic path.</li>
+</ol>
+<h3 id="flaky-or-nondeterministic-output"><a class="header" href="#flaky-or-nondeterministic-output">Flaky or nondeterministic output</a></h3>
+<p>Treat process/thread globals, time, random seeds, filesystem ordering, and
+shared stdout routing as prime suspects. A retry that turns green is evidence
+of the bug, not evidence that it disappeared. Sentinel names tests that both
+passed and failed across repetitions; start with those tests rather than the
+last failing command alone.</p>
+<h3 id="surviving-mutant"><a class="header" href="#surviving-mutant">Surviving mutant</a></h3>
+<p>A surviving mutant means the changed behavior can be altered without any test
+noticing. Add an assertion for the public behavior, not a test that merely
+mirrors a private implementation detail. If the mutant is truly equivalent,
+record why in a dated, narrowly scoped exception. A mutation timeout is not a
+kill and needs its slow/pathological path investigated.</p>
+<h3 id="performance"><a class="header" href="#performance">Performance</a></h3>
+<p>Separate three numbers:</p>
+<ul>
+<li><code>rd perf</code>: real guest execution against the emulated Moto E5 budget;</li>
+<li><code>cold26</code>: new live process presenting a previously captured deterministic
+snapshot frame;</li>
+<li>first interaction/materialization: reported separately from first frame.</li>
+</ul>
+<p>Do not use snapshot timing to claim the first-ever guest launch is &lt;26 ms,
+and never raise a budget in the same PR that introduces the slowdown.</p>
+<h3 id="baseline-change"><a class="header" href="#baseline-change">Baseline change</a></h3>
+<ol>
+<li>Run the same campaign on base and candidate.</li>
+<li>Open a PR that changes only the baseline/ADR evidence, or clearly isolate
+that commit.</li>
+<li>Link both reports and explain why the new behavior is correct.</li>
+<li>Apply <code>sentinel:baseline-approved</code> after maintainer review.</li>
+</ol>
+<h2 id="required-repository-settings"><a class="header" href="#required-repository-settings">Required repository settings</a></h2>
+<p>Files alone cannot make a check required. After this bot lands, configure
+branch protection or a repository ruleset for <code>main</code> to require at least:</p>
+<ul>
+<li>the existing CI jobs;</li>
+<li><code>RD Sentinel / audit</code>;</li>
+<li>optionally the publisher’s <code>rd-sentinel/gate</code> commit status;</li>
+<li>conversation resolution and no force-pushes.</li>
+</ul>
+<p>Also restrict who can apply the Sentinel approval labels. The bot honors those
+labels as maintainer decisions, so label permission is security-sensitive.</p>
+<p><code>.github/CODEOWNERS</code> routes Sentinel, supply-chain, native-boundary, and
+cold-start-evidence changes to the repository owner. Do <strong>not</strong> enable
+“Require review from Code Owners” while that owner is also the sole PR author:
+GitHub does not let authors approve their own PRs, so the rule would deadlock
+merges. Enable it when a second maintainer or team exists.</p>
+<h2 id="known-limits"><a class="header" href="#known-limits">Known limits</a></h2>
+<ul>
+<li>Hosted performance runners are noisy. Sentinel therefore pairs absolute
+budgets with A/B ratios and absolute deltas, but a human still reviews
+borderline evidence.</li>
+<li>Static diff heuristics are intentionally conservative and can produce P2
+review findings. P0/P1 rules are reserved for contracts, security,
+determinism, evidence loss, and measured regressions.</li>
+<li><code>cargo audit</code>, <code>cargo-deny</code>, <code>cargo-machete</code>, and <code>cargo-mutants</code> are
+installed by workflows that need them. On a local runner without one, the
+report marks that evidence skipped/incomplete rather than inventing it.</li>
+<li>OSV is queried only when network is explicitly allowed. Sentinel follows
+per-query <code>querybatch</code> pagination up to <code>campaigns.osv_max_pages</code>, reports
+the number of pages and any still-pending queries, and still keeps
+<code>cargo audit</code>/RustSec as separate evidence.</li>
+<li>Check Run annotations and code-scanning SARIF are GitHub presentation
+layers. A fork head, disabled code-scanning surface, or missing Checks API
+acceptance is recorded as a publisher-side error for that layer; it never
+turns a blocked fingerprinted report into a pass.</li>
+<li>The public-API inventory is a conservative source-level comparison, not a
+rustdoc/semver proof. It intentionally ignores same-crate file moves;
+associated items, re-exports, trait implementations, and generic bounds can
+still require human review or future <code>cargo-semver-checks</code> adoption.</li>
+<li>The named-test inventory is also source-level. Macro-generated tests without
+a visible following <code>fn</code> still rely on the <code>#[test]</code> attribute count and on
+compiled test evidence from campaigns.</li>
+<li>Diff-scoped mutation testing gives fast changed-code evidence. It does not
+prove the unchanged workspace has a high global mutation score.</li>
+<li>Sentinel workflows use reviewed full-SHA action pins. GitHub’s newer
+workflow dependency lockfile remains a separate adoption decision; Sentinel
+does not fabricate an <code>actions.lock</code> file.</li>
+<li>The bot does not prove Android compatibility beyond the pinned real-APK,
+native, contract, and golden evidence it actually executes.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="FUZZING.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="integration-validation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="FUZZING.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="integration-validation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,1033 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Appendices D + E Executable Ledger - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./appendix-d-e.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="apêndices-d--e--registro-executável-e-ledger-de-conclusão-honesta"><a class="header" href="#apêndices-d--e--registro-executável-e-ledger-de-conclusão-honesta">Apêndices D + E — registro executável e ledger de conclusão honesta</a></h1>
+<p>Este documento é o ledger dos Apêndices D (AndroidX/Jetpack, shims por
+módulo) e E (Google Play Services / Firebase, modo “sem GMS” honesto) da
+spec (<code>RustyDroid.md</code>). Como no Apêndice C, a fonte executável da verdade
+<strong>não é este texto</strong>: são <code>data/jetpack.toml</code> e <code>data/gms.toml</code>, validados
+por <code>rd-framework::fd_jetpack</code>/<code>fd_gms</code>, consultáveis via
+<code>rd jetpack</code>/<code>rd gms</code> e regenerados em <code>docs/jetpack.md</code>/<code>docs/gms.md</code>
+por <code>cargo xtask jetpack-report|gms-report</code>.</p>
+<h2 id="semântica-de-status-idêntica-à-do-apêndice-c"><a class="header" href="#semântica-de-status-idêntica-à-do-apêndice-c">Semântica de status (idêntica à do Apêndice C)</a></h2>
+<ul>
+<li><code>supported</code> — modelo host com estado para o subconjunto documentado em
+<code>notes</code>/<code>key_apis</code>, com testes. <strong>Nunca</strong> significa a biblioteca ou o
+serviço inteiro.</li>
+<li><code>partial</code> — um subconjunto real executa: DEX da biblioteca sobre a
+plataforma host e/ou shim host com estado. O restante cai em DEX,
+<code>NOT_FOUND</code> tipado ou desvio documentado.</li>
+<li><code>stub</code> — só reconhecimento: hierarquia de tipos, constantes, inflate ou
+alocação sem comportamento. Presença em DEX não é cobertura.</li>
+<li><code>not_implemented</code> — nenhum modelo registrado; a chamada falha de forma
+tipada (<code>NOT_IMPLEMENTED</code>/<code>NOT_FOUND</code>), nunca com sucesso fingido.</li>
+</ul>
+<p>Nenhum status sobe sem código + teste no mesmo PR (regra do Apêndice C).</p>
+<h2 id="estratégias-do-apêndice-d"><a class="header" href="#estratégias-do-apêndice-d">Estratégias do Apêndice D</a></h2>
+<p>Bibliotecas AndroidX e de terceiros <strong>viajam no APK</strong> (DEX). Por isso cada
+módulo declara uma estratégia:</p>
+<ul>
+<li><code>dex-passthrough</code> — o DEX da biblioteca executa na VM; o host só fornece
+a plataforma <code>android.*</code>/<code>java.*</code> embaixo. É a estratégia correta para
+bibliotecas puras (Gson, Moshi, coroutines…); o status mede quanto da
+plataforma embaixo + dos pontos de integração funciona de verdade.</li>
+<li><code>host-shim</code> — o host intercepta métodos listados com um modelo com
+estado (ex.: RecyclerView e WorkManager no M8; LiveData/ViewModelStore
+como fallback quando o APK não traz o corpo DEX). Fora da lista, o
+dispatch devolve <code>None</code> e o interpretador segue para o DEX real.</li>
+<li><code>host-native</code> — implementação nativa no host, sem DEX esperado.</li>
+</ul>
+<p>Jetpack Compose (UI-05) continua experimental/longo prazo na PARTE 0 da
+spec: o registro o mantém <code>not_implemented</code> com gap explícito — registrar
+não é implementar.</p>
+<h2 id="modo-sem-gms-honesto-apêndice-e"><a class="header" href="#modo-sem-gms-honesto-apêndice-e">Modo “sem GMS” honesto (Apêndice E)</a></h2>
+<p>Não há processo GMS, conta Google nem backend real — e o registro diz
+isso em toda linha (<code>network = "none"</code>, validado):</p>
+<ul>
+<li>As APIs <strong>existem</strong> como shims host com respostas estruturadas,
+determinísticas e <strong>programáveis pelo agente</strong> (<code>Engine::gms_*</code>):
+localização fixa, usuário fake, catálogo de billing, token FCM etc.</li>
+<li>Eventos são <strong>capturados</strong> e consultáveis (Analytics, Crashlytics —
+incluindo crashes reais da VM —, ads, compras), nunca enviados à rede.</li>
+<li>Firestore/RTDB são stores locais em memória (record/replay NET-03):
+writes disparam listeners sincronamente, sem sincronização externa.</li>
+<li><code>GoogleApiAvailability</code> é programável; o default <code>SUCCESS</code> significa
+apenas “o shim responde”, jamais “o Google respondeu”.</li>
+</ul>
+<h2 id="como-atualizar"><a class="header" href="#como-atualizar">Como atualizar</a></h2>
+<ol>
+<li>Mexeu num shim AndroidX/GMS? Atualize a linha em
+<code>data/jetpack.toml</code>/<code>data/gms.toml</code> <strong>no mesmo PR</strong>.</li>
+<li>Rode <code>rd jetpack check --json</code> / <code>rd gms check --json</code> (ou os testes
+de <code>rd-framework</code>).</li>
+<li>Regenere relatórios e spec: <code>cargo xtask jetpack-report jetpack-spec gms-report gms-spec</code>.</li>
+</ol>
+<h2 id="ledger-de-execução-branch-appendix-d-e-20261025"><a class="header" href="#ledger-de-execução-branch-appendix-d-e-20261025">Ledger de execução (branch <code>appendix-d-e-20261025</code>)</a></h2>
+<p>Estado por etapa: ver a tabela deste documento e o histórico dos PRs do trilho D/E (#213, #214); o antigo <code>PROGRESS-appendix-de.md</code> (log de sessão) saiu do repositório — está no histórico do git.
+Os PRs #191/#192 (Apêndice C, outro agente) não são tocados por este
+trabalho; arquivos compartilhados recebem, no máximo, edições aditivas
+mínimas documentadas no PR.</p>
+<ul>
+<li><strong>S6 (2026-10-25, branch <code>appendix-e-gms-runtime-20261025</code>)</strong>: o
+runtime do Apêndice E vive em <code>crates/rd-vm/src/gms.rs</code> (host-first,
+estado em <code>HostState.gms</code>, dispatch aditivo em <code>interp.rs</code> ao lado do
+Apêndice D) com 21 testes em <code>crates/rd-vm/tests/gms.rs</code>. 20 dos 21
+serviços sobem de <code>not_implemented</code> para <code>partial</code> (subconjuntos
+testados descritos em <code>data/gms.toml</code>); ML Kit permanece
+<code>not_implemented</code> e sem dispatch — o teste
+<code>unknown_gms_surface_returns_none</code> fixa essa fronteira.</li>
+<li><strong>S8 (rodada 1 de D/E, branch <code>appendix-d-e-round1-20261105</code>)</strong>: inventário
+por item, sem subir status sem teste.
+<ul>
+<li>
+<p><strong>D — stub → partial (3)</strong>: <code>androidx-drawerlayout</code>,
+<code>androidx-swiperefreshlayout</code>, <code>androidx-cardview</code>. Shim host em
+<code>crates/rd-vm/src/androidx_widgets.rs</code> (ligado em <code>call_host_shim_layer</code>
+e em <code>native.rs</code>), 9 testes em <code>crates/rd-vm/tests/androidx_widgets.rs</code>.
+Não modelados (dito em <code>notes</code>): animação, validação de
+<code>layout_gravity</code>, sobrecargas com gravidade <code>int</code> (caem no DEX),
+<code>DrawerListener</code>, gestos de arrasto, <code>onRefresh</code> (o host não dispara),
+sombra/cor de fundo do CardView.</p>
+</li>
+<li>
+<p><strong>D — continuam stub (4)</strong>: <code>androidx-viewpager2</code>,
+<code>androidx-constraintlayout</code>, <code>androidx-coordinatorlayout</code>,
+<code>androidx-material</code>. Sem shim; nenhum status sobe nesta rodada.</p>
+</li>
+<li>
+<p><strong>D — not_implemented (20)</strong>: a estratégia de cada item já está
+registrada em <code>data/jetpack.toml</code>. Próximo passo planejado (sem
+mudança de status até haver teste):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Biblioteca</th><th>Estratégia</th><th>Próximo passo / bloqueio</th></tr>
+</thead>
+<tbody>
+<tr><td>activity</td><td>dex-passthrough</td><td>Ciclo onCreate→onResume via DEX sobre <code>android.app</code></td></tr>
+<tr><td>annotation</td><td>dex-passthrough</td><td>Só metadado de compilação; decisão de status pendente</td></tr>
+<tr><td>paging</td><td>dex-passthrough</td><td><code>PagingSource.load</code> depende de coroutines</td></tr>
+<tr><td>palette</td><td>dex-passthrough</td><td><code>Palette.from(Bitmap)</code> depende de decode de bitmap (UI-02)</td></tr>
+<tr><td>compose</td><td>host-native</td><td>UI-05 experimental/longo prazo; segue <code>not_implemented</code></td></tr>
+<tr><td>emoji2</td><td>dex-passthrough</td><td>Fora do escopo desta rodada (fontes de emoji)</td></tr>
+<tr><td>media3</td><td>dex-passthrough</td><td>Depende de MEDIA-01/02 (pipeline de mídia)</td></tr>
+<tr><td>camerax</td><td>host-shim → DEX real</td><td><code>partial</code> (S19): o DEX real do CameraX 1.6.0 roda sobre a Camera2 virtual, sem shim novo. Preview renderiza. Captura não confirmada. Prova ponta a ponta local (APK fora do CI)</td></tr>
+<tr><td>security-crypto</td><td>host-shim</td><td><strong>Partial (S17, S20).</strong> Depende de AndroidKeyStore (ST-04). Persistência entre sessões no VFS app-private (S20); chave do AndroidKeyStore em claro no VFS, sem hardware</td></tr>
+<tr><td>credentials</td><td>host-shim</td><td><strong>Partial (S18, S18b).</strong> Padrão sem provedor. Provedor fake opt-in só para <code>get</code> (senha ou falha <code>Get*</code>); create sem armazenamento; <code>clear</code></td></tr>
+<tr><td>photopicker</td><td>host-shim</td><td>Depende de URI programável para <code>PickVisualMedia</code></td></tr>
+<tr><td>hilt-dagger</td><td>dex-passthrough</td><td>Exige app com DEX gerado pelo Hilt</td></tr>
+<tr><td>kotlinx-coroutines</td><td>dex-passthrough</td><td>Depende de <code>Dispatchers.Main</code> no modelo de threads</td></tr>
+<tr><td>rxjava</td><td>dex-passthrough</td><td>Depende de bridge de <code>Schedulers</code></td></tr>
+<tr><td>retrofit</td><td>dex-passthrough</td><td>Depende de <code>java.lang.reflect.Proxy</code></td></tr>
+<tr><td>moshi</td><td>dex-passthrough</td><td>DEX puro; sem ação host prevista</td></tr>
+<tr><td>gson</td><td>dex-passthrough</td><td>DEX puro dependente de reflexão</td></tr>
+<tr><td>coil</td><td>dex-passthrough</td><td>Depende de pipeline de imagens (UI-02)</td></tr>
+<tr><td>glide</td><td>dex-passthrough</td><td>Depende de pipeline de imagens (UI-02)</td></tr>
+<tr><td>picasso</td><td>dex-passthrough</td><td>Depende de pipeline de imagens (UI-02)</td></tr>
+</tbody>
+</table>
+</div>
+</li>
+<li>
+<p><strong>E — testes de erro e ciclo de vida (9 novos em
+<code>crates/rd-vm/tests/gms.rs</code>, suíte gms com 42 testes passando)</strong>:</p>
+<ul>
+<li><code>storage_getbytes_size_limit_error_and_delete_lifecycle</code>
+(firebase-storage): limite menor que o blob falha sem alterar o
+blob; limite igual ou zero tem sucesso; <code>delete</code> → leitura falha →
+segundo <code>delete</code> falha.</li>
+<li><code>safetynet_programmed_jws_and_nonce_record_track_api_key</code>
+(gms-integrity): <code>gms_set_attestation_jws</code> é devolvido por
+<code>getJwsResult</code>; o registro de nonce distingue <code>apiKeyPresent</code>.</li>
+<li><code>google_signin_sign_out_ends_silent_session_and_sign_in_restores_it</code>
+(gms-auth): <code>gms_sign_out_google</code> faz <code>silentSignIn</code> falhar com
+código 4 e <code>getLastSignedInAccount</code> voltar a null; reautenticar
+restaura a sessão.</li>
+<li><code>location_fix_cleared_mid_session_returns_null_until_reseeded</code>
+(gms-location): limpar o fix devolve null em <code>getLastLocation</code>;
+reprogramar restaura.</li>
+<li><code>nearby_request_connection_only_reaches_discovered_endpoints</code>
+(gms-nearby): <strong>correção de comportamento</strong>. <code>requestConnection</code>
+concluía com sucesso para qualquer endpoint, inclusive um nunca
+descoberto. Agora só conclui para endpoint descoberto ou programado
+e falha com <code>ApiException</code> (ENDPOINT_UNKNOWN) para os demais. Texto
+em <code>data/gms.toml</code> e <code>docs/gms.md</code> regenerado.</li>
+<li><code>maps_marker_remove_drops_only_that_marker</code> (gms-maps): <code>remove</code>
+tira só o marcador alvo, e o outro permanece.</li>
+<li><code>fit_zero_steps_yields_empty_data_set_not_fake_points</code> (gms-fit-health):
+sem passos programados, o histórico devolve lista vazia, sem ponto
+inventado.</li>
+<li><code>analytics_null_user_property_value_removes_it</code> (firebase-analytics):
+valor null em <code>setUserProperty</code> remove a propriedade.</li>
+<li><code>firestore_missing_document_reads_as_absent_not_error</code>
+(firebase-firestore): <code>get</code> de documento inexistente conclui com
+sucesso e <code>exists() == false</code>, sem dados inventados.</li>
+</ul>
+</li>
+<li>
+<p><strong>E — auditoria</strong>: fechada na rodada S9 (ver inventário abaixo).</p>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="s9--apêndice-e-inventário-final-dos-20-serviços-partial-2026-11-05"><a class="header" href="#s9--apêndice-e-inventário-final-dos-20-serviços-partial-2026-11-05">S9 — Apêndice E: inventário final dos 20 serviços <code>partial</code> (2026-11-05)</a></h3>
+<p>Critério (plano §5): cada serviço <code>partial</code> precisa de teste de <strong>sucesso</strong>,
+de <strong>erro</strong> e de <strong>ciclo de vida</strong>, quando o shim tem esses caminhos. Onde o
+shim não tem caminho de erro programável, a célula diz isso em vez de inventar
+um teste. Testes em <code>crates/rd-vm/tests/gms.rs</code> e <code>crates/rd-vm/tests/gms_erro_ciclo.rs</code> (etapa 7).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Serviço</th><th>Sucesso</th><th>Erro</th><th>Ciclo de vida</th></tr>
+</thead>
+<tbody>
+<tr><td>gms-common</td><td><code>availability_programmable_codes</code></td><td>mesmo teste (códigos programados)</td><td>troca de código no mesmo teste</td></tr>
+<tr><td>gms-tasks</td><td><code>tasks_completion_source_roundtrip_with_dex_listener</code></td><td><code>tasks_failure_surfaces_exception</code></td><td><code>tasks_when_all_success_failure_and_complete</code></td></tr>
+<tr><td>gms-location</td><td><code>location_fix_and_callback_delivery</code></td><td><code>location_failure_blocks_reads_and_registrations_then_recovers</code> (falha programada: leitura e registro falham)</td><td>mesmo teste (remoção segue disponível; recuperação volta a entregar); <code>location_fix_cleared_mid_session_returns_null_until_reseeded</code></td></tr>
+<tr><td>gms-maps</td><td><code>maps_ready_camera_and_markers</code></td><td><code>maps_load_failure_blocks_map_ready_then_recovers</code> (falha programada: initialize com código, sem onMapReady)</td><td>mesmo teste (limpar a falha volta a entregar o mapa)</td></tr>
+<tr><td>gms-billing</td><td><code>billing_product_details_modern_path</code></td><td><code>billing_purchase_flow_and_cancel</code> (cancel)</td><td><code>billing_listener_relaunching_flow_is_bounded</code></td></tr>
+<tr><td>gms-auth</td><td><code>google_signin_silent_requires_host_completion</code></td><td>ApiException 4 (mesmo teste)</td><td><code>google_signin_sign_out_ends_silent_session_and_sign_in_restores_it</code></td></tr>
+<tr><td>gms-ads</td><td><code>ads_banner_success_failure_and_rewarded</code></td><td><code>gms_ads_set_failure</code> (mesmo teste)</td><td><code>clear_failure</code> no mesmo teste</td></tr>
+<tr><td>gms-fit-health</td><td><code>fit_steps_programmable</code></td><td><code>fit_failure_does_not_start_sessions</code> (falha sem efeito colateral)</td><td><code>fit_failure_blocks_reads_and_writes_then_recovers</code> (bloqueio e recuperação); <code>fit_zero_steps_yields_empty_data_set_not_fake_points</code></td></tr>
+<tr><td>gms-cast</td><td><code>cast_states_follow_programmed_session</code></td><td><code>cast_failed_connect_creates_no_session_then_recovers</code> (falha sem sessão; erro em <code>gms_cast_last_error</code>)</td><td><code>cast_state_listener_fires_only_on_real_transitions</code></td></tr>
+<tr><td>gms-nearby</td><td><code>nearby_discovery_reports_programmed_endpoint</code></td><td><code>nearby_request_connection_only_reaches_discovered_endpoints</code></td><td><code>nearby_lifecycle_discovery_and_connections</code></td></tr>
+<tr><td>gms-integrity</td><td><code>integrity_and_safetynet_deterministic_tokens</code></td><td><code>integrity_failure_code_is_programmable_per_error_kind</code>; <code>safetynet_failure_blocks_attestation_then_recovers</code> (attest com ApiException, sem nonce)</td><td><code>integrity_failure_then_recovery_is_a_full_lifecycle</code>; mesmo teste do SafetyNet (recuperação)</td></tr>
+<tr><td>firebase-core</td><td><code>firebase_autoinit_and_strict_mode</code> (auto-init)</td><td>strict sem initializeApp (mesmo teste)</td><td>mesmo teste (init → uso)</td></tr>
+<tr><td>firebase-analytics</td><td><code>firebase_autoinit_and_strict_mode</code> (evento)</td><td><code>analytics_invalid_names_are_rejected_then_valid_events_recorded</code> (nome inválido rejeitado e contado)</td><td>mesmo teste (coleção desligada e religada)</td></tr>
+<tr><td>firebase-auth</td><td><code>firebase_auth_full_flow</code></td><td>senha errada (mesmo teste)</td><td><code>firebase_auth_state_listener_fires_on_add_and_signin</code></td></tr>
+<tr><td>firebase-messaging</td><td><code>messaging_token_topics_and_delivery</code></td><td><code>messaging_failure_blocks_token_and_topics_then_recovers</code> (token e tópico falham com IOException; sem efeito)</td><td>mesmo teste (deleteToken segue; recuperação restaura token e assinatura)</td></tr>
+<tr><td>firebase-crashlytics</td><td><code>crashlytics_records_and_uncaught_bridge</code></td><td><code>crashlytics_custom_keys_capped_at_64_and_truncated</code> (limite de 64 chaves e truncamento)</td><td>crash não capturado vira registro; coleção desligada (mesmo teste)</td></tr>
+<tr><td>firebase-firestore</td><td><code>firestore_set_get_query_and_seed</code></td><td><code>firestore_missing_document_reads_as_absent_not_error</code></td><td><code>firestore_query_filter_and_snapshot_listener</code></td></tr>
+<tr><td>firebase-rtdb</td><td><code>rtdb_set_resolve_and_listener</code></td><td><code>rtdb_permission_denied_cancels_listeners_and_blocks_writes_then_recovers</code> (negação: onCancelled, escrita não grava, remoção e leitura falham)</td><td>mesmo teste (listener registrado volta a receber após recuperação)</td></tr>
+<tr><td>firebase-remoteconfig</td><td><code>remoteconfig_fetch_activate_semantics</code></td><td><code>remote_config_failed_fetch_keeps_active_values_then_recovers</code></td><td>fetch falho mantém valores ativos; recuperação aplica o novo (mesmo teste)</td></tr>
+<tr><td>firebase-storage</td><td><code>storage_seed_download_and_missing</code></td><td><code>storage_getbytes_size_limit_error_and_delete_lifecycle</code></td><td>mesmo teste (delete)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Na etapa 7, cada célula “sem caminho de erro” ganhou uma falha programável opt-in
+(sem falha programada, o comportamento é o de antes), com teste que falha sem ela.
+Messaging e RTDB têm falha programável e teste próprio nesta tabela (#603 e #604). A etapa 7
+está fechada (ver o fechamento abaixo).</p>
+<p>Mudanças de comportamento nesta rodada (cada uma com teste que falha sem ela):</p>
+<ul>
+<li><strong>gms-cast</strong>: <code>onCastStateChanged(int)</code> agora dispara em transição real de
+estado (connect/disconnect programados). Antes, <code>CastStateListener</code> era só
+guardado e nunca chamado. Mutação (dispatch removido) ⇒ teste falha.</li>
+<li><strong>firebase-rtdb</strong>: <code>removeEventListener</code> agora deixa de entregar eventos
+(já existia no código, sem teste). Mutação (remoção do <code>retain</code>) ⇒ teste falha.</li>
+</ul>
+<p>Getters novos (somente leitura): <code>gms_nearby_is_discovering</code>, <code>gms_nearby_connections</code>.</p>
+<h3 id="s10--apêndice-d-viewpager2-2026-11-05"><a class="header" href="#s10--apêndice-d-viewpager2-2026-11-05">S10 — Apêndice D: ViewPager2 (2026-11-05)</a></h3>
+<ul>
+<li><strong>S10 (rodada 2 de D, branch <code>appendix-d-viewpager2-20261105</code>)</strong>: ViewPager2
+sobe de <code>stub</code> para <code>partial</code> (<code>androidx-viewpager2</code>).
+<ul>
+<li>Shim em <code>crates/rd-vm/src/androidx_widgets.rs</code> (<code>Family::Pager</code>), com
+estado por instância: adapter e página atual. <code>setAdapter</code> zera a
+página (como o AOSP); <code>setCurrentItem(I)</code> e <code>(IZ)</code> fixam a página em
+<code>[0, count-1]</code>; sem adapter, ou com adapter vazio, a chamada é ignorada.</li>
+<li>Desvio de design: <code>count</code> vem do <code>getItemCount()</code> do DEX do adapter, pelo
+mesmo caminho do RecyclerView (<code>m8::call_dex</code>). Adapter sem
+<code>getItemCount</code> no DEX conta como 0 (chamada ignorada, sem panic).</li>
+<li>Testes: 6 novos em <code>crates/rd-vm/tests/androidx_widgets.rs</code> (roundtrip e
+reset, clamp, forma com <code>smoothScroll</code>, ignorado sem adapter ou com
+adapter vazio, adapter só do host, isolamento por instância), com
+dispatch real por <code>Engine::invoke_instance</code>. O arquivo tem 15 testes.</li>
+<li>Mutações (cada uma derruba os testes que devem cair): sem clamp superior
+→ 2 falhas; sem reset no <code>setAdapter</code> → 1 falha; sem o caso
+<code>count == 0</code> → 2 falhas. Arquivo restaurado e comparado byte a byte.</li>
+<li>Inventário: a API pública completa do ViewPager2 (AndroidX main) <strong>não</strong>
+foi inventariada nesta rodada. O que não é modelado está listado em
+<code>notes</code> de <code>data/jetpack.toml</code>. Por isso o status é <code>partial</code>, não
+<code>supported</code>.</li>
+<li>Não modelado (dito em <code>notes</code>): animação, <code>OnPageChangeCallback</code>
+(nenhum evento é entregue), fake drag, entrada de usuário, transformadores
+de página, orientação, offscreen page limit, item decorations e
+acessibilidade. Se o adapter encolher, a página não é reajustada.</li>
+<li>O pacote legado <code>androidx.viewpager</code> (ViewPager v1) segue <code>stub</code> (só
+hierarquia e inflate, sem shim) e fica fora de <code>key_apis</code>.</li>
+<li>D — continuam <code>stub</code> (3): <code>androidx-constraintlayout</code>,
+<code>androidx-coordinatorlayout</code>, <code>androidx-material</code>. D — <code>not_implemented</code>
+(20) sem mudança.</li>
+</ul>
+</li>
+</ul>
+<h3 id="s11--apêndice-d-photo-picker-com-resultado-programável-2026-11-05"><a class="header" href="#s11--apêndice-d-photo-picker-com-resultado-programável-2026-11-05">S11 — Apêndice D: photo picker com resultado programável (2026-11-05)</a></h3>
+<ul>
+<li><strong>S11 (rodada 3 de D, branch <code>appendix-d-photopicker-20261105</code>)</strong>: photo
+picker sobe de <code>not_implemented</code> para <code>partial</code> (<code>androidx-photopicker</code>).
+<ul>
+<li>Escolha do usuário: resultado programável. Sem provedor inventado e sem
+sucesso fake. Por padrão, o picker cancela.</li>
+<li>Lançamento: <code>Activity.startActivityForResult(Intent, int)</code> (e a forma com
+<code>Bundle</code>) em <code>crates/rd-vm/src/framework.rs</code>. Ações de picker
+(<code>android.media.action.PICK_IMAGES</code>, <code>GET_CONTENT</code>, <code>OPEN_DOCUMENT</code>) passam
+por <code>crates/rd-vm/src/photopicker.rs</code>. Outras ações continuam
+<code>NOT_IMPLEMENTED</code> e não consomem a fila.</li>
+<li>Resultado: uma fila FIFO de <code>PickerAnswer</code> (<code>Uri</code> ou <code>Cancel</code>) em
+<code>HostState.photopicker</code>. Fila vazia = <code>RESULT_CANCELED</code> sem data. URI
+programada = <code>RESULT_OK</code> com a URI em <code>Intent.getData()</code>. A entrega chama
+<code>onActivityResult(IILandroid/content/Intent;)V</code> no DEX do app.</li>
+<li>Modelo do Intent: único, o <code>IntentMeta</code> de <code>bundle.rs</code>. Não há arms
+duplicados de Intent. Uma tentativa anterior com arms duplicados foi
+descartada porque eles eram sombreados pelo <code>IntentMeta</code>.</li>
+<li>Testes: 7 em <code>crates/rd-vm/tests/photopicker.rs</code>, com Intents criados
+por DEX (<code>new-instance</code> + <code>invoke-direct &lt;init&gt;(String)</code>) e lançamento por
+DEX (<code>invoke-virtual startActivityForResult</code>). Cobrem: cancelamento sem
+resposta, URI entregue com RESULT_OK e getData, FIFO com fila vazia
+cancelando de novo, GET_CONTENT e OPEN_DOCUMENT, ação fora do picker sem
+consumir a fila, Intent sem ação, e resultado sem tipo MIME.</li>
+<li>Mutações (cada uma derruba os testes que devem cair): sem entrega
+(<code>onActivityResult</code> não chamado) → 5 falhas; fila ignorada (sempre
+cancela) → 4 falhas; RESULT_OK trocado por CANCELED para URI → 2 falhas;
+GET_CONTENT removido da lista → 1 falha; data não entregue → 4 falhas;
+ação não verificada (qualquer ação vira picker) → 1 falha. Arquivos
+restaurados e comparados byte a byte.</li>
+<li>Desvios documentados: entrega síncrona (no mesmo call, sem loop de
+mensagens); uma URI só (<code>PickMultipleVisualMedia</code> não é devolvido); Uri
+opaca (sem esquema nem caminho); sem tipo MIME no resultado.</li>
+<li>Não modelado: UI do picker do sistema, seleção real de mídia, permissão
+de acesso à mídia, e a classe <code>ActivityResultContracts$PickVisualMedia</code>
+do AndroidX como golden (os testes exercitam o caminho da ação do Intent).</li>
+<li>Inventário: a API pública do photo picker não foi inventariada
+integralmente. O que não é modelado está em <code>notes</code> de <code>data/jetpack.toml</code>.
+Por isso o status é <code>partial</code>, não <code>supported</code>.</li>
+<li>D — <code>partial</code> agora: DrawerLayout, SwipeRefreshLayout, CardView,
+ViewPager2, photo picker. <code>stub</code> (3): ConstraintLayout, CoordinatorLayout,
+material. <code>not_implemented</code> (19, eram 20).</li>
+</ul>
+</li>
+</ul>
+<h3 id="s12--apêndice-d-rxjava-3-como-dex-passthrough-2026-11-05"><a class="header" href="#s12--apêndice-d-rxjava-3-como-dex-passthrough-2026-11-05">S12 — Apêndice D: RxJava 3 como dex-passthrough (2026-11-05)</a></h3>
+<ul>
+<li><strong>S12 (rodada 4 de D, branch <code>appendix-d-rxjava-20261105</code>)</strong>: RxJava sobe de
+<code>not_implemented</code> para <code>partial</code> (<code>rxjava</code>, <code>dex-passthrough</code>). O bytecode
+real da biblioteca executa na VM, sem shim host.
+<ul>
+<li>Fixture: DEX de <code>io.reactivex.rxjava3:rxjava</code> 3.1.10 e <code>reactive-streams</code> 1.0.4,
+reduzido por R8 8.7.18 com regras keep. Tem 23 KB e está em
+<code>crates/rd-vm/tests/fixtures/rxjava3/</code>. A regeneração reproduz o SHA-256
+<code>4023c229…</code> (<code>scripts/gen-rxjava3-fixture.sh</code>). Proveniência e licenças no README.</li>
+<li>Exceção de política: <code>.dex</code> é bloqueante no RD Sentinel. A exceção datada, com
+escopo de um único arquivo e validade até 2027-02-05, está em
+<code>docs/adr/036-excecao-fixture-dex-rxjava.md</code>. Ela depende de um mantenedor aplicar
+<code>sentinel:policy-approved</code>. Não foi aplicada por mim.</li>
+<li>Testes: 5 em <code>crates/rd-vm/tests/jetpack_rxjava.rs</code>. Cobrem <code>just</code> + <code>subscribe</code>
+→ disposed; <code>never</code> → não disposed; <code>dispose()</code> → disposed; <code>empty</code> → disposed;
+e sem o DEX da biblioteca no Engine a chamada falha.</li>
+<li>Gap de plataforma encontrado pelo teste: <code>AtomicInteger.lazySet</code> e
+<code>AtomicReference.lazySet</code> não existiam na VM. Os dois viram alias de <code>set</code>
+(<code>crates/rd-vm/src/intrinsics.rs</code>). Na VM single-threaded essa é a semântica.</li>
+<li>Mutações (cada uma derruba os testes certos; arquivo restaurado e comparado
+byte a byte): sem <code>lazySet</code> em AtomicInteger → 1 falha; sem <code>lazySet</code> em
+AtomicReference → 2 falhas; <code>set</code>/<code>lazySet</code> de AtomicReference não grava → 2 falhas.</li>
+<li>Não modelado: Schedulers e threads, Flowable e backpressure, operadores além de
+just/empty/never, blocking*, onError/RxJavaPlugins, CompositeDisposable, Subjects.
+Por isso o status é <code>partial</code>, não <code>supported</code>.</li>
+<li>D — <code>partial</code> agora: DrawerLayout, SwipeRefreshLayout, CardView, ViewPager2,
+photo picker, RxJava (6). <code>stub</code> (3): ConstraintLayout, CoordinatorLayout,
+material. <code>not_implemented</code> (18).</li>
+</ul>
+</li>
+</ul>
+<h3 id="s13--apêndice-d-room-261-real-sobre-o-vm-st-02-2026-11-08"><a class="header" href="#s13--apêndice-d-room-261-real-sobre-o-vm-st-02-2026-11-08">S13 — Apêndice D: Room 2.6.1 real sobre o VM (ST-02) (2026-11-08)</a></h3>
+<ul>
+<li><strong>S13 (rodada 5 de D, branch <code>fix/room-migrations-close-20261108</code>)</strong>: o Room
+deixa de ser um builder com migrações no-op. Três desvios do VM, achados por um
+fixture real, foram corrigidos, com aprovação do usuário para mudar a semântica
+que afeta todos os apps:
+<ul>
+<li><code>addMigrations</code> grava as migrações no <code>MigrationContainer</code> real do Room
+(<code>crates/rd-vm/src/m8.rs</code>). Antes era no-op: a migração 1→2 nunca rodava.</li>
+<li><code>requireMigration</code> segue o padrão do Room. Sem <code>fallbackToDestructiveMigration()</code>,
+uma versão sem caminho de migração lança <code>IllegalStateException</code>
+(“A migration from 1 to 2 was required but not found”). Antes, o VM recriava
+a tabela em silêncio e perdia os dados.</li>
+<li><code>close()</code> libera a conexão do backend (<code>crates/rd-vm/src/jsqlite.rs</code>), como o
+Android. Antes ficava com a conexão viva, e a tabela TEMP do invalidation
+tracker sobrevivia; a reabertura falhava com <code>table room_table_modification_log already exists</code>. O <code>close</code> do <code>SQLiteOpenHelper</code> (que o Room chama ao fechar)
+também libera a conexão do banco que abriu.</li>
+<li>Evidência do bug antes da correção (trace SQL, <code>RD_SQL_TRACE=1</code>): com a migração
+declarada, nenhum <code>ALTER TABLE</code> era executado; o Room rodava <code>DROP TABLE IF EXISTS item</code> e recriava a tabela. Sem migração, o mesmo <code>DROP</code> acontecia sem erro.</li>
+<li>Fixture: <code>crates/rd-vm/tests/fixtures/room/src/</code> (duas versões do mesmo banco:
+v1 com <code>item(id, name)</code>; v2 com <code>qty INTEGER NOT NULL DEFAULT 0</code> e
+<code>Migration(1,2)</code>). O <code>_Impl</code> é gerado pelo processador real do
+<code>androidx.room:room-compiler:2.6.1</code> no javac, e o DEX sai do D8 (R8 8.7.18,
+<code>--min-api 26</code>). <code>scripts/gen-room-fixture.sh</code> regenera tudo a partir do Google
+Maven (AndroidX não existe no Maven Central), com <code>platform-35</code> para o
+<code>android.jar</code>. O SHA-256 gerado nesta rodada foi <code>134e9ab7…</code>.</li>
+<li>O DEX <strong>não</strong> é versionado: <code>.dex</code> é bloqueante no RD Sentinel e a exceção da
+ADR 036 cobre só o fixture do RxJava. Por isso <code>crates/rd-vm/tests/jetpack_room.rs</code>
+(3 testes) é <code>#[ignore]</code> e exige <code>RD_ROOM_FIXTURE_DEX</code>. Rodar no CI exige uma
+exceção de política nova, que é decisão de mantenedor.</li>
+<li>Testes: <code>migration_declared_runs_alter_and_keeps_rows</code> (<code>count=1,qty=0</code>),
+<code>without_migration_refuses_to_open_like_room</code> (ISE do Room) e
+<code>fresh_database_reopens_in_same_process</code> (reabertura após <code>close</code>).
+Os três passam com a correção. No VM original (<code>main</code>) os três falham.</li>
+<li>Regressão: <code>cargo test -p rd-vm -- --include-ignored</code> com o DEX presente: todos
+os blocos <code>test result: ok</code>, zero falhas.</li>
+<li>(Superado pelo S21) <code>fallbackToDestructiveMigrationFrom</code>/<code>OnDowngrade</code> não eram gravados no config.</li>
+<li>Não modelado: auto-migrations, observers do InvalidationTracker
+(triggers) e coroutines/Flow. Por isso o status é <code>partial</code>, não <code>supported</code>.</li>
+<li>Observado no trace: cada abertura em conexão nova reexecuta o <code>onOpen</code> do Room
+(<code>CREATE TEMP TABLE</code>), e agora ele não falha. Sem erro de SQL nos três cenários.</li>
+</ul>
+</li>
+</ul>
+<h3 id="s14--apêndice-d-navigation-desempilhar-a-raiz-como-o-aosp-2026-11-08"><a class="header" href="#s14--apêndice-d-navigation-desempilhar-a-raiz-como-o-aosp-2026-11-08">S14 — Apêndice D: navigation, desempilhar a raiz como o AOSP (2026-11-08)</a></h3>
+<ul>
+<li><strong>S14 (rodada 6 de D, branch <code>fix/navigation-root-pop-20261108</code>)</strong>: <code>popBackStack()</code> e
+<code>popBackStack(id, inclusive)</code> no host de <code>NavController</code> passam a seguir o AOSP.
+<ul>
+<li>Fonte: <code>NavController.java</code> (AOSP <code>platform/frameworks/support</code>): <code>popBackStack()</code> é
+<code>popBackStack(atual, true)</code>; o retorno é <code>popped &amp;&amp; dispatchOnDestinationChanged()</code>, e
+o dispatch não ocorre com a pilha vazia. A doc oficial de back stack diz que, quando
+o retorno é false, <code>getCurrentDestination()</code> é nulo (o último destino saiu da pilha).</li>
+<li>Antes: a raiz era mantida em qualquer caso, e <code>popBackStack(raiz, true)</code> retornava 1.
+Agora desempilhar a raiz esvazia a pilha e retorna 0.</li>
+<li><code>navigateUp()</code> não muda: o AOSP também não desempilha a raiz nesse caso (retorna false).</li>
+<li>Decisão do usuário (2026-11-08, “pesquise e escolha a melhor solução”): alinhar ao
+Android. A mudança afeta apps que desempilham a raiz; apps que tratam o retorno/destino
+nulo se comportam como no Android.</li>
+<li>Teste: <code>dex_navigation_root_pop_empties_stack_like_android</code> (<code>crates/rd-vm/tests/androidx.rs</code>).
+Mutação (retorno <code>popped</code> sem checar pilha vazia) derruba o teste.</li>
+<li>Não modelado: <code>navigate()</code> com pilha vazia (o AOSP exige o destino atual),
+<code>popUpTo</code>/<code>saveState</code>/<code>restoreState</code>, e validação de destino desconhecido ao navegar.
+Por isso o status segue <code>partial</code>.</li>
+</ul>
+</li>
+</ul>
+<h3 id="s15--apêndice-d-testes-do-room-no-ci-com-dex-gerado-na-hora-2026-11-08"><a class="header" href="#s15--apêndice-d-testes-do-room-no-ci-com-dex-gerado-na-hora-2026-11-08">S15 — Apêndice D: testes do Room no CI, com DEX gerado na hora (2026-11-08)</a></h3>
+<ul>
+<li><strong>Decisão do usuário (2026-11-08, <code>room_dex_policy</code>): gerar no CI.</strong> O DEX do fixture do
+Room continua <strong>não versionado</strong> (ADR 036 inalterada: a exceção cobre só o RxJava).</li>
+<li>Novo job <code>room-fixture</code> em <code>.github/workflows/ci.yml</code>: roda <code>scripts/gen-room-fixture.sh</code>
+(Room 2.6.1 com o processador real no javac, D8/R8 8.7.18, ~24 s) e depois
+<code>RD_ROOM_FIXTURE_DEX=… cargo test -p rd-vm --test jetpack_room -- --ignored</code>.</li>
+<li>Validado localmente com os mesmos comandos: SHA-256 do DEX <code>134e9ab7…</code> (igual ao da S13),
+3 testes do Room passam.</li>
+<li>Os 3 testes continuam <code>#[ignore]</code>, para que <code>cargo test --workspace</code> não dependa do DEX.</li>
+<li>Status de <code>room</code> segue <code>partial</code> (ver S13 e S21: não modelados auto-migrations, observers do
+InvalidationTracker e coroutines/Flow).</li>
+</ul>
+<h3 id="s16--apêndice-d-lacunas-conhecidas-de-workmanager-2026-11-08"><a class="header" href="#s16--apêndice-d-lacunas-conhecidas-de-workmanager-2026-11-08">S16 — Apêndice D: lacunas conhecidas de WorkManager (2026-11-08)</a></h3>
+<p>Auditoria do modelo host de <code>androidx.work</code> em <code>crates/rd-vm/src/m8.rs</code> (sem mudança de
+comportamento nesta rodada). Achados, por leitura do código:</p>
+<ul>
+<li><code>cancelWorkById</code>, <code>cancelAllWorkByTag</code> e <code>cancelUniqueWork</code> percorrem <code>vm.fw.m8.work</code> e
+marcam <strong>todo</strong> registro <code>ENQUEUED</code> como <code>CANCELLED</code>. Não casam id, tag nem nome único.
+Efeito: cancelar um trabalho cancela os outros. Isso é um erro, não só uma lacuna.</li>
+<li><code>WorkRecord</code> guarda <code>id</code> no formato <code>work-N</code>, não um UUID. Não há <code>getId()</code>, então o app
+não tem como relacionar um <code>WorkRequest</code> ao registro.</li>
+<li><code>tags</code> é sempre <code>Vec::new()</code>: <code>addTag</code> não é gravado. Por isso <code>cancelAllWorkByTag</code> e
+<code>getWorkInfosByTag</code> não teriam como casar.</li>
+<li><code>getWorkInfosByTag</code> e <code>getWorkInfosForUniqueWork</code> devolvem um <code>ListenableFuture</code> sem valor.</li>
+</ul>
+<p>Correção (2026-11-08, branch <code>fix/workmanager-cancel-ids-20261108</code>):</p>
+<ul>
+<li>Cada <code>WorkRequest</code> ganha id UUID v4 no <code>build()</code> (RNG por engine, determinístico com
+<code>RD_UUID_SEED</code>); <code>WorkRequest.getId()</code> devolve o mesmo <code>java.util.UUID</code>, e <code>WorkRecord.id</code> usa esse texto.</li>
+<li><code>Builder(Class)</code> grava o worker (antes o <code>worker_class</code> saía sempre vazio); <code>addTag</code> acumula
+as tags no builder e o <code>build()</code> as copia; <code>WorkRecord.tags</code> as recebe.</li>
+<li><code>enqueueUniqueWork</code> / <code>enqueueUniquePeriodicWork</code> gravam o nome em <code>WorkRecord.unique_name</code>.</li>
+<li><code>cancelWorkById</code>, <code>cancelAllWorkByTag</code> e <code>cancelUniqueWork</code> cancelam só os <code>ENQUEUED</code> que casam.</li>
+<li><code>getWorkInfosByTag</code> / <code>getWorkInfosForUniqueWork</code> deixaram de ser sequestrados. Sem <code>WorkInfo</code>
+real, a chamada não devolve mais um future vazio: falha de forma explícita (não modelado).</li>
+</ul>
+<p>Testes: <code>crates/rd-vm/tests/m8.rs</code> (<code>m8_workmanager_*</code>, incluindo mutação do casamento que derruba
+os testes de cancelamento) e <code>crates/rd-vm/tests/m8_workmanager_dex.rs</code> (bytecode DEX em memória:
+builder, <code>getId</code>, <code>enqueue</code>, <code>cancelWorkById</code>).</p>
+<p>Segunda rodada (mesma branch de correção, 2026-11-08): <code>WorkInfo</code> real.</p>
+<ul>
+<li><code>getWorkInfosByTag</code>, <code>getWorkInfosForUniqueWork</code> e <code>getWorkInfoById</code> devolvem <code>ListenableFuture</code>
+já completo, com <code>List&lt;WorkInfo&gt;</code> (ou <code>WorkInfo</code>/<code>null</code> por id). <code>WorkInfo.getId()</code> (UUID) e
+<code>getState()</code> (enum <code>WorkInfo.State</code>, constantes com a ordem da AndroidX, cache em <code>statics</code>).
+<code>WorkInfo.State.isFinished()</code>. <code>sget</code> de <code>WorkInfo.State.X</code> resolve pelo provider host
+(<code>m8::host_static</code>, em <code>engine.rs</code>).</li>
+<li>Teste DEX: <code>crates/rd-vm/tests/m8_workmanager_dex.rs</code> (lista, <code>Future.get</code>, <code>List.get</code>, <code>getState</code>
+comparado com <code>sget</code> por identidade, <code>isFinished</code>). Limite: o teste não pega o cache de identidade
+quebrado em referências guardadas de uma chamada anterior (mutação aplicada e não detectada).</li>
+</ul>
+<p>Terceira rodada: <code>ExistingWorkPolicy</code> e <code>ExistingPeriodicWorkPolicy</code> são enums host (<code>host_static</code>).
+<code>KEEP</code> descarta o pedido novo quando já há trabalho <code>ENQUEUED</code> com o mesmo nome único; <code>REPLACE</code>
+cancela esse trabalho (só <code>ENQUEUED</code>, como o cancelamento) e enfileira o novo. Teste:
+<code>dex_unique_work_keep_and_replace_follow_existing_work_policy</code> (mutações de KEEP e REPLACE derrubam o teste).
+<code>APPEND</code>, <code>APPEND_OR_REPLACE</code> e <code>UPDATE</code> não são modeladas (encadeamento depende de execução).</p>
+<p>Fechado em S22: tags. Fechado em S23: <code>doWork()</code> sob demanda
+(<code>m8_run_work</code>) e progresso/output em <code>WorkInfo</code> (ver S23). Fechado em S24: <code>Constraints</code>
+aplicadas contra o estado simulado do dispositivo (ver S24). Por isso <code>work</code> segue <code>partial</code>
+(sem o runtime real do WorkManager e sem chains).</p>
+<h3 id="s17--apêndice-d-security-crypto-sobre-o-androidkeystore-st-04-2026-11-08"><a class="header" href="#s17--apêndice-d-security-crypto-sobre-o-androidkeystore-st-04-2026-11-08">S17 — Apêndice D: security-crypto sobre o AndroidKeyStore (ST-04) (2026-11-08)</a></h3>
+<ul>
+<li><strong>S17 (rodada 7 de D, branch <code>feat/appd-security-crypto-20261108</code>)</strong>: <code>EncryptedSharedPreferences.create</code>
+(assinaturas com <code>MasterKey</code> e com alias deprecado) e a superfície <code>SharedPreferences</code>/<code>Editor</code> sobem de
+<code>not_implemented</code> para <code>partial</code>. Módulo <code>crates/rd-vm/src/security_crypto.rs</code>, com 14 testes unitários
+(codec, cifragem, AAD por arquivo e por chave, chave mestra ausente ou diferente, tipos errados, edições
+pendentes, <code>clear</code> seguido de <code>put</code>, listeners). A API pública foi conferida no AAR oficial 1.1.0
+(<code>dl.google.com</code>), não só na documentação.</li>
+<li>Valores cifrados com AES-256-GCM pela chave do AndroidKeyStore (<code>jkeystore.rs</code>), IV aleatório por valor e
+AAD = arquivo + chave. Mutação de teste: remover o arquivo do AAD derruba <code>value_copied_to_another_file_*</code>.</li>
+<li><strong>Desvios</strong> (também em <code>notes</code> do registro): o formato não é o do Tink, então não há interoperabilidade
+com dados gravados por um dispositivo real; só os valores são cifrados (nomes ficam em claro na memória
+do host); o estado dura só a sessão do Engine (nada no VFS; superado pelo S20); <code>create</code> é interceptado mesmo com o DEX da
+biblioteca presente. <code>MasterKey.Builder</code> e <code>MasterKeys.getOrCreate</code> rodam no DEX sobre o ST-04.</li>
+<li><strong>Decisão do usuário (2026-11-08)</strong>: o escopo de D nesta rodada são os host-shim (CameraX, security-crypto,
+credentials). Os dex-passthrough continuam <code>not_implemented</code> sem teste de carga de DEX real.</li>
+</ul>
+<h3 id="s18--apêndice-d-credentials-host-shim-sem-provedor-2026-11-08"><a class="header" href="#s18--apêndice-d-credentials-host-shim-sem-provedor-2026-11-08">S18 — Apêndice D: credentials, host-shim sem provedor (2026-11-08)</a></h3>
+<ul>
+<li><strong>S18 (rodada 8 de D, branch <code>feat/appd-credentials-20261108</code>)</strong>: <code>CredentialManager</code> sobe de
+<code>not_implemented</code> para <code>partial</code>. Módulo <code>crates/rd-vm/src/credentials.rs</code>, com 6 testes de guest em
+<code>crates/rd-vm/tests/credentials_shim.rs</code>: o DEX sintético chama a interface por <code>invoke-interface/range</code>
+e o callback é uma classe do próprio DEX que guarda o que recebe. A API foi conferida no AAR oficial
+androidx.credentials 1.7.0-alpha03 (<code>dl.google.com</code>, <code>javap</code>).</li>
+<li><strong>Padrão sem provedor</strong> (sem provedor fake instalado; o fake é opt-in, ver S18b): <code>getCredentialAsync</code> → <code>onError(NoCredentialException)</code>;
+<code>createCredentialAsync</code> → <code>onError(CreateCredentialUnsupportedException)</code>; <code>clearCredentialStateAsync</code> →
+<code>onResult(null)</code>, porque não há estado a limpar. Os campos <code>type</code> e <code>errorMessage</code> seguem o construtor
+real (constantes lidas do bytecode). Argumentos obrigatórios nulos (contexto, request, callback) → NPE.</li>
+<li>Mutação: desligar o dispatch de instância derruba 5 dos 6 testes.</li>
+<li><strong>Desvios</strong> (também em <code>notes</code> do registro): callback entregue inline, antes de a chamada retornar; executor
+ignorado; o construtor do DEX não roda (o host grava os campos); nada é persistido, porque sem provedor não
+existe credencial.</li>
+<li><strong>Não modelados</strong> (caem no DEX da biblioteca): <code>prepareGetCredentialAsync</code>,
+<code>getCredentialAsync(PendingGetCredentialHandle, …)</code>, <code>createSettingsPendingIntent</code>, <code>signalCredentialState*</code>
+e as variantes <code>suspend</code>.</li>
+<li><strong>Pendente (resolvido em S18b)</strong>: o caminho de sucesso só ficava testável com um provedor fake.</li>
+</ul>
+<h3 id="s18b--apêndice-d-provedor-fake-do-credentials-2026-11-08"><a class="header" href="#s18b--apêndice-d-provedor-fake-do-credentials-2026-11-08">S18b — Apêndice D: provedor fake do credentials (2026-11-08)</a></h3>
+<ul>
+<li><strong>Pesquisa</strong>: o Credential Manager é atendido por provedores do sistema (<code>CredentialProviderService</code>, Android 14+
+para terceiros). O app não instala provedor no próprio processo, então um “provedor fake” é dublê de teste.
+A documentação oficial pede tratar <code>NoCredentialException</code>, cancelamento, interrupção, erro de configuração
+e falha desconhecida (<code>developer.android.com/identity/sign-in/smart-lock-migration</code>).</li>
+<li><strong>Opções avaliadas</strong>: (1) manter o padrão sem provedor, sem caminho de sucesso testável; (2) provedor fake
+programável, opt-in, só para <code>get</code>, no formato dos <code>gms_*_set_*</code> do Apêndice E; (3) provedor completo com
+armazenamento, leitura das opções do <code>GetCredentialRequest</code> e <code>preferImmediatelyAvailableCredentials</code>.</li>
+<li><strong>Escolhida: (2).</strong> Cobre o caminho de sucesso e as falhas tipadas sem a complexidade da (3), que depende de
+ler as opções do request e de um armazenamento para o create. A (3) fica como próximo passo.</li>
+<li><strong>Implementação</strong>: <code>credentials_set_password(id, senha)</code> faz <code>getCredentialAsync</code> devolver
+<code>GetCredentialResponse</code> com um <code>PasswordCredential</code> (campos <code>type</code>, <code>id</code>, <code>password</code> e a lista <code>credentials</code>,
+como o construtor real grava). <code>credentials_set_get_failure(GetFailure)</code> faz o get falhar com
+<code>GetCredentialCancellationException</code>, <code>GetCredentialInterruptedException</code>,
+<code>GetCredentialProviderConfigurationException</code> ou <code>GetCredentialUnknownException</code>, com o <code>type</code> lido do bytecode
+do AAR 1.7.0-alpha03. <code>credentials_clear_fake()</code> volta ao padrão. Estado em <code>HostState.credentials</code>, padrão <code>None</code>.</li>
+<li><strong>Desvios</strong>: o fake ignora o <code>GetCredentialRequest</code> e responde igual a qualquer pedido. <code>PasswordCredential.data</code>
+fica nulo (o <code>Bundle</code> não é modelado). Create e clear não mudam com o fake.</li>
+<li><strong>Testes</strong>: 4 novos em <code>credentials_shim.rs</code>: sucesso com <code>PasswordCredential</code> (id, senha e type conferidos);
+cada uma das 4 exceções <code>Get*</code> com a classe e o <code>type</code> da biblioteca; ciclo sucesso → erro → limpar → volta ao
+padrão sem resíduo; create e clear inalterados. Mutação do dispatch (ignorar o fake): derruba 3 dos 4.</li>
+<li><strong>Próximo passo (não feito)</strong>: (3), com armazenamento para o create e leitura das opções do request.</li>
+</ul>
+<h3 id="s19--apêndice-d-camerax-validação-ponta-a-ponta-do-dex-real-2026-11-08"><a class="header" href="#s19--apêndice-d-camerax-validação-ponta-a-ponta-do-dex-real-2026-11-08">S19 — Apêndice D: CameraX, validação ponta a ponta do DEX real (2026-11-08)</a></h3>
+<ul>
+<li><strong>Decisão do usuário (2026-11-08)</strong>: primeiro, escrever um shim host do ponto de entrada do CameraX. Depois
+da evidência abaixo, o usuário escolheu validar o DEX real. Esta rodada não tem shim novo; o plano
+“host-shim” para camerax fica substituído por esta decisão.</li>
+<li><strong>Evidência (local, build <code>rd-cli</code> debug de <code>main</code> 9399bf3, APK <code>comprix-v1.6.0-x86_64-release.apk</code>)</strong>:
+<ul>
+<li>Rota até o Scanner: <code>Pular</code> → <code>Nova lista</code> → <code>Compra do Mês</code> → <code>Criar e adicionar itens</code> →
+<code>Escanear um produto</code>, com permissão de câmera concedida. <code>last_error</code> = <code>null</code>. A tela “Escanear preço”
+mostra o preview sem injeção de frames (<code>/home/user/comprix/cx_run1.png</code>, fora do repositório).</li>
+<li>Trace com <code>RD_TRACE_METHOD=Landroidx/camera</code>: <code>ProcessCameraProvider.getInstance</code> →
+<code>getOrCreateCameraXInstance</code>, criação do <code>PreviewView</code>, binding de use cases, <code>SurfaceRequest</code> e
+<code>AndroidImageReaderProxy</code>. Todo o pipeline interno do CameraX roda no DEX sobre a Camera2 virtual (<code>m10</code>).</li>
+<li>“Tirar foto”: <code>ImageCapture.takePicture</code> → <code>submitStillCaptureRequest</code> executa, com <code>FutureChain</code> e
+<code>Futures.transformAsync</code>. <strong>A conclusão da captura não aparece no trace</strong> (sem <code>onCaptureSuccess</code> nem
+<code>ImageSaver</code>), então o sucesso da captura não é afirmado.</li>
+<li><strong>Reteste (2026-11-08, 22:15, <code>rd-cli</code> de <code>main</code> 8c3e9f2)</strong>: com <code>RD_TRACE_METHOD=Lbr/com/comprix/</code>, que
+cobre os callbacks do app, nenhum <code>onCaptureSuccess</code>, <code>onError</code> ou <code>onImageSaved</code> aparece. O screenshot
+pós-“Tirar foto” (<code>/home/user/comprix/cx_capture.png</code>, fora do repositório) ainda mostra a tela
+“Escanear preço”, sem a tela de confirmação do que o app leu. <code>last_error</code> = <code>null</code>. A captura continua
+não confirmada.</li>
+</ul>
+</li>
+<li><strong>Reteste (2026-11-09, <code>rd</code> de <code>main</code> 07cc7c5, 4 execuções)</strong>: o fluxo foi refeito por <code>rd mcp</code>
+(<code>install</code> → <code>permissions_grant CAMERA</code> → <code>launch</code> → <code>tap_text</code> até “Escanear um produto” → <code>tap_text</code>
+“Tirar foto”). O toque é aceito (<code>listener_acionado</code>), e a tela continua “Escanear preço”, sem
+confirmação da captura (<code>last_error</code> = <code>null</code>).
+<ul>
+<li>Com <code>RD_TRACE_METHOD=Landroidx/camera</code>: <code>takePicture</code> → <code>takePictureInternal</code> →
+<code>submitStillCaptureRequests</code> executam. Depois disso o trace para na espera do CameraX
+(<code>Camera2CameraControlImpl.waitForSessionUpdateId</code> / <code>isSessionUpdated</code>). Não há chamada de
+<code>capture</code> ou <code>captureBurst</code> no Camera2 (com <code>RD_TRACE_METHOD=Landroid/hardware/camera2</code>).</li>
+<li>Causa provável (não corrigida): o Camera2 virtual (<code>crates/rd-vm/src/m10/camera.rs</code>, ~1109–1130)
+chama <code>onCaptureCompleted</code> uma vez por <code>capture</code>/<code>setRepeatingRequest</code>, de forma síncrona. Não
+entrega resultados por frame. Na sessão inteira do trace só aparece um <code>onCaptureCompleted</code> de
+atualização de sessão. O CameraX espera por um resultado posterior a essa atualização, e ele não
+chega. Tags de request (<code>setTag</code>/<code>getTag</code>) estão implementadas e não explicam o bloqueio.</li>
+<li>Sem correção nesta rodada. Entregar resultados por frame muda a semântica da Camera2 virtual e
+precisa de PR próprio com testes de <code>camera_305.rs</code> e <code>m10.rs</code>.</li>
+<li>Evidência fora do repositório: <code>/home/user/appc/val/cx_r1.*</code>, <code>cx_r2.*</code>, <code>cx_r3.*</code>
+(transcrição JSON, trace em stderr, screenshot).</li>
+</ul>
+</li>
+<li><strong>Decisão de status (2026-11-08, usuário)</strong>: o usuário aceitou a evidência local e pediu que o CameraX vire
+<code>partial</code>. Registro: <code>module = "rd-vm/m10"</code>, <code>code</code> = <code>m10/camera.rs</code> e <code>m10/preview.rs</code>, <code>gap_id</code> mantido.
+Os testes no repositório cobrem a camada Camera2 que o CameraX usa: <code>camera_305.rs</code>, <code>m10.rs</code> e
+<code>android_scale_gesture.rs</code> (caminho do <code>PreviewView</code>). A prova do DEX do CameraX em si continua local, porque
+o APK não é versionável. Isso abre uma exceção à regra de <code>partial</code> com teste específico, registrada aqui e
+no PR. Não houve fixture com ADR. A estratégia na tabela segue <code>host-shim</code>, como o escopo de D, mas a
+implementação é o DEX real.
+Sobre o registro anterior (“pendente: fixture ou aceitar evidência local”): fica resolvido pela aceitação acima.</li>
+<li><strong>Limites da evidência</strong>: o preview foi verificado visualmente (screenshot). Não foi medido frame a frame, e a
+captura não foi confirmada. <code>ImageAnalysis</code> (modo Código) não foi exercitado.</li>
+</ul>
+<h3 id="s20--apêndice-d-security-crypto-persistência-entre-sessões-2026-11-08"><a class="header" href="#s20--apêndice-d-security-crypto-persistência-entre-sessões-2026-11-08">S20 — Apêndice D: security-crypto, persistência entre sessões (2026-11-08)</a></h3>
+<ul>
+<li><strong>Lacuna fechada</strong>: até o S19, o estado do security-crypto durava só a sessão do Engine. O cabeçalho de
+<code>security_crypto.rs</code> dizia “nada é gravado no VFS”, e isso não é mais verdade. O VFS da sessão
+(<code>Engine::set_vfs</code>) guarda agora duas coisas:
+<ul>
+<li>o arquivo cifrado em <code>files/rd_encrypted/&lt;nome em hex&gt;.enc</code>, em formato de texto (<code>RDENC1</code>, uma linha por
+valor com IV e <code>ciphertext||tag</code> em hex), regravado a cada <code>commit</code>/<code>apply</code> e na criação;</li>
+<li>a chave do AndroidKeyStore em <code>files/rd_keystore/&lt;alias em hex&gt;.key</code>, gravada em <code>generateKey</code> e apagada
+em <code>deleteEntry</code>.</li>
+</ul>
+</li>
+<li><strong>Recarga</strong>: <code>create</code> recarrega a chave e o arquivo do VFS quando a Engine não os tem em memória.
+<code>containsAlias</code>, <code>getKey</code>, <code>Cipher.init</code> e <code>doFinal</code> também recarregam a chave. A leitura de valor não
+recarrega: uma chave removida da memória continua falhando fechado.</li>
+<li><strong>Falhas tipadas</strong>: arquivo presente mas inválido → <code>GeneralSecurityException</code> (não vira arquivo vazio, para
+não sobrescrever dados); chave removida → <code>GeneralSecurityException</code> no <code>create</code>; byte alterado no
+ciphertext gravado → <code>SecurityException</code> na leitura da sessão seguinte.</li>
+<li><strong>Desvios</strong> (também em <code>notes</code> do registro): o material da chave fica em claro no VFS, sem TEE/StrongBox
+(o AndroidKeyStore real não expõe o material); o formato é próprio, não o do Tink; os nomes de arquivo e de
+chave aparecem em hex no VFS (sem separador de caminho), não cifrados.</li>
+<li><strong>Testes</strong> (<code>crates/rd-vm/src/security_crypto.rs</code>, 4 novos; módulo com 18 testes):
+<ul>
+<li><code>values_and_keystore_key_survive_a_new_engine_on_the_same_vfs</code>: a Engine B, sem nada em memória, lê o valor
+gravado pela Engine A; o texto puro não aparece no arquivo gravado;</li>
+<li><code>deleted_keystore_key_is_not_loaded_by_the_next_engine</code>;</li>
+<li><code>tampered_file_on_the_vfs_fails_authentication_in_the_next_engine</code>;</li>
+<li><code>corrupted_file_on_the_vfs_is_a_typed_error_not_an_empty_file</code>.</li>
+</ul>
+</li>
+<li><strong>Mutação</strong>: sem a gravação no <code>apply</code>, caem os 2 testes de sessão que dependem dela; sem a recarga da chave
+no <code>create</code>, caem os mesmos 2. O arquivo foi restaurado e conferido por checksum.</li>
+<li><strong>Validação</strong>: <code>cargo test -p rd-vm</code> completo passa, com 0 falhas; <code>cargo clippy -p rd-vm --lib --tests -- -D warnings</code>
+ok; <code>cargo fmt --all -- --check</code> ok.</li>
+<li><strong>Fora deste passo</strong>: DataStore (fica para depois, depende de coroutines e de persistência em disco);
+AES256_SIV para nomes de chave; EncryptedFile; o caminho Tink do DEX.</li>
+</ul>
+<h3 id="s21--apêndice-d-room-fallbacktodestructivemigrationfrom-e-ondowngrade-2026-11-08"><a class="header" href="#s21--apêndice-d-room-fallbacktodestructivemigrationfrom-e-ondowngrade-2026-11-08">S21 — Apêndice D: Room, fallbackToDestructiveMigrationFrom e OnDowngrade (2026-11-08)</a></h3>
+<ul>
+<li><strong>Lacuna fechada</strong>: o builder aceitava <code>fallbackToDestructiveMigrationFrom(int...)</code> e
+<code>fallbackToDestructiveMigrationOnDowngrade()</code> sem gravar nada. O config recebia <code>migrationNotRequiredFrom</code>
+vazio e <code>allowDestructiveMigrationOnDowngrade</code> no padrão, então o Room recusava aberturas que o app real
+aceitaria. Isso era mais estrito que o Room, nunca mais permissivo (S13).</li>
+<li><strong>Implementação</strong> (<code>crates/rd-vm/src/m8.rs</code>): o builder grava as versões num <code>HashSet&lt;Integer&gt;</code> (boxed) e o
+flag de downgrade. <code>room_init</code> passa o conjunto para <code>migrationNotRequiredFrom</code> e o flag para
+<code>allowDestructiveMigrationOnDowngrade</code>. A decisão de <code>isMigrationRequired</code> continua no Room real (DEX), não no host.</li>
+<li><strong>API conferida no jar</strong> (<code>javap</code> em <code>room-runtime-2.6.1.jar</code>): <code>fallbackToDestructiveMigrationFrom(int...)</code>
+(só a forma varargs) e <code>fallbackToDestructiveMigrationOnDowngrade()</code>. A bytecode de <code>isMigrationRequired</code>
+confirma que o conjunto e o flag são os campos consultados.</li>
+<li><strong>Fixture</strong>: <code>V2.java</code> ganha <code>seed</code> e <code>withFallbackFrom</code>; <code>V1.java</code> ganha <code>openOverV2</code>,
+<code>openOverV2WithoutFallback</code> e <code>count</code> no DAO. O DEX foi regenerado por <code>scripts/gen-room-fixture.sh</code>
+(javac com o processador do Room 2.6.1, depois D8), sem erro.</li>
+<li><strong>Testes</strong> (<code>crates/rd-vm/tests/jetpack_room.rs</code>, <code>#[ignore]</code>; a CI roda com o DEX):
+<ul>
+<li><code>fallback_from_listed_version_recreates_the_table</code>: <code>count=0</code>;</li>
+<li><code>downgrade_with_fallback_recreates_the_table</code>: <code>count=0</code>;</li>
+<li><code>downgrade_without_fallback_refuses_to_open_like_room</code>: <code>IllegalStateException</code>
+(“A migration from 2 to 1 was required but not found”);</li>
+<li>os 3 testes anteriores seguem passando. Total: 6/6 com <code>--ignored</code>.</li>
+</ul>
+</li>
+<li><strong>Mutação</strong>: conjunto sempre vazio derruba <code>fallback_from_listed_version_recreates_the_table</code>; flag de downgrade
+fixo em 0 derruba <code>downgrade_with_fallback_recreates_the_table</code>. O arquivo foi restaurado e conferido por checksum.</li>
+<li><strong>Limite</strong>: o fixture só tem os pares 1→2 e 2→1. Versões de origem diferentes de 1 não têm cenário próprio.
+Não há auto-migrations, observers do InvalidationTracker, nem coroutines/Flow. Status segue <code>partial</code>.</li>
+</ul>
+<h3 id="s22--apêndice-d-workinfogettags-workmanager-2026-11-08"><a class="header" href="#s22--apêndice-d-workinfogettags-workmanager-2026-11-08">S22 — Apêndice D: WorkInfo.getTags (WorkManager, 2026-11-08)</a></h3>
+<ul>
+<li><strong>Lacuna fechada</strong> (pendência do S16: “tags/progresso/output em <code>WorkInfo</code>”): só as tags. <code>WorkInfo</code>
+agora devolve <code>getTags()</code> com um <code>Set&lt;String&gt;</code> das tags do pedido, como o real. Antes, <code>WorkInfo</code> só tinha
+<code>getId()</code> e <code>getState()</code>.</li>
+<li><strong>Implementação</strong> (<code>crates/rd-vm/src/m8.rs</code>): <code>new_work_info</code> monta <code>rd_tags</code> a partir do <code>WorkRecord.tags</code>
+(que já vinha do <code>addTag</code> desde o S16), e o despacho de <code>WorkInfo.getTags</code> lê esse campo.</li>
+<li><strong>Teste</strong> (<code>crates/rd-vm/tests/m8.rs</code>, <code>m8_workmanager_work_info_exposes_tags</code>): enfileira um pedido com
+<code>sync</code> e <code>daily</code>, pega o <code>WorkInfo</code> por <code>getWorkInfosByTag("sync")</code> (o future já completo) e confere
+<code>getTags()</code> = {<code>daily</code>, <code>sync</code>}. Os 8 testes de <code>workmanager</code> passam.</li>
+<li><strong>Mutação</strong>: <code>WorkInfo</code> com o conjunto de tags vazio derruba o teste (<code>left == right</code>). Arquivo restaurado e
+conferido por checksum.</li>
+<li><strong>Continua pendente</strong>: progresso e output em <code>WorkInfo</code>, <code>Worker.doWork()</code> em background, e a aplicação de
+constraints. Por isso <code>work</code> segue <code>partial</code>.</li>
+</ul>
+<h3 id="s23--apêndice-d-dowork-sob-demanda-progresso-e-output-workmanager-2026-11-09"><a class="header" href="#s23--apêndice-d-dowork-sob-demanda-progresso-e-output-workmanager-2026-11-09">S23 — Apêndice D: doWork sob demanda, progresso e output (WorkManager, 2026-11-09)</a></h3>
+<ul>
+<li><strong>Lacuna fechada</strong> (pendência do S22): <code>Worker.doWork()</code> agora roda. O harness
+<code>Engine::m8_run_work(id)</code> cria o Worker do DEX com o construtor real
+<code>(Context, WorkerParameters)</code>, chama <code>doWork()</code> e mapeia o <code>Result</code>:
+<code>success</code> → <code>SUCCEEDED</code>, <code>failure</code> → <code>FAILED</code>, <code>retry</code> → volta a <code>ENQUEUED</code>, <code>null</code> → <code>FAILED</code>.
+Exceção não capturada no construtor ou em <code>doWork</code> vira <code>FAILED</code>, como no WorkManager. Erro interno
+da VM propaga e o pedido volta a <code>ENQUEUED</code>.</li>
+<li><strong>Progresso e output</strong>: <code>Worker.setProgressAsync(Data)</code> grava o progresso no pedido; <code>Result.success(Data)</code>
+e <code>failure(Data)</code> gravam o output. <code>WorkInfo.getProgress()</code> e <code>getOutputData()</code> devolvem esses <code>Data</code>;
+sem valor, um <code>Data</code> vazio (como <code>Data.EMPTY</code>).</li>
+<li><strong>Modelo host</strong>: a superclasse <code>Landroidx/work/Worker;</code> é host (como <code>RecyclerView.Adapter</code>). Métodos do
+app que o DEX define mandam; os da base (<code>getInputData</code>, <code>getId</code>, <code>getTags</code>, <code>getApplicationContext</code>,
+<code>getRunAttemptCount</code>, <code>isStopped</code>, <code>setProgressAsync</code>) são respondidos pelo host. <code>WorkerParameters</code> é um
+objeto host com id, input vazio e tags. <code>getApplicationContext()</code> devolve <code>null</code> (sem contexto do app).</li>
+<li><strong>GC</strong>: <code>Data</code> de progresso e de output, e o worker em execução, são raízes fortes.</li>
+<li><strong>Testes</strong> (<code>crates/rd-vm/tests/m8_workmanager_run.rs</code>, 9 testes): success, failure, retry (reagendado
+e executável de novo), <code>null</code>, só roda o que está ENQUEUED, progresso e output, getters de <code>WorkInfo</code>
+pelo despacho real, <code>WorkInfo</code> vazio antes de rodar, e sobrevivência a <code>gc()</code>.</li>
+<li><strong>Mutações</strong>: (A) <code>setProgressAsync</code> sem gravar e (B) <code>retry()</code> virando <code>FAILED</code> derrubam 4 testes
+(progresso, output, getters e retry). Arquivo restaurado e conferido por checksum.</li>
+<li><strong>Continua pendente</strong>: <code>Constraints</code> (não aplicadas), e o runtime real do WorkManager (<code>WorkerParameters</code>
+e <code>Context</code> são modelos host). Quando o APK traz o <code>work-runtime</code> real, o DEX real manda nos métodos que ele define.</li>
+</ul>
+<h3 id="s24--apêndice-d-constraints-do-workmanager-2026-11-09"><a class="header" href="#s24--apêndice-d-constraints-do-workmanager-2026-11-09">S24 — Apêndice D: Constraints do WorkManager (2026-11-09)</a></h3>
+<ul>
+<li><strong>Lacuna fechada</strong>: as constraints deixam de ser só aceitas. <code>Constraints.Builder</code> é host
+(<code>setRequiredNetworkType(NetworkType)</code>, <code>setRequiresCharging</code>, <code>setRequiresBatteryNotLow</code>,
+<code>setRequiresStorageNotLow</code>, <code>setRequiresDeviceIdle</code>, <code>build()</code>), e <code>WorkRequest.Builder.setConstraints(c)</code>
+copia as constraints para o pedido. <code>NetworkType</code> é enum host (<code>NOT_REQUIRED</code>, <code>CONNECTED</code>, <code>UNMETERED</code>,
+<code>NOT_ROAMING</code>, <code>METERED</code>, <code>TEMPORARILY_UNMETERED</code>).</li>
+<li><strong>Aplicação</strong>: <code>m8_run_work</code> consulta <code>constraints_met(constraints, DeviceConditions)</code>. Não atendida: o
+pedido <strong>fica ENQUEUED e o doWork não roda</strong> (como no WorkManager).</li>
+<li><strong>Estado do dispositivo simulado</strong>: <code>Engine::m8_device</code> / <code>m8_set_device</code>. Padrão: rede Wi-Fi (<code>UNMETERED</code>),
+fora da tomada, bateria e armazenamento OK, não ocioso. O harness muda esse estado.</li>
+<li><strong>Aproximações</strong> (documentadas): <code>NOT_ROAMING</code> vale como <code>CONNECTED</code>; <code>TEMPORARILY_UNMETERED</code> como
+<code>UNMETERED</code>. Não há modelo de roaming nem de cota temporária.</li>
+<li><strong>Testes</strong> (<code>crates/rd-vm/tests/m8_workmanager_run.rs</code>, 15 no total): constraints chegam ao pedido;
+sem constraints roda offline; <code>setRequiresCharging</code> bloqueia até carregar (sem progresso enquanto bloqueado);
+<code>CONNECTED</code> bloqueia offline e aceita rede medida; <code>UNMETERED</code> recusa rede medida; ocioso espera o
+dispositivo ficar ocioso.</li>
+<li><strong>Mutação</strong>: desligar a checagem em <code>m8_run_work</code> derruba 4 testes de bloqueio. Arquivo restaurado e
+conferido por checksum.</li>
+<li><strong>Continua pendente</strong>: o runtime real do WorkManager (<code>WorkerParameters</code>/<code>Context</code> são modelos host),
+chains (<code>beginWith</code>/<code>then</code>) e <code>PeriodicWorkRequest</code> com constraints. Por isso <code>work</code> segue <code>partial</code>.</li>
+</ul>
+<h3 id="s25--apêndice-d-navegação-com-ações-e-argumentos-safe-args-ui-04-2026-11-09"><a class="header" href="#s25--apêndice-d-navegação-com-ações-e-argumentos-safe-args-ui-04-2026-11-09">S25 — Apêndice D: navegação com ações e argumentos (safe-args, UI-04, 2026-11-09)</a></h3>
+<ul>
+<li><strong>Lacuna fechada</strong> (fallback do <code>NavController</code>): ações do grafo. <code>Engine::androidx_nav_declare_action</code>
+declara <code>&lt;action id, from, to&gt;</code>. <code>navigate(actionId)</code> e <code>navigate(actionId, Bundle)</code> saem do destino
+atual: ação declarada a partir dele leva ao destino <code>to</code>; ação declarada de outro destino lança
+<code>IllegalArgumentException</code> e não muda a pilha, como no AOSP.</li>
+<li><strong>Safe-args</strong>: <code>navigate(NavDirections)</code> lê <code>getActionId()</code> e <code>getArguments()</code> do objeto gerado pelo
+app (método DEX real). Ação fora do grafo lança <code>IllegalArgumentException</code>.</li>
+<li><strong>Argumentos</strong>: o <code>Bundle</code> fica na entrada empilhada (<code>args</code> paralelo à pilha) e volta por
+<code>NavBackStackEntry.getArguments()</code>. As referências são raízes do GC (<code>gc_host_ephemerons</code>).</li>
+<li><strong>Testes</strong> (<code>crates/rd-vm/tests/androidx.rs</code>, +2): resolução de ação a partir do destino atual com
+argumentos e GC; <code>NavDirections</code> com DEX real e ação não declarada.</li>
+<li><strong>Mutação</strong>: remover a checagem de origem da ação derruba o teste de ação; não guardar o Bundle derruba
+o teste de argumentos; remover a raiz do GC derruba o teste de sobrevivência. Arquivos restaurados
+e conferidos por checksum.</li>
+<li><strong>Continua pendente</strong> (por isso <code>navigation</code> segue <code>partial</code>): o grafo é declarado pelo harness e não
+lido de <code>res/navigation/*.xml</code> compilado no APK; não há <code>NavOptions</code>/<code>popUpTo</code>; o fallback de
+Fragment (back stack e lifecycle) continua do DEX real. UI-04 segue aberto no roadmap.</li>
+</ul>
+<h2 id="critério-de-erro-e-ciclo-de-vida-apêndice-e-etapa-6"><a class="header" href="#critério-de-erro-e-ciclo-de-vida-apêndice-e-etapa-6">Critério de erro e ciclo de vida (Apêndice E, etapa 6)</a></h2>
+<p>Critério por serviço parcial: além do caminho de sucesso, o shim tem um caminho de erro programável
+e um teste do ciclo completo (sucesso → erro → recuperação, sem resíduo do erro).</p>
+<ul>
+<li>
+<p><strong>Play Integrity</strong> (<code>gms-integrity</code>): <code>gms_set_integrity_failure(code)</code> faz <code>requestIntegrityToken</code>
+falhar com <code>IntegrityServiceException</code> (códigos oficiais: -1 API não disponível, -3 rede, -100 erro interno).
+O pedido falho não registra nonce. Testes em <code>crates/rd-vm/tests/gms_erro_ciclo.rs</code>.</p>
+</li>
+<li>
+<p><strong>Fit</strong> (<code>gms-fit-health</code>): <code>gms_fit_set_failure(code)</code> faz leitura, escrita, gravação e sessões falharem
+com <code>ApiException</code> sem efeito colateral (sem gravação, sem sessão iniciada). Testes no mesmo arquivo.</p>
+</li>
+<li>
+<p>Mutações da checagem de falha em cada shim derrubam os testes correspondentes.</p>
+</li>
+<li>
+<p><strong>Fused Location</strong> (<code>gms-location</code>): <code>gms_location_set_failure(code)</code> faz leitura, disponibilidade e
+registro de atualizações falharem com <code>ApiException</code> sem registrar callback; remover continua disponível.
+Testes no mesmo arquivo, com callback DEX que prova a entrega do convidado.</p>
+</li>
+<li>
+<p><strong>Remote Config</strong> (<code>firebase-remoteconfig</code>): <code>gms_remoteconfig_set_fetch_failure(code)</code> faz <code>fetch</code> e
+<code>fetchAndActivate</code> falharem com <code>FirebaseRemoteConfigFetchException</code>; os valores ativados continuam valendo
+e nenhum valor fica pendente para o <code>activate</code>. Testes no mesmo arquivo.</p>
+</li>
+<li>
+<p><strong>Cast</strong> (<code>gms-cast</code>): <code>gms_cast_set_connect_failure(code)</code> faz a tentativa falhar sem criar sessão (estado
+NO_DEVICES); o erro fica em <code>gms_cast_last_error</code> e a tentativa seguinte bem-sucedida o limpa. Testes no mesmo arquivo.</p>
+</li>
+<li>
+<p><strong>Nearby</strong> (<code>gms-nearby</code>): critério já atendido por testes existentes em <code>tests/gms.rs</code> (ENDPOINT_UNKNOWN para
+endpoint não descoberto; ciclo de descoberta, conexão e encerramento). Nenhuma mudança de código.</p>
+</li>
+<li>
+<p><strong>Analytics</strong> (<code>firebase-analytics</code>): nome de evento (até 40), parâmetro (até 40) e propriedade de usuário (até 24)
+inválidos pela regra documentada do Firebase são rejeitados e contados em <code>gms_analytics_rejected</code>. Parâmetro
+inválido rejeita o evento inteiro (escolha de modelagem; a doc não especifica). Coleção desligada descarta sem
+contar como rejeição. Testes em <code>gms_erro_ciclo.rs</code>; mutação do validador derruba o teste.</p>
+</li>
+<li>
+<p><strong>Crashlytics</strong> (<code>firebase-crashlytics</code>): no máximo 64 pares chave/valor (novas chaves além do limite são ignoradas;
+regravar chave existente continua valendo, em <code>setCustomKey</code> e <code>setCustomKeys</code>), chave e valor truncados em 1024
+caracteres (contagem por <code>char</code>). Teste em <code>gms_erro_ciclo.rs</code>; mutação do limite derruba o teste (70 em vez de 64).</p>
+</li>
+<li>
+<p><strong>Maps</strong> (<code>gms-maps</code>): falha de carregamento programável (<code>gms_maps_set_load_failure(code)</code>): <code>MapsInitializer.initialize</code>
+devolve o código e <code>getMapAsync</code> não entrega o <code>GoogleMap</code> enquanto a falha durar; <code>gms_maps_clear_load_failure()</code>
+recupera. Opt-in: sem falha programada, o comportamento é o de antes. Não acoplado ao <code>availability_code</code> global,
+para não mudar o comportamento de apps com mapas. Teste em <code>gms_erro_ciclo.rs</code>; mutação do bloqueio derruba o teste.</p>
+</li>
+<li>
+<p><strong>Messaging</strong> (<code>firebase-messaging</code>): falha programável (<code>gms_fcm_set_failure</code>/<code>gms_fcm_clear_failure</code>): <code>getToken</code>
+e <code>subscribeToTopic</code>/<code>unsubscribeFromTopic</code> falham com <code>java.io.IOException</code> (SERVICE_NOT_AVAILABLE), sem efeito
+colateral; <code>deleteToken</code> segue disponível. A exceção segue relatos do SDK (firebase-android-sdk issues #4053 e #5826),
+não a referência oficial. Teste em <code>gms_erro_ciclo.rs</code>; mutação do guard derruba o teste.</p>
+</li>
+<li>
+<p><strong>RTDB</strong> (<code>firebase-rtdb</code>): negação de acesso programável (<code>gms_rtdb_set_permission_denied(true|false)</code>). Leituras por
+listener chamam <code>onCancelled(DatabaseError)</code> e o listener não fica registrado (o cancelamento é terminal); escritas
+não acontecem e o <code>CompletionListener</code> recebe o erro; <code>removeValue</code>, <code>updateChildren</code> e <code>get</code> falham com
+<code>DatabaseException</code>. A doc oficial diz que, com negação das regras, o callback de cancelamento é disparado com
+<code>PERMISSION_DENIED</code>. Limitação: o código numérico de <code>DatabaseError</code> não é modelado. Teste em <code>gms_erro_ciclo.rs</code>;
+mutação do setter derruba o teste.</p>
+</li>
+<li>
+<p><strong>SafetyNet</strong> (dentro de <code>gms-integrity</code>): <code>gms_safetynet_set_failure(code)</code> faz <code>attest</code> falhar com <code>ApiException</code>
+sem JWS e sem registrar nonce; <code>gms_safetynet_clear_failure()</code> recupera. Teste <code>safetynet_failure_blocks_attestation_then_recovers</code>;
+mutação do guard derruba o teste. A doc oficial pede nonce com pelo menos 16 bytes; essa regra não virou falha.</p>
+</li>
+</ul>
+<p>Firebase Auth já cumpre o critério por testes existentes (<code>InvalidCredentials</code> como erro; <code>signOut</code> e listener de
+estado como ciclo). Google Ads e Google Sign-In também já cumprem o critério por testes existentes
+(<code>ads_banner_success_failure_and_rewarded</code>, <code>google_signin_silent_requires_host_completion</code>,
+<code>google_signin_sign_out_ends_silent_session_and_sign_in_restores_it</code>). Com isso, a etapa 7 (os 20 serviços
+<code>partial</code>) está fechada pela tabela de erro/ciclo. Registro da etapa 7 no plano: PR #607.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="gms.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="engine-registry.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="gms.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="engine-registry.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

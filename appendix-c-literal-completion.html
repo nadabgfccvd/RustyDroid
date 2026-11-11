@@ -1,0 +1,842 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Appendix C Literal Completion Ledger - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./appendix-c-literal-completion.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="appendix-c--literal-completion-program"><a class="header" href="#appendix-c--literal-completion-program">Appendix C — literal completion program</a></h1>
+<p>This document tracks the decision to use the <strong>literal</strong> definition of
+complete for the fields currently marked <code>partial</code> in
+<code>data/api-coverage.toml</code>: a package is not complete because a hot-path subset
+works. It is complete only when the whole registered public Android surface for
+API 26–36 has behaviour, tests and documented failure modes in RustyDroid.</p>
+<p>The registry remains the source of truth. This page is the execution ledger:
+it explains what still blocks each promotion and in which order the blockers
+are being removed. No status in <code>data/api-coverage.toml</code> may be flipped to
+<code>supported</code> merely because this page lists a plan.</p>
+<h2 id="what-literal-completion-program-means"><a class="header" href="#what-literal-completion-program-means">What “literal completion program” means</a></h2>
+<p>Read the phrase in its ordinary, strict sense:</p>
+<ul>
+<li><strong>Literal</strong> modifies the definition of <em>complete</em>. “Complete” means the
+whole registered scope is accounted for; it does not mean “good enough”,
+“the common cases work”, “the app starts”, or “the subset needed today
+works”.</li>
+<li><strong>Completion</strong> is the final state being pursued, not the amount of effort
+already spent and not the fact that a commit, PR, checkpoint or round was
+finished.</li>
+<li><strong>Program</strong> means a coordinated, multi-step body of work with an explicit
+ledger of remaining blockers. It is not an executable program, and the
+existence of this document is not itself evidence that anything is complete.</li>
+</ul>
+<p>In short:</p>
+<blockquote>
+<p>A registered Appendix C scope is literally complete <strong>only if every
+in-scope public API and Android-visible behaviour is implemented, tested
+and truthfully recorded</strong>. Anything less is progress, not completion.</p>
+</blockquote>
+<h3 id="binding-rule-for-future-agents"><a class="header" href="#binding-rule-for-future-agents">Binding rule for future agents</a></h3>
+<p>Before writing or saying that a package, class or registered surface is
+“done”, “complete” or <code>supported</code>, a future agent must:</p>
+<ol>
+<li>identify the exact registered prefix and scope in
+<code>data/api-coverage.toml</code>, using the API 26–36 public Android surface;</li>
+<li>inventory every in-scope class/interface/enum, constructor, method and
+field, instead of starting from only the calls used by one app or test;</li>
+<li>account for every inventoried item as either implemented and tested, or
+as an explicit remaining blocker — an unaudited item counts as a blocker;</li>
+<li>implement Android-visible semantics, not merely signatures: state
+transitions, return values, callback order, exceptions, permissions,
+lifecycle/threading rules, process boundaries and persistence where the
+platform exposes them;</li>
+<li>test success, error, boundary and lifecycle paths, with real-APK evidence
+for hot paths where the completion gate below requires it; and</li>
+<li>update the registry and generated reports so they agree with the code and
+tests in the same change.</li>
+</ol>
+<p>If any in-scope item is still missing, unknown, stubbed, defaulted,
+unimplemented or untested, the surface is <strong>not literally complete</strong>. Leave
+it at <code>not_implemented</code>, <code>stub</code> or <code>partial</code>, as appropriate, and name the
+remaining blockers. When in doubt, choose the lower, more honest status.</p>
+<p>The following are useful progress signals, but <strong>none of them is literal
+completion</strong>:</p>
+<ul>
+<li>the code compiles;</li>
+<li>a selected unit/integration test subset passes;</li>
+<li>one app reaches a screen or one golden path works;</li>
+<li>most or all commonly used methods work;</li>
+<li>class hierarchies, constants or method signatures exist;</li>
+<li>methods exist but return a plausible default or silently do nothing;</li>
+<li>a percentage estimate sounds high;</li>
+<li>a long-running task, checkpoint, commit or PR has finished.</li>
+</ul>
+<h3 id="incremental-work-is-allowed-false-completion-is-not"><a class="header" href="#incremental-work-is-allowed-false-completion-is-not">Incremental work is allowed; false completion is not</a></h3>
+<p>This program expects incremental rounds. An agent may correctly finish a
+requested checkpoint without literally completing the whole Android surface,
+but must report those as two different facts, for example:</p>
+<blockquote>
+<p>“This checkpoint implemented subset Y and its tests. Surface X remains
+<code>partial</code>; blockers A, B and C remain.”</p>
+</blockquote>
+<p>It must not shorten that to “X is done” or promote X to <code>supported</code>. If a
+task explicitly asks for literal completion of a scope, the agent must work
+from the full inventory and either close every blocker or stop with the
+remaining blockers stated explicitly. It must not silently redefine the
+requested scope to whatever subset happened to be implemented.</p>
+<p>For example, correctly implementing <code>put</code>, <code>get</code>, <code>size</code> and <code>clear</code> for a
+collection class is real progress, but the class or package remains
+<code>partial</code> if its views, iterators, bulk operations, equality/ordering
+semantics, serialization forms, edge cases or any other in-scope members are
+still missing or unaudited. Only the exact registered scope that passes the
+full gate below may be called complete.</p>
+<h2 id="when-a-surface-is-not_implemented-or-stub"><a class="header" href="#when-a-surface-is-not_implemented-or-stub">When a surface is <code>not_implemented</code> or <code>stub</code></a></h2>
+<p>Classify the <strong>registered surface</strong> (the exact package or class prefix in
+<code>data/api-coverage.toml</code>), not the outcome of one call. A single unsupported
+overload may return a typed <code>NOT_IMPLEMENTED(...)</code> error inside a <code>partial</code>
+surface; that does not make the whole surface <code>not_implemented</code>. Conversely,
+one hierarchy entry or constant does not make a package <code>partial</code>.</p>
+<p>Use the narrowest honest prefix. Registry lookup uses the longest matching
+prefix, so a real class can be <code>partial</code> or <code>supported</code> while its surrounding
+package remains <code>stub</code> or <code>not_implemented</code>. Do not let a broad package entry
+claim credit for one unrelated class.</p>
+<h3 id="decision-rule"><a class="header" href="#decision-rule">Decision rule</a></h3>
+<p>Ask these questions in order:</p>
+<ol>
+<li><strong>Is there production host code that intentionally owns this prefix?</strong>
+<ul>
+<li>No → <code>not_implemented</code>.</li>
+<li>Yes → continue.</li>
+</ul>
+</li>
+<li><strong>Does that code perform any Android-visible behaviour?</strong> Examples are
+retaining state, computing a result from inputs, changing lifecycle,
+invoking callbacks in the platform order, enforcing a permission, or
+raising the Android exception required by the operation.
+<ul>
+<li>No; it only supplies type shape, constants or a harmless fallback →
+<code>stub</code>.</li>
+<li>Yes, for a real subset → <code>partial</code>.</li>
+</ul>
+</li>
+<li><strong>Does the whole registered scope pass the literal completion gate
+below?</strong>
+<ul>
+<li>Yes → <code>supported</code>.</li>
+<li>No → keep <code>partial</code> and name the remaining blockers, or narrow the
+registered prefix to the scope that is actually complete.</li>
+</ul>
+</li>
+</ol>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Question</th><th><code>not_implemented</code></th><th><code>stub</code></th><th><code>partial</code></th></tr>
+</thead>
+<tbody>
+<tr><td>Registered production owner/module?</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Class/interface hierarchy or constants may resolve?</td><td>Not claimed</td><td>Yes</td><td>Usually</td></tr>
+<tr><td>Android-visible state transition or computed result?</td><td>No</td><td>No</td><td>Yes, for a subset</td></tr>
+<tr><td>Counts as API behaviour/support?</td><td>No</td><td>No</td><td>Only for the documented subset</td></tr>
+<tr><td>Normal result when real semantics are requested</td><td>Structured <code>NOT_IMPLEMENTED(...)</code>, unresolved host feature, or another explicit failure</td><td>Explicit failure, or a documented no-op/default only where no semantics are being claimed</td><td>Real behaviour for implemented calls; explicit failure for the rest</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="use-not_implemented-when-there-is-no-host-model"><a class="header" href="#use-not_implemented-when-there-is-no-host-model">Use <code>not_implemented</code> when there is no host model</a></h3>
+<p>A surface is <code>not_implemented</code> when RustyDroid has <strong>no registered host
+model or dispatch for that prefix</strong>. The following do <strong>not</strong> count as an
+implementation and do not, by themselves, move a surface out of
+<code>not_implemented</code>:</p>
+<ul>
+<li>the API name appears in an APK/DEX, a test fixture, documentation, an
+issue, a TODO or an AOSP reference copy;</li>
+<li>a descriptor or package string appears in unrelated code;</li>
+<li>AndroidX or app code contains its own class with a similar role;</li>
+<li>a generic VM path can allocate an otherwise empty object shell but no code
+owns the Android semantics of the surface;</li>
+<li>a plan exists to implement it later.</li>
+</ul>
+<p>Runtime behaviour must not fake success. When guest code needs the missing
+host behaviour, it should receive the structured <code>NOT_IMPLEMENTED(module)</code>
+contract (or an equally explicit unresolved-feature failure), not a
+plausible null, zero, empty collection, successful return code, invented
+sensor/media/location data or silent no-op.</p>
+<p>Registry requirements for <code>not_implemented</code>:</p>
+<ul>
+<li><code>module = "none"</code>;</li>
+<li><code>code = []</code>;</li>
+<li>a non-empty <code>gap_id</code>;</li>
+<li><code>notes</code> names the missing model rather than saying only “TODO”;</li>
+<li><code>key_apis</code> may identify representative missing APIs, but they are an
+inventory of the gap, not evidence of support.</li>
+</ul>
+<p>If intentional production code is added for the prefix, the entry can no
+longer remain <code>not_implemented</code>: reclassify it as <code>stub</code> or <code>partial</code> in the
+same change and record the real module/code paths.</p>
+<h3 id="use-stub-when-only-the-shape-or-a-fallback-exists"><a class="header" href="#use-stub-when-only-the-shape-or-a-fallback-exists">Use <code>stub</code> when only the shape or a fallback exists</a></h3>
+<p>A surface is <code>stub</code> when RustyDroid intentionally recognizes it well enough
+for loading, linking or harmless placeholder interaction, but does not yet
+model its Android-visible semantics. Typical stub-only material includes:</p>
+<ul>
+<li>built-in superclass/interface hierarchy entries so <code>instanceof</code>, casts or
+method resolution can proceed;</li>
+<li>public constants, enum shells or field defaults;</li>
+<li>an allocatable manager/view/value shell with no service, rendering,
+transport or state machine behind it;</li>
+<li>methods that always return the same null/zero/false/empty result or do
+nothing regardless of their inputs;</li>
+<li>a compatibility fallback that lets startup continue while the requested
+operation is explicitly unsupported.</li>
+</ul>
+<p>A stub is <strong>not support</strong>. It must not be described as “works”, “complete”,
+“compatible” or as execution coverage. In particular, a stub must not invent
+data whose presence would make an app believe a device, renderer, network,
+media pipeline, provider or system service actually operated.</p>
+<p>A documented no-op can be real behaviour only when the Android contract for
+that exact operation is itself a no-op in the relevant environment. If the
+operation normally has an observable effect and RustyDroid merely ignores
+it, the surface remains a stub (or <code>partial</code> if other operations are real),
+and the deviation stays in the gap notes.</p>
+<p>Registry requirements for <code>stub</code>:</p>
+<ul>
+<li>a concrete implementing <code>module</code> (never <code>"none"</code>);</li>
+<li>at least one real <code>code</code> path containing the hierarchy/constants/fallback;</li>
+<li>a non-empty <code>gap_id</code>;</li>
+<li><code>notes</code> separates what shape exists from what semantics are absent;</li>
+<li>evidence proves only the placeholder/loadability claim; it must not be
+presented as behavioural coverage.</li>
+</ul>
+<h3 id="boundary-examples"><a class="header" href="#boundary-examples">Boundary examples</a></h3>
+<ul>
+<li><strong>Only a <code>classpath.rs</code> hierarchy entry and constants exist:</strong> <code>stub</code>.</li>
+<li><strong>No owner code exists; only an app DEX references the package:</strong>
+<code>not_implemented</code>.</li>
+<li><strong>A manager object can be obtained but every operation is a fixed default
+and registrations/callbacks are discarded:</strong> <code>stub</code>.</li>
+<li><strong>A manager records registrations and dispatches a tested subset of
+callbacks, while other operations fail explicitly:</strong> <code>partial</code>.</li>
+<li><strong>A value class stores constructor inputs and correctly implements a
+tested subset of accessors, equality, parsing or serialization:</strong>
+<code>partial</code>; <code>supported</code> only if the registered scope is complete.</li>
+<li><strong>One unsupported overload in an otherwise real implementation returns
+typed <code>NOT_IMPLEMENTED(...)</code>:</strong> the surface remains <code>partial</code>; record the
+overload as a blocker instead of downgrading the whole prefix.</li>
+<li><strong>One class in a package is real, but the rest of the package has no
+model:</strong> register or retain the narrow class prefix for the real class and
+keep the broader package at its own honest status.</li>
+</ul>
+<h3 id="promotion-and-demotion-rules"><a class="header" href="#promotion-and-demotion-rules">Promotion and demotion rules</a></h3>
+<ul>
+<li><code>not_implemented</code> → <code>stub</code>: only when intentional hierarchy, constants
+or fallback code lands with an owner module and gap record. A plan, issue
+or unmerged experiment is not enough.</li>
+<li><code>stub</code> → <code>partial</code>: only when the first real Android-visible behaviour
+lands and is exercised by tests. More constants or more elaborate
+fallbacks do not cross this boundary.</li>
+<li><code>partial</code> → <code>supported</code>: only when every item in the completion gate
+below is true for the exact registered prefix. A complete hot path is
+still <code>partial</code> under the literal program.</li>
+<li>Demote a surface when an audit shows that its claimed behaviour is only
+hierarchy/default fallback, that the named code no longer owns the prefix,
+or that tests do not exercise the claimed semantics. Honest demotion is
+progress; preserving an inflated count is not.</li>
+</ul>
+<p>As of 2026-10-23 the registry contains 106 surfaces: 4 <code>supported</code>, 29
+<code>partial</code>, 14 <code>stub</code> and 59 <code>not_implemented</code>. The generated inventory in
+<code>docs/api-coverage.md</code> and the records in <code>data/api-coverage.toml</code> are the
+current lists; this section defines how those records must be classified
+when they change.</p>
+<h2 id="completion-gate-for-every-package"><a class="header" href="#completion-gate-for-every-package">Completion gate for every package</a></h2>
+<p>A <code>partial</code> surface may be promoted only when all items below are true for
+that exact prefix:</p>
+<ol>
+<li><strong>API inventory:</strong> every public class/interface/enum, constructor, method
+and field in the API 26–36 SDK surface is inventoried. Hidden/internal APIs
+are listed separately and either modelled or return a typed
+<code>NOT_IMPLEMENTED(module_id)</code>; they do not count as public completeness.</li>
+<li><strong>Behaviour, not presence:</strong> methods perform the Android-visible state
+transition, return value, callback order, exception type/message shape and
+permission/security checks. Generated hierarchy stubs and default-value
+fallbacks are blockers, not implementations.</li>
+<li><strong>Process and persistence semantics:</strong> lifecycle, threading/looper rules,
+binder/process boundaries where Android exposes them, storage durability,
+restart/relaunch behaviour and multi-app isolation are tested.</li>
+<li><strong>Fixtures:</strong> unit tests plus DEX/app-level fixtures exercise success,
+error, boundary and lifecycle paths. Real-APK evidence is required for hot
+paths already used by golden apps.</li>
+<li><strong>No silent fallback:</strong> unsupported overloads cannot fall through to a
+plausible default. They either work or produce the structured error
+contract; the registry gap stays until they work.</li>
+<li><strong>Generated truth:</strong> <code>rd api-coverage check</code>, <code>cargo xtask api-coverage-report</code>, <code>cargo xtask api-coverage-spec</code> and
+<code>cargo xtask compat-report</code> agree with the code and tests in the same PR.</li>
+</ol>
+<h2 id="current-checkpoint-status"><a class="header" href="#current-checkpoint-status">Current checkpoint status</a></h2>
+<p>As of 2026-10-23, Rounds 1–10 below are merged, not merely local branch
+work. <a href="https://github.com/nadabgfccvd/RustyDroid/pull/172">PR #172</a> merged
+<code>appendix-c-literal-round10-20261023</code> into
+<code>appendix-c-api-coverage-20261023</code> at merge commit <code>e16632b</code>. The merged
+stack contains the ten checkpoint commits plus two RD Sentinel remediation
+commits: <code>9ffc7b4</code> (production <code>expect(...)</code> removal) and <code>82cc58c</code>
+(keeping Android dispatch off the String hot path). The final pre-merge
+Sentinel run
+<a href="https://github.com/nadabgfccvd/RustyDroid/actions/runs/39930840914"><code>39930840914</code></a>
+passed complete with no findings.</p>
+<p><strong>Update 2026-10-25 — deep-audit series.</strong> After Rounds 1–10, two deep-audit
+series re-checked the modeled subset of individual surfaces line by line
+against AOSP and fixed real divergences (e.g. <code>TileService.onBind</code>,
+<code>MtpObjectInfo</code> int getters, <code>EuiccManager</code> ordering, the legacy <code>NfcAdapter</code>
+singleton, MBMS <code>DownloadRequest.Builder.setAppIntent</code> assignment order):
+<a href="https://github.com/nadabgfccvd/RustyDroid/pull/196">PR #196</a> (merge <code>73b5685</code>)
+and <a href="https://github.com/nadabgfccvd/RustyDroid/pull/200">PR #200</a> (merge
+<code>80963fd</code>, cellbroadcast + mbms). A deep audit confirms the documented subset
+only; it does <strong>not</strong> promote a surface past <code>partial</code>.</p>
+<p>That publication status does not change the completion bar: every surface
+named below remains at the status recorded in <code>data/api-coverage.toml</code>
+until its whole-package blockers are closed.</p>
+<h2 id="round-1--storage-durability-foundation-merged"><a class="header" href="#round-1--storage-durability-foundation-merged">Round 1 — storage durability foundation (merged)</a></h2>
+<ul>
+<li><code>android.database.sqlite</code>: named databases now serialize to the
+app-private VFS database path after committed mutations and deserialize on
+a fresh Engine launch. <code>:memory:</code>, <code>createInMemory</code> and the forced legacy
+subset fallback remain intentionally memory-only.</li>
+<li>Proof: <code>sqlite_named_database_persists_across_engine_launches</code> writes in
+one Engine, drops it, reopens the same named helper in a new Engine and
+reads/writes again across a third launch.</li>
+<li>Status after Round 1: <strong>still <code>partial</code></strong>. Remaining literal blockers are
+exact SQLite result codes/extensions, WAL/checkpoint and locale/collation
+fidelity, custom scalar/aggregate/window functions, locking/concurrency and
+closed-database/reference-count nuances across every overload.</li>
+</ul>
+<h2 id="round-2--parcelparcelable-and-local-binder-foundation"><a class="header" href="#round-2--parcelparcelable-and-local-binder-foundation">Round 2 — Parcel/Parcelable and local Binder foundation</a></h2>
+<ul>
+<li><code>android.os.Parcel</code> is now a real byte buffer: obtain/recycle,
+data-size/position accounting, marshall/unmarshall/appendFrom, primitive
+and UTF-16 string forms, primitive/string/Binder arrays, interface
+tokens and exception words, <code>writeValue</code>/<code>readValue</code>, Bundles, lists/maps
+and typed Parcelable lists/arrays.</li>
+<li><code>android.os.Parcelable</code>: DEX classes are materialized through their
+static <code>CREATOR</code> after byte marshalling; <code>Bundle.writeToParcel</code> and
+<code>Bundle.readFromParcel</code> use the same local Parcel stream.</li>
+<li><code>android.os.Binder</code>: <code>attachInterface</code>, <code>queryLocalInterface</code>,
+<code>getInterfaceDescriptor</code>, interface transactions and Engine-local
+<code>transact</code> dispatch into a DEX stub’s <code>onTransact</code> are implemented.</li>
+<li>Proof: <code>crates/rd-vm/tests/parcel_binder.rs</code> materializes a DEX
+Parcelable from marshalled bytes through its own Creator, round-trips a
+typed list through a supplied Creator, and runs an AIDL-shaped
+enforce-interface/read-int/write-reply transaction through a DEX Binder
+stub.</li>
+<li>Status after Round 2: <code>android.os</code> remains <strong>partial</strong>, and the former
+stub sub-surfaces <code>android.os.Parcel</code>, <code>android.os.Parcelable</code> and
+<code>android.os.Binder</code> are now honestly <strong>partial</strong>, not complete. Kernel
+Binder handles/processes/servicemanager, death recipients, file
+descriptors, Serializable/SparseArray forms, exact AOSP Bundle wire
+magic and every framework Parcelable layout remain blockers.</li>
+</ul>
+<h2 id="round-3--named-persistent-sharedpreferences"><a class="header" href="#round-3--named-persistent-sharedpreferences">Round 3 — Named, persistent SharedPreferences</a></h2>
+<ul>
+<li><code>Context.getSharedPreferences(name, mode)</code> no longer collapses every
+name into one global object/map. Each name has a canonical
+<code>SharedPreferencesImpl</code> object and an isolated typed store in this Engine.</li>
+<li>Stores load lazily from and persist to
+<code>/data/user/0/&lt;package&gt;/shared_prefs/&lt;name&gt;.xml</code> in the app-private VFS.
+The XML uses Android’s <code>&lt;map&gt;</code>, <code>&lt;string&gt;</code>, <code>&lt;int&gt;</code>, <code>&lt;long&gt;</code>, <code>&lt;float&gt;</code>,
+<code>&lt;boolean&gt;</code> and <code>&lt;set&gt;</code> forms.</li>
+<li><code>PreferenceManager.getDefaultSharedPreferences</code> resolves the
+<code>&lt;package&gt;_preferences</code> store; <code>Activity.getPreferences(mode)</code> resolves
+the activity-local store name.</li>
+<li>Editor string/string-set/int/long/float/boolean puts, remove and clear,
+listeners, <code>contains</code>, and boxed <code>getAll</code> values preserve their guest
+types. Typed getters now raise <code>ClassCastException</code> for a wrong stored
+type, as AOSP does.</li>
+<li>Proof: <code>shared_preferences_named_stores_persist_across_engine_launches</code>
+writes two isolated named stores in one Engine, reads all supported value
+types in a second Engine, removes/clears keys, and observes those changes
+in a third Engine.</li>
+<li>Status after Round 3: <code>android.content</code> and <code>android.preference</code> remain
+<strong>partial</strong>. Preference screens/default-value inflation, ContentProvider
+IPC, multi-process external-change reload, backup/restore semantics and
+complete Context services remain blockers.</li>
+</ul>
+<h2 id="round-4--aosp-bundle-parcel-framing"><a class="header" href="#round-4--aosp-bundle-parcel-framing">Round 4 — AOSP Bundle Parcel framing</a></h2>
+<ul>
+<li>Every Bundle Parcel path now uses the same
+<code>length | BNDL magic | ArrayMap</code> frame as AOSP
+<code>BaseBundle.writeToParcelInner</code>: <code>Bundle.writeToParcel</code>,
+<code>Parcel.writeBundle</code>, <code>Parcel.writeValue</code>, <code>Parcel.writeParcelable</code>
+and their readers no longer diverge into an internal-only stream.</li>
+<li><code>Parcel.writeBundle</code>/<code>writePersistableBundle</code> write the AOSP nullable
+present marker (<code>1</code> present, <code>0</code> null); their readers validate that
+marker. Bundle readers validate the magic and bound entry decoding by
+the declared frame length.</li>
+<li>Proof: <code>bundle_parcel_uses_aosp_length_magic_and_nullable_marker</code>
+checks the exact empty-Bundle bytes, rejects a corrupted magic, proves
+the null marker, and round-trips through the guest-visible
+<code>Bundle.writeToParcel</code>/<code>readFromParcel</code> methods.</li>
+<li>Status after Round 4: <code>android.os</code>, <code>android.os.Parcel</code> and
+<code>android.os.Parcelable</code> remain <strong>partial</strong>. Cross-process Binder,
+file descriptors, Serializable/SparseArray forms and byte layouts for
+every framework-owned Parcelable remain blockers.</li>
+</ul>
+<h2 id="round-5--sparsearray-parcel-values"><a class="header" href="#round-5--sparsearray-parcel-values">Round 5 — SparseArray Parcel values</a></h2>
+<ul>
+<li><code>Parcel.writeValue</code>/<code>readValue</code> now support the AOSP
+<code>VAL_SPARSEARRAY</code> and <code>VAL_SPARSEBOOLEANARRAY</code> tags, preserving sorted
+integer keys and typed values through marshalled bytes.</li>
+<li>The direct <code>writeSparseArray</code>/<code>readSparseArray</code> and
+<code>writeSparseBooleanArray</code>/<code>readSparseBooleanArray</code> Parcel methods use
+the same size/key/value streams, including the <code>-1</code> null marker.</li>
+<li>Host <code>SparseArray</code> state is read from the existing sorted Engine map;
+DEX subclasses fall back to their guest <code>size()</code>, <code>keyAt()</code> and
+<code>valueAt()</code> methods.</li>
+<li>Proof: <code>sparse_arrays_roundtrip_through_value_and_direct_methods</code>
+round-trips null, String and boxed values at negative/positive keys,
+SparseBooleanArray entries, and a null SparseArray marker.</li>
+<li>Status after Round 5: <code>android.os</code>, <code>android.os.Parcel</code>,
+<code>android.os.Parcelable</code> and <code>android.util</code> remain <strong>partial</strong>.
+Serializable values, file descriptors, cross-process Binder and every
+framework Parcelable layout remain blockers.</li>
+</ul>
+<h2 id="round-6--androidutilbase64-value-codec"><a class="header" href="#round-6--androidutilbase64-value-codec">Round 6 — <code>android.util.Base64</code> value codec</a></h2>
+<ul>
+<li><code>android.util.Base64.encode</code>, <code>encodeToString</code> and <code>decode</code> now cover
+the String and byte-array overloads, including offset/length forms.</li>
+<li>The codec implements AOSP flags and output details: standard and
+URL-safe alphabets, optional padding, 76-column wrapping with a final
+line break, CRLF line endings and <code>NO_WRAP</code>.</li>
+<li>Decoding follows Android’s state machine: non-alphabet bytes are
+skipped, two- and three-sextet tails may omit padding, and malformed
+padding raises <code>IllegalArgumentException("bad base-64")</code>.</li>
+<li>The public flag constants are available through host static-field
+resolution as well as the constants normally inlined by compilers.</li>
+<li>Proof: <code>android_base64_flags_and_wrapping_match_aosp</code>,
+<code>android_base64_decode_skips_garbage_and_validates_padding</code> and
+<code>android_base64_static_dispatch_uses_offsets_and_constants</code>.</li>
+<li>Status after Round 6: <code>android.util</code> remains <strong>partial</strong>. The
+Base64 stream classes and the rest of the <code>android.util</code> catalogue
+remain blockers.</li>
+</ul>
+<h2 id="round-7--androidutillrucache-with-dex-callbacks"><a class="header" href="#round-7--androidutillrucache-with-dex-callbacks">Round 7 — <code>android.util.LruCache</code> with DEX callbacks</a></h2>
+<ul>
+<li><code>LruCache</code> now implements constructor validation, access-order
+<code>get</code>/<code>put</code>/<code>remove</code>, <code>trimToSize</code>, <code>resize</code>, <code>evictAll</code>, size and
+hit/miss/create/put/eviction counters, ordered <code>snapshot()</code> maps and
+the AOSP <code>toString()</code> summary shape.</li>
+<li>Cache operations remain final host operations, but subclass hooks are
+guest code: <code>create</code>, <code>sizeOf</code> and <code>entryRemoved</code> resolve and execute
+DEX overrides, including the AOSP collision path when <code>create</code>
+populates the requested key itself.</li>
+<li>Proof: <code>lru_cache_access_order_eviction_and_stats_match_aosp</code> covers
+the platform class directly, and
+<code>dex_lru_cache_callbacks_drive_creation_sizing_and_eviction</code> uses a
+DEX subclass whose entries cost 2 units, creates values on misses and
+observes the exact evicted key through <code>entryRemoved</code>.</li>
+<li>Status after Round 7: <code>android.util</code> remains <strong>partial</strong>. The rest of
+its public catalogue, including IO/JSON/XML helpers and event/log
+types, remains incomplete.</li>
+</ul>
+<h2 id="round-8--androidutilbase64-stream-classes"><a class="header" href="#round-8--androidutilbase64-stream-classes">Round 8 — <code>android.util.Base64</code> stream classes</a></h2>
+<ul>
+<li><code>Base64OutputStream</code> now wraps a guest or host <code>OutputStream</code>, accepts
+single-byte and byte-array slice writes, emits only complete encoded
+triplets while the stream is open, carries a one- or two-byte remainder
+across writes, preserves the selected alphabet/padding/wrapping flags,
+flushes the wrapped stream without finishing the code stream, and on
+close emits the final padded group and line break before honouring
+<code>NO_CLOSE</code>.</li>
+<li><code>Base64InputStream</code> now wraps a guest or host <code>InputStream</code>, decodes its
+encoded bytes with the Round 6 AOSP decoder state machine, and serves
+<code>read()</code>, <code>read(byte[])</code>, sliced <code>read(byte[], int, int)</code>, <code>available()</code>
+after decoding has begun, EOF and close/<code>NO_CLOSE</code> behaviour.</li>
+<li>Both stream classes are registered in the built-in class hierarchy as
+filter streams and dispatch when referenced polymorphically through
+<code>java.io.InputStream</code>/<code>java.io.OutputStream</code>, without shadowing a DEX
+subclass override.</li>
+<li>Proof: <code>base64_output_stream_incrementally_encodes_and_finishes_on_close</code>
+writes <code>hello</code> one byte at a time, observes only <code>aGVs</code> after <code>flush()</code>,
+and observes <code>aGVsbG8=\n</code> after <code>close()</code>;
+<code>base64_input_stream_decodes_wrapped_bytes_with_offsets</code> decodes wrapped
+input, writes into a non-zero destination offset, and checks
+<code>available()</code>/EOF.</li>
+<li>Status after Round 8: <code>android.util</code> remains <strong>partial</strong>. The rest of its
+public catalogue, including IO/JSON/XML helpers and event/log types,
+remains incomplete.</li>
+</ul>
+<h2 id="round-9--androidutilatomicfile"><a class="header" href="#round-9--androidutilatomicfile">Round 9 — <code>android.util.AtomicFile</code></a></h2>
+<ul>
+<li><code>AtomicFile(File)</code> retains the exact base <code>File</code>, derives the AOSP
+<code>&lt;base&gt;.bak</code> backup file, and implements <code>getBaseFile</code>, <code>startWrite</code>,
+<code>finishWrite</code>, <code>failWrite</code>, <code>openRead</code>, <code>readFully</code> and <code>delete</code> over
+the VM filesystem.</li>
+<li><code>startWrite</code> follows the platform backup protocol: an existing base is
+renamed to <code>.bak</code>; if a backup already exists, that older committed
+backup is retained and the interrupted base replacement is discarded.
+A failed first stream open creates missing parent directories and
+retries, matching AOSP.</li>
+<li><code>finishWrite</code> closes the replacement stream and deletes the backup;
+<code>failWrite</code> closes it, deletes the replacement and restores the backup;
+<code>openRead</code> first restores an orphaned backup left by an interrupted
+write. Missing base files surface <code>FileNotFoundException</code> from the real
+<code>FileInputStream</code> constructor path.</li>
+<li>Proof:
+<code>atomic_file_finish_fail_and_interrupted_writes_follow_aosp_backup_protocol</code>
+covers initial parent creation, commit, explicit rollback, a second
+<code>startWrite</code> while a backup exists, rollback on read after an
+interrupted write, recommit, delete and the missing-file error.</li>
+<li>Status after Round 9: <code>android.util</code> remains <strong>partial</strong>. The rest of its
+public catalogue, including JSON/XML helpers and event/log types,
+remains incomplete.</li>
+</ul>
+<h2 id="round-10--androidutil-json-streaming"><a class="header" href="#round-10--androidutil-json-streaming">Round 10 — <code>android.util</code> JSON streaming</a></h2>
+<ul>
+<li><code>JsonReader</code> now implements the AOSP streaming scope machine for
+objects, arrays, names, strings, numbers, booleans and null, including
+<code>begin*</code>/<code>end*</code>, <code>hasNext</code>, <code>peek</code>, typed scalar readers, <code>skipValue</code>,
+<code>getPath</code>, strict number/string validation, BOM handling and typed
+<code>MalformedJsonException</code>/<code>IllegalStateException</code> failures. Lenient mode
+additionally accepts comments, single-quoted and unquoted literals,
+alternative separators and <code>NaN</code>/infinities.</li>
+<li><code>JsonToken</code> is a real host enum surface: its ten constants are cached
+singletons with Java <code>name</code>/<code>ordinal</code>, and <code>values()</code>/<code>valueOf(String)</code>
+return those same constants.</li>
+<li><code>JsonWriter</code> maintains the document/object/array scope stack while it
+emits to a guest or host <code>Writer</code>. It covers deferred names, compact
+and indented output, string escaping, HTML-safe replacements,
+<code>serializeNulls</code>, fluent primitive values, boxed <code>Boolean</code>/<code>Number</code>,
+finite-number checks, flush and incomplete-document failure on close.</li>
+<li>Proof: <code>json_reader_strict_streaming_tokens_paths_and_skip_value</code>,
+<code>json_reader_lenient_mode_and_typed_errors</code>,
+<code>json_writer_pretty_prints_html_safe_output_and_skips_null_names</code> and
+<code>json_writer_boxed_values_and_json_token_enum_statics</code> exercise the
+classes through guest-visible <code>StringReader</code>/<code>StringWriter</code> objects.</li>
+<li>Status after Round 10: <code>android.util</code> remains <strong>partial</strong>. The rest of
+its public catalogue, including XML helpers and event/log types,
+remains incomplete.</li>
+</ul>
+<h2 id="round-11--androidutil-printer-and-stateset-port-of-191"><a class="header" href="#round-11--androidutil-printer-and-stateset-port-of-191">Round 11 — <code>android.util</code> Printer and StateSet (port of #191)</a></h2>
+<ul>
+<li>Ported from the open draft #191 onto current <code>main</code>, per item. Its
+ArrayMap/ArraySet work was already on <code>main</code> (<code>8791401</code>) and was not
+re-ported. Its perf commit <code>b4de826</code> was not ported: the <code>jlstring</code>
+gate is name-only and over-inclusive, so it can skip core String handling
+that the later dispatcher serves, and it is outside Appendix C.</li>
+<li><code>android.util.Printer</code> family: <code>LogPrinter</code>, <code>PrintStreamPrinter</code>,
+<code>PrintWriterPrinter</code> and <code>StringBuilderPrinter</code> constructors and
+<code>println</code>, including the <code>StringBuilderPrinter</code> null-message quirk
+(append first, then NPE without newline). <code>LogPrinter</code> routes to the
+single host log channel, not AOSP per-buffer selection.</li>
+<li><code>android.util.StateSet</code>: <code>isWildCard</code>, <code>stateSetMatches</code> (one-state and
+array overloads), <code>trimStateSet</code>, <code>dump</code>, <code>containsAttribute</code>,
+<code>WILD_CARD</code> and <code>NOTHING</code>. <code>android.drawable</code>’s state matcher now calls
+the AOSP-exact <code>state_set_matches</code>, which honours the <code>0</code> terminator.</li>
+<li>Not modelled: the hidden <code>StateSet.get(mask)</code> table and <code>Printer</code>
+behaviour beyond these four implementations.</li>
+<li>Proof: <code>android_printers</code> (1) and <code>android_state_set</code> (1) integration
+tests, plus the existing <code>android_array_containers</code> (2).</li>
+<li>Status after Round 11: <code>android.util</code> remains <strong>partial</strong>.</li>
+</ul>
+<h2 id="apêndice-c-inventory-checkpoint-api-2636"><a class="header" href="#apêndice-c-inventory-checkpoint-api-2636">Apêndice C inventory checkpoint (API 26–36)</a></h2>
+<ul>
+<li>The public SDK surface was inventoried for all eleven levels, API 26–36,
+from the official <code>platform-NN</code> <code>android.jar</code> stubs on
+<code>dl.google.com/android/repository</code>, by <code>scripts/appendix_c_inventory.py</code>.
+API 34 comes from <code>platform-34-ext7</code> (<code>ApiLevel=34</code>, <code>IsBaseSdk=true</code>,
+<code>ExtensionLevel=7</code>), because no plain <code>platform-34</code> package is published.
+Results are in <a href="appendix-c-inventory.html"><code>docs/appendix-c-inventory.md</code></a> and
+the CSVs beside it. Totals are public + protected members, excluding
+synthetic and bridge methods.</li>
+<li>The inventory is the list of blockers. It does <strong>not</strong> mark any item as
+complete. The <code>rd-vm</code> descriptor count is a class-level signal only.</li>
+<li>Per the rule above, an item the inventory counts and that is not
+implemented and tested is an open blocker, so <code>android.util</code> and every
+other Appendix C surface remain <code>partial</code> or lower.</li>
+</ul>
+<h2 id="remaining-literal-blockers-by-partial-surface"><a class="header" href="#remaining-literal-blockers-by-partial-surface">Remaining literal blockers by partial surface</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Domain</th><th>Surface</th><th>Main literal blockers</th></tr>
+</thead>
+<tbody>
+<tr><td>App/lifecycle</td><td><code>android.app</code></td><td>Complete Activity/Application/Service/task/fragment/dialog/notification/job/backup/admin semantics, process death/restart, saved-state and all manager services.</td></tr>
+<tr><td>App/lifecycle</td><td><code>android.app.job</code></td><td>Persistent job store, constraints, deadlines, backoff, reschedule/stop callbacks and system-triggered execution across process death.</td></tr>
+<tr><td>App/lifecycle</td><td><code>android.content</code></td><td>Full Context service surface, ContentProvider transport, grant-uri permissions, broadcast queues/priorities, service binding/process semantics.</td></tr>
+<tr><td>App/lifecycle</td><td><code>android.content.pm</code></td><td>Installer sessions, verification, overlays, archives, splits, cross-profile queries and every PackageManager query flag/result shape.</td></tr>
+<tr><td>App/lifecycle</td><td><code>android.content.res</code></td><td>Complete qualifier resolution, themes/styles, fonts, resource providers/loaders, configuration changes and asset path variants.</td></tr>
+<tr><td>View/UI</td><td><code>android.view</code></td><td>Surface/transaction model, windows/types, full input/gesture/focus/accessibility traversal, drag/drop, autofill/content capture and display variants.</td></tr>
+<tr><td>View/UI</td><td><code>android.view.accessibility</code></td><td>Full manager/service protocol, windows, magnification, gestures, actions, text/selection and external service policy.</td></tr>
+<tr><td>View/UI</td><td><code>android.view.inputmethod</code></td><td>Full IME protocol, subtypes, handwriting, autofill/voice integration, restart/input view lifecycle and multi-window input.</td></tr>
+<tr><td>View/UI</td><td><code>android.widget</code></td><td>The complete widget catalogue and adapter/list/recycler behaviours, remote views actions and theme/attribute fidelity.</td></tr>
+<tr><td>Graphics</td><td><code>android.graphics</code></td><td>Pixel-complete Bitmap/Canvas, shaders/filters/blend/path effects, color management, fonts/text rendering and hardware-buffer paths.</td></tr>
+<tr><td>Graphics</td><td><code>android.graphics.drawable</code></td><td>Vector/animated/adaptive/ripple/layer/state drawable completeness and resource/theme mutation semantics.</td></tr>
+<tr><td>Text</td><td><code>android.text</code></td><td>Unicode shaping, bidi, line breaking/hyphenation, fonts/fallback, spans/editable operations and layout pixel fidelity.</td></tr>
+<tr><td>Text</td><td><code>android.text.method</code></td><td>Complete movement/key/transformation method catalogue and editor interaction edge cases.</td></tr>
+<tr><td>Text</td><td><code>android.text.style</code></td><td>Exact span precedence/rendering for character, paragraph, suggestion, locale and metric-affecting spans.</td></tr>
+<tr><td>OS/IPC</td><td><code>android.os</code></td><td>Remaining after Rounds 2/4/5: cross-process/kernel Binder and servicemanager, death recipients/oneway scheduling, file-descriptor Parcels, Serializable forms, exact wire layouts for every framework-owned Parcelable, process/power/vibration/strict-mode/users and all manager semantics.</td></tr>
+<tr><td>OS/IPC</td><td><code>android.util</code></td><td>Remaining public helper/value catalogue beyond the implemented SparseArray/Base64/LruCache/AtomicFile/JSON/Printer/StateSet subsets (XML helpers, event log, StateSet.get(mask), time/date helpers and deprecated classes).</td></tr>
+<tr><td>Database</td><td><code>android.database</code></td><td>ContentProvider query/insert/update/delete/call transport, bulk operations, cursor windows/extras/notifications across apps.</td></tr>
+<tr><td>Database</td><td><code>android.database.sqlite</code></td><td>See Round 1 remaining blockers above.</td></tr>
+<tr><td>Net</td><td><code>android.net</code></td><td>ConnectivityService/network agents, DNS, link properties/capabilities callbacks, VPN/tethering and traffic/accounting semantics.</td></tr>
+<tr><td>Hardware</td><td><code>android.hardware.display</code></td><td>VirtualDisplay creation/callbacks, multiple displays, modes/HDR/color, display events and presentation windows.</td></tr>
+<tr><td>Services ext</td><td><code>android.service.notification</code></td><td>System ranking/zen/rules, listener grants/revocation, snooze contexts, bubbles and cross-app policy.</td></tr>
+<tr><td>System UI</td><td><code>android.appwidget</code></td><td>Launcher host process model, provider metadata/configure flows, collections/RemoteViews actions and backup/restore.</td></tr>
+<tr><td>System UI</td><td><code>android.inputmethodservice</code></td><td>Full IME service lifecycle, subtypes/switching, handwriting/voice, extraction/candidates and process isolation.</td></tr>
+<tr><td>System UI</td><td><code>android.accessibilityservice</code></td><td>Global actions, gestures, magnification, fingerprint/soft-keyboard controllers, windows and service capabilities/policy.</td></tr>
+<tr><td>Misc</td><td><code>android.preference</code></td><td>Legacy PreferenceActivity/Fragment XML screens, dependency/summary/order state and dialog preferences.</td></tr>
+<tr><td>Misc</td><td><code>android.icu</code></td><td>Complete ICU API and locale data fidelity (collation, calendars, number/date/message formatting, transliteration and break rules).</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="sequence"><a class="header" href="#sequence">Sequence</a></h2>
+<ol>
+<li><strong>Storage/IPC foundations (merged checkpoints; package blockers remain):</strong>
+SQLite durability (Round 1), Parcel/Parcelable bytes and local Binder
+transactions (Round 2), and SharedPreferences file durability (Round 3).
+These unblock <code>android.os</code>, <code>android.content</code> and provider work.</li>
+<li><strong>Value surfaces:</strong> continue <code>android.util</code> beyond the merged
+SparseArray/Base64/LruCache/AtomicFile/JSON subsets, then <code>android.text</code>
+primitives and ICU data boundaries, because UI and providers depend on
+exact value semantics.</li>
+<li><strong>App/content:</strong> PackageManager/resources first, then provider transport
+and the remaining <code>android.app</code> managers.</li>
+<li><strong>UI/rendering:</strong> view/widget input and focus, drawable/graphics pixel
+fidelity, text shaping/layout.</li>
+<li><strong>System services:</strong> notifications, widgets, IME and accessibility policy;
+display/virtual displays; network service callbacks.</li>
+<li><strong>Legacy/narrow surfaces:</strong> legacy preferences and remaining catalogue
+classes.</li>
+</ol>
+<p>Every round must either (a) close a named blocker with tests and update the
+registry notes, or (b) explicitly record why the blocker remains. A round
+that only renames statuses is not progress.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="appendix-c-inventory.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="jetpack.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="appendix-c-inventory.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="jetpack.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

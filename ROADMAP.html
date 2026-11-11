@@ -1,0 +1,1185 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="rust sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Roadmap (M0 → M12) - RustyDroid Documentation</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Rust-native Android runtime — architecture, MCP tools, compatibility scoreboards, and ADRs">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "rust";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-95e9dc97.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-e41c4db0.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('rust')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">RustyDroid Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/nadabgfccvd/RustyDroid/edit/main/docs/./ROADMAP.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="roadmap--rustydroid"><a class="header" href="#roadmap--rustydroid">ROADMAP — RustyDroid</a></h1>
+<blockquote>
+<p>Espelho executável da PARTE 4 da spec (<code>RustyDroid.md</code>). Status real, não aspiração.
+<strong>Regra:</strong> cada fase termina com código funcional + testes verdes + docs atualizadas.</p>
+</blockquote>
+<h2 id="status-atual"><a class="header" href="#status-atual">Status atual</a></h2>
+<p><strong>Regra de status:</strong> “concluído” só quando o DoD é reproduzível a partir do repositório e executado no CI ou em uma campanha documentada. Código presente, benchmark local não repetível ou uma nota no worklog não bastam, isoladamente. Fase com código presente mas DoD incompleto = ⚠️ <strong>parcial</strong>, com a lacuna explícita.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Fase</th><th>Entrega central</th><th>DoD (done quando…)</th><th>Status</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>M0</strong></td><td>Workspace + CI + rd-apk + permissions.toml + devices.toml (moto-e5) + behavior-switches.toml + motor de permissões</td><td>inspect de APK real imprime componentes/permissões/features completos; CI verde</td><td>✅ <strong>implementado (2026-10)</strong></td></tr>
+<tr><td>M1</td><td>rd-dex 100% + disassembler</td><td>idêntico ao baksmali em 3 APKs; fuzz 24h sem crash</td><td>⚠️ <strong>parcial</strong> — fuzz 24 h nunca executado; comparador não versionado</td></tr>
+<tr><td>M2</td><td>VM Dalvik mínima</td><td>métodos puros de APK real retornam valores corretos</td><td>✅ <strong>implementado (2026-10)</strong></td></tr>
+<tr><td>M3</td><td>Framework essencial</td><td>app trivial (activity+botão+texto) roda headless ponta a ponta</td><td>✅ <strong>implementado (2026-10, rounds 1+2)</strong></td></tr>
+<tr><td>M4</td><td>Render+dump</td><td>tiny-skia desenha; screenshot correto; get_ui_tree com ids certos</td><td>⚠️ <strong>parcial</strong> — <code>tiny-skia</code> + shaping <code>rustybuzz</code> ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); faltam golden de ≥5 APKs reais com referência Android, bidi e seleção por <code>DeviceConfig</code>; F-Droid ainda não sobe (ver abaixo)</td></tr>
+<tr><td>M5</td><td>Agente MCP v1 (30 tools + controles)</td><td>LLM instala, navega e assera estado só com as tools</td><td>✅ (provas e2e usam APK sintético, não APK real do corpus)</td></tr>
+<tr><td>M6</td><td>Executor de testes</td><td>suíte JSON → JUnit XML; compat-matrix automatizada</td><td>✅ <strong>implementado (2026-10)</strong></td></tr>
+<tr><td>M7</td><td>Performance + gate piso E5</td><td>startup &lt; 2 s app trivial; suíte golden passa nos budgets moto-e5</td><td>🟡 <strong>parcial (2026-10)</strong> — <code>rd perf</code> + gate de CI no app trivial (estimativa); golden pendente</td></tr>
+<tr><td>M8</td><td>Compat real</td><td>app OSS médio navega funcional; v0.9</td><td>✅ <strong>implementado (2026-10)</strong></td></tr>
+<tr><td>M9</td><td>Componentes avançados + NDK</td><td>5 APKs com .so rodando; widgets/IME/notificações ok</td><td>✅ <strong>implementado e revisado (2026-10)</strong> — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21</td></tr>
+<tr><td>M10</td><td>Dispositivos virtuais</td><td>câmera/GPS/biometria programáveis pelo agente</td><td>✅ <strong>implementado (2026-10-25)</strong> — <a href="m10.html">docs/m10.md</a>, <a href="adr/011-m10-virtual-devices.html">ADR 011</a>, PR #201. Viewport em paisagem: <code>Engine::viewport_px()</code> é a fonte única para layout, decor da janela, screenshots e <code>ScreenModel</code> (#252, PR #456)</td></tr>
+<tr><td>M11</td><td>Engines</td><td>WASM → RN → Mono → Flutter (ordem do <a href="adr/013-m11-engine-execution-strategy.html">ADR 013</a>): 1 app de cada em golden flow</td><td>🟡 <strong>parcial (S1 núcleo + S1b bridge em VM + S1c registro/CLI <code>rd engine run wasm</code>, 2026-11)</strong> — interpretador i32/i64 + validador + limites + fuzz em <code>rd-engine-wasm</code> (<a href="m11-wasm.html">docs/m11-wasm.md</a>) + bridge <code>io.rustydroid.wasm.WasmBridge</code> atrás da feature <code>wasm-engine</code> de <code>rd-vm</code>, com golden de VM (ciclo de vida de <code>Activity</code>) e APK de demonstração em <code>golden/engines/wasm/</code> (o <code>TextView</code> mostra <code>add(2, 3) = 5</code> via bridge, <code>wasm_demo_golden</code>). suíte <code>rd test golden/engines/wasm/suite.json</code> PASS no CI. S1c: adaptador <code>wasm</code> no registro atrás da feature <code>wasm-execution</code> (<code>partial_wasm</code>; <code>rd engine check wasm</code> = AVAILABLE_BOUNDED, <code>rd engine run wasm &lt;apk&gt;</code> executa o APK de demonstração e mostra <code>5</code>). Pendente: S2 React Native (estratégia proposta no <a href="adr/020-m11-s2-react-native.html">ADR 020</a>, aguarda decisão do dono sobre engine JS/Hermes), S3 Mono, S4 Flutter (golden flow de 1 app cada).</td></tr>
+<tr><td>M12</td><td>Ecossistema GH</td><td>docs site, compat-matrix viva, releases; v1.0</td><td>🟡 <strong>parcial (2026-11-10)</strong> — site mdBook publicado em https://nadabgfccvd.github.io/RustyDroid/ (Pages legacy sobre <code>gh-pages</code>, preservando <code>dev/bench</code>), índice de ADRs gerado e com gate de sincronia; faltam compat-matrix viva na mesma origem, releases automáticas no gh-pages e v1.0</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="-apêndice-g--registro-e-detecção-completos-2026-10-14"><a class="header" href="#-apêndice-g--registro-e-detecção-completos-2026-10-14">✅ Apêndice G — registro e detecção completos (2026-10-14)</a></h2>
+<p><strong>Escopo aprovado: registro/detecção, não execução de engines.</strong> As capacidades parciais de M9 e a
+seleção de runtimes no spec/manifest permanecem inalterados.</p>
+<ul>
+<li><code>data/engines.toml</code> + <code>rd-engine-registry</code>: 28 IDs estáveis, 12 módulos,
+dependências e estratégias; schema validado e status de runtime honesto.</li>
+<li>Detecção por nomes ZIP canônicos/classes/metadata do manifest; <code>signature</code>,
+<code>candidate</code>, <code>not_detected</code>; APK híbrido mantém múltiplos resultados.
+Não extrai/descomprime assets, não valida payload, não consulta rede e não
+executa libs/bytecode. DEX/ELF não atribuem linguagem de origem.</li>
+<li>Features opt-in <code>lang-01</code>…<code>lang-12</code>, transitivas e propagadas por CLI/MCP;
+build mínimo conserva o catálogo, sem novas dependências de runtime nativo.</li>
+<li><code>EngineAdapter::parse</code>/<code>event</code>/<code>syscall</code>: 28 adaptadores indisponíveis retornam
+<code>NOT_IMPLEMENTED(LANG-xx)</code>, mesmo com feature. Nenhum processo fictício.</li>
+<li><code>rd engine list|detect|check</code>, campo <code>engines</code> de <code>inspect --json</code> e MCP
+<code>app_info</code>; overrides de catálogo explícitos falham sem fallback silencioso.</li>
+<li>28 fixtures golden de <strong>detecção</strong>, testes de contratos/paths/limites/híbridos,
+CLI/MCP, drift e feature isolation. Integração OSS explícita via <code>RD_TEST_APK</code>.</li>
+<li>Tabela do Apêndice G, <a href="engine-registry.html">registro gerado</a> e compat-matrix
+saem da mesma fonte (<code>cargo xtask engine-spec|engine-report|compat-report</code>).</li>
+</ul>
+<p><strong>DoD entregue:</strong> todos os 28 registros consultáveis e testados; toda rota ausente
+responde erro tipado. <strong>DoD de execução NÃO entregue:</strong> cada engine futura precisa
+crate/adaptador real, golden flow de APK OSS e gate Moto E5 (ADR 003).</p>
+<h2 id="o-que-o-m0-entregou-verificado-em-apk-real-f-droid-201-reverificado-em-2026-11-01-com-f-droid-202--rd-inspect-sai-com-0-e-imprime-componentes-permissões-features-e-sdk"><a class="header" href="#o-que-o-m0-entregou-verificado-em-apk-real-f-droid-201-reverificado-em-2026-11-01-com-f-droid-202--rd-inspect-sai-com-0-e-imprime-componentes-permissões-features-e-sdk">O que o M0 entregou (verificado em APK real: F-Droid 2.0.1; reverificado em 2026-11-01 com F-Droid 2.0.2 — <code>rd inspect</code> sai com 0 e imprime componentes, permissões, features e SDK)</a></h2>
+<ul>
+<li><strong>Workspace Cargo</strong> com 9 crates + xtask, dependências só apontam para baixo,
+MSRV 1.76, perfil release calibrado para hardware fraco.</li>
+<li><strong>rd-apk</strong>: leitor ZIP próprio (STORED/DEFLATE/ZIP64, CRC-32 verificado),
+parser AXML completo (string pools UTF-8/16, resource map, typed values,
+dimensões/frações), parser ARSC mínimo-correto (config default, referências
+encadeadas), detecção de assinatura v1/v2/v3/v3.1, modelo tipado do manifest
+(Apêndice F: 4 componentes + aliases + providers + queries + features +
+meta-data + instrumentação) com árvore crua preservada (Lei 2).</li>
+<li><strong>Motor de permissões</strong> (<code>fd-permissions</code>): dado versionado com 175 permissões
+(43 dangerous/12 grupos, 15 specials, 78 normais puras + 15 com flag special = 93 normal-level, 36 signature, 3 internal) +
+13 roles + 7 appops; estado instalável/mutável (grant/deny/revoke) e auditoria
+estática (exported sem guarda, debuggable, cleartext, desconhecidas).</li>
+<li><strong>fd-devices</strong>: 6 perfis de device; <code>moto-e5</code> é o piso contratual (1024 MB RSS /
+256 MB heap / 25% single-thread / Adreno 308 fill-rate).</li>
+<li><strong>fd-behavior</strong>: 25 comutadores targetSdk 26→36 (PRF-07), consultáveis por target.</li>
+<li><strong>CLI <code>rd</code></strong>: <code>inspect</code> (humano + <code>--json</code>), <code>perm list|info|audit</code>,
+<code>device list|show</code>, <code>behavior --target</code>, <code>dex</code> (contrato <code>NOT_IMPLEMENTED</code>
+funcionando com exit code 2). Dados resolvidos de <code>--data</code> &gt; <code>RD_DATA_DIR</code> &gt;
+<code>./data</code> &gt; embutido no binário.</li>
+<li><strong>CI</strong>: fmt + clippy <code>-D warnings</code> + test + MSRV 1.76 + smoke do binário.</li>
+<li><strong>Fixture GH-05</strong>: <code>golden-apks/fetch.sh</code> baixa APKs OSS (nunca commitados).</li>
+</ul>
+<h2 id="-m1-parcial--rd-dex-2026-10"><a class="header" href="#-m1-parcial--rd-dex-2026-10">⚠️ M1 parcial — rd-dex (2026-10)</a></h2>
+<blockquote>
+<p><strong>Auditoria (2026-10):</strong> o DoD do M1 exige fuzz 24 h sem crash e comparação versionada com baksmali. A campanha de 24 h nunca foi executada. Até lá, M1 é ⚠️ parcial.
+<strong>Smoke de fuzz (2026-11-03):</strong> <code>scripts/fuzz-campaign.sh</code> recusou rodar os 5 targets em paralelo (RAM disponível 1,35 GB; o script pede 1 worker por target). Rodei os targets em sequência com <code>cargo +nightly fuzz run &lt;t&gt; -- -max_total_time=90 -rss_limit_mb=1024</code>: <code>apk_full</code> 2.273.145 execuções, <code>zip</code> 2.590.518, <code>axml</code> 250.033, <code>arsc</code> 80.440, <code>dex</code> 3.128.108. Pico de RSS 365–525 MB. <strong>0 crashes, 0 artefatos.</strong> Isso é smoke de 7,5 min no total, não a campanha de 24 h, que segue pendente.
+<strong>Campanha longa de fuzz (2026-11-03, bloco 4):</strong> 5 targets em sequência, 900 s cada (<code>/home/user/logs/fuzz-long.sh</code>, ~75 min). Todos saíram com rc=0, 0 crashes, 0 artefatos, ~72 M execuções (apk_full 45,6 M; zip 4,9 M; axml 0,28 M; arsc 0,76 M; dex 21,6 M). Pico de RSS ≤ 539 MB. Isto <strong>não</strong> é a campanha de 24 h do M1; ela continua pendente.</p>
+<p><strong>Campanha curta de fuzz (2026-11-03, bloco 9):</strong> 5 targets em sequência, 300 s cada (<code>/home/user/logs/fuzz-s3.sh</code>, cargo-fuzz 0.13.2 fixado em <code>--locked</code>, nightly). Todos saíram com rc=0, 0 crashes, 0 artefatos. Execuções: apk_full 27,3 M; zip 25,9 M; axml 37,2 M; arsc 22,7 M; dex 7,8 M (≈121 M no total). Pico de RSS ≤ 549 MB. Somada à campanha do bloco 4, são ≈193 M execuções em ≈100 min. Isto <strong>ainda não</strong> é a campanha de 24 h do M1; ela segue pendente.
+<strong>2026-11-02:</strong> comparação versionada em <code>scripts/dex_baksmali_diff.py</code> (baksmali 2.5.2 fixado por SHA-256), rodada no nightly-compat sobre os 3 APKs golden. Resultado: <strong>idêntico nos 3 APKs</strong> (ver item 2). Dois defeitos reais do <code>rd dex disasm</code> foram encontrados e corrigidos pelo comparador: formato 32x decodificado com 2 code units em vez de 3 (<code>move/16</code>, <code>move-wide/16</code>, <code>move-object/16</code>, que desalinhava o resto do método) e a faixa de <code>iput-short</code> (0x5f) fora da faixa de campo.</p>
+</blockquote>
+<ol>
+<li>✅ Parser DEX 100% (header, maps, strings MUTF-8, types, protos, fields,
+methods, classes, code items, debug info, annotations, call sites,
+method handles) — <strong>45.643 classes dos 3 APKs golden renderizam sem
+falha (0 pulos)</strong>.</li>
+<li>✅ Disassembler smali fiel (alvo baksmali 2.5.2): comparação versionada
+em <code>scripts/dex_baksmali_diff.py</code>. Resultado com o binário de 2026-11-02:
+<ul>
+<li>F-Droid 2.0.x: 24.528 classes, 129.151 métodos — 100% idênticos (opcodes e operandos);</li>
+<li>NewPipe: 10.671 classes, 65.538 métodos — 100% idênticos;</li>
+<li>Tasks: 25.595 classes, 102.218 métodos — 100% idênticos.
+Total: 60.794 classes e 296.907 métodos, 0 divergências em classes ou métodos.</li>
+</ul>
+</li>
+<li>✅ Fuzz targets (<code>cargo-fuzz</code>): <code>zip</code>, <code>axml</code>, <code>arsc</code>, <code>apk_full</code>, <code>dex</code>;
+CI compila os targets em nightly (execução 24h fora do CI — ver
+<code>docs/FUZZING.md</code>).</li>
+<li>Gate de saída: idêntico ao baksmali nos 3 APKs ✅ (comparador versionado,
+rodando no nightly-compat); fuzz 24h sem crash —
+smoke local limpo, campanha 24h pendente de runner dedicado (não bloqueia
+M2; parsers são fuzz-hardened por construção, Lei nº 1).</li>
+</ol>
+<h2 id="-m2-concluído--rd-vm-2026-10"><a class="header" href="#-m2-concluído--rd-vm-2026-10">✅ M2 concluído — rd-vm (2026-10)</a></h2>
+<ol>
+<li>✅ Interpretador Dalvik mínimo: dispatch por OPCODE EXATO (tabela canônica
+validada vs baksmali no M1) — move/const/return, aritmética int/long/float/
+double com semântica Java exata (wrapping, saturação, NaN, div por zero →
+ArithmeticException), shifts (contador int mesmo em long — pego em APK
+real), branches/switch (packed+sparse via payload), arrays com bounds,
+iget/iput/sget/sput, new-instance/new-array, invocações
+static/direct/virtual/super com resolução por superclasse, try/catch de
+exceções em QUALQUER instrução, strings (const-string, hashCode spec,
+concat, StringBuilder) e exceções de plataforma materializadas.</li>
+<li>✅ Arena heap do piso moto-e5: heap ≤ 256 MB (PRF-06) + teto de 1M objetos;
+OOM é erro tipado <code>VM_OOM</code> (Lei 1); arena-por-execução = o “GC” contratual
+do M2. Fuel anti-loop (200M default) e profundidade máxima de pilha.</li>
+<li>✅ Critério de saída — <strong>150/150 golden vectors PASS vs execução real</strong>:
+pipeline <code>golden/vm/</code> compila casos Java (javac no CI / ecj local), dexa
+com D8 <code>--min-api 26</code> e compara <code>rd vm exec --json</code> contra a execução
+real na JVM (GoldenRunner via reflexão) — resultado byte-a-byte igual
+(inclusive Float/Double.toString, MIN/-1 wrapping, NaN/Infinity).</li>
+<li>✅ Métodos puros de APK real executados e verificados à mão contra o smali:
+<code>ContainerHelpersKt.idealByteArraySize</code> (116/20/1048564),
+<code>idealLongArraySize</code> (cadeia invoke-static → 126), <code>IntIntPair.getFirst-impl</code>
+(empacotamento Kotlin: 1), <code>ScatterMapKt.loadedCapacity</code> (9).</li>
+<li>CLI: <code>rd vm exec &lt;apk|dex&gt; --class --method --sig [--args] [--json] [--fuel/--depth/--heap-mb]</code> — contrato JSON {status: ok|exception|error}.</li>
+</ol>
+<h2 id="-m3-concluído--framework-essencial-2026-10-rounds-12"><a class="header" href="#-m3-concluído--framework-essencial-2026-10-rounds-12">✅ M3 concluído — framework essencial (2026-10, rounds 1+2)</a></h2>
+<p><strong>Round 1 — núcleo host:</strong></p>
+<ol>
+<li>✅ Activity/Window/View/TextView/Button/LinearLayout/FrameLayout headless como
+classes HOST (<code>rd-vm::framework</code>) — estado fora do heap Dalvik, dispatch
+igual ao dos intrinsics.</li>
+<li>✅ Handler/Looper/Message com clock virtual determinístico (post/postDelayed
++ <code>advance_clock</code>); single-thread = UI thread.</li>
+<li>✅ Lifecycle (onCreate/onStart/onResume/onPause) dirigido por <code>launch_app</code>;
+navegação via <code>Intent(Context, Class)</code> + <code>startActivity</code> (const-class host).</li>
+<li>✅ Touch simulado: hit-test top-down + dispatch de onClick via resolução DEX.</li>
+<li>✅ CLI <code>rd app run</code> com script do agente (<code>tap X,Y</code> · <code>wait MS</code> · <code>dump</code>) e
+dump textual da árvore (seed do UI dump do M4).</li>
+<li>✅ Critério de saída ATINGIDO: app trivial (activity+botão+texto) roda
+ponta a ponta e responde a toques simulados (testes de integração M3).</li>
+</ol>
+<p><strong>Round 2 (M3.2) — LayoutInflater de layout XML real:</strong></p>
+<ol>
+<li>✅ <code>setContentView(I)</code> funcional: resid → <code>@layout/key</code> (ARSC
+<code>resolve_name</code>) → <code>res/layout/key.xml</code> (ZIP, fallback configs) →
+<code>axml::parse</code> (rd-apk) → árvore de views host recursiva.</li>
+<li>✅ Resources injetados na Engine (<code>Engine::set_resources(Apk)</code>); o CLI
+<code>rd app run</code> abre o APK UMA vez (dex + arsc + layouts do mesmo <code>Apk</code>,
+antes lia o zip 3×); <code>getPackageName</code> vem do manifest.</li>
+<li>✅ Atributos aplicados: <code>id</code> (resid → findViewById + dump <code>@id/nome</code>),
+<code>text</code> (string ou <code>@string/x</code> via ARSC), <code>orientation</code>,
+<code>visibility</code> (0/1/2), <code>enabled</code>, <code>onClick</code> (método na ACTIVITY),
+<code>layout_height</code> de folha com dimensão (dp/sp/px → px, DENSITY 2.0 =
+viewport 360dp); attrs não modelados ignorados com log (RD_FW_DEBUG);
+tags sem host (ImageView/…) falham TIPADAS (INFLATE).</li>
+<li>✅ Hierarquia Android BUILTIN no classpath (<code>builtin_hierarchy</code>): APKs
+reais não definem android.* no DEX — is_subtype(View/Activity/…) resolve
+sem DEX; dispatch host funciona para views infladas.</li>
+<li>✅ <code>setText(int resId)</code> + <code>Activity.getString(I)</code> resolvem no arsc;
+<strong>bug latente do <code>findViewById</code> corrigido</strong> (guard exigia Obj em args[0]
+e devolvia Null SEMPRE — sem cobertura até o M3.2).</li>
+<li>✅ Fixtures determinísticos byte a byte (<code>tests/common/apkfix.rs</code>): ZIP
+STORED + string pool UTF-16 + AXML + ARSC gerados em Rust (sem fixture
+binário commitado); 6 testes de integração M3.2 (inclui DoD XML+toque e
+erros tipados). 187 testes no workspace, clippy limpo, fmt ok, MSRV 1.76 ok.</li>
+</ol>
+<p>Na sequência do M3 (M4): render + UI dump rico (<code>get_ui_tree</code> com ids
+certos); configs específicas (land/locale/density) selecionáveis.</p>
+<h2 id="-m4-parcial-2026-10--rd-render"><a class="header" href="#-m4-parcial-2026-10--rd-render">⚠️ M4 parcial (2026-10) — rd-render</a></h2>
+<blockquote>
+<p><strong>Estado em 2026-11-05 (fim da rodada end-to-end):</strong> continuam abertos
+<strong>três</strong> gaps, e M4 segue ⚠️ parcial:</p>
+<ol>
+<li><strong>Referência Android (≥5 APKs):</strong> não há aparelho nem emulador neste
+ambiente. A VM não expõe extensões de virtualização (<code>vmx</code>/<code>svm</code>), então
+não existe <code>/dev/kvm</code> e o emulador x86 não sobe; <code>modprobe</code> não existe.
+Precisa de referências (screenshots + <code>uiautomator dump</code>) de um aparelho
+real ou de um host com KVM.</li>
+<li><strong>Goldens de regressão de APKs reais:</strong> hoje renderizam 3 (trivial-app
+fixture; Comprix 1.6.0 — onboarding; F-Droid — só a tela
+“Fetching app repositories…”). NewPipe e Markor param em <code>res/hq.xml</code>
+(drawable de vetor, NOT_IMPLEMENTED). Os IDs de Calculadora/Clock do
+Simple Mobile (<code>com.simplemobiletools.*</code>) e <code>org.billthefarmer.clock</code>
+retornaram 404 no F-Droid e não entraram.</li>
+<li><strong>F-Droid sobe só até a primeira tela.</strong> O sync de repositórios
+(okhttp <code>ConnectionSpec</code>) e o Room (driver SQLite do host, precisa de ADR)
+seguem como bloqueios.</li>
+</ol>
+<p>Feito nesta rodada: Round 2 (#538) e bidi (#539).</p>
+</blockquote>
+<blockquote>
+<p><strong>Atualização (2026-11-02, ADR 019 aceito):</strong> o snapshot agora pinta com <code>tiny-skia</code> (caminhos anti-aliased) e shapa o texto com <code>rustybuzz</code> sobre DejaVu Sans embutida (<code>crates/rd-render/assets/</code>). Continua sem bidi/RTL e sem fidelidade Roboto/Skia. O golden <code>golden/screens/trivial-app.png</code> é de regressão, não de referência Android.</p>
+</blockquote>
+<ol>
+<li>
+<p>✅ <strong><code>get_ui_tree</code> com ids certos</strong>: <code>Engine::view_tree()</code> estruturada
+(class/resource-id <code>package:id/nome</code>/text/bounds/visibility/enabled/
+clickable/children) + <code>rd-render::uiautomator_xml</code> no formato do
+<code>uiautomator dump</code> real (GONE excluído, INVISIBLE com bounds — issue #46).</p>
+</li>
+<li>
+<p>✅ <strong>Screenshot correto</strong>: software renderer determinístico (framebuffer
+RGB 720×1440) + painter por classe/estado (contêiner/texto/botão/borda de
+clickable; INVISIBLE não pinta a subárvore) + encoder PNG sem
+dependências (zlib STORED + crc32/adler32 próprios). Texto com atlas
+DejaVu Sans com shaping <code>rustybuzz</code> e raster <code>tiny-skia</code> (M4 de 2026-11-02, ADR 019). O atlas de <code>rd-vm</code> continua só para a Canvas da VM. Sem bidi; o Android real usa skia.</p>
+<p><strong>NewPipe (2026-11-03, atualização):</strong> <code>Collections.binarySearch</code> (PR #506),
+o hierarquia de <code>InflateException</code> (#506), o <em>field hiding</em> do heap (#506), o
+<code>TypedArray.getTextArray</code> sobre arrays do ARSC (#507) e as fábricas
+<code>javax.net.SocketFactory</code> (#509) destravaram a cadeia inteira de preferências
+do <code>App.onCreate</code>: WorkManager/Room, inflate de <code>res/xml</code>, <code>PreferenceManager</code>.
+Em seguida veio o <code>sun.misc.Unsafe</code>: os intrínsecos liam seus operandos um
+índice acima, então <strong>todo <code>put</code> gravava um default e todo CAS respondia
+<code>false</code></strong> — o <code>ConcurrentHashMap.initTable()</code> do okhttp girava em falso até
+queimar o fuel dentro do <code>App.onCreate</code> (a queima era silenciosa: <code>VM_FUEL</code>
+só no fim, ~20 min de CPU). Corrigido, com o modelo de elementos de array
+(<code>arrayBaseOffset</code>/<code>arrayIndexScale</code>), em <code>crates/rd-vm/tests/unsafe_cas.rs</code>.
+Na sequência, <code>java.util.ResourceBundle.getBundle(String, Locale)</code>
+(<code>resbundle.rs</code>): o <code>PrettyTime</code> localiza suas unidades por <em>class-based
+bundle</em> (<code>Resources_pt extends ListResourceBundle</code>), e os bundles passaram a
+resolver candidato por locale, <code>getContents()</code> e <code>getString</code>/<code>containsKey</code>.
+Com isso o <code>App.onCreate</code> do NewPipe executa ~236 métodos DEX (preferências,
+WorkManager, Room, okhttp, PrettyTime), passou pelo canal de notificação
+(o literal nulo do DEX, <code>Int(0)</code>, não era aceito pelos setters — corrigido)
+e pelo <code>EnumSet.of</code>. O <code>NoClassDefFoundError: Lj$/util/stream/d7;</code> (JLS
+12.4.2) foi rastreado com <code>RD_TRACE_CLINIT=1</code> até a causa real —
+<code>java.util.EnumMap</code> sem modelo — e caiu junto. O endpoint agora é
+<code>android.webkit.CookieManager.getInstance()</code> (NewPipe grava cookies do
+YouTube antes de qualquer tela) — modelado em <code>webkit_cookies.rs</code>, com
+parse/seleção de cookie por RFC 6265 e 7 testes. Depois dele veio
+<code>Boolean.getBoolean</code> (propriedade de sistema) e, <strong>marco desta rodada, o
+<code>App.onCreate</code> do NewPipe passou a terminar</strong>: a execução agora entra em
+<code>org.schabi.newpipe.MainActivity</code> e para em
+<code>Context.getDrawable(I)</code>. Esse ponto foi fechado em parte: cor vira
+<code>ColorDrawable</code> e arquivo vira gap estruturado com o caminho resolvido
+(<code>res/hq.xml</code>), então o endpoint atual é <strong>rasterizar drawable de vetor</strong> —
+o próximo passo natural é o renderizador de vetores (ADR antes de código).
+Cada um desses passos tem teste próprio
+(<code>collections_binary_search.rs</code>, <code>field_hiding.rs</code>, <code>collections_completion.rs</code>,
+<code>jnet_socket_factory.rs</code>) e o e2e <code>crates/rd-cli/tests/newpipe_oncreate_e2e.rs</code>
+fixa que os gaps fechados não voltam.
+<strong>F-Droid (<code>rd app shot golden-apks/org.fdroid.fdroid.apk</code>) ainda não sobe.</strong> Achados: (a) <code>SharedPreferencesImpl</code> não era subtipo de <code>SharedPreferences</code> (corrigido nesta rodada, <code>classpath::builtin_hierarchy</code>, com teste); (b) próximo bloqueio: <code>ExceptionInInitializerError</code> em <code>okhttp3.ConnectionSpec$Builder.cipherSuites</code> ("no cipher suites for cleartext connections") durante o <code>&lt;clinit&gt;</code> de <code>ConnectionSpec</code>. O smali mostra o <code>cipherSuites(String...)</code> lançando incondicionalmente quando <code>tls=false</code>, então o defeito pode estar no caminho de chamada da VM. Não investigado até o fim. NewPipe: <code>Collections.binarySearch</code> fora do escopo do M2. Tasks: <code>entry …</code> (IO). Por isso o golden usa o fixture <code>trivial</code> em vez de um APK real.
+<strong>Atualização (2026-11-03):</strong> o caminho do WorkManager foi destravado em parte (PR #492). O <code>Room</code> agora instancia <code>&lt;DB&gt;_Impl</code>, e o guard de main thread passa porque <code>currentThread</code>/<code>myLooper</code> são worker-aware dentro de tasks de Executor inline (teste <code>executor_inline_task_has_no_looper_outside_main_thread</code>, que falha com a correção desfeita). O próximo bloqueio é <code>lateinit property connectionManager has not been initialized</code> em <code>RoomDatabase</code>: o VM não executa <code>RoomDatabase.init(DatabaseConfiguration)</code>, e o runtime do Room usado pelo F-Droid (2.8, <code>RoomConnectionManager</code> sobre <code>androidx.sqlite.SQLiteConnection</code>) precisa de um driver SQLite de host. Escolher esse driver é uma decisão de arquitetura: ADR antes de código.</p>
+</li>
+<li>
+<p>✅ <strong>CLI</strong>: <code>rd app dump &lt;apk&gt;</code> (uiautomator XML | <code>--text</code> | <code>--json</code>) e
+<code>rd app shot &lt;apk&gt; --out FILE.png</code>; ações de script <code>xml</code> e <code>shot FILE</code>.</p>
+</li>
+<li>
+<p>✅ Testes e2e contra fixture real: ids/bounds/clickable/text na árvore;
+pixels do PNG (TextView branco / Button cinza / borda / fundo); PNG
+determinístico (mesmo input → mesmos bytes); dump escape XML.
+Round 2 do M4 (issue #47) — ✅ <strong>feito (#538, 2026-11-05)</strong>: seleção de
+recursos por device-config (locale → orientação → densidade → SDK) em
+<code>rd-apk::arsc</code> (<code>DeviceConfig</code>, <code>resolve_*_for</code>), com o dispositivo do VM
+(<code>Engine::resource_device_config</code>). Fora dele: qualificadores de tela
+(smallestWidth), <code>night</code>, <code>ldrtl</code>.</p>
+<p>Bidi — ✅ <strong>feito (#539, 2026-11-05)</strong>: <code>text_in_box</code> shapeia por segmento
+visual UAX #9 (<code>unicode-bidi</code>). Espelhamento de parênteses em RTL e
+alinhamento RTL de layout ficam fora.</p>
+</li>
+</ol>
+<h2 id="-m6-concluído--executor-de-testes-2026-10"><a class="header" href="#-m6-concluído--executor-de-testes-2026-10">✅ M6 concluído — executor de testes (2026-10)</a></h2>
+<ol>
+<li>✅ <strong><code>rd test &lt;suite.json&gt;</code></strong> (TST-01): suíte JSON → resumo humano + <strong>JUnit XML</strong>
+(<code>--junit</code>) + <code>--json</code>. Exit: <code>0</code> tudo passou · <code>1</code> houve falha · <code>64</code> suíte inválida/IO.
+Formato e regras em <a href="suite-format.html"><code>suite-format.md</code></a>.</li>
+<li>✅ <strong>Núcleo em <code>rd-agent::suite</code></strong>: validação antes de executar (<code>INVALID_SUITE</code>),
+uma sessão de agente nova por cenário (isolamento), parada na primeira falha,
+<code>expect: "ok"</code> ou <code>"error:CODIGO"</code> (código estável exato).</li>
+<li>✅ <strong>Asserção reprovada conta como falha.</strong> As tools <code>assert_*</code> e <code>wait_for</code> respondem
+sucesso na chamada com <code>"ok": false</code>/<code>"found": false</code>; o executor trata isso como falha.
+Sem essa regra, toda asserção errada passaria em verde (achado do próprio teste e2e).</li>
+<li>✅ <strong>compat-matrix automatizada</strong> (<code>cargo xtask compat-report</code>):
+<ul>
+<li>status das fases lido de <code>docs/ROADMAP.md</code> (a lista fixa estava defasada: M4/M5 aparecia ⬜);</li>
+<li>guarda de drift: crate nova em <code>crates/</code> sem linha na tabela quebra o relatório;</li>
+<li>seção “Suítes automatizadas” gerada a partir de <code>tests/suites/*.json</code>.</li>
+</ul>
+</li>
+<li>✅ <strong>CI</strong>: o job Rust roda <code>rd test tests/suites/contract-no-app.json</code> (sem APK) e
+gera o JUnit XML. O job de docs continua exigindo o placar sincronizado.</li>
+<li>Testes: +12 unitários em <code>rd-agent::suite</code>, +4 e2e do binário (<code>rd-cli/tests/test_cli.rs</code>:
+passa+JUnit, asserção errada → exit 1, suíte inválida → 64, arquivo ausente → 64),
++4 do <code>xtask</code> (fases do ROADMAP, guarda de crates, contagem de suítes).</li>
+</ol>
+<p><strong>Fora do M6:</strong> nada pendente — todos os adiamentos foram entregues
+(get_api_usage, timeout por passo, retries/hooks AG-07 e get_coverage abaixo).</p>
+<h2 id="-adiados-do-m6-concluídos"><a class="header" href="#-adiados-do-m6-concluídos">✅ Adiados do M6 concluídos</a></h2>
+<h3 id="get_api_usage-ag-09-metade-estática"><a class="header" href="#get_api_usage-ag-09-metade-estática"><code>get_api_usage</code> (AG-09, metade estática)</a></h3>
+<ol>
+<li>✅ <strong>Tool MCP <code>get_api_usage [--package]</code></strong>: análise ESTÁTICA dos DEX do app
+instalado — tipos <code>android.*</code> referenciados (<code>method_ids</code>/<code>field_ids</code>/
+superclass/interfaces), métodos por classe e contagem por domínio
+(<code>android.app</code>, <code>android.view</code>, …). Sem app/package → erro tipado.</li>
+<li>✅ Escopo honesto no resultado (<code>analysis: "static-dex-references"</code>): é o
+que o app REFERENCIA, não coverage de execução — a metade dinâmica veio
+na sequência (<code>get_coverage</code>, abaixo).</li>
+<li>Testes: unidade do scan (rd-agent::api_usage) + tool MCP (fixture:
+Activity/setContentView presentes; NO_APP e PACKAGE_NOT_INSTALLED tipados).</li>
+<li>Catálogo: 30 → 31 tools (README, <code>--describe-tools</code>, <code>docs/mcp-tools.md</code>
+regenerada; testes do issue #74 travam a convergência).</li>
+</ol>
+<h3 id="timeout-por-passo-no-executor-de-suítes"><a class="header" href="#timeout-por-passo-no-executor-de-suítes">Timeout por passo no executor de suítes</a></h3>
+<ol>
+<li>✅ Campo opcional <code>timeout_ms</code> (inteiro &gt; 0) por passo da suíte: orçamento
+de wall-clock. É MEDIÇÃO, não preempção: a chamada completa e o executor
+reprova o passo com o código estável <code>STEP_TIMEOUT</code> se o teto estourar
+(vale mesmo com <code>expect: "error:…"</code>); passos seguintes são pulados.</li>
+<li>✅ Validação antes de executar: <code>timeout_ms</code> ausente = sem teto; <code>0</code>,
+negativo ou não numérico → <code>INVALID_SUITE</code> (exit 64).</li>
+<li>✅ <code>docs/suite-format.md</code> (campo + regra 7) e módulo <code>rd-agent::suite</code>
+documentados; testes de parse + execução com APK real (estouro falha e
+pula o resto; orçamento folgado passa).</li>
+</ol>
+<h3 id="run_scenario-com-retries-e-hooks-ag-07"><a class="header" href="#run_scenario-com-retries-e-hooks-ag-07"><code>run_scenario</code> com retries e hooks (AG-07)</a></h3>
+<ol>
+<li>✅ <strong>Hooks por cenário</strong>: <code>setup</code> (roda antes dos passos; falha aborta o
+cenário — passos e teardown viram <code>SKIP</code>) e <code>teardown</code> (roda depois dos
+passos MESMO se falharem — limpeza garantida, best-effort; falha no
+teardown reprova o cenário). Mesma gramática de passo (<code>expect</code>,
+<code>timeout_ms</code>, <code>retries</code>); JUnit marca a fase (<code>[setup 0]</code>, <code>[teardown 1]</code>).</li>
+<li>✅ <strong>Retries por passo</strong>: <code>retries: N</code> (inteiro ≥ 0, padrão 0) = N
+tentativas extras após falha (erro inesperado, asserção ou <code>STEP_TIMEOUT</code>);
+a primeira que passa encerra; tempo = soma das tentativas; log da última;
+<code>attempts</code> anotado no JUnit.</li>
+<li>✅ Validação antes de executar: <code>retries</code> negativo/fracionário/texto e
+hooks que não são listas → <code>INVALID_SUITE</code> (exit 64).</li>
+<li>✅ Docs: <code>docs/suite-format.md</code> (campos, exemplo, regras 8-9) e módulo
+<code>rd-agent::suite</code>; 8 testes novos (parse, ordem dos hooks, teardown após
+falha, setup abortando, retries, curto-circuito, JUnit).</li>
+</ol>
+<h3 id="get_coverage-ag-09-metade-dinâmica"><a class="header" href="#get_coverage-ag-09-metade-dinâmica"><code>get_coverage</code> (AG-09, metade dinâmica)</a></h3>
+<ol>
+<li>✅ <strong>Instrumentação no interpretador (rd-vm)</strong>: <code>Engine::call</code> é o funil
+único de todo corpo DEX executado — registra <code>(dex_idx, method_idx)</code> num
+conjunto de cobertura; <code>coverage_snapshot()</code> enumera o classpath e devolve
+totais por classe. Denominador honesto: só métodos com corpo
+(<code>code_off != 0</code>); abstract/native e classes host (framework/intrinsics)
+ficam fora.</li>
+<li>✅ <strong>Tool MCP <code>get_coverage</code></strong> (32ª tool): exige app lançado
+(<code>NOT_RUNNING</code> senão); responde <code>{package, analysis: "method-entry-instrumentation", classes_total, methods_total, methods_executed, coverage_pct, classes[]}</code>. A contagem é do processo
+atual — relançar o app zera (arena-por-execução, M2).</li>
+<li>✅ Testes: rd-vm (snapshot conta corpos executados; abstract fora do
+denominador) + MCP (NO_APP→NOT_RUNNING, instalado sem launch→NOT_RUNNING,
+app lançado→onCreate/<code>&lt;clinit&gt;</code> contabilizados, pct coerente).</li>
+<li>✅ Catálogo: 31 → 32 tools (README, docs/mcp-tools.md regenerada, asserts
+de contagem).</li>
+</ol>
+<h2 id="-m7-em-andamento--passo-1-gate-de-performance-2026-10"><a class="header" href="#-m7-em-andamento--passo-1-gate-de-performance-2026-10">🟡 M7 em andamento — passo 1: gate de performance (2026-10)</a></h2>
+<ol>
+<li>
+<p>✅ <strong><code>rd perf &lt;apk&gt; [--device moto-e5] [--runs N] [--json]</code></strong> (PRF-06):
+mede <code>launch → primeiro frame</code> (frame = render do view tree via <code>screenshot</code>)
+em dois regimes — <strong>cold</strong> (<code>AgentSession</code> nova por execução; registro do APK
+fora do cronômetro) e <strong>warm</strong> (relançamento na mesma sessão). CPU por thread
+via <code>/proc/self/task/*/schedstat</code>; RSS de pico via <code>VmHWM</code>. Exit <code>0</code> orçamentos
+ok · <code>1</code> orçamento falhou ou erro de execução (<code>PERF_FAILED</code>).</p>
+</li>
+<li>
+<p>✅ <strong>Orçamentos do perfil <code>moto-e5</code></strong> (Apêndice A2): startup cold emulado
+<code>&lt; 2000 ms</code> (DoD do M7) · RSS de pico <code>≤ 1024 MB</code> (ADR 015) (falha fechado fora do
+Linux) · heap do app <code>≤ 256 MB</code> (marca d’água da arena da VM,
+<code>runtime_health.heap_peak_bytes</code>, lida fora do cronômetro).</p>
+</li>
+<li>
+<p>✅ <strong>Gate de CI</strong>: <code>crates/rd-cli/tests/perf_cli.rs</code> roda o binário sobre o
+APK do fixture e exige <code>pass: true</code> — primeiro gate de performance bloqueante.</p>
+</li>
+<li>
+<p>✅ <code>rd-testsupport::trivial_app</code>: builder do app trivial movido de
+<code>mcp_cli.rs</code> para fixture compartilhado (MCP e perf usam os mesmos bytes).</p>
+</li>
+<li>
+<p>Medição local (host de desenvolvimento, 3 execuções): cold p50 ≈ 1244 ms
+emulados, máximo ≈ 1510 ms; RSS de pico ≈ 27 MB. Tempo emulado =
+<code>host_ms / cpu_single_thread_factor</code> (moto-e5 = 0.25 ⇒ ×4) — <strong>estimativa</strong>:
+o fator não modela cache, IO, GPU nem o quota de 1 core.</p>
+</li>
+<li>
+<p>✅ <strong>Regime warm real</strong>: <code>tool_launch</code> reutiliza o processo (Engine) quando
+o package já está em execução — sem re-parse do DEX (<code>ensure_initialized</code>
+idempotente, <code>&lt;clinit&gt;</code> não repete); o resultado do launch traz <code>warm</code>.
+install/clear/remove continuam matando o processo (launch seguinte é frio).</p>
+</li>
+<li>
+<p>✅ <strong>Medição do heap do app</strong>: <code>rd-vm::Heap</code> acompanha a marca d’água
+(<code>peak()</code>, maior <code>used</code> observado); o <code>runtime_health</code> expõe
+<code>heap_peak_bytes</code>; o <code>rd perf</code> lê o pico após o primeiro frame (fora do
+cronômetro), reporta <code>app_heap_peak_mb</code> e avalia o orçamento
+<code>app_heap_peak ≤ ram_app_heap_mb</code> (falha fechado se não medido).</p>
+</li>
+</ol>
+<p><strong>Pendente para fechar o M7 (DoD):</strong> gate golden (APKs golden não estão no
+repositório) · medição em Moto E5 real · workflow de release bloqueante (hoje
+o gate é um teste de CI).</p>
+<h2 id="-m8-sondagem--compat-real-primeiro-app-2026-10"><a class="header" href="#-m8-sondagem--compat-real-primeiro-app-2026-10">🔎 M8 sondagem — compat real, primeiro app (2026-10)</a></h2>
+<p>Sondagem com APK real dentro do piso (sem commit de binário — GH-05;
+<code>golden-apks/fetch.sh org.primftpd</code>):</p>
+<ul>
+<li><strong>App</strong>: <code>org.primftpd</code> 8.2 (primitive ftpd, OSS) — minSdk 26 (<strong>piso OK</strong>),
+target/compile 36, 11 MB, 5 DEX, 21 componentes, Kotlin/AndroidX, assinatura
+v1+v2+v3.</li>
+<li>✅ <strong><code>rd inspect</code></strong>: completo (componentes, permissões 5 auto/2 runtime/1
+special, features, LAUNCHER <code>MainTabsActivity</code> + alias leanback).</li>
+<li>✅ <strong><code>install</code> via MCP</strong>: registrado na sessão com classificação de
+permissões correta.</li>
+<li>✅ <strong><code>AtomicReference</code> host (entregue nesta rodada)</strong>: o launch parava em
+<code>AtomicReference.&lt;init&gt;(Object)</code> NOT_FOUND; agora <code>&lt;init&gt;/get/set/getAndSet/ compareAndSet/weakCompareAndSet/compareAndExchange</code> são intrínsecos (estado
+em campo de heap; CAS por identidade de referência; VM single-threaded ⇒
+CAS exato). Verificado no app real: o gap seguinte mudou.</li>
+<li>✅ <strong>Coleções <code>java.util</code> host (entregue nesta rodada)</strong>: o gap seguinte
+era <code>java.util.WeakHashMap.&lt;init&gt;()V</code>. Agora <code>HashMap</code>/<code>WeakHashMap</code>
+(put/get/remove/containsKey/containsValue/size/isEmpty/clear + ctors) e
+<code>ArrayList</code>/<code>LinkedList</code> (add/add(i)/get/set/remove(i)/remove(obj)/
+contains/indexOf/size/isEmpty/clear) são intrínsecos com estado em
+<code>HostObj::Map/List</code>. Igualdade Java nas chaves/elementos: String por
+conteúdo, boxes por valor, senão identidade (equals de usuário NÃO é
+consultado — limitação documentada). Sem GC na arena ⇒ WeakHashMap ≡
+HashMap. Sem iteradores/entrySet/keySet ainda — catálogo <code>compat_gaps</code>
+atualizado para <code>partial</code>.</li>
+<li>✅ <strong><code>java.lang.Enum</code> host (entregue nesta rodada)</strong>: terceiro gap do
+launch (<code>ExceptionInInitializerError</code> → <code>Enum.&lt;init&gt;(String,int)</code>).
+<code>&lt;init&gt;</code>/<code>name</code>/<code>ordinal</code>/<code>toString</code> (default = name) são intrínsecos com
+estado nos campos de heap <code>name</code>/<code>ordinal</code>. Dispatch pela classe DECLARANTE
+do method ref (<code>call_instance_intrinsic_mref</code>): a super-chamada <code>Enum.*</code>
+cai no host, mas o construtor da classe de enum do app (código DEX) NÃO é
+sequestrado; <code>toString</code> só é default quando ninguém na cadeia DEX o
+declara. <code>values()</code>/<code>valueOf()</code> são estáticos sintéticos do app — rodam
+normal no interpretador.</li>
+<li>✅ <strong>Família <code>java.lang.ref</code> host (entregue nesta rodada)</strong>: quarto gap do
+launch (<code>WeakReference.&lt;init&gt;(Object)</code>). <code>WeakReference</code>/<code>SoftReference</code>:
+<code>&lt;init&gt;()V</code>/<code>(Object)V</code>/<code>(Object,ReferenceQueue)V</code> (fila ignorada),
+<code>get</code>/<code>clear</code> — estado no campo de heap <code>referent</code>; dispatch pela classe
+declarante do method ref (super-chamada de subclasse cai no host; construtor
+da subclasse segue para o DEX) e <code>get</code>/<code>clear</code> só sem declaração na cadeia
+DEX (override de usuário vence). <code>ReferenceQueue</code>: <code>poll</code>/<code>remove</code> →
+<code>null</code> (sem GC nada é enfileirado; na JVM real <code>remove()</code> bloqueia — aqui a
+fila está permanentemente vazia, resposta honesta). Sem GC na arena ⇒
+referent vive até <code>clear()</code> (limitação documentada, mesma política do
+WeakHashMap).</li>
+<li>✅ <strong><code>AtomicReferenceFieldUpdater</code> host (entregue nesta rodada)</strong>: quinto
+gap (<code>newUpdater(Class,Class,String)</code> — antes <code>NOT_IMPLEMENTED</code> tipado do
+catch-all <code>Ljava/</code>). <code>newUpdater</code> captura o NOME do campo (classes são
+ignoradas: sem access check; <code>volatile</code> não se aplica a VM single-thread)
+e devolve updater host; <code>get</code>/<code>set</code>/<code>getAndSet</code>/<code>compareAndSet</code>/
+<code>weakCompareAndSet</code> operam via <code>get_field</code>/<code>put_field</code> no alvo (CAS por
+identidade de referência; alvo null → NPE materializado).</li>
+<li>✅ <strong><code>java.util.concurrent</code> host (entregue nesta rodada)</strong>: sexto gap
+(<code>CopyOnWriteArraySet.&lt;init&gt;</code>). <code>CopyOnWriteArraySet</code> vira Set host
+(mesmo estado <code>List</code>, add DEDUPLICA por igualdade Java e devolve false
+se já presente); <code>CopyOnWriteArrayList</code> ≡ <code>ArrayList</code>. VM single-threaded
+⇒ cópia-em-escrita é irrelevante. <strong>Bug real corrigido no caminho</strong>:
+<code>check-cast COWSet → java/util/Set</code> estourava <code>ClassCastException</code> — as
+tabelas <code>builtin_hierarchy</code>/<code>builtin_interfaces</code> do <code>is_subtype</code> não
+conheciam as classes host do M8 (coleções/atomic/ref/Enum); agora têm
+cadeias de classe e closures de interface completas (List/Set →
+Collection → Iterable etc.).</li>
+<li>✅ <strong><code>LinkedHashMap</code> host (entregue nesta rodada)</strong>: sétimo gap
+(<code>&lt;init&gt;()V</code>) — entra na guarda do Map (métodos essenciais ≡ HashMap;
+ordem de iteração NÃO garantida, documentado) e na hierarquia
+(<code>LinkedHashMap &lt;: HashMap &lt;: AbstractMap</code>, iface <code>Map</code>). Com isso o
+launch real atravessa TODO o grupo java.util que era gap.</li>
+<li>✅ <strong><code>android.os.SystemClock</code> host (entregue nesta rodada)</strong>: oitavo gap
+(<code>uptimeMillis()J</code>) — família nova (framework Android). Relógio é o
+<strong>virtual determinístico</strong> da VM (<code>HostState.clock_ms</code>, o mesmo que
+alimenta <code>postDelayed</code>/<code>advance_clock</code>): <code>uptimeMillis</code>,
+<code>elapsedRealtime</code>, <code>elapsedRealtimeNanos</code> (×1e6) e
+<code>currentThreadTimeMillis</code> leem o clock; <code>sleep(J)V</code> o <strong>avança e drena o
+Looper</strong> (callbacks agendados disparam — consistente com o contrato do
+tempo da VM; nada de tempo de parede ⇒ testes reprodutíveis).</li>
+<li>✅ <strong><code>AtomicInteger</code> host (entregue nesta rodada)</strong>: nono gap
+(<code>&lt;init&gt;()V</code>). Mesmo padrão do <code>AtomicReference</code> (campo de heap <code>value</code>):
+<code>&lt;init&gt;()V</code>/<code>(I)V</code>, <code>get</code>/<code>set</code>/<code>getAndSet</code>, <code>compareAndSet</code>/
+<code>weakCompareAndSet</code> (exatos — VM single-threaded),
+<code>incrementAndGet</code>/<code>decrementAndGet</code>/<code>getAndIncrement</code>/<code>getAndDecrement</code>/
+<code>addAndGet</code>/<code>getAndAdd</code> com overflow <strong>wrapping</strong> (semântica Java),
+conversões <code>Number</code> (<code>intValue</code>/<code>longValue</code>/<code>floatValue</code>/<code>doubleValue</code>) e
+<code>toString</code>; hierarquia <code>AtomicInteger &lt;: Number &lt;: Object</code> + <code>Serializable</code>.</li>
+<li>✅ <strong><code>Executors</code>/<code>ExecutorService</code> host (entregue nesta rodada)</strong>: décimo
+gap (<code>newFixedThreadPool(I,ThreadFactory)</code>). VM é single-threaded ⇒
+substituto honesto: <code>newFixedThreadPool</code>/<code>newSingleThreadExecutor</code>/
+<code>newCachedThreadPool</code> (com/sem ThreadFactory — ambos ignorados, como o
+tamanho do pool) devolvem executor host que roda <code>Runnable</code>/<code>Callable</code>
+<strong>inline/síncrono</strong> (determinístico; <code>execute</code>, <code>submit</code> ×3 sobrecargas);
+<code>submit</code> devolve <code>Future</code> <strong>já completado</strong> (<code>get</code>/<code>get(J,TimeUnit)</code>/
+<code>isDone</code>=true/<code>isCancelled</code>=false/<code>cancel</code>=false); <code>shutdown</code>/
+<code>shutdownNow</code> (lista vazia — nada pendente)/<code>isShutdown</code>/<code>isTerminated</code>.
+Desvio documentado: exceções do Runnable <strong>propagam imediatamente</strong> (em
+Java seriam capturadas no Future). <code>ExecutorService &lt;: Executor</code> na
+hierarquia builtin.</li>
+<li>✅ <strong><code>Looper.getThread</code>/<code>Thread</code> host (entregue nesta rodada)</strong>: décimo
+primeiro gap. VM single-threaded ⇒ UMA thread sintética <strong>“main”</strong> (lazy,
+como o Looper): <code>Looper.getThread()</code> (framework) e
+<code>Thread.currentThread()</code> (intrinsics) devolvem sempre a mesma referência;
+<code>getName</code>=“main”, <code>getId</code>=1L, <code>threadId</code>=1, <code>isDaemon</code>=false,
+<code>isAlive</code>=true, <code>setName</code> ignorado, <code>toString</code>=“Thread[main,1,main]”;
+<code>Thread.sleep(J)V</code>/<code>(JI)V</code> avançam o relógio virtual (≡ SystemClock.sleep;
+ms&lt;0 ignorado), <code>yield()</code> é no-op. Hierarquia: <code>Thread &lt;: Object</code> +
+implements <code>Runnable</code>. <code>start()</code>/<code>interrupt()</code> seguem fora (não sondados).</li>
+<li>✅ <strong><code>Enum.compareTo</code> + herança por enums do app (entregue nesta rodada)</strong>:
+décimo segundo gap (<code>Lifecycle$State.compareTo(Ljava/lang/Enum;)I</code> — enum
+do APP/DEX herda métodos do <code>Enum</code> host, que não tem DEX ⇒ resolução
+falhava quando o method ref declara a SUBCLASSE). Fallback por subtipagem:
+<code>recv &lt;: Enum</code> e ninguém na cadeia DEX declara <code>(name,sig)</code> → intrínseco
+host (<code>name</code>/<code>ordinal</code>/<code>toString</code>/<code>compareTo</code>); override de usuário vence
+(resolve <code>Some</code>). <code>compareTo</code> = diferença de ordinais com <code>wrapping_sub</code>
+(comportamento documentado da JDK); <code>compareTo(null)</code> → NPE materializado.</li>
+<li>✅ <strong>Views + iteradores host (entregue nesta rodada)</strong>: décimo terceiro gap
+(<code>LinkedHashMap.entrySet</code>). <code>entrySet</code>/<code>keySet</code>/<code>values</code> devolvem view
+<strong>snapshot</strong> (classe <code>HashSet</code> host com cadeia <code>AbstractSet</code>; em Java a
+view é viva — desvio documentado) em <strong>ordem de inserção</strong> (estado Map é
+<code>Vec</code>); <code>Map.Entry</code> host com <code>getKey</code>/<code>getValue</code>/<code>setValue</code> (devolve o
+anterior; não propaga ao Map). <code>iterator()</code> para List/Set/views →
+<code>Iterator</code> host (<code>HostObj::Iter</code>, cursor sobre snapshot): <code>hasNext</code>/<code>next</code>
+(<code>NoSuchElementException</code> quando esgota)/<code>remove</code>
+(<code>UnsupportedOperationException</code>).</li>
+<li>✅ <strong>Bug pré-existente corrigido no caminho (achado pelo app real)</strong>:
+<code>builtin_hierarchy</code> apontava a cadeia de <code>Activity</code> para
+<code>Ljava/content/Context;</code> — <strong>typo</strong> de <code>Landroid/content/Context;</code> sem
+cobertura de teste até o primftpd exigir check-cast
+<code>MainTabsActivity → Context</code> (CCE espúrio). Corrigido + teste
+<code>android_activity_is_android_context</code>.</li>
+<li>✅ <strong><code>Collections.synchronized*</code> (entregue nesta rodada)</strong>: décimo quarto
+gap (<code>synchronizedMap(Map)</code>). VM single-threaded ⇒ sincronização é no-op:
+o wrapper devolve a PRÓPRIA coleção (identidade) — <code>synchronizedMap</code>/
+<code>SortedMap</code>/<code>List</code>/<code>Set</code>/<code>SortedSet</code>/<code>Collection</code>; null → NPE
+materializado. <code>unmodifiable*</code>/<code>empty*</code>/<code>singleton*</code> seguem fora (não
+sondados — sem especulação).</li>
+<li>✅ <strong><code>ArrayDeque</code> host (entregue nesta rodada)</strong>: décimo quinto gap
+(<code>&lt;init&gt;()V</code>). Deque sobre o estado <code>List</code> (frente = índice 0):
+<code>addFirst</code>/<code>addLast</code>/<code>offerFirst</code>/<code>offerLast</code>/<code>push</code>/<code>pop</code>/<code>add</code>/<code>offer</code>,
+<code>removeFirst</code>/<code>removeLast</code>/<code>pollFirst</code>/<code>pollLast</code>/<code>getFirst</code>/<code>getLast</code>/
+<code>peekFirst</code>/<code>peekLast</code>, <code>remove</code>/<code>removeFirstOccurrence</code>/
+<code>removeLastOccurrence</code>, <code>contains</code>/<code>size</code>/<code>isEmpty</code>/<code>clear</code> + <code>iterator</code>
+(frente→fundo). Semântica JDK: <strong>null rejeitado</strong> (NPE); vazio em
+get/remove/pop → <code>NoSuchElementException</code>; poll/peek → null. Hierarquia:
+<code>ArrayDeque &lt;: AbstractCollection</code> + <code>Deque</code>/<code>Queue</code>/<code>Collection</code>/
+<code>Iterable</code>.</li>
+<li>✅ <strong><code>Object.getClass</code> + <code>Class</code> host (entregue nesta rodada)</strong>: décimo
+sexto gap (<code>MainTabsActivity.getClass()</code>). <code>getClass</code> é <strong>final</strong> ⇒
+captura irrestrita é correta; devolve o objeto <code>Class</code> <strong>canônico</strong> por
+descritor (lazy, identidade estável — <code>a.getClass() == a.getClass()</code>).
+Estado: campo de heap <code>class_name</code> (descritor). Métodos: <code>getName</code>
+(descritor → binário: <code>Lcom/x/Y;</code> → <code>com.x.Y</code>; arrays mantêm <code>[I</code>),
+<code>getSimpleName</code> (descarta pacote e classe externa: <code>La/b/C$D;</code> → <code>D</code>),
+<code>toString</code> (<code>class &lt;nome&gt;</code>); guarda defensiva: só sem declaração DEX.</li>
+<li>✅ <strong><code>ConcurrentHashMap</code> host (entregue nesta rodada)</strong>: décimo sétimo gap
+(<code>&lt;init&gt;()V</code>). Single-threaded ⇒ mesmo estado/métodos do HashMap host
+(guarda estendida; entrySet/views funcionam). Hierarquia JDK correta:
+<strong>não</strong> estende <code>HashMap</code> (<code>AbstractMap</code> direto) + interfaces
+<code>Map</code>/<code>ConcurrentMap</code>/<code>Cloneable</code>/<code>Serializable</code>.</li>
+<li>✅ <strong><code>LinkedBlockingQueue</code> host (entregue nesta rodada)</strong>: décimo oitavo
+gap (<code>&lt;init&gt;()V</code>). FIFO unbounded sobre o estado <code>List</code> (capacidade
+ignorada — default da JDK; <code>remainingCapacity</code> = <code>Integer.MAX_VALUE</code>):
+<code>offer</code>/<code>add</code>/<code>put</code>/<code>poll()</code>/<code>peek</code>/<code>element</code>/<code>remove</code>/<code>contains</code>/<code>size</code>/
+<code>isEmpty</code>/<code>clear</code>; null rejeitado (NPE, como na JDK). <strong>Bloqueantes
+fail-fast</strong> (substituto honesto): <code>take</code>/<code>poll(J,TimeUnit)</code> com fila vazia
+→ <code>IllegalStateException</code> materializado — bloquear sem outra thread seria
+deadlock; falha visível &gt; pendurar. Hierarquia: <code>AbstractQueue → AbstractCollection</code> + <code>BlockingQueue</code>/<code>Queue</code>/<code>Collection</code>/<code>Serializable</code>.</li>
+<li>✅ <strong><code>ThreadLocal</code>/<code>InheritableThreadLocal</code> host (entregue nesta rodada)</strong>:
+décimo nono e vigésimo gaps (<code>&lt;init&gt;()V</code> de ambos). Single-threaded ⇒ um
+valor por instância (campos de heap <code>tl_value</code>+<code>tl_set</code>): <code>get</code> chama
+<code>initialValue()</code> via resolução DEX na primeira leitura e memoiza (como na
+JDK); <code>set</code>/<code>remove</code>; <code>&lt;init&gt;</code> só quando o mref declara a classe host
+(ctor de subclasse segue o DEX); get/set/remove por subtipagem e só sem
+declaração DEX (override vence). <code>InheritableThreadLocal</code> comporta-se
+igual (herdar entre threads não se aplica). <code>withInitial(Supplier)</code> fora
+(não sondado).</li>
+<li>✅ <strong><code>System.getProperty</code> host (entregue nesta rodada)</strong>: vigésimo primeiro
+gap. Tabela de propriedades coerente com a VM (os.name=Linux,
+os.arch=arm64-v8a, line.separator=LF real, file/path.separator,
+java.io.tmpdir, user.dir/language/region/timezone, java.vm.*,
+file.encoding=UTF-8, http.agent…); chave desconhecida → <strong>null</strong>
+(semântica JDK); variante <code>(key, def)</code> devolve <strong>def</strong>; key null → NPE
+materializado. <code>getProperties()</code> (Properties completo) fora — não sondado.</li>
+<li>✅ <strong><code>Class.getClassLoader</code> host (entregue nesta rodada)</strong>: vigésimo
+segundo gap. ClassLoader <strong>canônico por VM</strong> (lazy, identidade estável —
+qualquer classe devolve o mesmo objeto; runtime single-classloader, a
+distinção bootstrap=null do Java não se aplica). <code>ClassLoader &lt;: Object</code>.
+<code>loadClass</code> fora (não sondado).</li>
+<li>✅ <strong><code>System.getSecurityManager</code> (entregue nesta rodada)</strong>: vigésimo
+terceiro gap. Android não tem SecurityManager (deprecated na JDK; APIs de
+segurança são no-op) ⇒ sempre <strong>null</strong> — semântica correta, uma linha.</li>
+<li>✅ <strong><code>java.util.ServiceLoader</code> host (entregue nesta rodada)</strong>: vigésimo
+quarto gap. <code>load(Class)</code> e <code>load(Class,ClassLoader)</code> criam um loader que
+implementa <code>Iterable</code>; <code>iterator()</code> devolve um <code>Iterator</code> <strong>vazio</strong>. A VM
+ainda não varre <code>META-INF/services</code> do APK, portanto não inventa providers:
+<code>hasNext()</code> é falso e <code>next()</code> materializa <code>NoSuchElementException</code>. <code>service</code>
+null preserva <code>NullPointerException</code>; <code>ClassLoader</code> null (bootstrap) é aceito.</li>
+<li>✅ <strong><code>java.util.LinkedHashSet</code> host (entregue nesta rodada)</strong>: vigésimo
+quinto gap. <code>&lt;init&gt;()</code>, <code>add</code>/<code>remove</code>/<code>contains</code>/<code>size</code>/<code>isEmpty</code>/<code>clear</code> e
+<code>iterator()</code> reutilizam o Set host; o <code>Vec</code> preserva a ordem de inserção e
+remover+re-adicionar desloca o elemento para o fim. A hierarquia real
+<code>LinkedHashSet → HashSet → AbstractSet</code> e interfaces Set/Collection/Iterable
+são conhecidas pelo classpath. Construtores com capacity/Collection seguem
+fora até uma sondagem exigir.</li>
+<li>✅ <strong><code>ClassLoader.getResources(String)</code> + <code>java.util.Enumeration</code> host
+(entregue nesta rodada)</strong>: vigésimo sexto gap. <code>getResources</code> nunca devolve
+null (contrato JDK): retorna uma <code>Enumeration</code> host <strong>vazia</strong> — o runtime
+ainda não enumera entries do APK como recursos de classpath e não varre
+<code>META-INF/services</code>, logo não inventa recursos. <code>name</code> null materializa NPE
+(<code>Objects.requireNonNull</code> da JDK 9+). A <code>Enumeration</code> reutiliza o cursor do
+Iterator host com os nomes legados: <code>hasMoreElements()</code> é falso e
+<code>nextElement()</code> materializa <code>NoSuchElementException</code>.</li>
+<li>✅ <strong><code>ArrayList.&lt;init&gt;(Ljava/util/Collection;)V</code> host (entregue nesta
+rodada)</strong>: vigésimo sétimo gap. A cópia é um <strong>snapshot</strong> dos elementos na
+ordem do iterador da fonte host (ArrayList admite duplicatas — dedup fica a
+cargo da fonte; depois da cópia não há aliasing: mutar a fonte não toca a
+lista). Fonte null materializa NPE (<code>c.toArray()</code> na JDK); coleção do app
+sem estado host recebe erro tipado <code>VM_TYPE_ERROR</code> em vez de cópia
+silenciosamente vazia/errada. O mesmo construtor vale para
+<code>LinkedList</code>/<code>CopyOnWriteArrayList</code> via o helper compartilhado.</li>
+<li>✅ <strong><code>LinkedBlockingQueue.drainTo</code> host (entregue nesta rodada)</strong>: vigésimo
+oitavo gap. <code>drainTo(Collection)</code> e <code>drainTo(Collection,int)</code> drenam até
+<code>maxElements</code> (ou tudo) <strong>na ordem FIFO</strong> para o destino, respeitando a
+semântica de <code>add</code> dele (Set deduplica — como na JDK, que chama <code>c.add(e)</code>);
+o retorno conta os <strong>retirados</strong> da fila. Contratos JDK honrados: destino
+null → NPE, <code>drainTo(this)</code> → <code>IllegalArgumentException</code>, <code>maxElements</code>
+≤ 0 → 0. Destino fora da superfície de Collection host (coleção do app) →
+<code>VM_TYPE_ERROR</code> tipado em vez de perda silenciosa; destino host ganha
+lazy-init como os demais intrínsecos.</li>
+<li>✅ <strong><code>Activity.getFragmentManager()</code> host (entregue nesta rodada)</strong>: vigésimo
+nono gap e o <strong>primeiro em <code>android.app</code></strong> — o app completou o bootstrap
+<code>java.util</code> e entrou no framework. Devolve o <code>FragmentManager</code> <strong>canônico</strong>
+por VM (lazy, identidade estável — mesmo objeto em chamadas repetidas, como
+no Android real por Activity; o runtime executa uma activity por vez).
+O estado de fragments (back stack/transações) ainda não existe: métodos do
+FM seguem sendo sondados um a um.</li>
+<li>✅ <strong><code>FragmentManager.findFragmentByTag</code>/<code>findFragmentById</code> host (entregue
+nesta rodada)</strong>: trigésimo gap. Enquanto não há transações committadas, a
+resposta é <strong><code>null</code></strong> — contrato Android para fragment não encontrado (tag
+null também devolve null, como na <code>FragmentManagerImpl</code>). Nada de
+<code>NOT_IMPLEMENTED</code> para o caso vazio.</li>
+<li>✅ <strong><code>FragmentManager.beginTransaction</code> + <code>FragmentTransaction</code> host
+(entregue nesta rodada)</strong>: trigésimo primeiro gap. <code>beginTransaction()</code>
+devolve uma transação nova por chamada; <code>add</code>/<code>replace</code>/<code>remove</code> são
+fluentes e gravam <strong>ops pendentes</strong>; <code>commit</code>/<code>commitAllowingStateLoss</code>
+aplicam no registro de fragments da VM — com validação <strong>antes</strong> de mutar
+(nada de aplicação parcial: <code>Add</code> de fragment já registrada →
+<code>IllegalStateException</code>; 2º commit ou uso pós-commit → ISE; fragment null →
+NPE — a AOSP dereferencia a fragment). <code>commit</code> devolve id opaco <code>0</code> (sem
+back stack/animations/lifecycle DEX no host — documentado). A partir daí
+<code>findFragmentByTag</code>/<code>findFragmentById</code> consultam o registro (a última
+registrada vence; <code>containerViewId</code> 0 = sem container, nunca casa).</li>
+<li>✅ <strong><code>Fragment.&lt;init&gt;()V</code> host (entregue nesta rodada)</strong>: trigésimo segundo
+gap. A classe de fragment do app chama o ctor do super via <code>invokespecial</code>;
+o host não tem estado de construção, então é no-op — mesmo padrão de
+<code>Activity</code>/<code>Application</code>/<code>Context</code>. <code>Fragment &lt;: Object</code> na hierarquia.</li>
+<li>✅ <strong><code>FragmentManager.executePendingTransactions()</code> host (entregue nesta
+rodada)</strong>: trigésimo terceiro gap. No host o <code>commit</code> aplica
+<strong>sincronamente</strong> — não existe fila pendente, logo a resposta honesta é
+<code>false</code> (AOSP: “nothing was executed”). Nunca <code>NOT_IMPLEMENTED</code>.</li>
+<li>✅ <strong><code>array.clone()</code> host (entregue nesta rodada)</strong>: trigésimo quarto gap.
+Arrays são <code>Cloneable</code> (JLS 10.7) e o clone é <strong>shallow copy</strong>: novo objeto
+com o mesmo descritor/<code>ElemKind</code> e as mesmas referências de elementos
+(mutação estrutural no clone não toca o original). Cobre o rastro clássico
+de <code>values()</code>/<code>$VALUES.clone()</code> de enums — ex.:
+<code>[Landroidx/lifecycle/Lifecycle$Event;-&gt;clone()</code>. Na mesma rodada,
+correção de semântica relacionada: <code>Enum.clone()</code> materializa
+<code>CloneNotSupportedException</code> capturável (é <code>final</code> na JDK/libcore e sempre
+lança — nunca copia).</li>
+<li>✅ <strong>Observabilidade: stack trace Java opt-in (entregue nesta rodada) —
+<code>VmConfig::exception_trace</code> + <code>rd app run --trace</code></strong>. Exceções Java não
+capturadas anotam <code>\n  at classe-&gt;metodo(proto)</code> por frame ao desempilhar
+(estilo JVM, innermost-first). Default OFF: nenhuma saída existente muda
+(golden vectors seguem byte-idênticos; <code>rd vm exec</code> intocado). Resultado
+real: o NPE pós-bootstrap do <code>org.primftpd</code> foi localizado em
+<code>androidx.fragment.app.FragmentManager.dispatchCreate()V</code> ←
+<code>FragmentController</code> ← <code>FragmentActivity.onCreate</code> ←
+<code>MainTabsActivity.onCreate</code> — ou seja, o app usa <strong>androidx FragmentActivity</strong>
+e o call site do receiver null já está identificado.</li>
+<li>✅ <strong>Semântica DEX de invokes corrigida (rodada seguinte, 36º/37º gaps) —
+tipos de bug mais profundos que os gaps declarativos de API:</strong><br>(1) <strong><code>invoke-super</code> começava a busca em <code>super(mref.class)</code></strong> — semântica
+DEX correta: inicia na <strong>super da classe que declara o frame</strong> (Dalvik).
+No launch isso pulava <code>androidx/activity/ComponentActivity.onCreate</code> inteiro
+→ <code>dispatchOnContextAvailable</code> nunca rodava → <code>attachHost</code> nunca rodava →
+<code>mNonConfig</code> null → o NPE acima. <code>Engine::call</code> agora calcula
+<code>frame_super</code> do <code>ClassDef</code> do frame e o interp o usa como ponto de
+partida.<br>(2) <strong>Variantes <code>/range</code> de invoke-virtual (0x74) e invoke-direct (0x76)
+estavam TROCADAS</strong>: <code>invoke-virtual/range</code> despachava NÃO-virtualmente
+(classe declarada) e <code>invoke-direct/range</code> despachava VIRTUALMENTE —
+fazendo o ctor Kotlin de lambda <code>FunctionReferenceImpl.&lt;init&gt; → super(2, receiver, …)</code> (objeto de <code>OnBackPressedDispatcher.addCallback</code>)
+re-executar o próprio <code>&lt;init&gt;</code> em <strong>recursão infinita</strong> (VM_STACK_OVERFLOW
+a 512; abort nativo com pilha padrão). Máscaras corrigidas conforme o spec
+Dalvik (0x70/0x76 = direct).<br>(3) <strong><code>&lt;init&gt;()V</code> de coleções abstratas host no-op</strong> (37º): classe DEX
+estendendo Diretamente <code>java.util.AbstractList</code> e cia. chama <code>super()</code> via
+invoke-direct; antes caía em NOT_FOUND (tipos de classe host sem bucket
+java.util triviais). Testes: 3 regressões em <code>vm_exec</code>
+(super-do-frame, range-direct/virtual, subclasse-DEX-de-AbstractList).
+Resultado real: o launch sai do NPE e do overflow e para no próximo gap
+<strong><code>Activity.getApplication()</code></strong> (NOT_FOUND tipado, sem exception).</li>
+<li>✅ <strong><code>Activity.getApplication()</code>/<code>Context.getApplicationContext()</code> → Application
+canônica por VM (entregue nesta rodada, 38º/39º gaps reais)</strong>: o launch cria a
+Application do <code>android:name</code> do manifest (com fallback DEFAULT do AOSP — classe
+ausente no DEX → <code>Landroid/app/Application;</code>), roda <code>&lt;init&gt;</code>/<code>onCreate</code> DEX dela
+ANTES do da activity e devolve SEMPRE a mesma instância; mref pela classe do app
+(ex.: <code>MainTabsActivity</code>) coberto em <code>call_instance_intrinsic_mref</code> e mref
+<code>Landroid/...</code> no framework. Wiring: CLI <code>app run</code> e MCP <code>tool_launch</code> injetam
+o descritor do manifest (<code>set_application_class</code>). Teste: ordem
+Application.onCreate(41)→Activity.onCreate(42); canônica; contexto ≡ aplicação.</li>
+<li>✅ <strong>Cadeia <code>java.util.Collections</code> do <code>LogController</code> (entregue nesta rodada,
+40º–43º gaps reais):</strong> <code>unmodifiableMap</code>/<code>unmodifiableSet</code>/<code>singletonList</code> host —
+views imutáveis de SNAPSHOT em classes-marcadoras do JDK
+(<code>Collections$UnmodifiableMap/$UnmodifiableSet/$SingletonList</code>): leituras
+delegam (get/size/contains/…); mutações → <code>UnsupportedOperationException</code>
+tipada como na JDK; null → NPE; coleção do app sem estado host →
+<code>VM_TYPE_ERROR</code> tipado (não itera/instancia surpresa); <code>HashSet.&lt;init&gt;(Collection)</code>
+com snapshot dedup na ordem do iterador. Desvio documentado: snapshot ≠ view
+live (as mutações da fonte após a criação não refletem — já o regime de
+synchronized*); instanciador de provider usa ctor acessível sem classe pai implícita.</li>
+<li>✅ <strong><code>SharedPreferences</code> padrão host (entregue nesta rodada, 44º gap real):</strong>
+<code>PreferenceManager.getDefaultSharedPreferences(Context)</code> devolve o objeto
+canônico <code>Landroid/content/SharedPreferencesImpl;</code> (AOSP) — prefs começam
+VAZIAS e não persistem em arquivo nesta milestone (getXxx → default da
+chamada; contains → false; key null → NPE do AOSP). <code>edit()/apply/commit</code>
+seguem fora (falta tipada na sondagem seguinte se o app escrever prefs).</li>
+<li>✅ <strong>Descoberta real de <code>ServiceLoader</code> via <code>META-INF/services</code> (entregue
+nesta rodada, 45º gap real — slf4j 2.x do primftpd):</strong> <code>load(Class [,ClassLoader])</code> lê <code>META-INF/services/&lt;nome binário&gt;</code> do APK anexado
+(formato JDK: <code>#</code> comenta; linhas vazias puladas) e guarda os providers no
+estado host; <code>iterator()</code> INSTANCIA cada provider via DEX
+(<code>&lt;clinit&gt;</code>+<code>&lt;init&gt;()V</code>, helper <code>new_dex_instance</code>) no snapshot do Iter
+(eager — desvio de preguiça do JDK documentado) e devolve iterador real;
+provider ausente dos dex → <code>ServiceConfigurationError</code> tipado (JLS), sem
+skip silencioso; sem APK/sem arquivo → loader vazio (contrato, como antes).
+Resultado real da sondagem: <code>findServiceProviders</code> roda DEX, providers
+seriam descobertos se o APK embarcasse os services — o APK golden NÃO tem
+<code>META-INF/services</code> (o gradle strip dos packagingOptions) e a única factory
+disponível cai no fallback NOP do slf4j; <code>LogController.setActiveConfig</code>
+upstream casta <code>(LoggerContext)</code> INCONDICIONALMENTE → <code>ClassCastException</code>
+tipada, idêntica ao que um dispositivo real entrega com esse APK (cadeia do
+launch encerrada com comportamento fiel).</li>
+<li>⬜ <strong>Legacy gap (postergado — superseded pela cadeia androidX resolvida acima):</strong> o
+<code>ClassLoader.getResources(String) → Enumeration&lt;URL&gt;</code> abaixo pertence a probe anterior
+(SLF4J/LG já passou — o launch agora roda o onCreate inteiro). Reavaliar quando a
+sequência real exigir SPI/classpath enumeration de novo.</li>
+<li>⬜ <strong>Próximo gap (re-sondado): <code>ClassLoader.getResources(String) → Enumeration&lt;URL&gt;</code></strong> — próximo <code>NOT_FOUND</code> após LinkedHashSet
+(<code>getResources("org/slf4j/impl/StaticLoggerBinder.class")</code> do
+LoggerFactory.findPossibleStaticLoggerBinderPathSet — Logback probe; o
+PRM continua controlado antes). Replica encontrada: suíte
+<code>org.primftpd.log.PrimFtpdLoggerFactoryTest</code>. Necessário (canto-canto):
+Enumeration minimal (<code>hasMoreElements</code>/<code>nextElement</code>,
+<code>NoSuchElementException</code>) + getResources vazio (Java 9+: NPE em name null).
+Follow-ups da Enumeration: <code>Collections.emptyEnumeration</code> e
+<code>Collections.list(Enumeration)</code> no mesmo host; <code>ClassLoader.getResource</code>
+(singular) coberto por exceção quando o launch pedir; bloco <code>java.net.URL</code>
+quando a sequência real exigir URL.</li>
+</ul>
+<h2 id="-m8-concluído-2026-10--compat-real-escopo-completo-v090"><a class="header" href="#-m8-concluído-2026-10--compat-real-escopo-completo-v090">✅ M8 concluído (2026-10) — Compat real, escopo completo (v0.9.0)</a></h2>
+<p>Interceptação seletiva (<code>crates/rd-vm/src/m8.rs</code>, ADR 003): o dispatch consulta
+o host M8 antes do DEX só para métodos listados; o resto roda o DEX real da
+biblioteca do APK. Estado real e consultável via <code>Engine::m8_*</code>; testes em
+<code>crates/rd-vm/tests/m8.rs</code> (9 testes) + suíte do agente <code>tests/suites/m8-compat.json</code>.</p>
+<ol>
+<li>✅ <strong>RecyclerView</strong>: <code>setAdapter</code> pergunta <code>getItemCount()</code> ao adapter DEX,
+cria ViewHolders via <code>onCreateViewHolder</code> DEX, vincula via <code>onBindViewHolder</code>,
+anexa itemViews como filhos (cap 20 = viewport); <code>notify*</code> repopula e conta;
+LayoutManager/Linear/Grid; inflate de <code>&lt;androidx.recyclerview.widget.RecyclerView&gt;</code>.</li>
+<li>✅ <strong>Fragments</strong>: legacy completo (registro/transações) + androidx
+FragmentManager/FragmentTransaction (add/replace/remove/commit/commitNow,
+findByTag/Id, popBackStack, getSupportFragmentManager canônico).</li>
+<li>✅ <strong>Dialogs</strong>: Dialog/AlertDialog/Builder (title/message/view/buttons),
+show/dismiss/isShowing; clique dispara <code>OnClickListener</code> DEX
+(<code>Engine::m8_click_dialog_button</code>).</li>
+<li>✅ <strong>OkHttp shim</strong>: OkHttpClient/Request.Builder/Call.execute/enqueue
+(síncrono, Callback DEX), Response/ResponseBody; resposta determinística
+registrada (<code>m8_set_http_response</code>, default 200), URLs registradas. Sem rede.</li>
+<li>✅ <strong>SQLite/Room</strong>: SQLite em memória (DDL CREATE/DROP, insert/replace/
+update/delete, query/rawQuery SELECT…FROM, transações, ContentValues,
+Cursor completo, <code>SQLiteOpenHelper.onCreate</code> DEX); Room
+databaseBuilder/Builder/build sobre esse host.</li>
+<li>✅ <strong>Services/broadcasts/deep links</strong>: start/stop/bindService registrados;
+sendBroadcast entrega a receivers (<code>onReceive</code> DEX); Intent action/data +
+Uri parse/scheme/host/path; startActivity VIEW registra deep link e navega
+com handler registrado; JobScheduler host.</li>
+<li>✅ <strong>WorkManager</strong>: getInstance canônico; <code>enqueue*</code> registra WorkRecord
+(ENQUEUED → SUCCEEDED via <code>m8_complete_work</code>, <code>cancel*</code> → CANCELLED);
+Operation/ListenableFuture completados. Sem thread de background.</li>
+<li>✅ <strong>SharedPreferences stateful</strong>: Editor put/remove/clear + commit/apply
+aplicam no storage da VM; getters leem o storage; contains/getAll reais.</li>
+<li>✅ <strong>Regressão real</strong>: launch do <code>org.primftpd</code> inalterado (mesma
+ClassCastException fiel do APK sem META-INF/services); workspace verde.</li>
+</ol>
+<h2 id="-m9-concluído-2026-10--componentes-avançados--ndk"><a class="header" href="#-m9-concluído-2026-10--componentes-avançados--ndk">✅ M9 concluído (2026-10) — Componentes avançados + NDK</a></h2>
+<p>Arquitetura e limites: <a href="m9.html"><code>docs/m9.md</code></a>; decisão: <a href="adr/004-m9-native-isolation.html">ADR 004</a>.
+O código nativo <strong>nunca roda na CPU do host</strong>. O ELF é carregado por <code>rd-ndk</code> e
+executado num worker Python/Unicorn 2.1.4 em processo separado. Esse worker tem
+fuel, watchdog, syscalls bloqueadas e libc fail-closed. Não há <code>unsafe</code> novo, e o
+GPL fica fora do binário. Features: <code>advanced-components</code> (default) e <code>native</code>
+(opt-in).</p>
+<ol>
+<li>✅ <strong>SYS-09 notificações</strong>: canais e grupos, Builder/Compat, ações, BigText,
+progress, timeout, permissão <code>POST_NOTIFICATIONS</code> (targetSdk ≥ 33),
+PendingIntent com flag de mutabilidade (≥ 31), clique com auto-cancel,
+<code>NotificationListenerService</code>. Tool <code>notifications</code> funcional.</li>
+<li>✅ <strong>SYS-09 IME</strong>: foco/teclado em EditText, <code>InputConnection</code> (commit,
+composing, delete surrounding, seleção, editor action) e ciclo de vida do
+<code>InputMethodService</code> DEX. Unicode correto. Tool <code>ime</code>.</li>
+<li>✅ <strong>SYS-09 widgets</strong>: AppWidgetManager/Host, ciclo do <code>AppWidgetProvider</code>
+DEX e RemoteViews (texto, visibilidade, enabled, clique com PendingIntent),
+renderizados na mesma árvore <code>UiNode</code>. Tools <code>widgets</code> e <code>widget_screenshot</code>.
+ProgressBar e coleções → <code>NOT_IMPLEMENTED</code>.</li>
+<li>✅ <strong>SYS-10 acessibilidade e atalhos</strong>: árvore de nós e eventos para
+<code>AccessibilityService</code> DEX, ações focus/click/set_text (mesmo editor do IME);
+<code>ShortcutManager</code> dinâmico/pinned. Tools <code>accessibility</code> e <code>shortcuts</code>.</li>
+<li>✅ <strong>LANG-02 ELF</strong>: parser ELF32/64 limitado (x86_64/AArch64/ARM;
+REL/RELA/JMPREL/RELR; hash GNU). A campanha de mutação rodou 164M casos em
+12 min sem panic.</li>
+<li>✅ <strong>LANG-02 JNI</strong>: tabela JNIEnv/JavaVM (FindClass, MethodID/FieldID,
+<code>Call*Method[A]</code>, strings e regiões, arrays e críticos, weak globals,
+exceções, <code>RegisterNatives</code>, <code>JNI_OnLoad</code>) com fixtures nas 3 ABIs
+(<code>golden/native/</code>). Corrigido um bug de numeração: os slots 226–228 estavam
+deslocados.</li>
+<li>✅ <strong>Gate real</strong> (<code>golden-apks/native-gate.sh</code>, APKs fixados por SHA-256).
+Os 5 APKs fazem chamada JNI a partir do DEX real, e o script confere cada
+resultado. Passa também com as bibliotecas ARM dos mesmos APKs
+(<code>RD_NATIVE_ABI=arm64-v8a|armeabi-v7a</code>): 15/15 execuções.
+<ul>
+<li>voicesmith: <code>ConicConverter.convert</code> dá 16 quadráticas, igual à previsão
+de <code>computeQuadPOW2</code> do Skia.</li>
+<li>termux: <code>JNI.setPtyWindowSize</code> e <code>JNI.close</code>.</li>
+<li>netguard: <code>jni_getprop("net.dns1")</code> devolve <code>""</code>.</li>
+<li>binaryeye: <code>encodeStringAsSvg</code> gera um SVG QR 21×21 (cerca de 500 mil
+instruções), e o <code>zbarimg</code> decodifica <code>RustyDroid</code> nas 3 ABIs.</li>
+<li>whobird: <code>createErrorReporter</code> + <code>delete</code> (handle C++ real).</li>
+</ul>
+</li>
+</ol>
+<p>Correções que saíram do gate ARM: o detector de SVC confundia Thumb-2 com SVC,
+valores de 32 bits traziam lixo na metade alta e argumentos variádicos 64-bit
+não usavam par alinhado. Também foi corrigida a contagem de instruções, que
+somava totais acumulados.</p>
+<p>Ressalva: os componentes foram verificados no fixture <code>test.m9</code>. Também
+<code>Call*MethodV</code> (va_list) é suportado nos 3 ABIs, mas não há threads, <code>pthread_cond_wait</code> nem
+direct ByteBuffer (inferência TFLite); a reentrância nativa aninhada é
+recusada, os arrays JNI vão até 1M elementos e o JNA <code>libjnidispatch</code> não
+inicializa.</p>
+<p>MCP: catálogo 32 → 39 tools (<code>component_service</code>, <code>widgets</code>,
+<code>widget_screenshot</code>, <code>ime</code>, <code>accessibility</code>, <code>shortcuts</code>, <code>native_state</code>).</p>
+<h2 id="apps-alvo-ponta-a-ponta-requisito-do-dono-2026-11-01"><a class="header" href="#apps-alvo-ponta-a-ponta-requisito-do-dono-2026-11-01">Apps alvo ponta a ponta (requisito do dono, 2026-11-01)</a></h2>
+<ul>
+<li>Lista de 17 apps que devem rodar de ponta a ponta, com o status real de cada um:
+<a href="target-apps.html">docs/target-apps.md</a>. Nenhum deles está verificado como funcionando.</li>
+<li>Política de aquisição (decidida pelo dono): APKs só para teste interno, nunca
+commitados; ficam fora do git e entram por caminho em variável de ambiente.</li>
+<li>Lucky Patcher: em andamento (dono aprovou prosseguir).</li>
+<li>Decisão pendente do dono: escolha dos apps “a escolher” (GTA clone, photo manager,
+password manager, auto-clicker, auto-scroll, contatos).</li>
+<li>Suporte a Google Play Services (GMS): <strong>um dos últimos itens</strong>, depois dos golden
+flows dos demais apps.</li>
+</ul>
+<h2 id="objetivos-adicionais-do-dono-2026-11-02"><a class="header" href="#objetivos-adicionais-do-dono-2026-11-02">Objetivos adicionais do dono (2026-11-02)</a></h2>
+<ul>
+<li><strong>Suporte a XAPK.</strong> Aceitar arquivos <code>.xapk</code> (bundle com <code>manifest.json</code> e os
+APKs de split, além de OBB quando existir) em <code>rd inspect</code>, <code>rd dex disasm</code> e no
+fluxo de instalação, tratando o conjunto de splits como um único app. Status
+(2026-11-02): <strong>parcial</strong> — <code>rd inspect</code> (texto e <code>--json</code>) e <code>Apk::open</code> leem o
+bundle e usam o split <code>base</code>; splits e OBB aparecem no inspect; <code>rd dex disasm</code>
+cobre os DEX de todos os splits. Instalação (<code>install</code> do agente): todos os splits
+são parseados e validados, o split <code>base</code> é instalado, e a resposta traz <code>bundle.splits</code>
+com o resumo de cada um. Execução (2026-11-03): o <strong>DEX</strong> dos demais splits entra
+no classpath da execução (<code>bundle.split_dex_merged</code>, teste
+<code>install_xapk_mounts_split_dex_into_execution</code>). Limite honesto: as <strong>libs nativas</strong>
+dos splits ainda não são carregadas (<code>native_libs_pending</code>; <code>base_only_execution</code> fica
+<code>true</code> enquanto houver lib nativa de split pendente). <code>rd test</code> sobre o XAPK: verificado
+por <code>rd_test_runs_two_scenarios_over_an_xapk_bundle_with_split_dex</code> (2 cenários, instalação
+do bundle com split de feature e reinstalação). Libs nativas de split: base-only, decisão
+registrada no ADR 022.
+Decisão em <a href="adr/022-xapk-bundles.html">ADR 022</a>.</li>
+<li><strong>Layering de APKs.</strong> Permitir executar mais de um APK ao mesmo tempo, com um
+APK por cima do outro. Caso de uso citado pelo dono: um jogo clicker e um
+auto-clicker rodando simultaneamente. Status: não iniciado; exige decisão de
+design (isolamento de processo e de dados, compartilhamento de tela e de
+eventos de toque, e o que acontece com permissões e serviços de cada camada).
+Status (2026-11-02): proposta em <a href="adr/021-apk-layering.html">ADR 021</a>. O dono escolheu a
+etapa 1 (sessões com roteamento de entrada). A revisão do ADR 001 que ela exige está
+aceita em <a href="adr/023-revisa-adr-001-multiplas-sessoes.html">ADR 023</a> (mergeada). Código da
+etapa 1 mergeada em #510: <code>RunningApp</code> (#489), <code>SessionHub</code> com <code>session_open</code>,
+<code>session_list</code>, <code>session_close</code> e <code>engine_id</code> opcional em todas as tools de app
+(catálogo de 47 para 50 tools). Validado: CI 10/10 (job <code>native-languages</code> inclui
+as tools de sessão), workspace 1388 passed.
+Segunda rodada (#513, ADR 023 decisões 3 e 5): orçamento de heap por sessão,
+<code>min(256 MB, teto/N)</code> com teto do perfil moto-e5 (1024 MB), e <code>InputRouter</code> no hub
+com registro de cada toque por sessão. Dois apps rodando ao mesmo tempo, com toques
+intercalados, têm teste de regressão. Lacunas declaradas na ADR 023: o roteador
+está no hub e não no M10 (o M10 não tem roteador de entrada); o orçamento é de heap
+do VM, não de RSS por sessão; <code>batch</code> conta como um evento só.
+Pré-requisito da etapa 1 (ADR 024, concluído em #495, #497, #498 e #499): o estado host indexado por <code>ObjRef</code>
+e o destino do System.out saem do thread-local e vão para <code>HostState</code>. Passo 1
+(System.out por engine) mergeado em #495. Passo 2 (tabelas de spannable, regex, URI,
+XML, io-chars, anotações e seeds de Random) feito, com teste de dois engines
+intercalados. Passo 3 (contadores e RNG de UUID, #498) feito. Passo 4 (VFS por
+sessão, <code>VfsHandle</code> em <code>HostState</code>) feito em #499: sessões não se veem, <code>package_clear</code>
+apaga só o pacote, e relançamento na mesma sessão mantém os arquivos.
+ADR 025 (Room <code>init</code> sobre o SQLite de framework): etapa 1 feita pelo caminho A1, sem
+intrínsecos de coroutines. A causa do ponto de parada do spike era <code>queryCoroutineContext</code>
+não nulo (o Room usa nulo). Também foram corrigidos os builders de WorkRequest e as
+setters de NotificationChannel. <code>App.onCreate</code> do NewPipe roda até o fim.
+<strong>Atualização (2026-11-03, bloco 9):</strong> no F-Droid real, <code>App.onCreate</code> conclui sem
+exceção, e o teste <code>fdroid_oncreate_e2e</code> passa. A cadeia do Ktor pelo Kotlin reflect
+exigiu <code>Class.getTypeParameters()</code> (array vazio só para classes não genéricas;
+<code>NOT_IMPLEMENTED</code> para as demais), <code>Class.isAnnotation</code>/<code>isSynthetic</code> e
+<code>AssertionError(Object)</code>. Decisão em <a href="adr/027-reflexao-class-metadados-genericos.html">ADR 027</a>.
+Reflexão genérica completa (<code>TypeVariable</code>, <code>ParameterizedType</code>, enumeração de membros
+com tipos genéricos) segue fora de escopo até um app exigir.
+A primeira tela do F-Droid real renderiza (<code>rd app shot</code>: barra “F-Droid”, “Fetching app
+repositories…”, navegação Discover/Search/My apps). Isso exigiu rodar a CLI inteira
+numa thread de 32 MiB: na thread principal de 8 MiB, o orçamento de pilha nativa cortava
+o draw do Compose em ~400 quadros (<code>StackOverflowError</code>, tela branca).</li>
+</ul>
+<h2 id="-m12-em-andamento--site-de-documentação-publicado-2026-11-10"><a class="header" href="#-m12-em-andamento--site-de-documentação-publicado-2026-11-10">🟡 M12 em andamento — site de documentação publicado (2026-11-10)</a></h2>
+<p>O <code>docs/</code> tem 71 arquivos markdown e ~226 links internos que só existiam na
+interface do GitHub. O workflow <code>docs.yml</code> construía o mdBook em todo push, mas
+<strong>não publicava</strong>: ficava atrás de <code>vars.PAGES_ENABLED == 'true'</code>, variável que
+nunca foi criada, então <code>https://nadabgfccvd.github.io/RustyDroid/</code> respondia
+<strong>404</strong> na raiz desde a criação do repositório.</p>
+<p>O Pages do repositório já estava habilitado em modo <strong>legacy</strong> com
+<code>source = gh-pages:/</code>. Isso dispensa qualquer ajuste de configuração por um
+mantenedor: publicar é um push de branch, e o job só precisa de
+<code>contents: write</code>.</p>
+<ol>
+<li>✅ <strong>Publicação real</strong> — <code>docs.yml</code> constrói o livro e publica em <code>gh-pages</code>
+preservando <code>dev/bench/</code> (histórico do <code>bench.yml</code>) e escrevendo
+<code>.nojekyll</code>. A escrita é idempotente (sem commit quando nada mudou) e
+repete o ciclo fetch → merge → push até 3 vezes, porque <code>bench.yml</code> empurra
+na mesma branch.</li>
+<li>✅ <strong>Índice de ADRs gerado</strong> — <code>scripts/gen_adr_index.py</code>. A lista de ADRs no
+<code>SUMMARY.md</code> era escrita à mão e parava no ADR 020: <strong>18 registros existiam
+em disco e não apareciam no livro</strong>, e a lista nem estava em ordem numérica.
+Agora o bloco entre <code>&lt;!-- adr:begin --&gt;</code> e <code>&lt;!-- adr:end --&gt;</code> é regerado a
+partir de <code>docs/adr/*.md</code>, junto com <code>docs/adr/README.md</code> (tabela com data e
+status). Há gate de sincronia no <code>ci.yml</code> e no <code>docs.yml</code>.</li>
+<li>✅ <strong>Cobertura do livro</strong> — 0 arquivos órfãos (eram 26): os 39 ADRs, os
+apêndices B–F e C-inventory, os perfis do Comprix e <code>target-apps.md</code> estão
+no <code>SUMMARY.md</code>.</li>
+<li>⬜ <strong>Faltam:</strong> compat-matrix viva na mesma origem, releases publicadas no
+<code>gh-pages</code>, e o corte da v1.0.</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="index.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="target-apps.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="index.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="target-apps.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>
