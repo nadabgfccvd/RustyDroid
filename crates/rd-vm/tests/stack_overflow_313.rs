@@ -290,3 +290,82 @@ fn host_to_host_mutual_collection_cycle_throws_soe_and_recovers_313() {
         .join();
     assert!(res.is_ok(), "host-to-host cycle thread panicked");
 }
+
+/// Issue #637: the native-stack budget must be **relative to the stack the VM
+/// actually got**. Before the fix the floor of `detect_native_stack_budget` was
+/// a hardcoded 256 KiB, so on a thread smaller than ~512 KiB the computed
+/// budget was larger than the stack itself: the byte guard could never fire
+/// before the OS guard page, and the process died with `SIGABRT` instead of
+/// throwing a catchable `StackOverflowError`.
+///
+/// This test pins the small-stack cases that used to abort. Each size runs in
+/// its own thread; a regression kills the whole test binary, which is exactly
+/// the failure signature reported in #637 on CI.
+#[test]
+fn small_thread_stacks_throw_stack_overflow_instead_of_sigabrt_637() {
+    for kib in [256usize, 320, 512] {
+        let dex_bytes = build_recursive_dex();
+        let res = std::thread::Builder::new()
+            .name(format!("vm-{kib}kib-reentrant-637"))
+            .stack_size(kib * 1024)
+            .spawn(move || {
+                let dex = rd_dex::Dex::parse(dex_bytes).expect("DEX");
+                let mut vm = Engine::new(
+                    vec![dex],
+                    VmConfig {
+                        max_depth: 512,
+                        ..VmConfig::default()
+                    },
+                );
+                let list_a = vm
+                    .heap
+                    .alloc_instance("Ljava/util/ArrayList;".into(), Vec::new())
+                    .expect("list_a");
+                vm.invoke_instance(list_a, "<init>", "()V", &[])
+                    .expect("init list_a");
+                let list_b = vm
+                    .heap
+                    .alloc_instance("Ljava/util/ArrayList;".into(), Vec::new())
+                    .expect("list_b");
+                vm.invoke_instance(list_b, "<init>", "()V", &[])
+                    .expect("init list_b");
+                let node_a = vm
+                    .heap
+                    .alloc_instance("LRec313;".into(), vec![("peer".into(), Value::Obj(list_a))])
+                    .expect("node_a");
+                let node_b = vm
+                    .heap
+                    .alloc_instance("LRec313;".into(), vec![("peer".into(), Value::Obj(list_b))])
+                    .expect("node_b");
+                vm.invoke_instance(
+                    list_a,
+                    "add",
+                    "(Ljava/lang/Object;)Z",
+                    &[Value::Obj(node_a)],
+                )
+                .expect("list_a.add");
+                vm.invoke_instance(
+                    list_b,
+                    "add",
+                    "(Ljava/lang/Object;)Z",
+                    &[Value::Obj(node_b)],
+                )
+                .expect("list_b.add");
+
+                let r = vm.invoke_instance(
+                    list_a,
+                    "equals",
+                    "(Ljava/lang/Object;)Z",
+                    &[Value::Obj(list_b)],
+                );
+                match r {
+                    Err(VmExit::Exception(ex)) => {
+                        assert_eq!(ex.class, "Ljava/lang/StackOverflowError;");
+                    }
+                    other => panic!("{kib} KiB thread: expected StackOverflowError, got {other:?}"),
+                }
+            })
+            .expect("spawn thread");
+        assert!(res.join().is_ok(), "{kib} KiB reentrant thread panicked");
+    }
+}
