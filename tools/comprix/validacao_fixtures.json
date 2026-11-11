@@ -1,0 +1,22 @@
+{
+ "7891000100103": true,
+ "7896004400013": true,
+ "7894900011517": true,
+ "selo": {
+  "ALTO EM": true,
+  "AÇÚCAR ADICIONADO": true,
+  "GORDURA SATURADA": true,
+  "SÓDIO": true
+ },
+ "tabela": {
+  "porcao_30g": true,
+  "energia_120": true,
+  "sodio_150": true,
+  "saturadas_0,8": true,
+  "acucares_adicionados_8": "inconclusivo: OCR nao leu o valor 8 na linha do rotulo"
+ },
+ "preco": {
+  "24,90": true,
+  "codigo": true
+ }
+}
