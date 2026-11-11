@@ -71,6 +71,7 @@ pub(crate) fn throw_str(class: &str, msg: &str) -> VmExit {
     VmExit::Exception(Throwable::new(class, msg.to_string()))
 }
 #[cold]
+#[inline(never)]
 pub(crate) fn throw(class: &str, msg: impl Into<String>) -> VmExit {
     throw_string(class, msg.into())
 }
@@ -80,6 +81,7 @@ pub(crate) fn npe(what: &str) -> VmExit {
     throw_str("Ljava/lang/NullPointerException;", what)
 }
 #[cold]
+#[inline(never)]
 pub(crate) fn iae(msg: impl Into<String>) -> VmExit {
     throw_string("Ljava/lang/IllegalArgumentException;", msg.into())
 }
@@ -92,6 +94,7 @@ pub(crate) fn jstr_owned(vm: &mut Engine, s: String) -> Result<Value, VmExit> {
 pub(crate) fn jstr_str(vm: &mut Engine, s: &str) -> Result<Value, VmExit> {
     jstr_owned(vm, s.to_string())
 }
+#[inline(never)]
 pub(crate) fn jstr(vm: &mut Engine, s: impl Into<String>) -> Result<Value, VmExit> {
     jstr_owned(vm, s.into())
 }
@@ -196,6 +199,7 @@ pub(crate) fn java_string_hash(s: &str) -> i32 {
     }
     h
 }
+#[inline(never)]
 pub(crate) fn bool_value(b: bool) -> Value {
     Value::Int(b as i32)
 }
@@ -1880,6 +1884,7 @@ fn darg(args: &[Value], i: usize) -> f64 {
         _ => 0.0,
     }
 }
+#[inline(never)]
 pub(crate) fn new_list(vm: &mut Engine, elems: Vec<Value>) -> Result<ObjRef, VmExit> {
     let list = alloc_obj(vm, "Ljava/util/ArrayList;", Vec::new())?;
     vm.fw.objects.insert(list, HostObj::List { elems });

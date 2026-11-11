@@ -91,6 +91,7 @@ pub(crate) fn throw_str(class: &str, msg: &str) -> StubExit {
     StubExit(Box::new(sys::throw_str(class, msg)))
 }
 #[cold]
+#[inline(never)]
 pub(crate) fn throw(class: &str, msg: impl Into<String>) -> StubExit {
     throw_string(class, msg.into())
 }
@@ -100,6 +101,7 @@ pub(crate) fn npe(what: &str) -> StubExit {
     StubExit(Box::new(sys::npe(what)))
 }
 #[cold]
+#[inline(never)]
 pub(crate) fn iae(msg: impl Into<String>) -> StubExit {
     throw_string("Ljava/lang/IllegalArgumentException;", msg.into())
 }
@@ -118,6 +120,15 @@ pub(crate) fn jstr(vm: &mut Engine, s: impl Into<String>) -> StubResult<Value> {
 #[inline(never)]
 fn charseq(vm: &mut Engine, v: Option<&Value>) -> StubResult<Option<String>> {
     sys::charseq(vm, v).map_err(StubExit::from)
+}
+/// Canonical argument read: `args[i]`, or `Value::Null` when absent.
+///
+/// Deliberately outlined: `Value` carries a heap-owned variant, so inlining
+/// `Option::cloned` at each of the 800+ call sites duplicates the `Value::clone`
+/// allocation/unwind path. One shared copy is both smaller and branch-predictable.
+#[inline(never)]
+fn varg(args: &[Value], i: usize) -> Value {
+    args.get(i).cloned().unwrap_or(Value::Null)
 }
 #[inline(never)]
 pub(crate) fn put(vm: &mut Engine, r: ObjRef, f: &str, v: Value) -> StubResult<()> {
@@ -301,6 +312,7 @@ fn idx_oob_fmt(args: std::fmt::Arguments<'_>) -> StubExit {
     throw_string("Ljava/lang/IndexOutOfBoundsException;", std::fmt::format(args))
 }
 #[cold]
+#[inline(never)]
 fn ise(msg: impl Into<String>) -> StubExit {
     throw_string("Ljava/lang/IllegalStateException;", msg.into())
 }
@@ -318,10 +330,12 @@ fn assertion(msg: impl Into<String>) -> StubExit {
 }
 /// Classe do objeto como `&str` emprestado do heap (sem alocar a cada gate).
 #[cold]
+#[inline(never)]
 fn class_of(vm: &Engine, r: ObjRef) -> &str {
     vm.heap.class_of(r).unwrap_or("")
 }
 #[cold]
+#[inline(never)]
 fn obj(v: Option<&Value>) -> Option<ObjRef> {
     match v {
         Some(Value::Obj(r)) => Some(*r),
@@ -329,6 +343,7 @@ fn obj(v: Option<&Value>) -> Option<ObjRef> {
     }
 }
 #[cold]
+#[inline(never)]
 fn req_obj(args: &[Value], i: usize, what: &str) -> StubResult<ObjRef> {
     oarg(args, i).ok_or_else(|| npe(what))
 }
@@ -337,26 +352,32 @@ fn req_str(vm: &Engine, args: &[Value], i: usize, what: &str) -> StubResult<Stri
     opt_str(vm, args.get(i)).ok_or_else(|| npe(what))
 }
 #[cold]
+#[inline(never)]
 fn opt_str_arg(vm: &Engine, args: &[Value], i: usize) -> Option<String> {
     opt_str(vm, args.get(i))
 }
 #[cold]
+#[inline(never)]
 fn field_int(vm: &Engine, r: ObjRef, f: &str) -> i32 {
     get(vm, r, f).as_int().unwrap_or(0)
 }
 #[cold]
+#[inline(never)]
 fn field_long(vm: &Engine, r: ObjRef, f: &str) -> i64 {
     get(vm, r, f).as_long().unwrap_or(0)
 }
 #[cold]
+#[inline(never)]
 fn field_float(vm: &Engine, r: ObjRef, f: &str) -> f32 {
     get(vm, r, f).as_float().unwrap_or(0.0)
 }
 #[cold]
+#[inline(never)]
 fn field_bool(vm: &Engine, r: ObjRef, f: &str) -> bool {
     field_int(vm, r, f) != 0
 }
 #[cold]
+#[inline(never)]
 fn field_obj(vm: &Engine, r: ObjRef, f: &str) -> Option<ObjRef> {
     match get(vm, r, f) {
         Value::Obj(o) => Some(o),
@@ -364,6 +385,7 @@ fn field_obj(vm: &Engine, r: ObjRef, f: &str) -> Option<ObjRef> {
     }
 }
 #[cold]
+#[inline(never)]
 fn array_elems(vm: &Engine, v: Option<&Value>) -> Vec<Value> {
     match v {
         Some(Value::Obj(r)) => vm
@@ -375,10 +397,12 @@ fn array_elems(vm: &Engine, v: Option<&Value>) -> Vec<Value> {
     }
 }
 #[cold]
+#[inline(never)]
 fn array_is_obj(v: Option<&Value>) -> bool {
     matches!(v, Some(Value::Obj(_)))
 }
 #[cold]
+#[inline(never)]
 fn int_values(vm: &Engine, v: Option<&Value>) -> Vec<i32> {
     array_elems(vm, v)
         .iter()
@@ -411,12 +435,14 @@ fn new_float_array(vm: &mut Engine, vals: &[f32]) -> StubResult<Value> {
     ).map_err(StubExit::from)
 }
 #[cold]
+#[inline(never)]
 fn new_collection(vm: &mut Engine, class: &str, elems: Vec<Value>) -> StubResult<ObjRef> {
     let r = alloc_empty_obj(vm, class)?;
     vm.fw.objects.insert(r, HostObj::List { elems });
     Ok(r)
 }
 #[cold]
+#[inline(never)]
 fn collection_items(vm: &Engine, v: Option<&Value>) -> Vec<Value> {
     match v {
         Some(Value::Obj(r)) => match vm.fw.objects.get(r) {
@@ -453,6 +479,7 @@ fn empty_bundle(vm: &mut Engine) -> StubResult<Value> {
     Ok(Value::Obj(r))
 }
 #[cold]
+#[inline(never)]
 fn bundle_or_empty(vm: &mut Engine, v: Option<&Value>) -> StubResult<Value> {
     match v {
         Some(Value::Obj(_)) => Ok(v.cloned().unwrap_or(Value::Null)),
@@ -510,6 +537,7 @@ fn objects_equal(vm: &Engine, a: &Value, b: &Value) -> bool {
 }
 
 #[cold]
+#[inline(never)]
 pub(crate) fn value_string(vm: &mut Engine, v: &Value) -> StubResult<String> {
     Ok(match v {
         Value::Null => "null".to_string(),
@@ -1312,7 +1340,7 @@ fn documents_path_instance(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match name {
         "<init>" => {
-            let path = args.get(1).cloned().unwrap_or(Value::Null);
+            let path = varg(args, 1);
             let items = collection_items(vm, Some(&path));
             // DocumentsContract uses Preconditions.checkCollectionNotEmpty and
             // checkCollectionElementsNotNull, both IllegalArgumentException.
@@ -1326,7 +1354,7 @@ fn documents_path_instance(
                 vm,
                 recv,
                 "mRootId",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             // AOSP retains the caller's List reference (it does not copy it).
             put(vm, recv, "mPath", path)?;
@@ -1738,7 +1766,7 @@ fn web_settings_instance(
     }
     let field = format!("rd_{prop}");
     if is_setter {
-        let mut value = args.first().cloned().unwrap_or(Value::Null);
+        let mut value = varg(args, 0);
         match prop.as_str() {
             // AOSP documentation: font sizes outside 1..72 are pinned.
             "MinimumFontSize"
@@ -1898,7 +1926,7 @@ fn webview_instance(
                     vm,
                     recv,
                     "rd_headers",
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?;
             }
             web_navigate(vm, recv, url)?;
@@ -1911,7 +1939,7 @@ fn webview_instance(
                 vm,
                 recv,
                 "rd_post_data",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             web_navigate(vm, recv, url)?;
             Value::Null
@@ -2367,7 +2395,7 @@ fn text_classification_builder_instance(
             builder_set_entity(
                 vm,
                 recv,
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
                 farg(args, 1),
             )?;
             this
@@ -2386,7 +2414,7 @@ fn text_classification_builder_instance(
                 return Err(iae(""));
             }
             let mut actions = collection_items(vm, Some(&get(vm, recv, "rd_actions")));
-            actions.push(args.first().cloned().unwrap_or(Value::Null));
+            actions.push(varg(args, 0));
             let list = new_list(vm, actions)?;
             put(vm, recv, "rd_actions", Value::Obj(list))?;
             this
@@ -2507,7 +2535,7 @@ fn text_classification_static(
                 vm,
                 r,
                 "rd_pending_intent",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Obj(r)
         }
@@ -2536,7 +2564,7 @@ fn text_selection_builder_instance(
             Value::Null
         }
         "setEntityType" => {
-            let entity = args.first().cloned().unwrap_or(Value::Null);
+            let entity = varg(args, 0);
             if matches!(entity, Value::Null) {
                 return Err(npe("type"));
             }
@@ -2975,7 +3003,7 @@ fn text_language_request_builder_instance(
                 vm,
                 recv,
                 "rd_text",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -3047,7 +3075,7 @@ fn text_links_builder_instance(
                 vm,
                 recv,
                 "rd_text",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             let links = new_list(vm, Vec::new())?;
             put(vm, recv, "rd_links", Value::Obj(links))?;
@@ -3056,11 +3084,11 @@ fn text_links_builder_instance(
         "addLink" => {
             let pairs = entities_from_map(vm, args.get(2));
             let (extras, url_span) = if sig.contains("Landroid/os/Bundle;") {
-                (args.get(3).cloned().unwrap_or(Value::Null), Value::Null)
+                (varg(args, 3), Value::Null)
             } else if sig.contains("URLSpan") {
                 (
                     empty_bundle(vm)?,
-                    args.get(3).cloned().unwrap_or(Value::Null),
+                    varg(args, 3),
                 )
             } else {
                 (empty_bundle(vm)?, Value::Null)
@@ -3245,7 +3273,7 @@ fn conversation_actions_instance(
                 vm,
                 recv,
                 "rd_id",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -3498,7 +3526,7 @@ fn text_classifier_default(
                     vm,
                     r,
                     "rd_text",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
                 let links = new_list(vm, Vec::new())?;
                 put(vm, r, "rd_links", Value::Obj(links))?;
@@ -4448,7 +4476,7 @@ fn reprocess_formats_map_instance(
                 vm,
                 recv,
                 "rd_entry",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(vm, recv, "rd_input_count", Value::Int(inputs as i32))?;
             Value::Null
@@ -4915,7 +4943,7 @@ fn stream_map_instance(
                     vm,
                     recv,
                     "rd_high_speed",
-                    args.get(15).cloned().unwrap_or(Value::Null),
+                    varg(args, 15),
                 )?;
             } else {
                 let empty = obj_array(
@@ -4929,7 +4957,7 @@ fn stream_map_instance(
                 vm,
                 recv,
                 "rd_io_map",
-                args.get(16).cloned().unwrap_or(Value::Null),
+                varg(args, 16),
             )?;
             put(vm, recv, "rd_list_high_res", Value::Int(iarg(args, 17)))?;
             let enforce = if args.len() > 18 {
@@ -5284,7 +5312,7 @@ fn type_reference_static(
         "createSpecializedTypeReference" => {
             // The private Type constructor calls containsTypeVariable(type),
             // whose checkNotNull rejects a null type before anything else.
-            let type_value = args.first().cloned().unwrap_or(Value::Null);
+            let type_value = varg(args, 0);
             if matches!(type_value, Value::Null) {
                 return Err(npe("type must not be null"));
             }
@@ -5414,18 +5442,18 @@ fn init_native_key(vm: &mut Engine, recv: ObjRef, sig: &str, args: &[Value]) -> 
         };
         make_native_key(
             vm,
-            args.first().cloned().unwrap_or(Value::Null),
+            varg(args, 0),
             Value::Null,
-            args.get(1).cloned().unwrap_or(Value::Null),
+            varg(args, 1),
             Value::Null,
             vendor,
         )?
     } else if sig.contains("Ljava/lang/String;Ljava/lang/String;Ljava/lang/Class;") {
         make_native_key(
             vm,
-            args.first().cloned().unwrap_or(Value::Null),
-            args.get(1).cloned().unwrap_or(Value::Null),
-            args.get(2).cloned().unwrap_or(Value::Null),
+            varg(args, 0),
+            varg(args, 1),
+            varg(args, 2),
             Value::Null,
             i64::MAX,
         )?
@@ -5439,18 +5467,18 @@ fn init_native_key(vm: &mut Engine, recv: ObjRef, sig: &str, args: &[Value]) -> 
         }
         make_native_key(
             vm,
-            args.first().cloned().unwrap_or(Value::Null),
+            varg(args, 0),
             Value::Null,
             Value::Null,
-            args.get(1).cloned().unwrap_or(Value::Null),
+            varg(args, 1),
             i64::MAX,
         )?
     } else {
         make_native_key(
             vm,
-            args.first().cloned().unwrap_or(Value::Null),
+            varg(args, 0),
             Value::Null,
-            args.get(1).cloned().unwrap_or(Value::Null),
+            varg(args, 1),
             Value::Null,
             i64::MAX,
         )?
@@ -5523,7 +5551,7 @@ fn wrapper_key_instance(
     Ok(Some(match name {
         "<init>" => {
             let native = if sig.contains(CAMERA_METADATA_NATIVE_KEY) {
-                args.first().cloned().unwrap_or(Value::Null)
+                varg(args, 0)
             } else {
                 // Build a temporary native key through the same validation
                 // path, then adopt it as this wrapper's mKey.
@@ -5788,18 +5816,18 @@ fn camera_metadata_native_instance(
             Value::Null
         }
         "get" | "getBase" => {
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
             metadata_get(vm, recv, &key)
         }
         "set" | "setBase" => {
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
-            metadata_set(vm, recv, key, args.get(1).cloned().unwrap_or(Value::Null))?;
+            metadata_set(vm, recv, key, varg(args, 1))?;
             Value::Null
         }
         "isEmpty" => bool_value(metadata_entries(vm, recv).is_empty()),
@@ -5938,7 +5966,7 @@ fn camera_characteristics_instance(
             Value::Null
         }
         "get" => {
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
@@ -6037,8 +6065,8 @@ fn capture_request_init_from_template(
     let template = req_obj(args, 0, "settings")?;
     let is_reprocess = iarg(args, 1) != 0;
     let session_id = iarg(args, 2);
-    let logical_id = args.get(3).cloned().unwrap_or(Value::Null);
-    let physical_set = args.get(4).cloned().unwrap_or(Value::Null);
+    let logical_id = varg(args, 3);
+    let physical_set = varg(args, 4);
     if !matches!(physical_set, Value::Null) && is_reprocess {
         return Err(iae(
             "Create a reprocess capture request with with more than one physical camera is not supported!",
@@ -6119,7 +6147,7 @@ fn capture_request_instance(
             Value::Null
         }
         "get" => {
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
@@ -6146,7 +6174,7 @@ fn capture_request_instance(
             Value::Int(session)
         }
         "containsTarget" => {
-            let target = args.first().cloned().unwrap_or(Value::Null);
+            let target = varg(args, 0);
             bool_value(collection_items(vm, Some(&get(vm, recv, "rd_surfaces"))).contains(&target))
         }
         "getRequestType" => {
@@ -6229,7 +6257,7 @@ fn capture_request_builder_instance(
         }
         "addTarget" => {
             let request = request_of(vm, recv)?;
-            let target = args.first().cloned().unwrap_or(Value::Null);
+            let target = varg(args, 0);
             // ArraySet.add(null) is permitted by the collection itself even
             // though the parameter is annotated @NonNull.
             let mut surfaces = collection_items(vm, Some(&get(vm, request, "rd_surfaces")));
@@ -6242,7 +6270,7 @@ fn capture_request_builder_instance(
         }
         "removeTarget" => {
             let request = request_of(vm, recv)?;
-            let target = args.first().cloned().unwrap_or(Value::Null);
+            let target = varg(args, 0);
             let mut surfaces = collection_items(vm, Some(&get(vm, request, "rd_surfaces")));
             surfaces.retain(|s| *s != target);
             let list = new_list(vm, surfaces)?;
@@ -6259,7 +6287,7 @@ fn capture_request_builder_instance(
                     m
                 }
             };
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
@@ -6267,13 +6295,13 @@ fn capture_request_builder_instance(
                 vm,
                 settings,
                 key,
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Null
         }
         "get" => {
             let request = request_of(vm, recv)?;
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
@@ -6284,8 +6312,8 @@ fn capture_request_builder_instance(
         }
         "setPhysicalCameraKey" => {
             let request = request_of(vm, recv)?;
-            let key = args.first().cloned().unwrap_or(Value::Null);
-            let physical_id = args.get(2).cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
+            let physical_id = varg(args, 2);
             let settings = capture_request_physical_settings(vm, request, &physical_id)?;
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
@@ -6294,14 +6322,14 @@ fn capture_request_builder_instance(
                 vm,
                 settings,
                 key,
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Obj(recv)
         }
         "getPhysicalCameraKey" => {
             let request = request_of(vm, recv)?;
-            let key = args.first().cloned().unwrap_or(Value::Null);
-            let physical_id = args.get(1).cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
+            let physical_id = varg(args, 1);
             let settings = capture_request_physical_settings(vm, request, &physical_id)?;
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
@@ -6314,7 +6342,7 @@ fn capture_request_builder_instance(
                 vm,
                 request,
                 "rd_tag",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -6360,7 +6388,7 @@ fn capture_result_instance(
             // Identify overloads by signature/arity.
             let (camera_id, results_arg, request, sequence, frame) =
                 if sig.contains("CaptureResultExtras") {
-                    let extras = args.get(3).cloned().unwrap_or(Value::Null);
+                    let extras = varg(args, 3);
                     if matches!(args.get(2), None | Some(Value::Null)) {
                         return Err(iae("parent was null"));
                     }
@@ -6368,9 +6396,9 @@ fn capture_result_instance(
                         return Err(iae("extras was null"));
                     }
                     (
-                        args.first().cloned().unwrap_or(Value::Null),
-                        args.get(1).cloned().unwrap_or(Value::Null),
-                        args.get(2).cloned().unwrap_or(Value::Null),
+                        varg(args, 0),
+                        varg(args, 1),
+                        varg(args, 2),
                         match capture_result_extras_field(vm, &extras, "rd_request_id") {
                             Value::Int(i) => i,
                             _ => field_int(vm, obj(Some(&extras)).unwrap_or(recv), "mRequestId"),
@@ -6386,9 +6414,9 @@ fn capture_result_instance(
                         return Err(iae("parent was null"));
                     }
                     (
-                        args.first().cloned().unwrap_or(Value::Null),
-                        args.get(1).cloned().unwrap_or(Value::Null),
-                        args.get(2).cloned().unwrap_or(Value::Null),
+                        varg(args, 0),
+                        varg(args, 1),
+                        varg(args, 2),
                         iarg(args, 3),
                         match args.get(4) {
                             Some(Value::Long(l)) => *l,
@@ -6399,7 +6427,7 @@ fn capture_result_instance(
                 } else {
                     (
                         jstr_str(vm, "none")?,
-                        args.first().cloned().unwrap_or(Value::Null),
+                        varg(args, 0),
                         Value::Null,
                         iarg(args, 1),
                         -1i64,
@@ -6461,7 +6489,7 @@ fn capture_result_instance(
             Value::Obj(copy)
         }
         "get" => {
-            let key = args.first().cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
             if matches!(key, Value::Null) {
                 return Err(npe("key must not be null"));
             }
@@ -6615,9 +6643,9 @@ fn camera_manager_instance(
             // Callbacks are retained but never fire: there are no cameras
             // and therefore no initial availability/torch events to send.
             let callback = if sig.starts_with("(Ljava/util/concurrent/Executor;") {
-                args.get(1).cloned().unwrap_or(Value::Null)
+                varg(args, 1)
             } else {
-                args.first().cloned().unwrap_or(Value::Null)
+                varg(args, 0)
             };
             if matches!(callback, Value::Null) {
                 return Err(npe("callback"));
@@ -6705,6 +6733,7 @@ const ANIM_KIND_OBJECT: i32 = 3;
 fn anim_class_cast(msg: impl Into<String>) -> StubExit {
     throw("Ljava/lang/ClassCastException;", msg)
 }
+#[inline(never)]
 fn anim_put_bool(vm: &mut Engine, r: ObjRef, field: &str, value: bool) -> StubResult<()> {
     put(vm, r, field, bool_value(value))
 }
@@ -8723,7 +8752,7 @@ fn value_animator_static(
             "([Landroid/animation/PropertyValuesHolder;)Landroid/animation/ValueAnimator;",
         ) => {
             let animator = anim_new_animator(vm, VALUE_ANIMATOR)?;
-            let values = args.first().cloned().unwrap_or(Value::Null);
+            let values = varg(args, 0);
             put(vm, animator, "rd_values", values)?;
             anim_put_bool(vm, animator, "rd_initialized", false)?;
             Value::Obj(animator)
@@ -8735,7 +8764,7 @@ fn value_animator_static(
             let animator = anim_new_animator(vm, VALUE_ANIMATOR)?;
             let values = array_elems(vm, args.get(1));
             anim_animator_set_object_values(vm, animator, &values, false)?;
-            let evaluator = args.first().cloned().unwrap_or(Value::Null);
+            let evaluator = varg(args, 0);
             anim_animator_set_evaluator(vm, animator, evaluator)?;
             Value::Obj(animator)
         }
@@ -8766,7 +8795,7 @@ fn value_animator_static(
             "registerDurationScaleChangeListener",
             "(Landroid/animation/ValueAnimator$DurationScaleChangeListener;)Z",
         ) => {
-            let listener = args.first().cloned().unwrap_or(Value::Null);
+            let listener = varg(args, 0);
             let mut listeners = anim_duration_scale_listeners(vm);
             if listeners.contains(&listener) {
                 Value::Int(0)
@@ -8780,7 +8809,7 @@ fn value_animator_static(
             "unregisterDurationScaleChangeListener",
             "(Landroid/animation/ValueAnimator$DurationScaleChangeListener;)Z",
         ) => {
-            let listener = args.first().cloned().unwrap_or(Value::Null);
+            let listener = varg(args, 0);
             let mut listeners = anim_duration_scale_listeners(vm);
             let before = listeners.len();
             listeners.retain(|value| value != &listener);
@@ -8847,14 +8876,14 @@ fn object_animator_static(
             let animator = if by_property {
                 anim_new_object_animator(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                     None,
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?
             } else {
                 anim_new_object_animator(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                     opt_str_arg(vm, args, 1),
                     Value::Null,
                 )?
@@ -8879,14 +8908,14 @@ fn object_animator_static(
             let animator = if by_property {
                 anim_new_object_animator(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                     None,
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?
             } else {
                 anim_new_object_animator(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                     opt_str_arg(vm, args, 1),
                     Value::Null,
                 )?
@@ -8907,21 +8936,21 @@ fn object_animator_static(
             let animator = if by_property {
                 anim_new_object_animator(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                     None,
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?
             } else {
                 anim_new_object_animator(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                     opt_str_arg(vm, args, 1),
                     Value::Null,
                 )?
             };
             let values = array_elems(vm, args.get(3));
             anim_animator_set_object_values(vm, animator, &values, true)?;
-            let evaluator = args.get(2).cloned().unwrap_or(Value::Null);
+            let evaluator = varg(args, 2);
             anim_animator_set_evaluator(vm, animator, evaluator)?;
             Value::Obj(animator)
         }
@@ -8934,15 +8963,15 @@ fn object_animator_static(
                 vm,
                 animator,
                 "rd_target",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             let values = array_elems(vm, args.get(4));
             let holder = anim_make_object_pvh(
                 vm,
                 None,
-                args.get(1).cloned().unwrap_or(Value::Null),
-                args.get(3).cloned().unwrap_or(Value::Null),
-                args.get(2).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
+                varg(args, 3),
+                varg(args, 2),
                 &values,
             )?;
             anim_set_values(vm, animator, vec![holder])?;
@@ -8957,13 +8986,13 @@ fn object_animator_static(
                 vm,
                 animator,
                 "rd_target",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(
                 vm,
                 animator,
                 "rd_values",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             anim_put_bool(vm, animator, "rd_initialized", false)?;
             Value::Obj(animator)
@@ -9001,7 +9030,7 @@ fn property_values_holder_static(
             Value::Obj(anim_make_int_pvh(
                 vm,
                 None,
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
                 &values,
             )?)
         }
@@ -9025,7 +9054,7 @@ fn property_values_holder_static(
             Value::Obj(anim_make_float_pvh(
                 vm,
                 None,
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
                 &values,
             )?)
         }
@@ -9038,7 +9067,7 @@ fn property_values_holder_static(
                 vm,
                 opt_str_arg(vm, args, 0),
                 Value::Null,
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
                 Value::Null,
                 &values,
             )?)
@@ -9051,8 +9080,8 @@ fn property_values_holder_static(
             Value::Obj(anim_make_object_pvh(
                 vm,
                 None,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Null,
                 &values,
             )?)
@@ -9065,9 +9094,9 @@ fn property_values_holder_static(
             Value::Obj(anim_make_object_pvh(
                 vm,
                 None,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(2).cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 2),
+                varg(args, 1),
                 &values,
             )?)
         }
@@ -9097,7 +9126,7 @@ fn property_values_holder_static(
             Value::Obj(anim_make_keyframe_pvh(
                 vm,
                 None,
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
                 keyframes,
             )?)
         }
@@ -9147,7 +9176,7 @@ fn keyframe_static(
             "F",
         )?),
         ("ofObject", "(FLjava/lang/Object;)Landroid/animation/Keyframe;") => {
-            let object_value = args.get(1).cloned().unwrap_or(Value::Null);
+            let object_value = varg(args, 1);
             let value_type = anim_type_desc(vm, &object_value);
             Value::Obj(anim_new_keyframe(
                 vm,
@@ -9215,7 +9244,7 @@ fn property_values_holder_instance(
             Value::Null
         }
         ("<init>", "(Landroid/util/Property;)V") => {
-            let property = args.first().cloned().unwrap_or(Value::Null);
+            let property = varg(args, 0);
             let property_name = anim_property_name(vm, &property);
             put_opt_str(vm, recv, "rd_property_name", property_name)?;
             put(vm, recv, "rd_property", property)?;
@@ -9342,7 +9371,7 @@ fn keyframe_instance(
             Value::Null
         }
         ("<init>", "(FLjava/lang/Object;)V") if class == KEYFRAME_OBJECT => {
-            let object_value = args.get(1).cloned().unwrap_or(Value::Null);
+            let object_value = varg(args, 1);
             let value_type = anim_type_desc(vm, &object_value);
             put(vm, recv, "rd_kind", Value::Int(ANIM_KIND_OBJECT))?;
             put(vm, recv, "rd_fraction", Value::Float(farg(args, 0)))?;
@@ -9377,7 +9406,7 @@ fn keyframe_instance(
             anim_boxed(vm, anim_keyframe_kind(vm, recv), &internal)?
         }
         ("setValue", "(Ljava/lang/Object;)V") => {
-            let new_value = args.first().cloned().unwrap_or(Value::Null);
+            let new_value = varg(args, 0);
             match anim_keyframe_kind(vm, recv) {
                 ANIM_KIND_INT => {
                     let valid = matches!(&new_value, Value::Int(_))
@@ -9437,8 +9466,8 @@ fn animation_evaluator_instance(
     let value = match name {
         "evaluate" => {
             let fraction = farg(args, 0);
-            let start = args.get(1).cloned().unwrap_or(Value::Null);
-            let end = args.get(2).cloned().unwrap_or(Value::Null);
+            let start = varg(args, 1);
+            let end = varg(args, 2);
             match class {
                 INT_EVALUATOR => {
                     let s = anim_number_int(vm, &start)
@@ -9496,13 +9525,13 @@ fn android_property_instance(
                 vm,
                 recv,
                 "rd_type",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(
                 vm,
                 recv,
                 "rd_name",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -9513,7 +9542,7 @@ fn android_property_instance(
                 vm,
                 recv,
                 "rd_name",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -9524,14 +9553,14 @@ fn android_property_instance(
                 vm,
                 recv,
                 "rd_name",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
         ("set", "(Ljava/lang/Object;Ljava/lang/Object;)V") => {
             let runtime_class = class_of(vm, recv).to_string();
-            let target = args.first().cloned().unwrap_or(Value::Null);
-            let new_value = args.get(1).cloned().unwrap_or(Value::Null);
+            let target = varg(args, 0);
+            let new_value = varg(args, 1);
             if vm.cp.is_subtype(&runtime_class, ANDROID_INT_PROPERTY) {
                 let value = anim_number_int(vm, &new_value).ok_or_else(|| npe("value"))?;
                 vm.invoke_instance(
@@ -9626,12 +9655,12 @@ fn animator_base_instance(
                 vm,
                 recv,
                 "rd_listeners",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
         ("removeListener", "(Landroid/animation/Animator$AnimatorListener;)V") => {
-            let listener = args.first().cloned().unwrap_or(Value::Null);
+            let listener = varg(args, 0);
             anim_remove_listener(vm, recv, "rd_listeners", &listener)?;
             Value::Null
         }
@@ -9640,12 +9669,12 @@ fn animator_base_instance(
                 vm,
                 recv,
                 "rd_pause_listeners",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
         ("removePauseListener", "(Landroid/animation/Animator$AnimatorPauseListener;)V") => {
-            let listener = args.first().cloned().unwrap_or(Value::Null);
+            let listener = varg(args, 0);
             anim_remove_listener(vm, recv, "rd_pause_listeners", &listener)?;
             Value::Null
         }
@@ -9712,7 +9741,7 @@ fn value_animator_instance(
             Value::Null
         }
         ("setValues", "([Landroid/animation/PropertyValuesHolder;)V") => {
-            let values = args.first().cloned().unwrap_or(Value::Null);
+            let values = varg(args, 0);
             if matches!(values, Value::Null) {
                 return Err(npe("values"));
             }
@@ -9822,12 +9851,12 @@ fn value_animator_instance(
                 vm,
                 recv,
                 "rd_update_listeners",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
         ("removeUpdateListener", "(Landroid/animation/ValueAnimator$AnimatorUpdateListener;)V") => {
-            let listener = args.first().cloned().unwrap_or(Value::Null);
+            let listener = varg(args, 0);
             anim_remove_listener(vm, recv, "rd_update_listeners", &listener)?;
             Value::Null
         }
@@ -9838,7 +9867,7 @@ fn value_animator_instance(
         ("setInterpolator", "(Landroid/animation/TimeInterpolator;)V")
         | ("setInterpolator", "(Landroid/view/animation/Interpolator;)V") => {
             let interpolator = match args.first() {
-                Some(Value::Obj(_)) => args.first().cloned().unwrap_or(Value::Null),
+                Some(Value::Obj(_)) => varg(args, 0),
                 _ => {
                     let linear = alloc_obj(
                         vm,
@@ -9867,7 +9896,7 @@ fn value_animator_instance(
             }
         }
         ("setEvaluator", "(Landroid/animation/TypeEvaluator;)V") => {
-            let evaluator = args.first().cloned().unwrap_or(Value::Null);
+            let evaluator = varg(args, 0);
             anim_animator_set_evaluator(vm, recv, evaluator)?;
             Value::Null
         }
@@ -10016,7 +10045,7 @@ fn object_animator_instance(
                 vm,
                 recv,
                 "rd_target",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put_opt_str(vm, recv, "rd_property_name", opt_str_arg(vm, args, 1))?;
             Value::Null
@@ -10027,13 +10056,13 @@ fn object_animator_instance(
                 vm,
                 recv,
                 "rd_target",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(
                 vm,
                 recv,
                 "rd_property",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -10074,7 +10103,7 @@ fn object_animator_instance(
             Value::Null
         }
         ("setProperty", "(Landroid/util/Property;)V") => {
-            let property = args.first().cloned().unwrap_or(Value::Null);
+            let property = varg(args, 0);
             if !matches!(get(vm, recv, "rd_values"), Value::Null) {
                 if let Some(holder) = anim_values(vm, recv).first().copied() {
                     put(vm, holder, "rd_property", property.clone())?;
@@ -10117,7 +10146,7 @@ fn object_animator_instance(
         }
         ("getTarget", "()Ljava/lang/Object;") => get(vm, recv, "rd_target"),
         ("setTarget", "(Ljava/lang/Object;)V") => {
-            let target = args.first().cloned().unwrap_or(Value::Null);
+            let target = varg(args, 0);
             if get(vm, recv, "rd_target") != target {
                 if field_bool(vm, recv, "rd_started") {
                     anim_cancel(vm, recv)?;
@@ -10209,6 +10238,7 @@ fn af_destroyed(vm: &Engine, r: ObjRef) -> bool {
     field_bool(vm, r, "destroyed")
 }
 #[cold]
+#[inline(never)]
 fn af_throw_if_destroyed(vm: &Engine, r: ObjRef) -> StubResult<()> {
     if af_destroyed(vm, r) {
         Err(ise("Already called #build()"))
@@ -10245,10 +10275,7 @@ fn af_check_range(value: i32, min: i32, max: i32, name: &str) -> StubResult<i32>
     }
 }
 #[cold]
-fn af_arg_value(args: &[Value], i: usize) -> Value {
-    args.get(i).cloned().unwrap_or(Value::Null)
-}
-#[cold]
+#[inline(never)]
 fn af_req_arg_obj(args: &[Value], i: usize, what: &str) -> StubResult<ObjRef> {
     oarg(args, i).ok_or_else(|| npe(what))
 }
@@ -10274,6 +10301,7 @@ fn af_ensure_list_field(vm: &mut Engine, r: ObjRef, field: &str) -> StubResult<O
     Ok(list)
 }
 #[cold]
+#[inline(never)]
 fn af_field_items(vm: &mut Engine, r: ObjRef, field: &str) -> StubResult<Vec<Value>> {
     let list = af_ensure_list_field(vm, r, field)?;
     Ok(match vm.fw.objects.get(&list) {
@@ -10667,7 +10695,7 @@ fn autofill_value_static(
             if oarg(args, 0).is_none() {
                 Value::Null
             } else {
-                af_value_new(vm, AF_TYPE_TEXT, af_arg_value(args, 0))?
+                af_value_new(vm, AF_TYPE_TEXT, varg(args, 0))?
             }
         }
         "forToggle" => {
@@ -10828,7 +10856,7 @@ fn af_field_builder_instance(
     Ok(Some(match (name, sig) {
         ("setFilter", "(Ljava/util/regex/Pattern;)Landroid/service/autofill/Field$Builder;") => {
             af_check_not_used(vm, recv)?;
-            let filter = af_new_dataset_filter(vm, af_arg_value(args, 0))?;
+            let filter = af_new_dataset_filter(vm, varg(args, 0))?;
             put(vm, recv, "filter", filter)?;
             Value::Obj(recv)
         }
@@ -10877,10 +10905,10 @@ fn af_presentations_instance(
             "<init>",
             "(Landroid/widget/RemoteViews;Landroid/service/autofill/InlinePresentation;Landroid/widget/RemoteViews;Landroid/service/autofill/InlinePresentation;)V",
         ) => {
-            let menu = af_arg_value(args, 0);
-            let inline = af_arg_value(args, 1);
-            let dialog = af_arg_value(args, 2);
-            let tooltip = af_arg_value(args, 3);
+            let menu = varg(args, 0);
+            let inline = varg(args, 1);
+            let dialog = varg(args, 2);
+            let tooltip = varg(args, 3);
             af_presentations_validate(&menu, &inline, &dialog, &tooltip)?;
             put(vm, recv, "menuPresentation", menu)?;
             put(vm, recv, "inlinePresentation", inline)?;
@@ -10963,7 +10991,7 @@ fn af_inline_presentation_static(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match name {
         "createTooltipPresentation" => {
-            af_inline_new(vm, af_arg_value(args, 0), af_arg_value(args, 1), false)?
+            af_inline_new(vm, varg(args, 0), varg(args, 1), false)?
         }
         _ => return Ok(None),
     }))
@@ -10982,8 +11010,8 @@ fn af_inline_presentation_instance(
             "<init>",
             "(Landroid/app/slice/Slice;Landroid/widget/inline/InlinePresentationSpec;Z)V",
         ) => {
-            let slice = af_arg_value(args, 0);
-            let spec = af_arg_value(args, 1);
+            let slice = varg(args, 0);
+            let spec = varg(args, 1);
             if matches!(slice, Value::Null) {
                 return Err(npe("slice must not be null"));
             }
@@ -11353,7 +11381,7 @@ fn af_dataset_instance(
         ("<init>", "(Landroid/service/autofill/Dataset;Ljava/util/ArrayList;)V") => {
             let source = af_req_arg_obj(args, 0, "dataset")?;
             af_dataset_copy_fields(vm, recv, source, false)?;
-            put(vm, recv, "fieldIds", af_arg_value(args, 1))?;
+            put(vm, recv, "fieldIds", varg(args, 1))?;
             put(vm, recv, "eligibleReason", Value::Int(0))?;
             Value::Null
         }
@@ -11372,15 +11400,15 @@ fn af_dataset_instance(
                 "autofillDatatypes",
             ];
             for (i, field) in list_fields.iter().enumerate() {
-                put(vm, recv, field, af_arg_value(args, i))?;
+                put(vm, recv, field, varg(args, i))?;
             }
-            put(vm, recv, "fieldContent", af_arg_value(args, 8))?;
-            put(vm, recv, "presentation", af_arg_value(args, 9))?;
-            put(vm, recv, "dialogPresentation", af_arg_value(args, 10))?;
-            put(vm, recv, "inlinePresentation", af_arg_value(args, 11))?;
-            put(vm, recv, "inlineTooltipPresentation", af_arg_value(args, 12))?;
-            put(vm, recv, "id", af_arg_value(args, 13))?;
-            put(vm, recv, "authentication", af_arg_value(args, 14))?;
+            put(vm, recv, "fieldContent", varg(args, 8))?;
+            put(vm, recv, "presentation", varg(args, 9))?;
+            put(vm, recv, "dialogPresentation", varg(args, 10))?;
+            put(vm, recv, "inlinePresentation", varg(args, 11))?;
+            put(vm, recv, "inlineTooltipPresentation", varg(args, 12))?;
+            put(vm, recv, "id", varg(args, 13))?;
+            put(vm, recv, "authentication", varg(args, 14))?;
             put(vm, recv, "eligibleReason", Value::Int(0))?;
             Value::Null
         }
@@ -11551,7 +11579,7 @@ fn af_dataset_builder_instance(
             Value::Null
         }
         ("<init>", "(Landroid/widget/RemoteViews;)V") => {
-            let presentation = af_arg_value(args, 0);
+            let presentation = varg(args, 0);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation must be non-null"));
             }
@@ -11560,7 +11588,7 @@ fn af_dataset_builder_instance(
             Value::Null
         }
         ("<init>", "(Landroid/service/autofill/InlinePresentation;)V") => {
-            let inline = af_arg_value(args, 0);
+            let inline = varg(args, 0);
             if matches!(inline, Value::Null) {
                 return Err(npe("inlinePresentation must be non-null"));
             }
@@ -11602,7 +11630,7 @@ fn af_dataset_builder_instance(
             "(Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let inline = af_arg_value(args, 0);
+            let inline = varg(args, 0);
             if matches!(inline, Value::Null) {
                 return Err(npe("inlinePresentation must be non-null"));
             }
@@ -11614,8 +11642,8 @@ fn af_dataset_builder_instance(
             "(Landroid/service/autofill/InlinePresentation;Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let inline = af_arg_value(args, 0);
-            let tooltip = af_arg_value(args, 1);
+            let inline = varg(args, 0);
+            let tooltip = varg(args, 1);
             if matches!(inline, Value::Null) {
                 return Err(npe("inlinePresentation must be non-null"));
             }
@@ -11631,12 +11659,12 @@ fn af_dataset_builder_instance(
             "(Landroid/content/IntentSender;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            put(vm, recv, "authentication", af_arg_value(args, 0))?;
+            put(vm, recv, "authentication", varg(args, 0))?;
             builder_ret
         }
         ("setId", "(Ljava/lang/String;)Landroid/service/autofill/Dataset$Builder;") => {
             af_throw_if_destroyed(vm, recv)?;
-            put(vm, recv, "id", af_arg_value(args, 0))?;
+            put(vm, recv, "id", varg(args, 0))?;
             builder_ret
         }
         (
@@ -11644,7 +11672,7 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/content/ClipData;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let content_value = af_arg_value(args, 1);
+            let content_value = varg(args, 1);
             if let Value::Obj(content) = content_value {
                 let count = vm
                     .invoke_instance(content, "getItemCount", "()I", &[])?
@@ -11678,7 +11706,7 @@ fn af_dataset_builder_instance(
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
+                varg(args, 0),
                 Value::Null,
                 Value::Null,
                 Value::Null,
@@ -11697,8 +11725,8 @@ fn af_dataset_builder_instance(
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Null,
                 Value::Null,
                 Value::Null,
@@ -11712,15 +11740,15 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Landroid/widget/RemoteViews;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let presentation = af_arg_value(args, 2);
+            let presentation = varg(args, 2);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation cannot be null"));
             }
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 presentation,
                 Value::Null,
                 Value::Null,
@@ -11737,12 +11765,12 @@ fn af_dataset_builder_instance(
             if field_obj(vm, recv, "presentation").is_none() {
                 return Err(ise("Dataset presentation not set on constructor"));
             }
-            let filter = af_new_dataset_filter(vm, af_arg_value(args, 2))?;
+            let filter = af_new_dataset_filter(vm, varg(args, 2))?;
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Null,
                 Value::Null,
                 Value::Null,
@@ -11756,16 +11784,16 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Ljava/util/regex/Pattern;Landroid/widget/RemoteViews;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let presentation = af_arg_value(args, 3);
+            let presentation = varg(args, 3);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation cannot be null"));
             }
-            let filter = af_new_dataset_filter(vm, af_arg_value(args, 2))?;
+            let filter = af_new_dataset_filter(vm, varg(args, 2))?;
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 presentation,
                 Value::Null,
                 Value::Null,
@@ -11779,8 +11807,8 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Landroid/widget/RemoteViews;Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let presentation = af_arg_value(args, 2);
-            let inline = af_arg_value(args, 3);
+            let presentation = varg(args, 2);
+            let inline = varg(args, 3);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation cannot be null"));
             }
@@ -11790,8 +11818,8 @@ fn af_dataset_builder_instance(
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 presentation,
                 inline,
                 Value::Null,
@@ -11805,9 +11833,9 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Landroid/widget/RemoteViews;Landroid/service/autofill/InlinePresentation;Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let presentation = af_arg_value(args, 2);
-            let inline = af_arg_value(args, 3);
-            let tooltip = af_arg_value(args, 4);
+            let presentation = varg(args, 2);
+            let inline = varg(args, 3);
+            let tooltip = varg(args, 4);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation cannot be null"));
             }
@@ -11820,8 +11848,8 @@ fn af_dataset_builder_instance(
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 presentation,
                 inline,
                 tooltip,
@@ -11835,20 +11863,20 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Ljava/util/regex/Pattern;Landroid/widget/RemoteViews;Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let presentation = af_arg_value(args, 3);
-            let inline = af_arg_value(args, 4);
+            let presentation = varg(args, 3);
+            let inline = varg(args, 4);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation cannot be null"));
             }
             if matches!(inline, Value::Null) {
                 return Err(npe("inlinePresentation cannot be null"));
             }
-            let filter = af_new_dataset_filter(vm, af_arg_value(args, 2))?;
+            let filter = af_new_dataset_filter(vm, varg(args, 2))?;
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 presentation,
                 inline,
                 Value::Null,
@@ -11862,9 +11890,9 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Ljava/util/regex/Pattern;Landroid/widget/RemoteViews;Landroid/service/autofill/InlinePresentation;Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let presentation = af_arg_value(args, 3);
-            let inline = af_arg_value(args, 4);
-            let tooltip = af_arg_value(args, 5);
+            let presentation = varg(args, 3);
+            let inline = varg(args, 4);
+            let tooltip = varg(args, 5);
             if matches!(presentation, Value::Null) {
                 return Err(npe("presentation cannot be null"));
             }
@@ -11874,12 +11902,12 @@ fn af_dataset_builder_instance(
             if matches!(tooltip, Value::Null) {
                 return Err(npe("inlineTooltipPresentation cannot be null"));
             }
-            let filter = af_new_dataset_filter(vm, af_arg_value(args, 2))?;
+            let filter = af_new_dataset_filter(vm, varg(args, 2))?;
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 presentation,
                 inline,
                 tooltip,
@@ -11893,7 +11921,7 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/service/autofill/Field;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            af_dataset_set_field_by_id(vm, recv, af_arg_value(args, 0), af_arg_value(args, 1))?;
+            af_dataset_set_field_by_id(vm, recv, varg(args, 0), varg(args, 1))?;
             builder_ret
         }
         (
@@ -11904,8 +11932,8 @@ fn af_dataset_builder_instance(
             af_dataset_set_field_by_hint(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
             )?;
             builder_ret
         }
@@ -11915,7 +11943,7 @@ fn af_dataset_builder_instance(
         ) => {
             af_throw_if_destroyed(vm, recv)?;
             let any = jstr_str(vm, "any")?;
-            af_dataset_set_field_by_hint(vm, recv, any, af_arg_value(args, 0))?;
+            af_dataset_set_field_by_hint(vm, recv, any, varg(args, 0))?;
             builder_ret
         }
         (
@@ -11923,16 +11951,16 @@ fn af_dataset_builder_instance(
             "(Landroid/view/autofill/AutofillId;Landroid/view/autofill/AutofillValue;Ljava/util/regex/Pattern;Landroid/service/autofill/InlinePresentation;)Landroid/service/autofill/Dataset$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let inline = af_arg_value(args, 3);
+            let inline = varg(args, 3);
             if matches!(inline, Value::Null) {
                 return Err(npe("inlinePresentation cannot be null"));
             }
-            let filter = af_new_dataset_filter(vm, af_arg_value(args, 2))?;
+            let filter = af_new_dataset_filter(vm, varg(args, 2))?;
             af_dataset_set_id(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Null,
                 inline,
                 Value::Null,
@@ -12019,8 +12047,8 @@ fn af_fill_response_copy_static(vm: &mut Engine, args: &[Value]) -> StubResult<V
             continue;
         }
         let value = match field {
-            "datasets" => af_arg_value(args, 1),
-            "saveInfo" => af_arg_value(args, 2),
+            "datasets" => varg(args, 1),
+            "saveInfo" => varg(args, 2),
             _ => get(vm, source, field),
         };
         put(vm, response, field, value)?;
@@ -12188,9 +12216,9 @@ fn af_fill_response_builder_instance(
             af_fill_response_set_authentication(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
-                af_arg_value(args, 2),
+                varg(args, 0),
+                varg(args, 1),
+                varg(args, 2),
                 Value::Null,
                 Value::Null,
                 Value::Null,
@@ -12205,10 +12233,10 @@ fn af_fill_response_builder_instance(
             af_fill_response_set_authentication(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
-                af_arg_value(args, 2),
-                af_arg_value(args, 3),
+                varg(args, 0),
+                varg(args, 1),
+                varg(args, 2),
+                varg(args, 3),
                 Value::Null,
                 Value::Null,
                 true,
@@ -12222,11 +12250,11 @@ fn af_fill_response_builder_instance(
             af_fill_response_set_authentication(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
-                af_arg_value(args, 2),
-                af_arg_value(args, 3),
-                af_arg_value(args, 4),
+                varg(args, 0),
+                varg(args, 1),
+                varg(args, 2),
+                varg(args, 3),
+                varg(args, 4),
                 Value::Null,
                 true,
             )?;
@@ -12250,8 +12278,8 @@ fn af_fill_response_builder_instance(
             af_fill_response_set_authentication(
                 vm,
                 recv,
-                af_arg_value(args, 0),
-                af_arg_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 menu,
                 inline,
                 tooltip,
@@ -12265,7 +12293,7 @@ fn af_fill_response_builder_instance(
             "([Landroid/view/autofill/AutofillId;)Landroid/service/autofill/FillResponse$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            put(vm, recv, "ignoredIds", af_arg_value(args, 0))?;
+            put(vm, recv, "ignoredIds", varg(args, 0))?;
             ret
         }
         (
@@ -12280,7 +12308,7 @@ fn af_fill_response_builder_instance(
                 } else {
                     Vec::new()
                 };
-                datasets.push(af_arg_value(args, 0));
+                datasets.push(varg(args, 0));
                 af_set_field_items(vm, recv, "datasets", datasets)?;
             }
             ret
@@ -12291,7 +12319,7 @@ fn af_fill_response_builder_instance(
         ) => {
             af_throw_if_destroyed(vm, recv)?;
             af_fill_response_throw_if_disabled(vm, recv)?;
-            put(vm, recv, "saveInfo", af_arg_value(args, 0))?;
+            put(vm, recv, "saveInfo", varg(args, 0))?;
             ret
         }
         (
@@ -12300,7 +12328,7 @@ fn af_fill_response_builder_instance(
         ) => {
             af_throw_if_destroyed(vm, recv)?;
             af_fill_response_throw_if_disabled(vm, recv)?;
-            put(vm, recv, "clientState", af_arg_value(args, 0))?;
+            put(vm, recv, "clientState", varg(args, 0))?;
             ret
         }
         (
@@ -12309,9 +12337,9 @@ fn af_fill_response_builder_instance(
         ) => {
             af_throw_if_destroyed(vm, recv)?;
             af_fill_response_throw_if_disabled(vm, recv)?;
-            let ids = af_check_array_elements_not_null(vm, &af_arg_value(args, 0), "ids")?;
+            let ids = af_check_array_elements_not_null(vm, &varg(args, 0), "ids")?;
             af_check_range(ids.len() as i32, 1, 10, "ids length")?;
-            put(vm, recv, "fieldClassificationIds", af_arg_value(args, 0))?;
+            put(vm, recv, "fieldClassificationIds", varg(args, 0))?;
             let flags = field_int(vm, recv, "flags") | 0x1;
             put(vm, recv, "flags", Value::Int(flags))?;
             ret
@@ -12412,7 +12440,7 @@ fn af_fill_response_builder_instance(
             "([I)Landroid/service/autofill/FillResponse$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            put(vm, recv, "cancelIds", af_arg_value(args, 0))?;
+            put(vm, recv, "cancelIds", varg(args, 0))?;
             ret
         }
         (
@@ -12429,8 +12457,8 @@ fn af_fill_response_builder_instance(
             "([Landroid/view/autofill/AutofillId;)Landroid/service/autofill/FillResponse$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            af_check_array_elements_not_null(vm, &af_arg_value(args, 0), "ids")?;
-            put(vm, recv, "fillDialogTriggerIds", af_arg_value(args, 0))?;
+            af_check_array_elements_not_null(vm, &varg(args, 0), "ids")?;
+            put(vm, recv, "fillDialogTriggerIds", varg(args, 0))?;
             ret
         }
         ("build", "()Landroid/service/autofill/FillResponse;") => {
@@ -12528,7 +12556,7 @@ fn af_save_info_from_builder(vm: &mut Engine, builder: ObjRef) -> StubResult<Val
 #[cold]
 fn af_save_info_copy_static(vm: &mut Engine, args: &[Value]) -> StubResult<Value> {
     let source = af_req_arg_obj(args, 0, "saveInfo")?;
-    let optional = af_assert_valid_ids(vm, &af_arg_value(args, 1))?;
+    let optional = af_assert_valid_ids(vm, &varg(args, 1))?;
     let info = alloc_empty_obj(vm, AF_SAVE_INFO)?;
     for field in [
         "type",
@@ -12621,7 +12649,7 @@ fn af_save_info_builder_instance(
     let ret = Value::Obj(recv);
     let v = match (name, sig) {
         ("<init>", "(I[Landroid/view/autofill/AutofillId;)V") => {
-            let required = af_assert_valid_ids(vm, &af_arg_value(args, 1))?;
+            let required = af_assert_valid_ids(vm, &varg(args, 1))?;
             af_save_info_builder_init(vm, recv, iarg(args, 0), required)?;
             Value::Null
         }
@@ -12640,7 +12668,7 @@ fn af_save_info_builder_instance(
             "([Landroid/view/autofill/AutofillId;)Landroid/service/autofill/SaveInfo$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let ids = af_assert_valid_ids(vm, &af_arg_value(args, 0))?;
+            let ids = af_assert_valid_ids(vm, &varg(args, 0))?;
             put(vm, recv, "optionalIds", ids)?;
             ret
         }
@@ -12654,7 +12682,7 @@ fn af_save_info_builder_instance(
                     "Can call setDescription() or setCustomDescription(), but not both",
                 ));
             }
-            put(vm, recv, "description", af_arg_value(args, 0))?;
+            put(vm, recv, "description", varg(args, 0))?;
             ret
         }
         (
@@ -12667,7 +12695,7 @@ fn af_save_info_builder_instance(
                     "Can call setDescription() or setCustomDescription(), but not both",
                 ));
             }
-            put(vm, recv, "customDescription", af_arg_value(args, 0))?;
+            put(vm, recv, "customDescription", varg(args, 0))?;
             ret
         }
         (
@@ -12677,7 +12705,7 @@ fn af_save_info_builder_instance(
             af_throw_if_destroyed(vm, recv)?;
             let style = af_check_range(iarg(args, 0), 0, 2, "style")?;
             put(vm, recv, "negativeButtonStyle", Value::Int(style))?;
-            put(vm, recv, "negativeActionListener", af_arg_value(args, 1))?;
+            put(vm, recv, "negativeActionListener", varg(args, 1))?;
             ret
         }
         ("setPositiveAction", "(I)Landroid/service/autofill/SaveInfo$Builder;") => {
@@ -12691,7 +12719,7 @@ fn af_save_info_builder_instance(
             "(Landroid/service/autofill/Validator;)Landroid/service/autofill/SaveInfo$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let validator = af_arg_value(args, 0);
+            let validator = varg(args, 0);
             if !af_is_subtype(vm, &validator, AF_INTERNAL_VALIDATOR) {
                 let text = value_string(vm, &validator)?;
                 return Err(iae_fmt(format_args!("not provided by Android System: {text}")));
@@ -12704,12 +12732,12 @@ fn af_save_info_builder_instance(
             "(Landroid/service/autofill/Sanitizer;[Landroid/view/autofill/AutofillId;)Landroid/service/autofill/SaveInfo$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            let ids_value = af_arg_value(args, 1);
+            let ids_value = varg(args, 1);
             let ids = array_elems(vm, Some(&ids_value));
             if ids.is_empty() {
                 return Err(iae("ids cannot be empty or null"));
             }
-            let sanitizer = af_arg_value(args, 0);
+            let sanitizer = varg(args, 0);
             if !af_is_subtype(vm, &sanitizer, AF_INTERNAL_SANITIZER) {
                 let text = value_string(vm, &sanitizer)?;
                 return Err(iae_fmt(format_args!("not provided by Android System: {text}")));
@@ -12973,7 +13001,7 @@ fn af_user_data_instance(
             af_map_get(
                 vm,
                 &get(vm, recv, "categoryAlgorithms"),
-                &af_arg_value(args, 0),
+                &varg(args, 0),
             )
             .unwrap_or(Value::Null)
         }
@@ -13021,8 +13049,8 @@ fn af_user_data_builder_instance(
             "(Ljava/lang/String;Landroid/os/Bundle;)Landroid/service/autofill/UserData$Builder;",
         ) => {
             af_throw_if_destroyed(vm, recv)?;
-            put(vm, recv, "defaultAlgorithm", af_arg_value(args, 0))?;
-            put(vm, recv, "defaultArgs", af_arg_value(args, 1))?;
+            put(vm, recv, "defaultAlgorithm", varg(args, 0))?;
+            put(vm, recv, "defaultArgs", varg(args, 1))?;
             ret
         }
         (
@@ -13033,15 +13061,15 @@ fn af_user_data_builder_instance(
             if oarg(args, 0).is_none() {
                 return Err(npe("categoryId"));
             }
-            let category = af_arg_value(args, 0);
+            let category = varg(args, 0);
             af_map_put(
                 vm,
                 recv,
                 "categoryAlgorithms",
                 category.clone(),
-                af_arg_value(args, 1),
+                varg(args, 1),
             )?;
-            af_map_put(vm, recv, "categoryArgs", category, af_arg_value(args, 2))?;
+            af_map_put(vm, recv, "categoryArgs", category, varg(args, 2))?;
             ret
         }
         (
@@ -13090,7 +13118,7 @@ fn af_validators_static(
     let v = match name {
         "and" | "or" => {
             let validators =
-                af_check_array_elements_not_null(vm, &af_arg_value(args, 0), "validators")?;
+                af_check_array_elements_not_null(vm, &varg(args, 0), "validators")?;
             for (i, validator) in validators.iter().enumerate() {
                 if !af_is_subtype(vm, validator, AF_INTERNAL_VALIDATOR) {
                     let text = value_string(vm, validator)?;
@@ -13105,11 +13133,11 @@ fn af_validators_static(
                 AF_OPTIONAL_VALIDATORS
             };
             let r = alloc_empty_obj(vm, class)?;
-            put(vm, r, "validators", af_arg_value(args, 0))?;
+            put(vm, r, "validators", varg(args, 0))?;
             Value::Obj(r)
         }
         "not" => {
-            let validator = af_arg_value(args, 0);
+            let validator = varg(args, 0);
             if !af_is_subtype(vm, &validator, AF_INTERNAL_VALIDATOR) {
                 let text = value_string(vm, &validator)?;
                 return Err(iae_fmt(format_args!(
@@ -13263,8 +13291,8 @@ fn af_validator_instance(
             "<init>",
             "([Landroid/service/autofill/InternalValidator;)V",
         ) => {
-            af_check_array_elements_not_null(vm, &af_arg_value(args, 0), "validators")?;
-            put(vm, recv, "validators", af_arg_value(args, 0))?;
+            af_check_array_elements_not_null(vm, &varg(args, 0), "validators")?;
+            put(vm, recv, "validators", varg(args, 0))?;
             Value::Null
         }
         (AF_NEGATION_VALIDATOR, "<init>", "(Landroid/service/autofill/InternalValidator;)V") => {
@@ -13273,7 +13301,7 @@ fn af_validator_instance(
             Value::Null
         }
         (_, "isValid", "(Landroid/service/autofill/ValueFinder;)Z") => bool_value(
-            af_validator_is_valid(vm, class, recv, af_arg_value(args, 0))?,
+            af_validator_is_valid(vm, class, recv, varg(args, 0))?,
         ),
         (_, "describeContents", "()I") => Value::Int(0),
         _ => return Ok(None),
@@ -13431,12 +13459,12 @@ fn af_fill_request_instance(
                 0x1 | 0x2 | 0x4 | 0x10 | 0x40 | 0x80 | 0x100 | 0x200 | 0x400,
             )?;
             put(vm, recv, "id", Value::Int(iarg(args, 0)))?;
-            put(vm, recv, "fillContexts", af_arg_value(args, 1))?;
-            put(vm, recv, "hints", af_arg_value(args, 2))?;
-            put(vm, recv, "clientState", af_arg_value(args, 3))?;
+            put(vm, recv, "fillContexts", varg(args, 1))?;
+            put(vm, recv, "hints", varg(args, 2))?;
+            put(vm, recv, "clientState", varg(args, 3))?;
             put(vm, recv, "flags", Value::Int(flags))?;
-            put(vm, recv, "inlineSuggestionsRequest", af_arg_value(args, 5))?;
-            put(vm, recv, "delayedFillIntentSender", af_arg_value(args, 6))?;
+            put(vm, recv, "inlineSuggestionsRequest", varg(args, 5))?;
+            put(vm, recv, "delayedFillIntentSender", varg(args, 6))?;
             Value::Null
         }
         _ => match crate::android_stub_tables::eval_method_range(vm, 123, 131, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
@@ -13483,7 +13511,7 @@ fn af_fill_callback_instance(
     let v = match (name, sig) {
         ("onSuccess", "(Landroid/service/autofill/FillResponse;)V") => {
             af_callback_assert_not_called(vm, recv)?;
-            let response = af_arg_value(args, 0);
+            let response = varg(args, 0);
             if let Value::Obj(response_ref) = response {
                 put(
                     vm,
@@ -13505,7 +13533,7 @@ fn af_fill_callback_instance(
         }
         ("onFailure", "(Ljava/lang/CharSequence;)V") => {
             af_callback_assert_not_called(vm, recv)?;
-            let message = af_arg_value(args, 0);
+            let message = varg(args, 0);
             put(vm, recv, "failure", message.clone())?;
             if let Some(callback) = field_obj(vm, recv, "callback") {
                 vm.invoke_instance(
@@ -13559,7 +13587,7 @@ fn af_save_callback_instance(
         }
         ("onFailure", "(Ljava/lang/CharSequence;)V") => {
             af_callback_assert_not_called(vm, recv)?;
-            let message = af_arg_value(args, 0);
+            let message = varg(args, 0);
             put(vm, recv, "failure", message.clone())?;
             if let Some(callback) = field_obj(vm, recv, "callback") {
                 vm.invoke_instance(
@@ -13585,7 +13613,7 @@ fn af_field_classification_instance(
 ) -> StubResult<Option<Value>> {
     let v = match (name, sig) {
         ("<init>", "(Ljava/util/ArrayList;)V") => {
-            let matches_value = af_arg_value(args, 0);
+            let matches_value = varg(args, 0);
             let matches_ref = af_req_arg_obj(args, 0, "matches")?;
             let mut matches = collection_items(vm, Some(&matches_value));
             matches.sort_by(|a, b| {
@@ -13639,7 +13667,7 @@ fn af_saved_datasets_info_instance(
             if count < 0 {
                 return Err(iae("count must be at least 0"));
             }
-            put(vm, recv, "type", af_arg_value(args, 0))?;
+            put(vm, recv, "type", varg(args, 0))?;
             put(vm, recv, "count", Value::Int(count))?;
             Value::Null
         }
@@ -13763,6 +13791,7 @@ fn tr_items(vm: &Engine, value: &Value) -> Vec<Value> {
     collection_items(vm, Some(value))
 }
 #[cold]
+#[inline(never)]
 fn tr_field_items(vm: &Engine, r: ObjRef, field: &str) -> Vec<Value> {
     tr_items(vm, &get(vm, r, field))
 }
@@ -14127,7 +14156,7 @@ fn transition_values_instance(
                 vm,
                 recv,
                 "view",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -14202,36 +14231,37 @@ fn transition_animation_info_instance(
         vm,
         recv,
         "view",
-        args.first().cloned().unwrap_or(Value::Null),
+        varg(args, 0),
     )?;
     put(
         vm,
         recv,
         "name",
-        args.get(1).cloned().unwrap_or(Value::Null),
+        varg(args, 1),
     )?;
     put(
         vm,
         recv,
         "transition",
-        args.get(2).cloned().unwrap_or(Value::Null),
+        varg(args, 2),
     )?;
     put(
         vm,
         recv,
         "windowId",
-        args.get(3).cloned().unwrap_or(Value::Null),
+        varg(args, 3),
     )?;
     put(
         vm,
         recv,
         "values",
-        args.get(4).cloned().unwrap_or(Value::Null),
+        varg(args, 4),
     )?;
     Ok(Some(Value::Null))
 }
 
 #[cold]
+#[inline(never)]
 fn tr_invoke(
     vm: &mut Engine,
     recv: ObjRef,
@@ -16345,7 +16375,7 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "this$0",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
                 if let Some(map) = args.get(1) {
                     put(vm, recv, "val$runningAnimators", map.clone())?;
@@ -16356,7 +16386,7 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "mTransitionSet",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
             }
             TRANSITION_SET_NEXT_LISTENER => {
@@ -16364,13 +16394,13 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "this$0",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
                 put(
                     vm,
                     recv,
                     "val$nextTransition",
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?;
             }
             TRANSITION_MANAGER_MULTI => {
@@ -16378,9 +16408,9 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "mTransition",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
-                let root = args.get(1).cloned().unwrap_or(Value::Null);
+                let root = varg(args, 1);
                 put(vm, recv, "mSceneRoot", root.clone())?;
                 if let Some(root_ref) = obj(Some(&root)) {
                     let observer = match tr_invoke(
@@ -16402,13 +16432,13 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "val$sceneRoot",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
                 put(
                     vm,
                     recv,
                     "val$runningTransitions",
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?;
             }
             TRANSITION_FADE_LISTENER => {
@@ -16416,13 +16446,13 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "this$0",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
                 put(
                     vm,
                     recv,
                     "val$view",
-                    args.get(1).cloned().unwrap_or(Value::Null),
+                    varg(args, 1),
                 )?;
             }
             TRANSITION_FADE_ANIM_LISTENER => {
@@ -16430,7 +16460,7 @@ fn transition_callback_instance(
                     vm,
                     recv,
                     "mView",
-                    args.first().cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
                 )?;
                 put(vm, recv, "mLayerTypeChanged", Value::Int(0))?;
             }
@@ -16485,7 +16515,7 @@ fn transition_callback_instance(
             let Some(transition) = field_obj(vm, recv, "this$0") else {
                 return Ok(Some(Value::Null));
             };
-            let animator = args.first().cloned().unwrap_or(Value::Null);
+            let animator = varg(args, 0);
             match name {
                 "onAnimationStart" => {
                     tr_append_field_list(vm, transition, "mCurrentAnimators", animator)?;
@@ -16767,7 +16797,7 @@ fn transition_scene_instance(
                 vm,
                 recv,
                 "mSceneRoot",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -16778,13 +16808,13 @@ fn transition_scene_instance(
                 vm,
                 recv,
                 "mSceneRoot",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(
                 vm,
                 recv,
                 "mLayout",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -16794,13 +16824,13 @@ fn transition_scene_instance(
                 vm,
                 recv,
                 "mContext",
-                args.get(2).cloned().unwrap_or(Value::Null),
+                varg(args, 2),
             )?;
             put(
                 vm,
                 recv,
                 "mSceneRoot",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(vm, recv, "mLayoutId", Value::Int(iarg(args, 1)))?;
             Value::Null
@@ -16823,7 +16853,7 @@ fn transition_scene_instance(
                 vm,
                 recv,
                 "mEnterAction",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -16833,7 +16863,7 @@ fn transition_scene_instance(
                 vm,
                 recv,
                 "mExitAction",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -16881,7 +16911,7 @@ fn transition_scene_static(
                 &[
                     Value::Obj(root),
                     Value::Int(iarg(args, 1)),
-                    args.get(2).cloned().unwrap_or(Value::Null),
+                    varg(args, 2),
                 ],
             )?;
             tr_map_put(vm, cache, key, Value::Obj(scene))?;
@@ -16893,7 +16923,7 @@ fn transition_scene_static(
         }
         ("setCurrentScene", "(Landroid/view/ViewGroup;Landroid/transition/Scene;)V") => {
             let root = req_obj(args, 0, "sceneRoot")?;
-            tr_scene_set_current(vm, root, args.get(1).cloned().unwrap_or(Value::Null))?;
+            tr_scene_set_current(vm, root, varg(args, 1))?;
             Value::Null
         }
         _ => return Ok(None),
@@ -17291,7 +17321,7 @@ fn transition_manager_instance(
                 vm,
                 TRANSITION_MANAGER,
                 "sDefaultTransition",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             );
             Value::Null
         }
@@ -17304,8 +17334,8 @@ fn transition_manager_instance(
             tr_map_put(
                 vm,
                 map,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -17316,7 +17346,7 @@ fn transition_manager_instance(
             tr_manager_ensure(vm, recv)?;
             let pair_map = field_obj(vm, recv, "mScenePairTransitions")
                 .ok_or_else(|| npe("map"))?;
-            let to_scene = args.get(1).cloned().unwrap_or(Value::Null);
+            let to_scene = varg(args, 1);
             let inner = match tr_map_get(vm, &Value::Obj(pair_map), &to_scene)
                 .and_then(|value| obj(Some(&value)))
             {
@@ -17330,8 +17360,8 @@ fn transition_manager_instance(
             tr_map_put(
                 vm,
                 inner,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(2).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 2),
             )?;
             Value::Null
         }
@@ -17365,21 +17395,21 @@ fn transition_manager_static(
         }
         ("go", "(Landroid/transition/Scene;)V") => {
             let transition = tr_manager_default_transition(vm)?;
-            tr_manager_change_scene(vm, args.first().cloned().unwrap_or(Value::Null), transition)?;
+            tr_manager_change_scene(vm, varg(args, 0), transition)?;
             Value::Null
         }
         ("go", "(Landroid/transition/Scene;Landroid/transition/Transition;)V") => {
             tr_manager_change_scene(
                 vm,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 1),
             )?;
             Value::Null
         }
         ("beginDelayedTransition", "(Landroid/view/ViewGroup;)V") => {
             tr_manager_begin_delayed(
                 vm,
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
                 Value::Null,
             )?;
             Value::Null
@@ -17390,8 +17420,8 @@ fn transition_manager_static(
         ) => {
             tr_manager_begin_delayed(
                 vm,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -17422,8 +17452,8 @@ fn transition_manager_static(
         ("changeScene", "(Landroid/transition/Scene;Landroid/transition/Transition;)V") => {
             tr_manager_change_scene(
                 vm,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -17561,7 +17591,7 @@ fn transition_instance(
             "setInterpolator",
             "(Landroid/animation/TimeInterpolator;)Landroid/transition/TransitionSet;",
         ) => {
-            let interpolator = args.first().cloned().unwrap_or(Value::Null);
+            let interpolator = varg(args, 0);
             if is_set {
                 let flags = field_int(vm, recv, "mChangeFlags") | 1;
                 put(vm, recv, "mChangeFlags", Value::Int(flags))?;
@@ -17724,8 +17754,8 @@ fn transition_instance(
                 req_obj(args, 0, "sceneRoot")?,
                 req_obj(args, 1, "startValues")?,
                 req_obj(args, 2, "endValues")?,
-                args.get(3).cloned().unwrap_or(Value::Null),
-                args.get(4).cloned().unwrap_or(Value::Null),
+                varg(args, 3),
+                varg(args, 4),
             )?;
             Value::Null
         }
@@ -17797,7 +17827,7 @@ fn transition_instance(
                 vm,
                 recv,
                 "mListeners",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             self_value.clone()
         }
@@ -17814,7 +17844,7 @@ fn transition_instance(
                     vm,
                     recv,
                     "mListeners",
-                    &args.first().cloned().unwrap_or(Value::Null),
+                    &varg(args, 0),
                 )?;
                 if tr_field_items(vm, recv, "mListeners").is_empty() {
                     put(vm, recv, "mListeners", Value::Null)?;
@@ -17826,7 +17856,7 @@ fn transition_instance(
             "setEpicenterCallback",
             "(Landroid/transition/Transition$EpicenterCallback;)V",
         ) => {
-            let callback = args.first().cloned().unwrap_or(Value::Null);
+            let callback = varg(args, 0);
             put(vm, recv, "mEpicenterCallback", callback.clone())?;
             if is_set {
                 let flags = field_int(vm, recv, "mChangeFlags") | 8;
@@ -17861,7 +17891,7 @@ fn transition_instance(
             }
         }
         ("setPathMotion", "(Landroid/transition/PathMotion;)V") => {
-            let original = args.first().cloned().unwrap_or(Value::Null);
+            let original = varg(args, 0);
             let stored = if matches!(original, Value::Null) {
                 Value::Obj(alloc_empty_obj(vm, TRANSITION_STRAIGHT_PATH)?)
             } else {
@@ -17888,7 +17918,7 @@ fn transition_instance(
             "setPropagation",
             "(Landroid/transition/TransitionPropagation;)V",
         ) => {
-            let propagation = args.first().cloned().unwrap_or(Value::Null);
+            let propagation = varg(args, 0);
             put(vm, recv, "mPropagation", propagation.clone())?;
             if is_set {
                 let flags = field_int(vm, recv, "mChangeFlags") | 2;
@@ -17922,7 +17952,7 @@ fn transition_instance(
             "setSceneRoot",
             "(Landroid/view/ViewGroup;)Landroid/transition/TransitionSet;",
         ) => {
-            let root = args.first().cloned().unwrap_or(Value::Null);
+            let root = varg(args, 0);
             put(vm, recv, "mSceneRoot", root.clone())?;
             if is_set {
                 for child in tr_set_children(vm, recv) {
@@ -17952,7 +17982,7 @@ fn transition_instance(
                 vm,
                 recv,
                 "mNameOverrides",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             Value::Null
         }
@@ -18051,7 +18081,7 @@ fn tr_transition_specific_instance(
                 vm,
                 recv,
                 "mTargets",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             self_value
         }
@@ -18280,7 +18310,7 @@ fn tr_transition_specific_instance(
             "removeTransition",
             "(Landroid/transition/Transition;)Landroid/transition/TransitionSet;",
         ) if is_set => {
-            let child_value = args.first().cloned().unwrap_or(Value::Null);
+            let child_value = varg(args, 0);
             tr_remove_field_list(vm, recv, "mTransitions", &child_value)?;
             let child = req_obj(args, 0, "transition")?;
             put(vm, child, "mParent", Value::Null)?;
@@ -19729,7 +19759,7 @@ fn p57_text_info_instance(
             if text.as_deref().map(str::is_empty).unwrap_or(true) {
                 return Err(iae("charSequence is empty"));
             }
-            let value = args.first().cloned().unwrap_or(Value::Null);
+            let value = varg(args, 0);
             put(vm, recv, "mCharSequence", value)?;
             put(vm, recv, "mCookie", Value::Int(0))?;
             put(vm, recv, "mSequenceNumber", Value::Int(0))?;
@@ -19740,7 +19770,7 @@ fn p57_text_info_instance(
             if text.as_deref().map(str::is_empty).unwrap_or(true) {
                 return Err(iae("charSequence is empty"));
             }
-            let value = args.first().cloned().unwrap_or(Value::Null);
+            let value = varg(args, 0);
             put(vm, recv, "mCharSequence", value)?;
             put(vm, recv, "mCookie", Value::Int(iarg(args, 1)))?;
             put(vm, recv, "mSequenceNumber", Value::Int(iarg(args, 2)))?;
@@ -19781,7 +19811,7 @@ fn p57_suggestions_info_instance(
         ("<init>", "(I[Ljava/lang/String;)V") | ("<init>", "(I[Ljava/lang/String;II)V") => {
             let available = oarg(args, 1).is_some();
             let suggestions = if available {
-                args.get(1).cloned().unwrap_or(Value::Null)
+                varg(args, 1)
             } else {
                 obj_array(vm, "[Ljava/lang/String;", Vec::new())?
             };
@@ -20219,7 +20249,7 @@ fn p57_spell_session_instance(
             let info = args.first().cloned().unwrap();
             let manager = args.get(1).cloned().unwrap();
             let listener = args.get(2).cloned().unwrap();
-            let executor = args.get(3).cloned().unwrap_or(Value::Null);
+            let executor = varg(args, 3);
             put(vm, recv, "mSpellCheckerInfo", info)?;
             put(vm, recv, "mTextServicesManager", manager)?;
             put(vm, recv, "mSpellCheckerSessionListener", listener)?;
@@ -20386,7 +20416,7 @@ fn p57_translation_request_value_instance(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match (name, sig) {
         ("equals", "(Ljava/lang/Object;)Z") => {
-            let other = args.first().cloned().unwrap_or(Value::Null);
+            let other = varg(args, 0);
             bool_value(p57_translation_request_value_equal(
                 vm,
                 &Value::Obj(recv),
@@ -20611,8 +20641,8 @@ fn p57_view_translation_builder_instance(
                 p57_check_builder_unused(vm, recv)?;
             }
             let map = p57_ensure_map(vm, recv, "mTranslationRequestValues")?;
-            let key = args.first().cloned().unwrap_or(Value::Null);
-            let value = args.get(1).cloned().unwrap_or(Value::Null);
+            let key = varg(args, 0);
+            let value = varg(args, 1);
             let key_text = opt_str(vm, Some(&key));
             let existing_keys: Vec<Value> = match vm.fw.objects.get(&map) {
                 Some(HostObj::Map { entries }) => {
@@ -20724,7 +20754,7 @@ fn p57_translation_context_instance(
                 p57_check_builder_unused(vm, recv)?;
                 // The generated setter stores the value without any null
                 // validation (the context field itself is @Nullable).
-                let v = args.first().cloned().unwrap_or(Value::Null);
+                let v = varg(args, 0);
                 put(vm, recv, "mActivityId", v)?;
                 Value::Obj(recv)
             }
@@ -20767,7 +20797,7 @@ fn p57_translation_context_instance(
             }
             let a = args.first().cloned().unwrap();
             let b = args.get(1).cloned().unwrap();
-            let activity = args.get(3).cloned().unwrap_or(Value::Null);
+            let activity = varg(args, 3);
             put(vm, recv, "mSourceSpec", a)?;
             put(vm, recv, "mTargetSpec", b)?;
             put(vm, recv, "mTranslationFlags", Value::Int(flags))?;
@@ -20915,7 +20945,7 @@ fn p57_usb_interface_instance(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match (name, sig) {
         ("<init>", "(IIILjava/lang/String;II[Landroid/hardware/usb/UsbEndpoint;)V") => {
-            let name_v = args.get(3).cloned().unwrap_or(Value::Null);
+            let name_v = varg(args, 3);
             let Some(endpoints) = oarg(args, 6) else {
                 return Err(npe("endpoints"));
             };
@@ -20983,7 +21013,7 @@ fn p57_usb_configuration_instance(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match (name, sig) {
         ("<init>", "(ILjava/lang/String;II[Landroid/hardware/usb/UsbInterface;)V") => {
-            let name_v = args.get(1).cloned().unwrap_or(Value::Null);
+            let name_v = varg(args, 1);
             let Some(_) = oarg(args, 4) else {
                 return Err(npe("interfaces"));
             };
@@ -21239,7 +21269,7 @@ fn p57_usb_device_builder_instance(
             {
                 return Err(iae("version must not be empty"));
             }
-            let serial = args.get(10).cloned().unwrap_or(Value::Null);
+            let serial = varg(args, 10);
             let flags = [
                 iarg(args, 11),
                 iarg(args, 12),
@@ -21684,7 +21714,7 @@ fn p57_usage_events_instance(
             };
             let items = collection_items(vm, args.first());
             let events = obj_array(vm, "[Landroid/app/usage/UsageEvents$Event;", items.clone())?;
-            let pool = args.get(1).cloned().unwrap_or(Value::Null);
+            let pool = varg(args, 1);
             put(vm, recv, "rd_events", events)?;
             put(vm, recv, "mStringPool", pool)?;
             put(vm, recv, "mEventCount", Value::Int(items.len() as i32))?;
@@ -21755,7 +21785,7 @@ fn p57_usage_manager_instance(
     };
     Ok(Some(match (name, sig) {
         ("<init>", "(Landroid/content/Context;Landroid/app/usage/IUsageStatsManager;)V") => {
-            let context = args.first().cloned().unwrap_or(Value::Null);
+            let context = varg(args, 0);
             put(vm, recv, "mContext", context)?;
             Value::Null
         }
@@ -22593,7 +22623,7 @@ fn p57_print_manager_instance(
     };
     Ok(Some(match (name, sig) {
         ("<init>", "(Landroid/content/Context;Landroid/print/IPrintManager;II)V") => {
-            let context = args.first().cloned().unwrap_or(Value::Null);
+            let context = varg(args, 0);
             put(vm, recv, "mContext", context)?;
             put(vm, recv, "mUserId", Value::Int(iarg(args, 2)))?;
             put(vm, recv, "mAppId", Value::Int(iarg(args, 3)))?;
@@ -23916,6 +23946,7 @@ fn p49_class(c: &str) -> bool {
 }
 
 #[cold]
+#[inline(never)]
 fn p49_list_value(vm: &mut Engine, elems: Vec<Value>) -> StubResult<Value> {
     Ok(Value::Obj(new_list(vm, elems)?))
 }
@@ -23945,6 +23976,7 @@ fn p49_new_byte_array(vm: &mut Engine, bytes: &[u8]) -> StubResult<Value> {
 }
 
 #[cold]
+#[inline(never)]
 fn p49_byte_values(vm: &Engine, value: &Value) -> Vec<u8> {
     array_elems(vm, Some(value))
         .iter()
@@ -24266,7 +24298,7 @@ fn p49_biometric_builder_instance(
     if name == "<init>" {
         return Ok(Some(match sig {
             "(Landroid/content/Context;)V" => {
-                let context = args.first().cloned().unwrap_or(Value::Null);
+                let context = varg(args, 0);
                 let info = alloc_empty_obj(vm, P49_PROMPT_INFO)?;
                 let _ = p49_prompt_info_instance(vm, "<init>", "()V", info, &[])?;
                 put(vm, recv, "mContext", context)?;
@@ -24287,21 +24319,21 @@ fn p49_biometric_builder_instance(
     };
     Ok(Some(match (name, sig) {
         ("setTitle", "(Ljava/lang/CharSequence;)Landroid/hardware/biometrics/BiometricPrompt$Builder;") => {
-            let v = args.first().cloned().unwrap_or(Value::Null);
+            let v = varg(args, 0);
             set_info(vm, "mTitle", v)?
         }
         ("setUseDefaultTitle", "()Landroid/hardware/biometrics/BiometricPrompt$Builder;") => {
             set_info(vm, "mUseDefaultTitle", Value::Int(1))?
         }
         ("setSubtitle", "(Ljava/lang/CharSequence;)Landroid/hardware/biometrics/BiometricPrompt$Builder;") => {
-            let v = args.first().cloned().unwrap_or(Value::Null);
+            let v = varg(args, 0);
             set_info(vm, "mSubtitle", v)?
         }
         ("setUseDefaultSubtitle", "()Landroid/hardware/biometrics/BiometricPrompt$Builder;") => {
             set_info(vm, "mUseDefaultSubtitle", Value::Int(1))?
         }
         ("setDescription", "(Ljava/lang/CharSequence;)Landroid/hardware/biometrics/BiometricPrompt$Builder;") => {
-            let v = args.first().cloned().unwrap_or(Value::Null);
+            let v = varg(args, 0);
             set_info(vm, "mDescription", v)?
         }
         (
@@ -24333,7 +24365,7 @@ fn p49_biometric_builder_instance(
             if oarg(args, 2).is_none() {
                 return Err(iae("Listener must not be null"));
             }
-            let value = args.first().cloned().unwrap_or(Value::Null);
+            let value = varg(args, 0);
             put(vm, info, "mNegativeButtonText", value)?;
             put(vm, recv, "rd_negative_executor", args[1].clone())?;
             put(vm, recv, "rd_negative_listener", args[2].clone())?;
@@ -24383,7 +24415,7 @@ fn p49_biometric_builder_instance(
             Value::Obj(recv)
         }
         ("setService", "(Landroid/hardware/biometrics/IAuthService;)Landroid/hardware/biometrics/BiometricPrompt$Builder;") => {
-            let v = args.first().cloned().unwrap_or(Value::Null);
+            let v = varg(args, 0);
             put(vm, recv, "mService", v)?;
             Value::Obj(recv)
         }
@@ -25484,18 +25516,18 @@ fn p49_input_device_instance2(
             put(vm, recv, "mId", Value::Int(iarg(args, 0)))?;
             put(vm, recv, "mGeneration", Value::Int(iarg(args, 1)))?;
             put(vm, recv, "mControllerNumber", Value::Int(iarg(args, 2)))?;
-            put(vm, recv, "mName", args.get(3).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mName", varg(args, 3))?;
             put(vm, recv, "mVendorId", Value::Int(iarg(args, 4)))?;
             put(vm, recv, "mProductId", Value::Int(iarg(args, 5)))?;
-            put(vm, recv, "mDescriptor", args.get(6).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mDescriptor", varg(args, 6))?;
             put(vm, recv, "mIsExternal", Value::Int(iarg(args, 7)))?;
             put(vm, recv, "mSources", Value::Int(iarg(args, 8)))?;
             put(vm, recv, "mKeyboardType", Value::Int(iarg(args, 9)))?;
-            put(vm, recv, "mKeyCharacterMap", args.get(10).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mKeyCharacterMap", varg(args, 10))?;
             // The IETF tag is stored verbatim in this slice; AOSP's
             // ULocale canonicalization is not part of the input row claim.
-            put(vm, recv, "mKeyboardLanguageTag", args.get(11).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mKeyboardLayoutType", args.get(12).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mKeyboardLanguageTag", varg(args, 11))?;
+            put(vm, recv, "mKeyboardLayoutType", varg(args, 12))?;
             put(vm, recv, "mHasVibrator", Value::Int(iarg(args, 13)))?;
             put(vm, recv, "mHasMicrophone", Value::Int(iarg(args, 14)))?;
             put(vm, recv, "mHasButtonUnderPad", Value::Int(iarg(args, 15)))?;
@@ -25824,10 +25856,10 @@ fn p49_sound_trigger_instance(
                 p49_sound_model_init(
                     vm,
                     recv,
-                    &args.first().cloned().unwrap_or(Value::Null),
-                    &args.get(1).cloned().unwrap_or(Value::Null),
+                    &varg(args, 0),
+                    &varg(args, 1),
                     iarg(args, 2),
-                    &args.get(3).cloned().unwrap_or(Value::Null),
+                    &varg(args, 3),
                     iarg(args, 4),
                 )?;
                 return Ok(Some(Value::Null));
@@ -25839,10 +25871,10 @@ fn p49_sound_trigger_instance(
                 p49_sound_model_init(
                     vm,
                     recv,
-                    &args.first().cloned().unwrap_or(Value::Null),
-                    &args.get(1).cloned().unwrap_or(Value::Null),
+                    &varg(args, 0),
+                    &varg(args, 1),
                     1,
-                    &args.get(2).cloned().unwrap_or(Value::Null),
+                    &varg(args, 2),
                     iarg(args, 3),
                 )?;
                 Ok(Some(Value::Null))
@@ -25851,10 +25883,10 @@ fn p49_sound_trigger_instance(
                 p49_sound_model_init(
                     vm,
                     recv,
-                    &args.first().cloned().unwrap_or(Value::Null),
-                    &args.get(1).cloned().unwrap_or(Value::Null),
+                    &varg(args, 0),
+                    &varg(args, 1),
                     1,
-                    &args.get(2).cloned().unwrap_or(Value::Null),
+                    &varg(args, 2),
                     -1,
                 )?;
                 Ok(Some(Value::Null))
@@ -25888,15 +25920,15 @@ fn p49_sound_trigger_instance(
                     p49_sound_model_init(
                         vm,
                         recv,
-                        &args.first().cloned().unwrap_or(Value::Null),
-                        &args.get(1).cloned().unwrap_or(Value::Null),
+                        &varg(args, 0),
+                        &varg(args, 1),
                         0,
-                        &args.get(2).cloned().unwrap_or(Value::Null),
+                        &varg(args, 2),
                         iarg(args, 4),
                     )?;
                     let keyphrases = p49_array_or_empty(
                         vm,
-                        &args.get(3).cloned().unwrap_or(Value::Null),
+                        &varg(args, 3),
                         KEYPHRASES_DESC,
                     )?;
                     put(vm, recv, "mKeyphrases", keyphrases)?;
@@ -25909,15 +25941,15 @@ fn p49_sound_trigger_instance(
                     p49_sound_model_init(
                         vm,
                         recv,
-                        &args.first().cloned().unwrap_or(Value::Null),
-                        &args.get(1).cloned().unwrap_or(Value::Null),
+                        &varg(args, 0),
+                        &varg(args, 1),
                         0,
-                        &args.get(2).cloned().unwrap_or(Value::Null),
+                        &varg(args, 2),
                         -1,
                     )?;
                     let keyphrases = p49_array_or_empty(
                         vm,
-                        &args.get(3).cloned().unwrap_or(Value::Null),
+                        &varg(args, 3),
                         KEYPHRASES_DESC,
                     )?;
                     put(vm, recv, "mKeyphrases", keyphrases)?;
@@ -25981,7 +26013,7 @@ fn p49_sound_trigger_instance(
                 let locale = req_obj(args, 2, "locale")?;
                 let text = req_obj(args, 3, "text")?;
                 let users =
-                    p49_array_or_empty(vm, &args.get(4).cloned().unwrap_or(Value::Null), "[I")?;
+                    p49_array_or_empty(vm, &varg(args, 4), "[I")?;
                 put(vm, recv, "mId", Value::Int(iarg(args, 0)))?;
                 put(vm, recv, "mRecognitionModes", Value::Int(iarg(args, 1)))?;
                 put(vm, recv, "mLocale", Value::Obj(locale))?;
@@ -26090,11 +26122,11 @@ fn p49_sound_trigger_instance(
             ) => {
                 let keyphrases = p49_array_or_empty(
                     vm,
-                    &args.get(2).cloned().unwrap_or(Value::Null),
+                    &varg(args, 2),
                     "[Landroid/hardware/soundtrigger/SoundTrigger$KeyphraseRecognitionExtra;",
                 )?;
                 let data =
-                    p49_array_or_empty(vm, &args.get(3).cloned().unwrap_or(Value::Null), "[B")?;
+                    p49_array_or_empty(vm, &varg(args, 3), "[B")?;
                 put(vm, recv, "captureRequested", Value::Int(iarg(args, 0)))?;
                 put(vm, recv, "allowMultipleTriggers", Value::Int(iarg(args, 1)))?;
                 put(vm, recv, "keyphrases", keyphrases)?;
@@ -26216,7 +26248,7 @@ fn p49_sound_trigger_instance(
         ("<init>", "(III[Landroid/hardware/soundtrigger/SoundTrigger$ConfidenceLevel;)V") => {
                 let levels = p49_array_or_empty(
                     vm,
-                    &args.get(3).cloned().unwrap_or(Value::Null),
+                    &varg(args, 3),
                     "[Landroid/hardware/soundtrigger/SoundTrigger$ConfidenceLevel;",
                 )?;
                 put(vm, recv, "id", Value::Int(iarg(args, 0)))?;
@@ -26289,7 +26321,7 @@ fn p49_sound_trigger_instance(
                 let locales_arg = req_obj(args, 2, "supportedLocales")?;
                 let items = collection_items(vm, Some(&Value::Obj(locales_arg)));
                 let locales = Value::Obj(new_collection(vm, "Landroid/util/ArraySet;", items)?);
-                let keyphrase = args.get(1).cloned().unwrap_or(Value::Null);
+                let keyphrase = varg(args, 1);
                 put(vm, recv, "mId", Value::Int(iarg(args, 0)))?;
                 put(vm, recv, "mKeyphrase", keyphrase)?;
                 put(vm, recv, "mSupportedLocales", locales)?;
@@ -26315,7 +26347,7 @@ fn p49_sound_trigger_instance(
                 if locales.is_empty() {
                     bool_value(true)
                 } else {
-                    let target = args.first().cloned().unwrap_or(Value::Null);
+                    let target = varg(args, 0);
                     let mut found = false;
                     for locale in &locales {
                         if p49_value_equal(vm, locale, &target)? {
@@ -26476,7 +26508,7 @@ fn p49_midi_instance(
     match crate::android_stub_tables::lookup_class_id(220, 225, class) {
         Some(0) => Ok(Some(match (name, sig) {
             ("<init>", "(Landroid/media/midi/IMidiManager;)V") => {
-                let service = args.first().cloned().unwrap_or(Value::Null);
+                let service = varg(args, 0);
                 put(vm, recv, "mService", service)?;
                 let callbacks = p49_empty_list(vm)?;
                 put(vm, recv, "rd_device_callbacks", callbacks)?;
@@ -26553,7 +26585,7 @@ fn p49_midi_instance(
         },
         Some(2) => Ok(Some(match (name, sig) {
         ("<init>", "(IILjava/lang/String;)V") => {
-                let name_value = args.get(2).cloned().unwrap_or(Value::Null);
+                let name_value = varg(args, 2);
                 let stored_name = if matches!(name_value, Value::Obj(_)) {
                     name_value
                 } else {
@@ -26587,8 +26619,8 @@ fn p49_midi_instance(
                         "numOutputPorts out of range = {output_count}"
                     )));
                 }
-                let input_names_arg = args.get(4).cloned().unwrap_or(Value::Null);
-                let output_names_arg = args.get(5).cloned().unwrap_or(Value::Null);
+                let input_names_arg = varg(args, 4);
+                let output_names_arg = varg(args, 5);
                 let input_names = if matches!(input_names_arg, Value::Obj(_)) {
                     input_names_arg
                 } else {
@@ -26617,7 +26649,7 @@ fn p49_midi_instance(
                     vm,
                     recv,
                     "mProperties",
-                    args.get(6).cloned().unwrap_or(Value::Null),
+                    varg(args, 6),
                 )?;
                 put(vm, recv, "mIsPrivate", Value::Int(iarg(args, 7)))?;
                 put(vm, recv, "mDefaultProtocol", Value::Int(iarg(args, 8)))?;
@@ -26693,7 +26725,7 @@ fn p49_midi_instance(
         ("send", "([BII)V") => Ok(Some(p49_midi_receiver_send(
                     vm,
                     recv,
-                    &args.first().cloned().unwrap_or(Value::Null),
+                    &varg(args, 0),
                     iarg(args, 1),
                     iarg(args, 2),
                     0,
@@ -26701,7 +26733,7 @@ fn p49_midi_instance(
         ("send", "([BIIJ)V") => Ok(Some(p49_midi_receiver_send(
                     vm,
                     recv,
-                    &args.first().cloned().unwrap_or(Value::Null),
+                    &varg(args, 0),
                     iarg(args, 1),
                     iarg(args, 2),
                     larg(args, 3),
@@ -26721,7 +26753,7 @@ fn p49_midi_instance(
                     if class_of(vm, recv) != P49_MIDI_RECEIVER {
                         return Ok(None);
                     }
-                    let msg = args.first().cloned().unwrap_or(Value::Null);
+                    let msg = varg(args, 0);
                     let bytes = p49_byte_values(vm, &msg);
                     let offset = iarg(args, 1);
                     let count = iarg(args, 2);
@@ -26995,7 +27027,7 @@ fn p49_tv_instance(
     match crate::android_stub_tables::lookup_class_id(225, 230, class) {
         Some(0) => Ok(Some(match (name, sig) {
         ("<init>", "(Landroid/media/tv/ITvInputManager;I)V") => {
-                let service = args.first().cloned().unwrap_or(Value::Null);
+                let service = varg(args, 0);
                 put(vm, recv, "mService", service)?;
                 put(vm, recv, "mUserId", Value::Int(iarg(args, 1)))?;
                 let callbacks = p49_empty_list(vm)?;
@@ -27143,10 +27175,10 @@ fn p49_tv_instance(
             ) => {
                 let created = p49_tv_rating_from_values(
                     vm,
-                    args.first().cloned().unwrap_or(Value::Null),
-                    args.get(1).cloned().unwrap_or(Value::Null),
-                    args.get(2).cloned().unwrap_or(Value::Null),
-                    args.get(3).cloned().unwrap_or(Value::Null),
+                    varg(args, 0),
+                    varg(args, 1),
+                    varg(args, 2),
+                    varg(args, 3),
                 )?;
                 let Value::Obj(created_ref) = created else {
                     return Ok(None);
@@ -27369,10 +27401,10 @@ fn p49_tv_instance(
                     "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/CharSequence;Ljava/lang/String;ZIIZZZIIFFBLandroid/os/Bundle;)V",
                 ) => {
                     put(vm, recv, "mType", Value::Int(iarg(args, 0)))?;
-                    put(vm, recv, "mId", args.get(1).cloned().unwrap_or(Value::Null))?;
-                    put(vm, recv, "mLanguage", args.get(2).cloned().unwrap_or(Value::Null))?;
-                    put(vm, recv, "mDescription", args.get(3).cloned().unwrap_or(Value::Null))?;
-                    put(vm, recv, "mEncoding", args.get(4).cloned().unwrap_or(Value::Null))?;
+                    put(vm, recv, "mId", varg(args, 1))?;
+                    put(vm, recv, "mLanguage", varg(args, 2))?;
+                    put(vm, recv, "mDescription", varg(args, 3))?;
+                    put(vm, recv, "mEncoding", varg(args, 4))?;
                     put(vm, recv, "mEncrypted", Value::Int(iarg(args, 5)))?;
                     put(vm, recv, "mAudioChannelCount", Value::Int(iarg(args, 6)))?;
                     put(vm, recv, "mAudioSampleRate", Value::Int(iarg(args, 7)))?;
@@ -27389,7 +27421,7 @@ fn p49_tv_instance(
                         "mVideoActiveFormatDescription",
                         Value::Int(iarg(args, 15) as i8 as i32),
                     )?;
-                    put(vm, recv, "mExtra", args.get(16).cloned().unwrap_or(Value::Null))?;
+                    put(vm, recv, "mExtra", varg(args, 16))?;
                     Value::Null
                 }
         ("getType", "()I") => Value::Int(kind),
@@ -27709,7 +27741,7 @@ fn p49_mac_address_instance(
         }
         ("hashCode", "()I") => Value::Int(((addr >> 32) ^ addr) as i32),
         ("equals", "(Ljava/lang/Object;)Z") => bool_value(
-            p49_mac_long_from_obj_value(vm, &args.first().cloned().unwrap_or(Value::Null))
+            p49_mac_long_from_obj_value(vm, &varg(args, 0))
                 .map(|other| other == addr)
                 .unwrap_or(false),
         ),
@@ -27748,13 +27780,13 @@ fn p49_companion_manager_instance(
             vm,
             recv,
             "mService",
-            args.first().cloned().unwrap_or(Value::Null),
+            varg(args, 0),
         )?;
         put(
             vm,
             recv,
             "mContext",
-            args.get(1).cloned().unwrap_or(Value::Null),
+            varg(args, 1),
         )?;
         return Ok(Some(Value::Null));
     }
@@ -27797,7 +27829,7 @@ fn p49_companion_callback_instance(
     }
     Ok(Some(match (name, sig) {
         ("onAssociationPending", "(Landroid/content/IntentSender;)V") => {
-            let sender = args.first().cloned().unwrap_or(Value::Null);
+            let sender = varg(args, 0);
             put(vm, recv, "rd_pending_sender", sender.clone())?;
             put(vm, recv, "rd_found_sender", sender)?;
             Value::Null
@@ -27879,13 +27911,13 @@ fn p49_association_request_instance(
                 vm,
                 recv,
                 "mDeviceProfile",
-                args.get(2).cloned().unwrap_or(Value::Null),
+                varg(args, 2),
             )?;
             put(
                 vm,
                 recv,
                 "mDisplayName",
-                args.get(3).cloned().unwrap_or(Value::Null),
+                varg(args, 3),
             )?;
             put(vm, recv, "mSelfManaged", Value::Int(iarg(args, 4)))?;
             put(vm, recv, "mForceConfirmation", Value::Int(iarg(args, 5)))?;
@@ -28128,11 +28160,11 @@ fn p49_association_info_instance(
             }
             put(vm, recv, "mId", Value::Int(iarg(args, 0)))?;
             put(vm, recv, "mUserId", Value::Int(iarg(args, 1)))?;
-            put(vm, recv, "mPackageName", args.get(2).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mDeviceMacAddress", args.get(3).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mDisplayName", args.get(4).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mDeviceProfile", args.get(5).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mAssociatedDevice", args.get(6).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mPackageName", varg(args, 2))?;
+            put(vm, recv, "mDeviceMacAddress", varg(args, 3))?;
+            put(vm, recv, "mDisplayName", varg(args, 4))?;
+            put(vm, recv, "mDeviceProfile", varg(args, 5))?;
+            put(vm, recv, "mAssociatedDevice", varg(args, 6))?;
             put(vm, recv, "mSelfManaged", Value::Int(iarg(args, 7)))?;
             put(vm, recv, "mNotifyOnDeviceNearby", Value::Int(iarg(args, 8)))?;
             put(vm, recv, "mRevoked", Value::Int(iarg(args, 9)))?;
@@ -28328,8 +28360,8 @@ fn p49_bt_filter_instance(
                 p49_check_builder_not_used(vm, recv)?;
                 let mut uuids = collection_items(vm, Some(&get(vm, recv, "mServiceUuids")));
                 let mut masks = collection_items(vm, Some(&get(vm, recv, "mServiceUuidMasks")));
-                uuids.push(args.first().cloned().unwrap_or(Value::Null));
-                masks.push(args.get(1).cloned().unwrap_or(Value::Null));
+                uuids.push(varg(args, 0));
+                masks.push(varg(args, 1));
                 let stored_uuids = p49_list_value(vm, uuids)?;
                 let stored_masks = p49_list_value(vm, masks)?;
                 put(vm, recv, "mServiceUuids", stored_uuids)?;
@@ -28367,13 +28399,13 @@ fn p49_bt_filter_instance(
                 vm,
                 recv,
                 "mNamePattern",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             put(
                 vm,
                 recv,
                 "mAddress",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             for (index, field) in [(2, "mServiceUuids"), (3, "mServiceUuidMasks")] {
                 let raw = args.get(index).cloned().unwrap_or(Value::Null);
@@ -28454,7 +28486,7 @@ fn p49_ble_filter_instance(
         ("setRawDataFilter", "([B[B)Landroid/companion/BluetoothLeDeviceFilter$Builder;") => {
                 p49_check_builder_not_used(vm, recv)?;
                 let raw = req_obj(args, 0, "rawDataFilter")?;
-                let mask_value = args.get(1).cloned().unwrap_or(Value::Null);
+                let mask_value = varg(args, 1);
                 if matches!(mask_value, Value::Obj(_))
                     && array_elems(vm, Some(&Value::Obj(raw))).len()
                         != array_elems(vm, Some(&mask_value)).len()
@@ -28494,8 +28526,8 @@ fn p49_ble_filter_instance(
                 if opt_str_arg(vm, args, 0).map(|s| s.chars().count()).unwrap_or(0) > 10 {
                     return Err(iae("Prefix is too long"));
                 }
-                put(vm, recv, "mRenamePrefix", args.first().cloned().unwrap_or(Value::Null))?;
-                put(vm, recv, "mRenameSuffix", args.get(1).cloned().unwrap_or(Value::Null))?;
+                put(vm, recv, "mRenamePrefix", varg(args, 0))?;
+                put(vm, recv, "mRenameSuffix", varg(args, 1))?;
                 Value::Obj(recv)
             }
         (
@@ -28515,8 +28547,8 @@ fn p49_ble_filter_instance(
                 if opt_str_arg(vm, args, 0).map(|s| s.chars().count()).unwrap_or(0) > 10 {
                     return Err(iae("Prefix is too long"));
                 }
-                put(vm, recv, "mRenamePrefix", args.first().cloned().unwrap_or(Value::Null))?;
-                put(vm, recv, "mRenameSuffix", args.get(1).cloned().unwrap_or(Value::Null))?;
+                put(vm, recv, "mRenamePrefix", varg(args, 0))?;
+                put(vm, recv, "mRenameSuffix", varg(args, 1))?;
                 Value::Obj(recv)
             }
         ("build", "()Landroid/companion/BluetoothLeDeviceFilter;")
@@ -28571,18 +28603,18 @@ fn p49_ble_filter_instance(
             "<init>",
             "(Ljava/util/regex/Pattern;Landroid/bluetooth/le/ScanFilter;[B[BLjava/lang/String;Ljava/lang/String;IIIIZ)V",
         ) => {
-            put(vm, recv, "mNamePattern", args.first().cloned().unwrap_or(Value::Null))?;
-            let raw_scan = args.get(1).cloned().unwrap_or(Value::Null);
+            put(vm, recv, "mNamePattern", varg(args, 0))?;
+            let raw_scan = varg(args, 1);
             let scan = if matches!(raw_scan, Value::Obj(_)) {
                 raw_scan
             } else {
                 p49_default_scan_filter(vm)?
             };
             put(vm, recv, "mScanFilter", scan)?;
-            put(vm, recv, "mRawDataFilter", args.get(2).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mRawDataFilterMask", args.get(3).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mRenamePrefix", args.get(4).cloned().unwrap_or(Value::Null))?;
-            put(vm, recv, "mRenameSuffix", args.get(5).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mRawDataFilter", varg(args, 2))?;
+            put(vm, recv, "mRawDataFilterMask", varg(args, 3))?;
+            put(vm, recv, "mRenamePrefix", varg(args, 4))?;
+            put(vm, recv, "mRenameSuffix", varg(args, 5))?;
             put(vm, recv, "mRenameBytesFrom", Value::Int(iarg(args, 6)))?;
             put(vm, recv, "mRenameBytesLength", Value::Int(iarg(args, 7)))?;
             put(vm, recv, "mRenameNameFrom", Value::Int(iarg(args, 8)))?;
@@ -28952,7 +28984,7 @@ fn partial49_static(
             if !matches!(args.first(), Some(Value::Obj(_))) {
                 return Err(npe(""));
             }
-            let bytes = p49_byte_values(vm, &args.first().cloned().unwrap_or(Value::Null));
+            let bytes = p49_byte_values(vm, &varg(args, 0));
             p49_device_features_from_operand(vm, &bytes)?
         }
         (P49_HDMI_UTILS, "getLocalPortFromPhysicalAddress", "(II)I") => {
@@ -28993,10 +29025,10 @@ fn partial49_static(
             }
             p49_tv_rating_from_values(
                 vm,
-                args.first().cloned().unwrap_or(Value::Null),
-                args.get(1).cloned().unwrap_or(Value::Null),
-                args.get(2).cloned().unwrap_or(Value::Null),
-                args.get(3).cloned().unwrap_or(Value::Null),
+                varg(args, 0),
+                varg(args, 1),
+                varg(args, 2),
+                varg(args, 3),
             )?
         }
         (
@@ -29015,14 +29047,14 @@ fn partial49_static(
             p49_mac_value_from_long(vm, addr)?
         }
         (P49_MAC_ADDRESS, "fromBytes", "([B)Landroid/net/MacAddress;") => {
-            p49_mac_value_from_bytes(vm, &args.first().cloned().unwrap_or(Value::Null))?
+            p49_mac_value_from_bytes(vm, &varg(args, 0))?
         }
         (P49_MAC_ADDRESS, "isMacAddress", "([B)Z") => bool_value(
             matches!(args.first(), Some(Value::Obj(_)))
-                && p49_byte_values(vm, &args.first().cloned().unwrap_or(Value::Null)).len() == 6,
+                && p49_byte_values(vm, &varg(args, 0)).len() == 6,
         ),
         (P49_MAC_ADDRESS, "macAddressType", "([B)I") => {
-            let bytes = p49_byte_values(vm, &args.first().cloned().unwrap_or(Value::Null));
+            let bytes = p49_byte_values(vm, &varg(args, 0));
             if !matches!(args.first(), Some(Value::Obj(_))) || bytes.len() != 6 {
                 Value::Int(0)
             } else {
@@ -29044,7 +29076,7 @@ fn partial49_static(
             p49_new_byte_array(vm, &p49_mac_bytes_from_long(addr))?
         }
         (P49_MAC_ADDRESS, "stringAddrFromByteAddr", "([B)Ljava/lang/String;") => {
-            let bytes = p49_byte_values(vm, &args.first().cloned().unwrap_or(Value::Null));
+            let bytes = p49_byte_values(vm, &varg(args, 0));
             if !matches!(args.first(), Some(Value::Obj(_))) || bytes.len() != 6 {
                 Value::Null
             } else {
@@ -29135,11 +29167,6 @@ fn p41_class(c: &str) -> bool {
     crate::android_stub_tables::in_class_set(245, 260, c)
 }
 
-#[cold]
-fn p41_arg(args: &[Value], i: usize) -> Value {
-    args.get(i).cloned().unwrap_or(Value::Null)
-}
-
 #[cfg(feature = "advanced-components")]
 #[cold]
 fn p41_pending_is_activity(vm: &Engine, r: ObjRef) -> bool {
@@ -29185,7 +29212,7 @@ fn p41_tile_instance(
                     return Err(iae(""));
                 }
             }
-            put(vm, recv, "mPendingIntent", p41_arg(args, 0))?;
+            put(vm, recv, "mPendingIntent", varg(args, 0))?;
             Value::Null
         }
         ("updateTile", "()V") => {
@@ -29228,7 +29255,7 @@ fn p41_tile_service_instance(
             return Ok(None);
         }
         ("unlockAndRun", "(Ljava/lang/Runnable;)V") => {
-            put(vm, recv, "mUnlockRunnable", p41_arg(args, 0))?;
+            put(vm, recv, "mUnlockRunnable", varg(args, 0))?;
             if matches!(get(vm, recv, "mService"), Value::Null) {
                 return Err(npe(""));
             }
@@ -29318,10 +29345,10 @@ fn p41_wallpaper_instance(
                 ("mRequestedFormat".to_string(), Value::Int(1)),
             ],
         )?;
-        put(vm, recv, "this$0", p41_arg(args, 0))?;
+        put(vm, recv, "this$0", varg(args, 0))?;
         if args.len() > 1 {
-            put(vm, recv, "mClockFunction", p41_arg(args, 1))?;
-            put(vm, recv, "mHandler", p41_arg(args, 2))?;
+            put(vm, recv, "mClockFunction", varg(args, 1))?;
+            put(vm, recv, "mHandler", varg(args, 2))?;
         }
         put(vm, recv, "mSurfaceHolder", Value::Obj(holder))?;
         put(vm, recv, "mInitializing", Value::Int(1))?;
@@ -29461,7 +29488,7 @@ fn p41_wallpaper_instance(
                         recv,
                         "onAmbientModeChanged",
                         "(ZJ)V",
-                        &[p41_arg(args, 0), p41_arg(args, 1)],
+                        &[varg(args, 0), varg(args, 1)],
                     )?;
                 }
             }
@@ -29676,7 +29703,7 @@ fn p41_chooser_instance(
         return Ok(match (name, sig) {
             ("sendResult", "(Ljava/util/List;)V") => {
                 let count = field_int(vm, recv, "rd_send_count");
-                put(vm, recv, "rd_targets", p41_arg(args, 0))?;
+                put(vm, recv, "rd_targets", varg(args, 0))?;
                 put(vm, recv, "rd_send_count", Value::Int(count + 1))?;
                 Some(Value::Null)
             }
@@ -29720,7 +29747,7 @@ fn p41_chooser_instance(
                     service,
                     "onGetChooserTargets",
                     "(Landroid/content/ComponentName;Landroid/content/IntentFilter;)Ljava/util/List;",
-                    &[p41_arg(args, 0), p41_arg(args, 1)],
+                    &[varg(args, 0), varg(args, 1)],
                 ) {
                     Ok(value) => (value, None),
                     Err(error) => (Value::Null, Some(error)),
@@ -29745,8 +29772,8 @@ fn p41_chooser_instance(
             "<init>",
             "(Ljava/lang/CharSequence;Landroid/graphics/drawable/Icon;FLandroid/content/ComponentName;Landroid/os/Bundle;)V",
         ) => {
-            put(vm, recv, "mTitle", p41_arg(args, 0))?;
-            put(vm, recv, "mIcon", p41_arg(args, 1))?;
+            put(vm, recv, "mTitle", varg(args, 0))?;
+            put(vm, recv, "mIcon", varg(args, 1))?;
             let score = farg(args, 2);
             if score > 1.0 || score < 0.0 {
                 return Err(iae_fmt(format_args!(
@@ -29755,8 +29782,8 @@ fn p41_chooser_instance(
                 )));
             }
             put(vm, recv, "mScore", Value::Float(score))?;
-            put(vm, recv, "mComponentName", p41_arg(args, 3))?;
-            put(vm, recv, "mIntentExtras", p41_arg(args, 4))?;
+            put(vm, recv, "mComponentName", varg(args, 3))?;
+            put(vm, recv, "mIntentExtras", varg(args, 4))?;
             Value::Null
         }
         ("toString", "()Ljava/lang/String;") => {
@@ -29795,12 +29822,12 @@ fn p41_carrier_identifier_instance(
             "<init>",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;II)V",
         ) => {
-            put(vm, recv, "mMcc", p41_arg(args, 0))?;
-            put(vm, recv, "mMnc", p41_arg(args, 1))?;
-            put(vm, recv, "mSpn", p41_arg(args, 2))?;
-            put(vm, recv, "mImsi", p41_arg(args, 3))?;
-            put(vm, recv, "mGid1", p41_arg(args, 4))?;
-            put(vm, recv, "mGid2", p41_arg(args, 5))?;
+            put(vm, recv, "mMcc", varg(args, 0))?;
+            put(vm, recv, "mMnc", varg(args, 1))?;
+            put(vm, recv, "mSpn", varg(args, 2))?;
+            put(vm, recv, "mImsi", varg(args, 3))?;
+            put(vm, recv, "mGid1", varg(args, 4))?;
+            put(vm, recv, "mGid2", varg(args, 5))?;
             let (carrier, specific) = if args.len() >= 8 {
                 (iarg(args, 6), iarg(args, 7))
             } else {
@@ -29837,8 +29864,8 @@ fn p41_carrier_identifier_instance(
             put(vm, recv, "mMnc", mnc)?;
             put(vm, recv, "mSpn", Value::Null)?;
             put(vm, recv, "mImsi", Value::Null)?;
-            put(vm, recv, "mGid1", p41_arg(args, 1))?;
-            put(vm, recv, "mGid2", p41_arg(args, 2))?;
+            put(vm, recv, "mGid1", varg(args, 1))?;
+            put(vm, recv, "mGid2", varg(args, 2))?;
             put(vm, recv, "mCarrierId", Value::Int(-1))?;
             put(vm, recv, "mSpecificCarrierId", Value::Int(-1))?;
             Value::Null
@@ -29920,7 +29947,7 @@ fn p41_carrier_instance(
     if class == P41_CARRIER_WRAPPER {
         return Ok(match (name, sig) {
             ("<init>", "(Landroid/service/carrier/CarrierService;)V") => {
-                put(vm, recv, "this$0", p41_arg(args, 0))?;
+                put(vm, recv, "this$0", varg(args, 0))?;
                 Some(Value::Null)
             }
             _ => None,
@@ -29943,7 +29970,7 @@ fn p41_carrier_instance(
             recv,
             "onLoadConfig",
             "(Landroid/service/carrier/CarrierIdentifier;)Landroid/os/PersistableBundle;",
-            &[p41_arg(args, 1)],
+            &[varg(args, 1)],
         )?,
         _ => match crate::android_stub_tables::eval_method_range(vm, 967, 968, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
     };
@@ -29973,7 +30000,7 @@ fn p41_media_result_instance(
                 recv,
                 "onResultSent",
                 "(Ljava/lang/Object;I)V",
-                &[p41_arg(args, 0), Value::Int(flags)],
+                &[varg(args, 0), Value::Int(flags)],
             )?;
             Value::Null
         }
@@ -30022,8 +30049,8 @@ fn p41_media_instance(
                         "The root id in BrowserRoot cannot be null. Use null for BrowserRoot instead.",
                     ));
                 }
-                put(vm, recv, "mRootId", p41_arg(args, 0))?;
-                put(vm, recv, "mExtras", p41_arg(args, 1))?;
+                put(vm, recv, "mRootId", varg(args, 0))?;
+                put(vm, recv, "mExtras", varg(args, 1))?;
                 Value::Null
             }
         _ => match crate::android_stub_tables::eval_method_range(vm, 971, 973, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
@@ -30061,7 +30088,7 @@ fn p41_media_instance(
                 recv,
                 "onLoadChildren",
                 "(Ljava/lang/String;Landroid/service/media/MediaBrowserService$Result;)V",
-                &[p41_arg(args, 0), p41_arg(args, 1)],
+                &[varg(args, 0), varg(args, 1)],
             )?
         }
         (
@@ -30257,11 +30284,6 @@ const P35_SPELL_BINDER: &str =
 #[cold]
 fn p35_class(c: &str) -> bool {
     crate::android_stub_tables::in_class_set(260, 286, c)
-}
-
-#[cold]
-fn p35_arg(args: &[Value], i: usize) -> Value {
-    args.get(i).cloned().unwrap_or(Value::Null)
 }
 
 #[cold]
@@ -30568,18 +30590,18 @@ fn p35_listener_recorder(
         "onRmsChanged" => put(vm, recv, "rd_rms", Value::Float(farg(args, 0)))?,
         "onEvent" => {
             put(vm, recv, "rd_event_type", Value::Int(iarg(args, 0)))?;
-            put(vm, recv, "rd_bundle", p35_arg(args, 1))?;
+            put(vm, recv, "rd_bundle", varg(args, 1))?;
         }
         "onReadyForSpeech"
         | "onResults"
         | "onPartialResults"
         | "onSegmentResults"
-        | "onLanguageDetection" => put(vm, recv, "rd_bundle", p35_arg(args, 0))?,
-        "onBufferReceived" => put(vm, recv, "rd_buffer", p35_arg(args, 0))?,
-        "onSupportResult" => put(vm, recv, "rd_support", p35_arg(args, 0))?,
-        "onGetSuggestions" => put(vm, recv, "rd_suggestions", p35_arg(args, 0))?,
-        "onGetSentenceSuggestions" => put(vm, recv, "rd_sentence_suggestions", p35_arg(args, 0))?,
-        "onSessionCreated" => put(vm, recv, "rd_session", p35_arg(args, 0))?,
+        | "onLanguageDetection" => put(vm, recv, "rd_bundle", varg(args, 0))?,
+        "onBufferReceived" => put(vm, recv, "rd_buffer", varg(args, 0))?,
+        "onSupportResult" => put(vm, recv, "rd_support", varg(args, 0))?,
+        "onGetSuggestions" => put(vm, recv, "rd_suggestions", varg(args, 0))?,
+        "onGetSentenceSuggestions" => put(vm, recv, "rd_sentence_suggestions", varg(args, 0))?,
+        "onSessionCreated" => put(vm, recv, "rd_session", varg(args, 0))?,
         _ => {}
     }
     Ok(Some(Value::Null))
@@ -30629,13 +30651,13 @@ fn p35_recognition_service_instance(
                     let support = alloc_obj(
                         vm,
                         P35_SUPPORT_CALLBACK,
-                        vec![("mCallback".to_string(), p35_arg(args, 2))],
+                        vec![("mCallback".to_string(), varg(args, 2))],
                     )?;
                     vm.invoke_instance(
                         service,
                         "onCheckRecognitionSupport",
                         "(Landroid/content/Intent;Landroid/content/AttributionSource;Landroid/speech/RecognitionService$SupportCallback;)V",
-                        &[p35_arg(args, 0), p35_arg(args, 1), Value::Obj(support)],
+                        &[varg(args, 0), varg(args, 1), Value::Obj(support)],
                     )?;
                 }
                 Value::Null
@@ -30645,7 +30667,7 @@ fn p35_recognition_service_instance(
                 "(Landroid/content/Intent;Landroid/content/AttributionSource;Landroid/speech/IModelDownloadListener;)V",
             ) => {
                 if let Some(service) = p35_recognition_binder_service(vm, recv) {
-                    if let Value::Obj(listener) = p35_arg(args, 2) {
+                    if let Value::Obj(listener) = varg(args, 2) {
                         let wrapper = alloc_obj(
                             vm,
                             P35_MODEL_DOWNLOAD_LISTENER,
@@ -30658,14 +30680,14 @@ fn p35_recognition_service_instance(
                             service,
                             "onTriggerModelDownload",
                             "(Landroid/content/Intent;Landroid/content/AttributionSource;Landroid/speech/ModelDownloadListener;)V",
-                            &[p35_arg(args, 0), p35_arg(args, 1), Value::Obj(wrapper)],
+                            &[varg(args, 0), varg(args, 1), Value::Obj(wrapper)],
                         )?;
                     } else {
                         vm.invoke_instance(
                             service,
                             "onTriggerModelDownload",
                             "(Landroid/content/Intent;Landroid/content/AttributionSource;)V",
-                            &[p35_arg(args, 0), p35_arg(args, 1)],
+                            &[varg(args, 0), varg(args, 1)],
                         )?;
                     }
                 }
@@ -30704,9 +30726,9 @@ fn p35_recognition_service_instance(
                 "<init>",
                 "(Landroid/speech/RecognitionService;Landroid/speech/IRecognitionListener;Landroid/content/AttributionSource;)V",
             ) => {
-                put(vm, recv, "this$0", p35_arg(args, 0))?;
-                put(vm, recv, "mListener", p35_arg(args, 1))?;
-                put(vm, recv, "mCallingAttributionSource", p35_arg(args, 2))?;
+                put(vm, recv, "this$0", varg(args, 0))?;
+                put(vm, recv, "mListener", varg(args, 1))?;
+                put(vm, recv, "mCallingAttributionSource", varg(args, 2))?;
                 Value::Null
             }
             ("getCallingAttributionSource", "()Landroid/content/AttributionSource;") => {
@@ -30792,7 +30814,7 @@ fn p35_recognition_service_instance(
             recv,
             "onCheckRecognitionSupport",
             "(Landroid/content/Intent;Landroid/speech/RecognitionService$SupportCallback;)V",
-            &[p35_arg(args, 0), p35_arg(args, 2)],
+            &[varg(args, 0), varg(args, 2)],
         )?,
         (
             "onTriggerModelDownload",
@@ -30801,7 +30823,7 @@ fn p35_recognition_service_instance(
             recv,
             "onTriggerModelDownload",
             "(Landroid/content/Intent;)V",
-            std::slice::from_ref(&p35_arg(args, 0)),
+            std::slice::from_ref(&varg(args, 0)),
         )?,
         (
             "onTriggerModelDownload",
@@ -30819,6 +30841,7 @@ fn p35_recognition_service_instance(
 }
 
 #[cold]
+#[inline(never)]
 fn p35_hash_mix(h: i32, x: i32) -> i32 {
     h.wrapping_mul(31).wrapping_add(x)
 }
@@ -30900,7 +30923,7 @@ fn p35_recognition_support_instance(
             {
                 p35_check_not_used(vm, recv, 0x10)?;
                 p35_mark_field(vm, recv, bit)?;
-                put(vm, recv, field, p35_arg(args, 0))?;
+                put(vm, recv, field, varg(args, 0))?;
                 return Ok(Some(Value::Obj(recv)));
             }
             if name == adder
@@ -30920,7 +30943,7 @@ fn p35_recognition_support_instance(
                     list,
                     "add",
                     "(Ljava/lang/Object;)Z",
-                    std::slice::from_ref(&p35_arg(args, 0)),
+                    std::slice::from_ref(&varg(args, 0)),
                 )?;
                 return Ok(Some(Value::Obj(recv)));
             }
@@ -30931,7 +30954,7 @@ fn p35_recognition_support_instance(
     let value = match (name, sig) {
         ("<init>", "(Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)V") => {
             for (i, (field, ..)) in FIELDS.iter().enumerate() {
-                let v = p35_arg(args, i);
+                let v = varg(args, i);
                 if !matches!(v, Value::Obj(_)) {
                     return Err(npe(""));
                 }
@@ -31013,7 +31036,7 @@ fn p35_recognition_part_instance(
         ("setRawText", "(Ljava/lang/String;)Landroid/speech/RecognitionPart$Builder;") => {
                 p35_check_not_used(vm, recv, 0x10)?;
                 p35_mark_field(vm, recv, 0x1)?;
-                put(vm, recv, "mRawText", p35_arg(args, 0))?;
+                put(vm, recv, "mRawText", varg(args, 0))?;
                 Value::Obj(recv)
             }
         (
@@ -31026,7 +31049,7 @@ fn p35_recognition_part_instance(
                 }
                 p35_check_not_used(vm, recv, 0x10)?;
                 p35_mark_field(vm, recv, 0x2)?;
-                put(vm, recv, "mFormattedText", p35_arg(args, 0))?;
+                put(vm, recv, "mFormattedText", varg(args, 0))?;
                 Value::Obj(recv)
             }
         ("setTimestampMillis", "(J)Landroid/speech/RecognitionPart$Builder;") => {
@@ -31080,12 +31103,12 @@ fn p35_recognition_part_instance(
 
     let value = match (name, sig) {
         ("<init>", "(Ljava/lang/String;Ljava/lang/String;JI)V") => {
-            let raw = p35_arg(args, 0);
+            let raw = varg(args, 0);
             let timestamp = larg(args, 2);
             let confidence = iarg(args, 3);
             p35_validate_recognition_part(&raw, timestamp, confidence)?;
             put(vm, recv, "mRawText", raw)?;
-            put(vm, recv, "mFormattedText", p35_arg(args, 1))?;
+            put(vm, recv, "mFormattedText", varg(args, 1))?;
             put(vm, recv, "mTimestampMillis", Value::Long(timestamp))?;
             put(vm, recv, "mConfidenceLevel", Value::Int(confidence))?;
             Value::Null
@@ -31146,7 +31169,7 @@ fn p35_alternative_span_instance(
         ("<init>", "(IILjava/util/List;)V") => {
             let start = iarg(args, 0);
             let end = iarg(args, 1);
-            let alternatives = p35_arg(args, 2);
+            let alternatives = varg(args, 2);
             put(vm, recv, "mStartPosition", Value::Int(start))?;
             put(vm, recv, "mEndPosition", Value::Int(end))?;
             put(vm, recv, "mAlternatives", alternatives.clone())?;
@@ -31267,9 +31290,9 @@ fn p35_spell_instance(
                             vm,
                             P35_SPELL_INTERNAL,
                             vec![
-                                ("mLocale".to_string(), p35_arg(args, 0)),
-                                ("mListener".to_string(), p35_arg(args, 1)),
-                                ("mBundle".to_string(), p35_arg(args, 2)),
+                                ("mLocale".to_string(), varg(args, 0)),
+                                ("mListener".to_string(), varg(args, 1)),
+                                ("mBundle".to_string(), varg(args, 2)),
                                 ("mSession".to_string(), Value::Obj(session_obj)),
                                 (
                                     "mSupportedAttributes".to_string(),
@@ -31311,10 +31334,10 @@ fn p35_spell_instance(
                 "<init>",
                 "(Ljava/lang/String;Lcom/android/internal/textservice/ISpellCheckerSessionListener;Landroid/os/Bundle;Landroid/service/textservice/SpellCheckerService$Session;I)V",
             ) => {
-                put(vm, recv, "mLocale", p35_arg(args, 0))?;
-                put(vm, recv, "mListener", p35_arg(args, 1))?;
-                put(vm, recv, "mBundle", p35_arg(args, 2))?;
-                put(vm, recv, "mSession", p35_arg(args, 3))?;
+                put(vm, recv, "mLocale", varg(args, 0))?;
+                put(vm, recv, "mListener", varg(args, 1))?;
+                put(vm, recv, "mBundle", varg(args, 2))?;
+                put(vm, recv, "mSession", varg(args, 3))?;
                 put(
                     vm,
                     recv,
@@ -31596,7 +31619,7 @@ fn partial35_static(
                 if oarg(args, 0).is_none() {
                     return Err(iae("Context cannot be null"));
                 }
-                p35_new_recognizer(vm, p35_arg(args, 0), Value::Null, false)?
+                p35_new_recognizer(vm, varg(args, 0), Value::Null, false)?
             }
             (
                 "createSpeechRecognizer",
@@ -31605,7 +31628,7 @@ fn partial35_static(
                 if oarg(args, 0).is_none() {
                     return Err(iae("Context cannot be null"));
                 }
-                p35_new_recognizer(vm, p35_arg(args, 0), p35_arg(args, 1), false)?
+                p35_new_recognizer(vm, varg(args, 0), varg(args, 1), false)?
             }
             (
                 "createOnDeviceSpeechRecognizer",
@@ -31626,7 +31649,7 @@ fn partial35_static(
                 if oarg(args, 0).is_none() {
                     return Err(iae("Context cannot be null"));
                 }
-                p35_new_recognizer(vm, p35_arg(args, 0), Value::Null, true)?
+                p35_new_recognizer(vm, varg(args, 0), Value::Null, true)?
             }
             _ => return Ok(None),
         };
@@ -31876,8 +31899,8 @@ fn p35b_tts_instance(
                 return Err(npe(""));
             };
             put(vm, recv, "rd_context", Value::Obj(context))?;
-            put(vm, recv, "rd_init_listener", p35_arg(args, 1))?;
-            put(vm, recv, "rd_requested_engine", p35_arg(args, 2))?;
+            put(vm, recv, "rd_init_listener", varg(args, 1))?;
+            put(vm, recv, "rd_requested_engine", varg(args, 2))?;
             let params = empty_bundle(vm)?;
             put(vm, recv, "mParams", params)?;
             let earcons = p35b_new_hash_map(vm)?;
@@ -31916,7 +31939,7 @@ fn p35b_tts_instance(
             }
         }
         ("setEngineByPackageName", "(Ljava/lang/String;)I") => {
-            put(vm, recv, "rd_requested_engine", p35_arg(args, 0))?;
+            put(vm, recv, "rd_requested_engine", varg(args, 0))?;
             Ok(Some(p35b_tts_dispatch_init_error(vm, recv)?))
         }
         (
@@ -31977,14 +32000,14 @@ fn p35b_tts_instance(
             Ok(Some(Value::Int(0)))
         }
         ("setOnUtteranceProgressListener", "(Landroid/speech/tts/UtteranceProgressListener;)I") => {
-            put(vm, recv, "rd_utterance_listener", p35_arg(args, 0))?;
+            put(vm, recv, "rd_utterance_listener", varg(args, 0))?;
             Ok(Some(Value::Int(0)))
         }
         (
             "setOnUtteranceCompletedListener",
             "(Landroid/speech/tts/TextToSpeech$OnUtteranceCompletedListener;)I",
         ) => {
-            put(vm, recv, "rd_completed_listener", p35_arg(args, 0))?;
+            put(vm, recv, "rd_completed_listener", varg(args, 0))?;
             Ok(Some(Value::Int(0)))
         }
         (
@@ -31995,7 +32018,7 @@ fn p35b_tts_instance(
             let package = opt_str(vm, args.get(1)).unwrap_or_default();
             let uri = p35b_tts_uri_parse(vm, &format!("android.resource://{package}/{}", iarg(args, 2)))?;
             let field = if name == "addSpeech" { "mUtterances" } else { "mEarcons" };
-            Ok(Some(p35b_tts_add_mapping(vm, recv, field, p35_arg(args, 0), uri)?))
+            Ok(Some(p35b_tts_add_mapping(vm, recv, field, varg(args, 0), uri)?))
         }
         (
             "addSpeech" | "addEarcon",
@@ -32006,7 +32029,7 @@ fn p35b_tts_instance(
             };
             let uri = p35b_tts_uri_parse(vm, &filename)?;
             let field = if name == "addSpeech" { "mUtterances" } else { "mEarcons" };
-            Ok(Some(p35b_tts_add_mapping(vm, recv, field, p35_arg(args, 0), uri)?))
+            Ok(Some(p35b_tts_add_mapping(vm, recv, field, varg(args, 0), uri)?))
         }
         (
             "addSpeech" | "addEarcon",
@@ -32016,10 +32039,10 @@ fn p35b_tts_instance(
                 "Landroid/net/Uri;",
                 "fromFile",
                 "(Ljava/io/File;)Landroid/net/Uri;",
-                &[p35_arg(args, 1)],
+                &[varg(args, 1)],
             )?;
             let field = if name == "addSpeech" { "mUtterances" } else { "mEarcons" };
-            Ok(Some(p35b_tts_add_mapping(vm, recv, field, p35_arg(args, 0), uri)?))
+            Ok(Some(p35b_tts_add_mapping(vm, recv, field, varg(args, 0), uri)?))
         }
         (
             "addSpeech" | "addEarcon",
@@ -32031,8 +32054,8 @@ fn p35b_tts_instance(
                 vm,
                 recv,
                 field,
-                p35_arg(args, 0),
-                p35_arg(args, 1),
+                varg(args, 0),
+                varg(args, 1),
             )?))
         }
         _ => crate::android_stub_tables::eval_method_range(vm, 1016, 1029, name, sig, Some(recv), args),
@@ -32064,7 +32087,7 @@ fn p35b_tts_listener_recorder(
         (P35B_TTS_ON_COMPLETED, "onUtteranceCompleted", "(Ljava/lang/String;)V") => {
             let last = jstr_str(vm, "onUtteranceCompleted")?;
             put(vm, recv, "rd_last", last)?;
-            put(vm, recv, "rd_utterance_id", p35_arg(args, 0))?;
+            put(vm, recv, "rd_utterance_id", varg(args, 0))?;
             Value::Null
         }
         _ => return Ok(None),
@@ -32186,7 +32209,7 @@ fn p35b_synthesis_request_instance(
             "(Ljava/lang/String;Landroid/os/Bundle;)V"
             | "(Ljava/lang/CharSequence;Landroid/os/Bundle;)V",
         ) => {
-            put(vm, recv, "mText", p35_arg(args, 0))?;
+            put(vm, recv, "mText", varg(args, 0))?;
             // mParams = new Bundle(params): a copy; null params NPE in
             // the Bundle copy constructor.
             let Some(params) = oarg(args, 1) else {
@@ -32227,7 +32250,7 @@ fn p35b_upl_instance(
                 recv,
                 "onError",
                 "(Ljava/lang/String;)V",
-                &[p35_arg(args, 0)],
+                &[varg(args, 0)],
             )?;
             Value::Null
         }
@@ -32236,7 +32259,7 @@ fn p35b_upl_instance(
                 recv,
                 "onUtteranceRangeStart",
                 "(Ljava/lang/String;II)V",
-                &[p35_arg(args, 0), p35_arg(args, 1), p35_arg(args, 2)],
+                &[varg(args, 0), varg(args, 1), varg(args, 2)],
             )?;
             Value::Null
         }
@@ -32506,14 +32529,14 @@ fn p35b_session_instance(
         ("<init>", "(Landroid/content/Context;)V") => {
             let handler = alloc_empty_obj(vm, "Landroid/os/Handler;")?;
             vm.invoke_instance(handler, "<init>", "()V", &[])?;
-            p35b_session_init(vm, recv, p35_arg(args, 0), Value::Obj(handler))?;
+            p35b_session_init(vm, recv, varg(args, 0), Value::Obj(handler))?;
             Value::Null
         }
         ("<init>", "(Landroid/content/Context;Landroid/os/Handler;)V") => {
             if oarg(args, 1).is_none() {
                 return Err(npe(""));
             }
-            p35b_session_init(vm, recv, p35_arg(args, 0), p35_arg(args, 1))?;
+            p35b_session_init(vm, recv, varg(args, 0), varg(args, 1))?;
             Value::Null
         }
         ("show", "(Landroid/os/Bundle;I)V")
@@ -32919,7 +32942,7 @@ fn p35b_detected_instance(
                     let value = if is_int {
                         Value::Int(iarg(args, 0))
                     } else {
-                        p35_arg(args, 0)
+                        varg(args, 0)
                     };
                     put(vm, recv, field, value)?;
                     return Ok(Some(Value::Obj(recv)));
@@ -33252,7 +33275,7 @@ fn partial35b_static(
                 unflattened,
                 "equals",
                 "(Ljava/lang/Object;)Z",
-                &[p35_arg(args, 1)],
+                &[varg(args, 1)],
             )?
         }
         _ => match crate::android_stub_tables::eval_class_method_range(vm, 17, 21, class, name, sig, None, args)? { Some(v) => v, None => return Ok(None) },
@@ -33773,7 +33796,7 @@ fn p35c_location_instance(
     let value = match (name, sig) {
         ("<init>", "(Ljava/lang/String;)V") => {
             p35c_location_reset(vm, recv)?;
-            put(vm, recv, "mProvider", p35_arg(args, 0))?;
+            put(vm, recv, "mProvider", varg(args, 0))?;
             Value::Null
         }
         ("<init>", "(Landroid/location/Location;)V") => {
@@ -33868,10 +33891,10 @@ fn p35c_location_instance(
             Value::Null
         }
         ("setIsFromMockProvider", "(Z)V") => {
-            vm.invoke_instance(recv, "setMock", "(Z)V", &[p35_arg(args, 0)])?
+            vm.invoke_instance(recv, "setMock", "(Z)V", &[varg(args, 0)])?
         }
         ("setExtras", "(Landroid/os/Bundle;)V") => {
-            let extras = p35c_location_copy_bundle(vm, p35_arg(args, 0))?;
+            let extras = p35c_location_copy_bundle(vm, varg(args, 0))?;
             put(vm, recv, "mExtras", extras)?;
             Value::Null
         }
@@ -34406,9 +34429,9 @@ fn p35c_slice_item_instance(
             }
             let hints = p35c_string_array(vm, collection_items(vm, args.get(3)))?;
             put(vm, recv, "mHints", hints)?;
-            put(vm, recv, "mFormat", p35_arg(args, 1))?;
-            put(vm, recv, "mSubType", p35_arg(args, 2))?;
-            put(vm, recv, "mObj", p35_arg(args, 0))?;
+            put(vm, recv, "mFormat", varg(args, 1))?;
+            put(vm, recv, "mSubType", varg(args, 2))?;
+            put(vm, recv, "mObj", varg(args, 0))?;
             Value::Null
         }
         (
@@ -34421,13 +34444,13 @@ fn p35c_slice_item_instance(
                 vm,
                 "Landroid/util/Pair;",
                 vec![
-                    ("first".to_string(), p35_arg(args, 0)),
-                    ("second".to_string(), p35_arg(args, 1)),
+                    ("first".to_string(), varg(args, 0)),
+                    ("second".to_string(), varg(args, 1)),
                 ],
             )?;
-            put(vm, recv, "mHints", p35_arg(args, 4))?;
-            put(vm, recv, "mFormat", p35_arg(args, 2))?;
-            put(vm, recv, "mSubType", p35_arg(args, 3))?;
+            put(vm, recv, "mHints", varg(args, 4))?;
+            put(vm, recv, "mFormat", varg(args, 2))?;
+            put(vm, recv, "mSubType", varg(args, 3))?;
             put(vm, recv, "mObj", Value::Obj(pair))?;
             Value::Null
         }
@@ -34486,7 +34509,7 @@ fn p35c_slice_item_instance(
             vm.invoke_instance(obj, "longValue", "()J", &[])?
         }
         ("hasHint", "(Ljava/lang/String;)Z") => {
-            Value::Int(p35c_hints_contains(vm, &get(vm, recv, "mHints"), &p35_arg(args, 0)) as i32)
+            Value::Int(p35c_hints_contains(vm, &get(vm, recv, "mHints"), &varg(args, 0)) as i32)
         }
         ("hasHints", "([Ljava/lang/String;)Z") => {
             if oarg(args, 0).is_none() {
@@ -34578,9 +34601,9 @@ fn p35c_slice_instance(
                 collection_items(vm, args.first()),
             )?;
             put(vm, recv, "mItems", items)?;
-            put(vm, recv, "mHints", p35_arg(args, 1))?;
-            put(vm, recv, "mUri", p35_arg(args, 2))?;
-            put(vm, recv, "mSpec", p35_arg(args, 3))?;
+            put(vm, recv, "mHints", varg(args, 1))?;
+            put(vm, recv, "mUri", varg(args, 2))?;
+            put(vm, recv, "mSpec", varg(args, 3))?;
             Value::Null
         }
         ("getItems", "()Ljava/util/List;") => {
@@ -34598,7 +34621,7 @@ fn p35c_slice_instance(
             p35c_list_copy_of_array(vm, &hints)?
         }
         ("hasHint", "(Ljava/lang/String;)Z") => {
-            Value::Int(p35c_hints_contains(vm, &get(vm, recv, "mHints"), &p35_arg(args, 0)) as i32)
+            Value::Int(p35c_hints_contains(vm, &get(vm, recv, "mHints"), &varg(args, 0)) as i32)
         }
         ("isCallerNeeded", "()Z") => {
             let needed = array_elems(vm, Some(&get(vm, recv, "mHints")))
@@ -34676,11 +34699,11 @@ fn p35c_slice_builder_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/net/Uri;)V") => {
-            p35c_slice_builder_init(vm, recv, p35_arg(args, 0), Value::Null)?;
+            p35c_slice_builder_init(vm, recv, varg(args, 0), Value::Null)?;
             Value::Null
         }
         ("<init>", "(Landroid/net/Uri;Landroid/app/slice/SliceSpec;)V") => {
-            p35c_slice_builder_init(vm, recv, p35_arg(args, 0), p35_arg(args, 1))?;
+            p35c_slice_builder_init(vm, recv, varg(args, 0), varg(args, 1))?;
             Value::Null
         }
         ("<init>", "(Landroid/app/slice/Slice$Builder;)V") => {
@@ -34743,7 +34766,7 @@ fn p35c_slice_builder_instance(
                 return Err(npe(""));
             };
             let hints = p35c_slice_hints_array(vm, slice)?;
-            let item = p35c_new_slice_item(vm, Value::Obj(slice), "slice", p35_arg(args, 1), hints, true)?;
+            let item = p35c_new_slice_item(vm, Value::Obj(slice), "slice", varg(args, 1), hints, true)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -34766,13 +34789,13 @@ fn p35c_slice_builder_instance(
                 item,
                 "<init>",
                 "(Landroid/app/PendingIntent;Landroid/app/slice/Slice;Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)V",
-                &[Value::Obj(action), Value::Obj(slice), format, p35_arg(args, 2), hints],
+                &[Value::Obj(action), Value::Obj(slice), format, varg(args, 2), hints],
             )?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
         ("addText", "(Ljava/lang/CharSequence;Ljava/lang/String;Ljava/util/List;)Landroid/app/slice/Slice$Builder;") => {
-            let item = p35c_new_slice_item(vm, p35_arg(args, 0), "text", p35_arg(args, 1), p35_arg(args, 2), false)?;
+            let item = p35c_new_slice_item(vm, varg(args, 0), "text", varg(args, 1), varg(args, 2), false)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -34780,7 +34803,7 @@ fn p35c_slice_builder_instance(
             if oarg(args, 0).is_none() {
                 return Err(npe(""));
             }
-            let item = p35c_new_slice_item(vm, p35_arg(args, 0), "image", p35_arg(args, 1), p35_arg(args, 2), false)?;
+            let item = p35c_new_slice_item(vm, varg(args, 0), "image", varg(args, 1), varg(args, 2), false)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -34788,7 +34811,7 @@ fn p35c_slice_builder_instance(
             if oarg(args, 0).is_none() {
                 return Err(npe(""));
             }
-            let item = p35c_new_slice_item(vm, p35_arg(args, 0), "input", p35_arg(args, 1), p35_arg(args, 2), false)?;
+            let item = p35c_new_slice_item(vm, varg(args, 0), "input", varg(args, 1), varg(args, 2), false)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -34799,7 +34822,7 @@ fn p35c_slice_builder_instance(
                 "(I)Ljava/lang/Integer;",
                 &[Value::Int(iarg(args, 0))],
             )?;
-            let item = p35c_new_slice_item(vm, boxed, "int", p35_arg(args, 1), p35_arg(args, 2), false)?;
+            let item = p35c_new_slice_item(vm, boxed, "int", varg(args, 1), varg(args, 2), false)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -34814,7 +34837,7 @@ fn p35c_slice_builder_instance(
                 "(J)Ljava/lang/Long;",
                 &[Value::Long(p35c_larg(args, 0))],
             )?;
-            let item = p35c_new_slice_item(vm, boxed, "long", p35_arg(args, 1), hints, true)?;
+            let item = p35c_new_slice_item(vm, boxed, "long", varg(args, 1), hints, true)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -34830,7 +34853,7 @@ fn p35c_slice_builder_instance(
             if oarg(args, 0).is_none() {
                 return Err(npe(""));
             }
-            let item = p35c_new_slice_item(vm, p35_arg(args, 0), "bundle", p35_arg(args, 1), p35_arg(args, 2), false)?;
+            let item = p35c_new_slice_item(vm, varg(args, 0), "bundle", varg(args, 1), varg(args, 2), false)?;
             p35c_builder_add(vm, recv, item)?;
             Value::Obj(recv)
         }
@@ -35151,7 +35174,7 @@ fn p35d_backup_agent_instance(
         }
         ("onBind", "()Landroid/os/IBinder;") => Value::Obj(p35d_backup_agent_binder(vm, recv)?),
         ("onCreate", "(Landroid/os/UserHandle;)V") => {
-            put(vm, recv, "mUser", p35_arg(args, 0))?;
+            put(vm, recv, "mUser", varg(args, 0))?;
             vm.invoke_instance(recv, "onCreate", "()V", &[])?
         }
         ("onCreate", "(Landroid/os/UserHandle;I)V") => {
@@ -35160,7 +35183,7 @@ fn p35d_backup_agent_instance(
                 recv,
                 "onCreate",
                 "(Landroid/os/UserHandle;)V",
-                &[p35_arg(args, 0)],
+                &[varg(args, 0)],
             )?
         }
         ("onCreate", "(Landroid/os/UserHandle;II)V") => {
@@ -35171,7 +35194,7 @@ fn p35d_backup_agent_instance(
                 recv,
                 "onCreate",
                 "(Landroid/os/UserHandle;I)V",
-                &[p35_arg(args, 0), Value::Int(iarg(args, 1))],
+                &[varg(args, 0), Value::Int(iarg(args, 1))],
             )?
         }
         ("clearBackupRestoreEventLogger", "()V") => {
@@ -35440,12 +35463,12 @@ fn p35e_ssl_error_instance(
                 recv,
                 "<init>",
                 "(ILandroid/net/http/SslCertificate;Ljava/lang/String;)V",
-                &[Value::Int(iarg(args, 0)), p35_arg(args, 1), empty],
+                &[Value::Int(iarg(args, 0)), varg(args, 1), empty],
             )?
         }
         ("<init>", "(ILandroid/net/http/SslCertificate;Ljava/lang/String;)V") => {
-            put(vm, recv, "mCertificate", p35_arg(args, 1))?;
-            put(vm, recv, "mUrl", p35_arg(args, 2))?;
+            put(vm, recv, "mCertificate", varg(args, 1))?;
+            put(vm, recv, "mUrl", varg(args, 2))?;
             put(vm, recv, "mErrors", Value::Int(0))?;
             vm.invoke_instance(recv, "addError", "(I)Z", &[Value::Int(iarg(args, 0))])?
         }
@@ -35455,7 +35478,7 @@ fn p35e_ssl_error_instance(
                 recv,
                 "<init>",
                 "(ILjava/security/cert/X509Certificate;Ljava/lang/String;)V",
-                &[Value::Int(iarg(args, 0)), p35_arg(args, 1), empty],
+                &[Value::Int(iarg(args, 0)), varg(args, 1), empty],
             )?
         }
         ("<init>", "(ILjava/security/cert/X509Certificate;Ljava/lang/String;)V") => {
@@ -35476,7 +35499,7 @@ fn p35e_ssl_error_instance(
                 &[
                     Value::Int(iarg(args, 0)),
                     Value::Obj(certificate),
-                    p35_arg(args, 2),
+                    varg(args, 2),
                 ],
             )?
         }
@@ -35739,13 +35762,13 @@ fn p35e_ssl_certificate_instance(
             "<init>",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
         ) => {
-            let not_before = p35e_parse_date(vm, p35_arg(args, 2))?;
-            let not_after = p35e_parse_date(vm, p35_arg(args, 3))?;
+            let not_before = p35e_parse_date(vm, varg(args, 2))?;
+            let not_after = p35e_parse_date(vm, varg(args, 3))?;
             p35e_ssl_certificate_init(
                 vm,
                 recv,
-                p35_arg(args, 0),
-                p35_arg(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 not_before,
                 not_after,
                 Value::Null,
@@ -35758,11 +35781,11 @@ fn p35e_ssl_certificate_instance(
         ) => p35e_ssl_certificate_init(
             vm,
             recv,
-            p35_arg(args, 0),
-            p35_arg(args, 1),
-            p35_arg(args, 2),
-            p35_arg(args, 3),
-            p35_arg(args, 4),
+            varg(args, 0),
+            varg(args, 1),
+            varg(args, 2),
+            varg(args, 3),
+            varg(args, 4),
         )?,
         ("<init>", "(Ljava/security/cert/X509Certificate;)V") => {
             let Some(x509) = oarg(args, 0) else {
@@ -35917,7 +35940,7 @@ fn p35e_dname_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/net/http/SslCertificate;Ljava/lang/String;)V") => {
-            put(vm, recv, "mDName", p35_arg(args, 1))?;
+            put(vm, recv, "mDName", varg(args, 1))?;
             if let Some(dn) = opt_str(vm, args.get(1)) {
                 if let Some(components) = p35e_parse_dn(&dn) {
                     for (kind, val) in components {
@@ -35979,8 +36002,8 @@ fn p35e_se_service_instance(
                 vm,
                 "Landroid/se/omapi/SEService$SEListener;",
                 vec![
-                    ("mListener".to_string(), p35_arg(args, 2)),
-                    ("mExecutor".to_string(), p35_arg(args, 1)),
+                    ("mListener".to_string(), varg(args, 2)),
+                    ("mExecutor".to_string(), varg(args, 1)),
                 ],
             )?;
             put(vm, recv, "mSEListener", Value::Obj(listener))?;
@@ -36077,9 +36100,9 @@ fn p35e_reader_instance(
             if oarg(args, 0).is_none() || oarg(args, 1).is_none() || oarg(args, 2).is_none() {
                 return Err(iae("Parameters cannot be null"));
             }
-            put(vm, recv, "mService", p35_arg(args, 0))?;
-            put(vm, recv, "mName", p35_arg(args, 1))?;
-            put(vm, recv, "mReader", p35_arg(args, 2))?;
+            put(vm, recv, "mService", varg(args, 0))?;
+            put(vm, recv, "mName", varg(args, 1))?;
+            put(vm, recv, "mReader", varg(args, 2))?;
             Value::Null
         }
         ("openSession", "()Landroid/se/omapi/Session;")
@@ -36240,7 +36263,7 @@ fn partial35e_static(
                 error,
                 "<init>",
                 "(ILandroid/net/http/SslCertificate;Ljava/lang/String;)V",
-                &[Value::Int(mapped), p35_arg(args, 1), p35_arg(args, 2)],
+                &[Value::Int(mapped), varg(args, 1), varg(args, 2)],
             )?;
             Value::Obj(error)
         }
@@ -36418,11 +36441,6 @@ const P36A_CREDSTORE: &str = "Landroid/security/identity/CredstoreIdentityCreden
 #[cold]
 fn p36a_class(c: &str) -> bool {
     crate::android_stub_tables::in_class_set(323, 326, c)
-}
-
-#[cold]
-fn p36a_value(args: &[Value], i: usize) -> Value {
-    args.get(i).cloned().unwrap_or(Value::Null)
 }
 
 #[allow(clippy::too_many_arguments)] // AOSP names each distinct array fault
@@ -36881,9 +36899,9 @@ fn p36a_matrix_static(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("multiplyMM", "([FI[FI[FI)V") => {
-            let result = p36a_value(args, 0);
-            let lhs_value = p36a_value(args, 2);
-            let rhs_value = p36a_value(args, 4);
+            let result = varg(args, 0);
+            let lhs_value = varg(args, 2);
+            let rhs_value = varg(args, 4);
             let result_offset = iarg(args, 1);
             // AOSP validates `result` before either operand.
             p36a_array_bounds(
@@ -36928,9 +36946,9 @@ fn p36a_matrix_static(
             Value::Null
         }
         ("multiplyMV", "([FI[FI[FI)V") => {
-            let result = p36a_value(args, 0);
-            let lhs_value = p36a_value(args, 2);
-            let rhs_value = p36a_value(args, 4);
+            let result = varg(args, 0);
+            let lhs_value = varg(args, 2);
+            let rhs_value = varg(args, 4);
             let result_offset = iarg(args, 1);
             p36a_array_bounds(
                 vm,
@@ -36974,8 +36992,8 @@ fn p36a_matrix_static(
             Value::Null
         }
         ("transposeM", "([FI[FI)V") => {
-            let result = p36a_value(args, 0);
-            let source = p36a_value(args, 2);
+            let result = varg(args, 0);
+            let source = varg(args, 2);
             if matches!(&result, Value::Obj(_)) && obj(Some(&result)) == obj(Some(&source)) {
                 // AOSP's transposeM loop reads and writes through the
                 // arrays directly, so an in-place transposition
@@ -37003,8 +37021,8 @@ fn p36a_matrix_static(
             }
         }
         ("invertM", "([FI[FI)Z") => {
-            let result = p36a_value(args, 0);
-            let source = p36a_value(args, 2);
+            let result = varg(args, 0);
+            let source = varg(args, 2);
             let input = p36a_read_matrix(vm, &source, iarg(args, 3), "", "", "", false)?;
             let Some(output) = p36a_invert(&input) else {
                 return Ok(Some(Value::Int(0)));
@@ -37041,7 +37059,7 @@ fn p36a_matrix_static(
             output[13] = -(top + bottom) * r_height;
             output[14] = -(far + near) * r_depth;
             output[15] = 1.0;
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("frustumM", "([FIFFFFFF)V") => {
@@ -37079,7 +37097,7 @@ fn p36a_matrix_static(
             output[10] = (far + near) * r_depth;
             output[14] = 2.0 * (far * near * r_depth);
             output[11] = -1.0;
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("perspectiveM", "([FIFFFF)V") => {
@@ -37095,45 +37113,45 @@ fn p36a_matrix_static(
             output[10] = (z_far + z_near) * range_reciprocal;
             output[11] = -1.0;
             output[14] = 2.0 * z_far * z_near * range_reciprocal;
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("length", "(FFF)F") => {
             Value::Float(p36a_length(farg(args, 0), farg(args, 1), farg(args, 2)))
         }
         ("setIdentityM", "([FI)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &p36a_identity())?
         }
         ("scaleM", "([FI[FIFFF)V") => {
-            let result = p36a_value(args, 0);
-            let source = p36a_value(args, 2);
+            let result = varg(args, 0);
+            let source = varg(args, 2);
             let input = p36a_read_matrix(vm, &source, iarg(args, 3), "", "", "", false)?;
             let output = p36a_scale(&input, farg(args, 4), farg(args, 5), farg(args, 6));
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("scaleM", "([FIFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let input = p36a_read_matrix(vm, &result, iarg(args, 1), "", "", "", false)?;
             let output = p36a_scale(&input, farg(args, 2), farg(args, 3), farg(args, 4));
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("translateM", "([FI[FIFFF)V") => {
-            let result = p36a_value(args, 0);
-            let source = p36a_value(args, 2);
+            let result = varg(args, 0);
+            let source = varg(args, 2);
             let input = p36a_read_matrix(vm, &source, iarg(args, 3), "", "", "", false)?;
             let output = p36a_translate(&input, farg(args, 4), farg(args, 5), farg(args, 6));
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("translateM", "([FIFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let input = p36a_read_matrix(vm, &result, iarg(args, 1), "", "", "", false)?;
             let output = p36a_translate(&input, farg(args, 2), farg(args, 3), farg(args, 4));
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("rotateM", "([FI[FIFFFF)V") => {
-            let result = p36a_value(args, 0);
-            let source = p36a_value(args, 2);
+            let result = varg(args, 0);
+            let source = varg(args, 2);
             let result_offset = iarg(args, 1);
             // AOSP delegates to multiplyMM after building a temp rotation.
             p36a_array_bounds(
@@ -37171,7 +37189,7 @@ fn p36a_matrix_static(
             Value::Null
         }
         ("rotateM", "([FIFFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let input = p36a_read_matrix(
                 vm,
                 &result,
@@ -37197,18 +37215,18 @@ fn p36a_matrix_static(
             Value::Null
         }
         ("setRotateM", "([FIFFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let output =
                 p36a_set_rotate(farg(args, 2), farg(args, 3), farg(args, 4), farg(args, 5));
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("setRotateEulerM", "([FIFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let output = p36a_set_rotate_euler(farg(args, 2), farg(args, 3), farg(args, 4), false);
             p36a_write_matrix_implicit(vm, &result, iarg(args, 1), &output)?
         }
         ("setRotateEulerM2", "([FIFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let output = p36a_set_rotate_euler(farg(args, 2), farg(args, 3), farg(args, 4), true);
             p36a_write_floats(
                 vm,
@@ -37223,7 +37241,7 @@ fn p36a_matrix_static(
             Value::Null
         }
         ("setLookAtM", "([FIFFFFFFFFF)V") => {
-            let result = p36a_value(args, 0);
+            let result = varg(args, 0);
             let output = p36a_set_look_at(
                 [farg(args, 2), farg(args, 3), farg(args, 4)],
                 [farg(args, 5), farg(args, 6), farg(args, 7)],
@@ -38118,8 +38136,8 @@ fn p36c_nsd_info_instance(
         }
         ("<init>", "(Ljava/lang/String;Ljava/lang/String;)V") => {
             p36c_init_nsd_info(vm, recv)?;
-            put(vm, recv, "mServiceName", p36a_value(args, 0))?;
-            put(vm, recv, "mServiceType", p36a_value(args, 1))?;
+            put(vm, recv, "mServiceName", varg(args, 0))?;
+            put(vm, recv, "mServiceType", varg(args, 1))?;
             Value::Null
         }
         ("getHost", "()Ljava/net/InetAddress;") => {
@@ -38130,7 +38148,7 @@ fn p36c_nsd_info_instance(
                 .unwrap_or(Value::Null)
         }
         ("setHost", "(Ljava/net/InetAddress;)V") => {
-            let addresses = new_collection(vm, "Ljava/util/ArrayList;", vec![p36a_value(args, 0)])?;
+            let addresses = new_collection(vm, "Ljava/util/ArrayList;", vec![varg(args, 0)])?;
             put(vm, recv, "mHostAddresses", Value::Obj(addresses))?;
             Value::Null
         }
@@ -38155,7 +38173,7 @@ fn p36c_nsd_info_instance(
             Value::Null
         }
         ("setAttribute", "(Ljava/lang/String;[B)V") => {
-            p36c_set_txt_attribute(vm, recv, opt_str_arg(vm, args, 0), p36a_value(args, 1))?;
+            p36c_set_txt_attribute(vm, recv, opt_str_arg(vm, args, 0), varg(args, 1))?;
             Value::Null
         }
         ("setAttribute", "(Ljava/lang/String;Ljava/lang/String;)V") => {
@@ -38420,7 +38438,7 @@ fn p36c_nsd_manager_instance(
                 Some(Value::Obj(service)) => *service,
                 _ => return Err(npe( "")),
             };
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
             put(vm, recv, "mListenerKey", Value::Int(1))?;
             p36c_store_listener_arrays(vm, recv, Vec::new(), Vec::new(), Vec::new())?;
             let callback = alloc_empty_obj(vm, P36C_NSD_CALLBACK)?;
@@ -38452,7 +38470,7 @@ fn p36c_nsd_manager_instance(
             "registerService",
             "(Landroid/net/nsd/NsdServiceInfo;ILjava/util/concurrent/Executor;Landroid/net/nsd/NsdManager$RegistrationListener;)V",
         ) => {
-            let info = p36a_value(args, 0);
+            let info = varg(args, 0);
             let Value::Obj(info_ref) = info else {
                 return Err(npe( ""));
             };
@@ -38462,7 +38480,7 @@ fn p36c_nsd_manager_instance(
             }
             p36c_check_service_info(vm, &info)?;
             p36c_check_protocol(iarg(args, 1))?;
-            let listener = p36a_value(args, args.len().saturating_sub(1));
+            let listener = varg(args, args.len().saturating_sub(1));
             let key = p36c_put_listener(vm, recv, listener, info.clone())?;
             p36c_nsd_remote(
                 vm,
@@ -38474,7 +38492,7 @@ fn p36c_nsd_manager_instance(
             Value::Null
         }
         ("unregisterService", "(Landroid/net/nsd/NsdManager$RegistrationListener;)V") => {
-            let listener = p36a_value(args, 0);
+            let listener = varg(args, 0);
             let key = p36c_get_listener_key(vm, recv, &listener)?;
             p36c_nsd_remote(
                 vm,
@@ -38503,12 +38521,12 @@ fn p36c_nsd_manager_instance(
             }
             p36c_check_protocol(iarg(args, 1))?;
             let network = if args.len() == 5 {
-                p36a_value(args, 2)
+                varg(args, 2)
             } else {
                 Value::Null
             };
-            let info = p36c_new_discovery_info(vm, p36a_value(args, 0), network)?;
-            let listener = p36a_value(args, args.len().saturating_sub(1));
+            let info = p36c_new_discovery_info(vm, varg(args, 0), network)?;
+            let listener = varg(args, args.len().saturating_sub(1));
             let key = p36c_put_listener(vm, recv, listener, info.clone())?;
             p36c_nsd_remote(
                 vm,
@@ -38520,7 +38538,7 @@ fn p36c_nsd_manager_instance(
             Value::Null
         }
         ("stopServiceDiscovery", "(Landroid/net/nsd/NsdManager$DiscoveryListener;)V") => {
-            let listener = p36a_value(args, 0);
+            let listener = varg(args, 0);
             let key = p36c_get_listener_key(vm, recv, &listener)?;
             p36c_nsd_remote(vm, recv, "stopDiscovery", "(I)V", &[Value::Int(key)])?;
             Value::Null
@@ -38533,9 +38551,9 @@ fn p36c_nsd_manager_instance(
             "resolveService",
             "(Landroid/net/nsd/NsdServiceInfo;Ljava/util/concurrent/Executor;Landroid/net/nsd/NsdManager$ResolveListener;)V",
         ) => {
-            let info = p36a_value(args, 0);
+            let info = varg(args, 0);
             p36c_check_service_info(vm, &info)?;
-            let listener = p36a_value(args, args.len().saturating_sub(1));
+            let listener = varg(args, args.len().saturating_sub(1));
             let key = p36c_put_listener(vm, recv, listener, info.clone())?;
             p36c_nsd_remote(
                 vm,
@@ -38547,7 +38565,7 @@ fn p36c_nsd_manager_instance(
             Value::Null
         }
         ("stopServiceResolution", "(Landroid/net/nsd/NsdManager$ResolveListener;)V") => {
-            let listener = p36a_value(args, 0);
+            let listener = varg(args, 0);
             let key = p36c_get_listener_key(vm, recv, &listener)?;
             p36c_nsd_remote(
                 vm,
@@ -38562,9 +38580,9 @@ fn p36c_nsd_manager_instance(
             "registerServiceInfoCallback",
             "(Landroid/net/nsd/NsdServiceInfo;Ljava/util/concurrent/Executor;Landroid/net/nsd/NsdManager$ServiceInfoCallback;)V",
         ) => {
-            let info = p36a_value(args, 0);
+            let info = varg(args, 0);
             p36c_check_service_info(vm, &info)?;
-            let listener = p36a_value(args, 2);
+            let listener = varg(args, 2);
             let key = p36c_put_listener(vm, recv, listener, info.clone())?;
             p36c_nsd_remote(
                 vm,
@@ -38579,7 +38597,7 @@ fn p36c_nsd_manager_instance(
             "unregisterServiceInfoCallback",
             "(Landroid/net/nsd/NsdManager$ServiceInfoCallback;)V",
         ) => {
-            let listener = p36a_value(args, 0);
+            let listener = varg(args, 0);
             let key = p36c_get_listener_key(vm, recv, &listener)?;
             p36c_nsd_remote(
                 vm,
@@ -38620,7 +38638,7 @@ fn p36c_sip_static(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("isApiSupported", "(Landroid/content/Context;)Z") => {
-            let context = p36a_value(args, 0);
+            let context = varg(args, 0);
             Value::Int(i32::from(p36c_sip_feature(
                 vm,
                 &context,
@@ -38628,7 +38646,7 @@ fn p36c_sip_static(
             )?))
         }
         ("isVoipSupported", "(Landroid/content/Context;)Z") => {
-            let context = p36a_value(args, 0);
+            let context = varg(args, 0);
             if !p36c_sip_feature(vm, &context, "android.software.sip.voip")? {
                 Value::Int(0)
             } else {
@@ -38641,7 +38659,7 @@ fn p36c_sip_static(
             }
         }
         ("newInstance", "(Landroid/content/Context;)Landroid/net/sip/SipManager;") => {
-            let context = p36a_value(args, 0);
+            let context = varg(args, 0);
             let supported = vm.invoke_static(
                 P36C_SIP_MANAGER,
                 "isApiSupported",
@@ -38662,7 +38680,7 @@ fn p36c_sip_static(
             }
         }
         ("getCallId", "(Landroid/content/Intent;)Ljava/lang/String;") => {
-            let Value::Obj(intent) = p36a_value(args, 0) else {
+            let Value::Obj(intent) = varg(args, 0) else {
                 return Err(npe(""));
             };
             let key = jstr_str(vm, "android:sipCallID")?;
@@ -38674,7 +38692,7 @@ fn p36c_sip_static(
             )?
         }
         ("getOfferSessionDescription", "(Landroid/content/Intent;)Ljava/lang/String;") => {
-            let Value::Obj(intent) = p36a_value(args, 0) else {
+            let Value::Obj(intent) = varg(args, 0) else {
                 return Err(npe(""));
             };
             let key = jstr_str(vm, "android:sipOfferSD")?;
@@ -38686,7 +38704,7 @@ fn p36c_sip_static(
             )?
         }
         ("isIncomingCallIntent", "(Landroid/content/Intent;)Z") => {
-            let intent = p36a_value(args, 0);
+            let intent = varg(args, 0);
             if matches!(intent, Value::Null) {
                 Value::Int(0)
             } else {
@@ -38714,7 +38732,7 @@ fn p36c_sip_static(
             let intent = alloc_empty_obj(vm, "Landroid/content/Intent;")?;
             vm.invoke_instance(intent, "<init>", "()V", &[])?;
             let call_key = jstr_str(vm, "android:sipCallID")?;
-            let call_id = p36a_value(args, 0);
+            let call_id = varg(args, 0);
             vm.invoke_instance(
                 intent,
                 "putExtra",
@@ -38722,7 +38740,7 @@ fn p36c_sip_static(
                 &[call_key, call_id],
             )?;
             let offer_key = jstr_str(vm, "android:sipOfferSD")?;
-            let offer = p36a_value(args, 1);
+            let offer = varg(args, 1);
             vm.invoke_instance(
                 intent,
                 "putExtra",
@@ -38774,7 +38792,7 @@ fn p36c_sip_instance(
             "open",
             "(Landroid/net/sip/SipProfile;Landroid/app/PendingIntent;Landroid/net/sip/SipRegistrationListener;)V",
         ) => {
-            if matches!(p36a_value(args, 1), Value::Null) {
+            if matches!(varg(args, 1), Value::Null) {
                 return Err(npe("incomingCallPendingIntent cannot be null"));
             }
             return Err(p36c_sip_dead());
@@ -38806,7 +38824,7 @@ fn p36c_sip_instance(
             "takeAudioCall",
             "(Landroid/content/Intent;Landroid/net/sip/SipAudioCall$Listener;)Landroid/net/sip/SipAudioCall;",
         ) => {
-            let intent = p36a_value(args, 0);
+            let intent = varg(args, 0);
             if matches!(intent, Value::Null) {
                 return Err(throw(
                     P36C_SIP_EXCEPTION,
@@ -39058,23 +39076,23 @@ fn p36d_bt_adapter_instance(
             "<init>",
             "(Landroid/bluetooth/IBluetoothManager;Landroid/content/AttributionSource;)V",
         ) => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_))
-                || !matches!(p36a_value(args, 1), Value::Obj(_))
+            if !matches!(varg(args, 0), Value::Obj(_))
+                || !matches!(varg(args, 1), Value::Obj(_))
             {
                 return Err(npe(""));
             }
-            put(vm, recv, "mManagerService", p36a_value(args, 0))?;
-            put(vm, recv, "mAttributionSource", p36a_value(args, 1))?;
+            put(vm, recv, "mManagerService", varg(args, 0))?;
+            put(vm, recv, "mAttributionSource", varg(args, 1))?;
             put(vm, recv, "mService", Value::Null)?;
             Value::Null
         }
         ("getRemoteDevice", "(Ljava/lang/String;)Landroid/bluetooth/BluetoothDevice;") => {
             let attribution = get(vm, recv, "mAttributionSource");
-            p36d_new_bluetooth_device(vm, p36a_value(args, 0), None, attribution)?
+            p36d_new_bluetooth_device(vm, varg(args, 0), None, attribution)?
         }
         ("getRemoteLeDevice", "(Ljava/lang/String;I)Landroid/bluetooth/BluetoothDevice;") => {
             let attribution = get(vm, recv, "mAttributionSource");
-            p36d_new_bluetooth_device(vm, p36a_value(args, 0), Some(iarg(args, 1)), attribution)?
+            p36d_new_bluetooth_device(vm, varg(args, 0), Some(iarg(args, 1)), attribution)?
         }
         ("getRemoteDevice", "([B)Landroid/bluetooth/BluetoothDevice;") => {
             let bytes = match args.first() {
@@ -39179,7 +39197,7 @@ fn p36d_bt_manager_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/content/Context;)V") => {
-            let attribution = match p36a_value(args, 0) {
+            let attribution = match varg(args, 0) {
                 Value::Obj(context) => vm.invoke_instance(
                     context,
                     "getAttributionSource",
@@ -39244,7 +39262,7 @@ fn p36d_bt_manager_instance(
                 &[Value::Int(iarg(args, 1))],
             )?;
             let connected = collection_items(vm, Some(&devices));
-            let device = p36a_value(args, 0);
+            let device = varg(args, 0);
             let mut state = 0;
             for connected_device in connected {
                 let Value::Obj(device_ref) = device else {
@@ -39271,8 +39289,8 @@ fn p36d_bt_manager_instance(
             "openGattServer",
             "(Landroid/content/Context;Landroid/bluetooth/BluetoothGattServerCallback;IZ)Landroid/bluetooth/BluetoothGattServer;",
             &[
-                p36a_value(args, 0),
-                p36a_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Int(0),
                 Value::Int(0),
             ],
@@ -39285,8 +39303,8 @@ fn p36d_bt_manager_instance(
             "openGattServer",
             "(Landroid/content/Context;Landroid/bluetooth/BluetoothGattServerCallback;IZ)Landroid/bluetooth/BluetoothGattServer;",
             &[
-                p36a_value(args, 0),
-                p36a_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Int(0),
                 Value::Int(iarg(args, 2)),
             ],
@@ -39299,8 +39317,8 @@ fn p36d_bt_manager_instance(
             "openGattServer",
             "(Landroid/content/Context;Landroid/bluetooth/BluetoothGattServerCallback;IZ)Landroid/bluetooth/BluetoothGattServer;",
             &[
-                p36a_value(args, 0),
-                p36a_value(args, 1),
+                varg(args, 0),
+                varg(args, 1),
                 Value::Int(iarg(args, 2)),
                 Value::Int(0),
             ],
@@ -39309,12 +39327,12 @@ fn p36d_bt_manager_instance(
             "openGattServer",
             "(Landroid/content/Context;Landroid/bluetooth/BluetoothGattServerCallback;IZ)Landroid/bluetooth/BluetoothGattServer;",
         ) => {
-            if matches!(p36a_value(args, 0), Value::Null)
-                || matches!(p36a_value(args, 1), Value::Null)
+            if matches!(varg(args, 0), Value::Null)
+                || matches!(varg(args, 1), Value::Null)
             {
-                let context = p36a_value(args, 0);
+                let context = varg(args, 0);
                 let context_text = p36c_object_string(vm, &context)?;
-                let callback = p36a_value(args, 1);
+                let callback = varg(args, 1);
                 let callback_text = p36c_object_string(vm, &callback)?;
                 return Err(iae_fmt(format_args!(
                     "null parameter: {context_text} {callback_text}"
@@ -39381,7 +39399,7 @@ fn p36d_bt_device_instance(
                     "{address_type} is not a Bluetooth address type"
                 )));
             }
-            put(vm, recv, "mAddress", p36a_value(args, 0))?;
+            put(vm, recv, "mAddress", varg(args, 0))?;
             put(vm, recv, "mAddressType", Value::Int(address_type))?;
             put(vm, recv, "mAttributionSource", Value::Null)?;
             Value::Null
@@ -39584,7 +39602,7 @@ fn p36d_scan_filter_instance(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     if (name, sig) == ("matches", "(Landroid/bluetooth/le/ScanResult;)Z")
-        && matches!(p36a_value(args, 0), Value::Null)
+        && matches!(varg(args, 0), Value::Null)
     {
         return Ok(Some(Value::Int(0)));
     }
@@ -39614,7 +39632,7 @@ fn p36d_scan_filter_instance(
                 Value::Null,
             ];
             for (index, value) in values.iter_mut().enumerate() {
-                *value = p36a_value(args, index);
+                *value = varg(args, index);
             }
             p36d_init_scan_filter_fields(vm, recv, &values)?;
             Value::Null
@@ -39813,7 +39831,7 @@ fn p36d_scan_filter_builder_instance(
             "setDeviceAddress",
             "(Ljava/lang/String;)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            let address = p36a_value(args, 0);
+            let address = varg(args, 0);
             if matches!(address, Value::Null) {
                 put(vm, recv, "mDeviceAddress", Value::Null)?;
             } else {
@@ -39828,7 +39846,7 @@ fn p36d_scan_filter_builder_instance(
             p36d_set_scan_filter_address(
                 vm,
                 recv,
-                p36a_value(args, 0),
+                varg(args, 0),
                 iarg(args, 1),
                 Value::Null,
             )?;
@@ -39838,14 +39856,14 @@ fn p36d_scan_filter_builder_instance(
             "setDeviceAddress",
             "(Ljava/lang/String;I[B)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            let irk = p36a_value(args, 2);
+            let irk = varg(args, 2);
             let Value::Obj(_) = irk else {
                 return Err(npe(""));
             };
             if p49_byte_values(vm, &irk).len() != 16 {
                 return Err(iae("'irk' is invalid length!"));
             }
-            p36d_set_scan_filter_address(vm, recv, p36a_value(args, 0), iarg(args, 1), irk)?;
+            p36d_set_scan_filter_address(vm, recv, varg(args, 0), iarg(args, 1), irk)?;
             Value::Obj(recv)
         }
         (
@@ -39859,15 +39877,15 @@ fn p36d_scan_filter_builder_instance(
             {
                 return Err(iae("uuid is null while uuidMask is not null!"));
             }
-            put(vm, recv, "mServiceUuid", p36a_value(args, 0))?;
-            put(vm, recv, "mServiceUuidMask", p36a_value(args, 1))?;
+            put(vm, recv, "mServiceUuid", varg(args, 0))?;
+            put(vm, recv, "mServiceUuidMask", varg(args, 1))?;
             Value::Obj(recv)
         }
         (
             "setServiceSolicitationUuid",
             "(Landroid/os/ParcelUuid;)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            let uuid = p36a_value(args, 0);
+            let uuid = varg(args, 0);
             let clear_mask = matches!(uuid, Value::Null);
             put(vm, recv, "mServiceSolicitationUuid", uuid)?;
             if clear_mask {
@@ -39879,26 +39897,26 @@ fn p36d_scan_filter_builder_instance(
             "setServiceSolicitationUuid",
             "(Landroid/os/ParcelUuid;Landroid/os/ParcelUuid;)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            if matches!(p36a_value(args, 1), Value::Obj(_))
-                && matches!(p36a_value(args, 0), Value::Null)
+            if matches!(varg(args, 1), Value::Obj(_))
+                && matches!(varg(args, 0), Value::Null)
             {
                 return Err(iae(
                     "SolicitationUuid is null while SolicitationUuidMask is not null!",
                 ));
             }
-            put(vm, recv, "mServiceSolicitationUuid", p36a_value(args, 0))?;
-            put(vm, recv, "mServiceSolicitationUuidMask", p36a_value(args, 1))?;
+            put(vm, recv, "mServiceSolicitationUuid", varg(args, 0))?;
+            put(vm, recv, "mServiceSolicitationUuidMask", varg(args, 1))?;
             Value::Obj(recv)
         }
         (
             "setServiceData",
             "(Landroid/os/ParcelUuid;[B)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            if matches!(p36a_value(args, 0), Value::Null) {
+            if matches!(varg(args, 0), Value::Null) {
                 return Err(iae("serviceDataUuid is null"));
             }
-            put(vm, recv, "mServiceDataUuid", p36a_value(args, 0))?;
-            put(vm, recv, "mServiceData", p36a_value(args, 1))?;
+            put(vm, recv, "mServiceDataUuid", varg(args, 0))?;
+            put(vm, recv, "mServiceData", varg(args, 1))?;
             put(vm, recv, "mServiceDataMask", Value::Null)?;
             Value::Obj(recv)
         }
@@ -39906,7 +39924,7 @@ fn p36d_scan_filter_builder_instance(
             "setServiceData",
             "(Landroid/os/ParcelUuid;[B[B)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            if matches!(p36a_value(args, 0), Value::Null) {
+            if matches!(varg(args, 0), Value::Null) {
                 return Err(iae("serviceDataUuid is null"));
             }
             p36d_check_existing_mask(
@@ -39917,20 +39935,20 @@ fn p36d_scan_filter_builder_instance(
                 "serviceData is null while serviceDataMask is not null",
                 "size mismatch for service data and service data mask",
             )?;
-            put(vm, recv, "mServiceDataUuid", p36a_value(args, 0))?;
-            put(vm, recv, "mServiceData", p36a_value(args, 1))?;
-            put(vm, recv, "mServiceDataMask", p36a_value(args, 2))?;
+            put(vm, recv, "mServiceDataUuid", varg(args, 0))?;
+            put(vm, recv, "mServiceData", varg(args, 1))?;
+            put(vm, recv, "mServiceDataMask", varg(args, 2))?;
             Value::Obj(recv)
         }
         (
             "setManufacturerData",
             "(I[B)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            if matches!(p36a_value(args, 1), Value::Obj(_)) && iarg(args, 0) < 0 {
+            if matches!(varg(args, 1), Value::Obj(_)) && iarg(args, 0) < 0 {
                 return Err(iae("invalid manufacture id"));
             }
             put(vm, recv, "mManufacturerId", Value::Int(iarg(args, 0)))?;
-            put(vm, recv, "mManufacturerData", p36a_value(args, 1))?;
+            put(vm, recv, "mManufacturerData", varg(args, 1))?;
             put(vm, recv, "mManufacturerDataMask", Value::Null)?;
             Value::Obj(recv)
         }
@@ -39938,7 +39956,7 @@ fn p36d_scan_filter_builder_instance(
             "setManufacturerData",
             "(I[B[B)Landroid/bluetooth/le/ScanFilter$Builder;",
         ) => {
-            if matches!(p36a_value(args, 1), Value::Obj(_)) && iarg(args, 0) < 0 {
+            if matches!(varg(args, 1), Value::Obj(_)) && iarg(args, 0) < 0 {
                 return Err(iae("invalid manufacture id"));
             }
             p36d_check_existing_mask(
@@ -39950,8 +39968,8 @@ fn p36d_scan_filter_builder_instance(
                 "size mismatch for manufacturerData and manufacturerDataMask",
             )?;
             put(vm, recv, "mManufacturerId", Value::Int(iarg(args, 0)))?;
-            put(vm, recv, "mManufacturerData", p36a_value(args, 1))?;
-            put(vm, recv, "mManufacturerDataMask", p36a_value(args, 2))?;
+            put(vm, recv, "mManufacturerData", varg(args, 1))?;
+            put(vm, recv, "mManufacturerDataMask", varg(args, 2))?;
             Value::Obj(recv)
         }
         (
@@ -39985,8 +40003,8 @@ fn p36d_scan_filter_builder_instance(
                 "size mismatch for mAdvertisingData and mAdvertisingDataMask",
             )?;
             put(vm, recv, "mAdvertisingDataType", Value::Int(iarg(args, 0)))?;
-            put(vm, recv, "mAdvertisingData", p36a_value(args, 1))?;
-            put(vm, recv, "mAdvertisingDataMask", p36a_value(args, 2))?;
+            put(vm, recv, "mAdvertisingData", varg(args, 1))?;
+            put(vm, recv, "mAdvertisingDataMask", varg(args, 2))?;
             Value::Obj(recv)
         }
         ("build", "()Landroid/bluetooth/le/ScanFilter;") => {
@@ -40051,9 +40069,9 @@ fn p36d_tag_static(
                 "<init>",
                 "([B[I[Landroid/os/Bundle;IJLandroid/nfc/INfcTag;)V",
                 &[
-                    p36a_value(args, 0),
-                    p36a_value(args, 1),
-                    p36a_value(args, 2),
+                    varg(args, 0),
+                    varg(args, 1),
+                    varg(args, 2),
                     Value::Int(0),
                     Value::Long(larg(args, 3)),
                     Value::Null,
@@ -40112,7 +40130,7 @@ fn p36d_tag_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "([B[I[Landroid/os/Bundle;IJLandroid/nfc/INfcTag;)V") => {
-            let tech = p36a_value(args, 1);
+            let tech = varg(args, 1);
             if !matches!(tech, Value::Obj(_)) {
                 return Err(iae("rawTargets cannot be null"));
             }
@@ -40124,13 +40142,13 @@ fn p36d_tag_instance(
                 };
                 names.push(jstr(vm, name.to_string())?);
             }
-            let extras = p36a_value(args, 2);
+            let extras = varg(args, 2);
             if !matches!(extras, Value::Obj(_)) {
                 return Err(npe(""));
             }
             let mut copied_extras = array_elems(vm, Some(&extras));
             copied_extras.resize(codes.len(), Value::Null);
-            put(vm, recv, "mId", p36a_value(args, 0))?;
+            put(vm, recv, "mId", varg(args, 0))?;
             let tech_list = new_int_array(vm, &codes)?;
             put(vm, recv, "mTechList", tech_list)?;
             let tech_string_list = obj_array(vm, "[Ljava/lang/String;", names)?;
@@ -40139,7 +40157,7 @@ fn p36d_tag_instance(
             put(vm, recv, "mTechExtras", tech_extras)?;
             put(vm, recv, "mServiceHandle", Value::Int(iarg(args, 3)))?;
             put(vm, recv, "mCookie", Value::Long(larg(args, 4)))?;
-            put(vm, recv, "mTagService", p36a_value(args, 5))?;
+            put(vm, recv, "mTagService", varg(args, 5))?;
             put(vm, recv, "mConnectedTechnology", Value::Int(-1))?;
             Value::Null
         }
@@ -40263,7 +40281,7 @@ fn p36d_nfc_a_static(
     if (name, sig) != ("get", "(Landroid/nfc/Tag;)Landroid/nfc/tech/NfcA;") {
         return Ok(None);
     }
-    let Value::Obj(tag) = p36a_value(args, 0) else {
+    let Value::Obj(tag) = varg(args, 0) else {
         return Err(npe(""));
     };
     let has_tech = vm.invoke_instance(tag, "hasTech", "(I)Z", &[Value::Int(1)])?;
@@ -40329,7 +40347,7 @@ fn p36d_nfc_a_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/nfc/Tag;)V") => {
-            let tag = p36a_value(args, 0);
+            let tag = varg(args, 0);
             put(vm, recv, "mTag", tag.clone())?;
             put(vm, recv, "mSelectedTechnology", Value::Int(1))?;
             put(vm, recv, "mIsConnected", Value::Int(0))?;
@@ -40496,7 +40514,7 @@ fn p36d_nfc_a_instance(
                 service,
                 "transceive",
                 "(I[BZ)Landroid/nfc/TransceiveResult;",
-                &[handle, p36a_value(args, 0), Value::Int(1)],
+                &[handle, varg(args, 0), Value::Int(1)],
             ) {
                 Err(VmExit::Exception(t)) if t.class == "Landroid/os/RemoteException;" => {
                     return Err(throw("Ljava/io/IOException;", "NFC service died"));
@@ -40590,7 +40608,7 @@ fn p36d_card_emulation_static(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("getInstance", "(Landroid/nfc/NfcAdapter;)Landroid/nfc/cardemulation/CardEmulation;") => {
-            let Value::Obj(adapter) = p36a_value(args, 0) else {
+            let Value::Obj(adapter) = varg(args, 0) else {
                 return Err(npe("NfcAdapter is null"));
             };
             let context =
@@ -40654,7 +40672,7 @@ fn p36d_card_emulation_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/content/Context;Landroid/nfc/INfcCardEmulation;)V") => {
-            let Value::Obj(context) = p36a_value(args, 0) else {
+            let Value::Obj(context) = varg(args, 0) else {
                 return Err(npe(""));
             };
             let application = vm.invoke_instance(
@@ -40666,7 +40684,7 @@ fn p36d_card_emulation_instance(
             put(vm, recv, "mContext", application)?;
             vm.statics.insert(
                 (P36D_CARD_EMULATION.to_string(), "sService".to_string()),
-                p36a_value(args, 1),
+                varg(args, 1),
             );
             Value::Null
         }
@@ -40695,7 +40713,7 @@ fn p36d_card_emulation_instance(
                 group,
                 "<init>",
                 "(Ljava/util/List;Ljava/lang/String;)V",
-                &[p36a_value(args, 2), p36a_value(args, 1)],
+                &[varg(args, 2), varg(args, 1)],
             )?;
             let key = (P36D_CARD_EMULATION.to_string(), "sService".to_string());
             if !matches!(vm.statics.get(&key), Some(Value::Obj(_))) {
@@ -40718,7 +40736,7 @@ fn p36d_aid_group_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Ljava/util/List;Ljava/lang/String;)V") => {
-            let aids = p36a_value(args, 0);
+            let aids = varg(args, 0);
             let items = collection_items(vm, Some(&aids));
             if !matches!(aids, Value::Obj(_)) || items.is_empty() {
                 return Err(iae("No AIDS in AID group."));
@@ -40742,7 +40760,7 @@ fn p36d_aid_group_instance(
                 upper.push(jstr(vm, text.to_ascii_uppercase())?);
             }
             let category = match opt_str_arg(vm, args, 1).as_deref() {
-                Some("payment" | "other") => p36a_value(args, 1),
+                Some("payment" | "other") => varg(args, 1),
                 _ => jstr_str(vm, "other")?,
             };
             let aids = new_collection(vm, "Ljava/util/ArrayList;", upper)?;
@@ -40754,8 +40772,8 @@ fn p36d_aid_group_instance(
         ("<init>", "(Ljava/lang/String;Ljava/lang/String;)V") => {
             let aids = new_collection(vm, "Ljava/util/ArrayList;", Vec::new())?;
             put(vm, recv, "aids", Value::Obj(aids))?;
-            put(vm, recv, "category", p36a_value(args, 0))?;
-            put(vm, recv, "description", p36a_value(args, 1))?;
+            put(vm, recv, "category", varg(args, 0))?;
+            put(vm, recv, "description", varg(args, 1))?;
             Value::Null
         }
         ("toString", "()Ljava/lang/String;") => {
@@ -41249,7 +41267,7 @@ fn p36e_media_description_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("equals", "(Ljava/lang/Object;)Z") => {
-            let other = match p36a_value(args, 0) {
+            let other = match varg(args, 0) {
                 Value::Obj(other)
                     if vm.cp.is_subtype(class_of(vm, other), P36E_MEDIA_DESCRIPTION) =>
                 {
@@ -41334,7 +41352,7 @@ fn p36e_media_description_builder_instance(
         }
         _ => return Ok(None),
     };
-    put(vm, recv, field, p36a_value(args, 0))?;
+    put(vm, recv, field, varg(args, 0))?;
     Ok(Some(Value::Obj(recv)))
 }
 
@@ -41496,7 +41514,7 @@ fn p36e_media_metadata_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/os/Bundle;I)V") => {
-            let source = p36a_value(args, 0);
+            let source = varg(args, 0);
             let bundle = p36e_clone_bundle(vm, &source)?;
             put(vm, recv, "mBundle", bundle)?;
             put(vm, recv, "mBitmapDimensionLimit", Value::Int(iarg(args, 1)))?;
@@ -41504,11 +41522,11 @@ fn p36e_media_metadata_instance(
             Value::Null
         }
         ("containsKey", "(Ljava/lang/String;)Z") => {
-            let key = p36a_value(args, 0);
+            let key = varg(args, 0);
             p36e_metadata_bundle_call(vm, recv, "containsKey", "(Ljava/lang/String;)Z", &key)?
         }
         ("getText", "(Ljava/lang/String;)Ljava/lang/CharSequence;") => {
-            let key = p36a_value(args, 0);
+            let key = varg(args, 0);
             p36e_metadata_bundle_call(
                 vm,
                 recv,
@@ -41518,7 +41536,7 @@ fn p36e_media_metadata_instance(
             )?
         }
         ("getString", "(Ljava/lang/String;)Ljava/lang/String;") => {
-            let key = p36a_value(args, 0);
+            let key = varg(args, 0);
             let text = vm.invoke_instance(
                 recv,
                 "getText",
@@ -41539,7 +41557,7 @@ fn p36e_media_metadata_instance(
         }
         ("getLong", "(Ljava/lang/String;)J") => {
             let bundle = p36e_bundle_ref(vm, recv)?;
-            let key = p36a_value(args, 0);
+            let key = varg(args, 0);
             vm.invoke_instance(
                 bundle,
                 "getLong",
@@ -41548,11 +41566,11 @@ fn p36e_media_metadata_instance(
             )?
         }
         ("getRating", "(Ljava/lang/String;)Landroid/media/Rating;") => {
-            let key = p36a_value(args, 0);
+            let key = varg(args, 0);
             p36e_bundle_parcelable_by_key(vm, recv, &key, P36E_RATING)?
         }
         ("getBitmap", "(Ljava/lang/String;)Landroid/graphics/Bitmap;") => {
-            let key = p36a_value(args, 0);
+            let key = varg(args, 0);
             p36e_bundle_parcelable_by_key(vm, recv, &key, "Landroid/graphics/Bitmap;")?
         }
         ("size", "()I") => {
@@ -41740,7 +41758,7 @@ fn p36e_media_metadata_instance(
             }
         }
         ("equals", "(Ljava/lang/Object;)Z") => {
-            let other = match p36a_value(args, 0) {
+            let other = match varg(args, 0) {
                 Value::Obj(other) if other == recv => {
                     return Ok(Some(Value::Int(1)));
                 }
@@ -41816,8 +41834,8 @@ fn p36e_metadata_builder_put(
         }
     }
     let bundle = p36e_bundle_ref(vm, receiver)?;
-    let key = p36a_value(args, 0);
-    let value = p36a_value(args, 1);
+    let key = varg(args, 0);
+    let value = varg(args, 1);
     vm.invoke_instance(bundle, bundle_method, bundle_sig, &[key, value])?;
     Ok(Value::Obj(receiver))
 }
@@ -41838,7 +41856,7 @@ fn p36e_media_metadata_builder_instance(
             Value::Null
         }
         ("<init>", "(Landroid/media/MediaMetadata;)V") => {
-            let source = match p36a_value(args, 0) {
+            let source = match varg(args, 0) {
                 Value::Obj(source) => source,
                 _ => return Err(npe("")),
             };
@@ -42020,12 +42038,12 @@ fn p36e_playback_state_instance(
             put(vm, recv, "mSpeed", Value::Float(farg(args, 3)))?;
             put(vm, recv, "mBufferedPosition", Value::Long(larg(args, 4)))?;
             put(vm, recv, "mActions", Value::Long(larg(args, 5)))?;
-            let custom = p36a_value(args, 6);
+            let custom = varg(args, 6);
             let copied = p36e_new_list(vm, p36e_list_items(vm, &custom))?;
             put(vm, recv, "mCustomActions", copied)?;
             put(vm, recv, "mActiveItemId", Value::Long(larg(args, 7)))?;
-            put(vm, recv, "mErrorMessage", p36a_value(args, 8))?;
-            put(vm, recv, "mExtras", p36a_value(args, 9))?;
+            put(vm, recv, "mErrorMessage", varg(args, 8))?;
+            put(vm, recv, "mExtras", varg(args, 9))?;
             Value::Null
         }
         ("toString", "()Ljava/lang/String;") => {
@@ -42087,7 +42105,7 @@ fn p36e_playback_state_builder_instance(
         }
         ("<init>", "(Landroid/media/session/PlaybackState;)V") => {
             p36e_playback_builder_defaults(vm, recv)?;
-            if let Value::Obj(source) = p36a_value(args, 0) {
+            if let Value::Obj(source) = varg(args, 0) {
                 put(
                     vm,
                     recv,
@@ -42163,8 +42181,8 @@ fn p36e_playback_state_builder_instance(
                 P36E_CUSTOM_ACTION,
                 "(Ljava/lang/String;Ljava/lang/CharSequence;ILandroid/os/Bundle;)V",
                 &[
-                    p36a_value(args, 0),
-                    p36a_value(args, 1),
+                    varg(args, 0),
+                    varg(args, 1),
                     Value::Int(iarg(args, 2)),
                     Value::Null,
                 ],
@@ -42180,7 +42198,7 @@ fn p36e_playback_state_builder_instance(
             "addCustomAction",
             "(Landroid/media/session/PlaybackState$CustomAction;)Landroid/media/session/PlaybackState$Builder;",
         ) => {
-            let action = p36a_value(args, 0);
+            let action = varg(args, 0);
             if !matches!(action, Value::Obj(_)) {
                 return Err(iae(
                     "You may not add a null CustomAction to PlaybackState.",
@@ -42252,11 +42270,11 @@ fn p36e_custom_action_builder_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Ljava/lang/String;Ljava/lang/CharSequence;I)V") => {
-            let action = p36a_value(args, 0);
+            let action = varg(args, 0);
             if p36e_is_empty_text(vm, &action)? {
                 return Err(iae("You must specify an action to build a CustomAction."));
             }
-            let name_value = p36a_value(args, 1);
+            let name_value = varg(args, 1);
             if p36e_is_empty_text(vm, &name_value)? {
                 return Err(iae("You must specify a name to build a CustomAction."));
             }
@@ -42300,13 +42318,13 @@ fn p36e_queue_item_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/media/MediaDescription;J)V") => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_)) {
+            if !matches!(varg(args, 0), Value::Obj(_)) {
                 return Err(iae("Description cannot be null."));
             }
             if larg(args, 1) == -1 {
                 return Err(iae("Id cannot be QueueItem.UNKNOWN_ID"));
             }
-            put(vm, recv, "mDescription", p36a_value(args, 0))?;
+            put(vm, recv, "mDescription", varg(args, 0))?;
             put(vm, recv, "mId", Value::Long(larg(args, 1)))?;
             Value::Null
         }
@@ -42322,7 +42340,7 @@ fn p36e_queue_item_instance(
             )?
         }
         ("equals", "(Ljava/lang/Object;)Z") => {
-            let other = match p36a_value(args, 0) {
+            let other = match varg(args, 0) {
                 Value::Obj(other) if vm.cp.is_subtype(class_of(vm, other), P36E_QUEUE_ITEM) => {
                     other
                 }
@@ -42351,14 +42369,14 @@ fn p36e_media_session_instance(
     let value = match (name, sig) {
         ("<init>", "(Landroid/content/Context;Ljava/lang/String;)V")
         | ("<init>", "(Landroid/content/Context;Ljava/lang/String;Landroid/os/Bundle;)V") => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_)) {
+            if !matches!(varg(args, 0), Value::Obj(_)) {
                 return Err(iae("context cannot be null."));
             }
-            let tag = p36a_value(args, 1);
+            let tag = varg(args, 1);
             if p36e_is_empty_text(vm, &tag)? {
                 return Err(iae("tag cannot be null or empty"));
             }
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
             put(vm, recv, "mActive", Value::Int(0))?;
             return Err(throw(
                 "Ljava/lang/RuntimeException;",
@@ -42419,7 +42437,7 @@ fn p36e_media_session_manager_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/content/Context;)V") => {
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
             put(vm, recv, "mService", Value::Null)?;
             let map = p36e_new_map(vm, "Landroid/util/ArrayMap;")?;
             put(vm, recv, "mListeners", Value::Obj(map))?;
@@ -42429,10 +42447,10 @@ fn p36e_media_session_manager_instance(
             "createSession",
             "(Landroid/media/session/MediaSession$CallbackStub;Ljava/lang/String;Landroid/os/Bundle;)Landroid/media/session/ISession;",
         ) => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_)) {
+            if !matches!(varg(args, 0), Value::Obj(_)) {
                 return Err(npe("cbStub shouldn't be null"));
             }
-            if !matches!(p36a_value(args, 1), Value::Obj(_)) {
+            if !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(npe("tag shouldn't be null"));
             }
             return Err(throw(
@@ -42447,7 +42465,7 @@ fn p36e_media_session_manager_instance(
             "getActiveSessionsForUser",
             "(Landroid/content/ComponentName;Landroid/os/UserHandle;)Ljava/util/List;",
         ) => {
-            if !matches!(p36a_value(args, 1), Value::Obj(_)) {
+            if !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(npe("userHandle shouldn't be null"));
             }
             p36e_new_list(vm, Vec::new())?
@@ -42456,28 +42474,28 @@ fn p36e_media_session_manager_instance(
         (
             "addOnActiveSessionsChangedListener",
             "(Landroid/media/session/MediaSessionManager$OnActiveSessionsChangedListener;Landroid/content/ComponentName;)V",
-        ) => p36e_add_session_listener(vm, recv, p36a_value(args, 0), Value::Null)?,
+        ) => p36e_add_session_listener(vm, recv, varg(args, 0), Value::Null)?,
         (
             "addOnActiveSessionsChangedListener",
             "(Landroid/media/session/MediaSessionManager$OnActiveSessionsChangedListener;Landroid/content/ComponentName;Landroid/os/Handler;)V",
-        ) => p36e_add_session_listener(vm, recv, p36a_value(args, 0), p36a_value(args, 2))?,
+        ) => p36e_add_session_listener(vm, recv, varg(args, 0), varg(args, 2))?,
         (
             "addOnActiveSessionsChangedListener",
             "(Landroid/content/ComponentName;Landroid/os/UserHandle;Ljava/util/concurrent/Executor;Landroid/media/session/MediaSessionManager$OnActiveSessionsChangedListener;)V",
         ) => {
-            if !matches!(p36a_value(args, 1), Value::Obj(_)) {
+            if !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(npe("userHandle shouldn't be null"));
             }
-            if !matches!(p36a_value(args, 2), Value::Obj(_)) {
+            if !matches!(varg(args, 2), Value::Obj(_)) {
                 return Err(npe("executor shouldn't be null"));
             }
-            p36e_add_session_listener(vm, recv, p36a_value(args, 3), p36a_value(args, 2))?
+            p36e_add_session_listener(vm, recv, varg(args, 3), varg(args, 2))?
         }
         (
             "removeOnActiveSessionsChangedListener",
             "(Landroid/media/session/MediaSessionManager$OnActiveSessionsChangedListener;)V",
         ) => {
-            let listener = p36a_value(args, 0);
+            let listener = varg(args, 0);
             if !matches!(listener, Value::Obj(_)) {
                 return Err(npe("sessionListener shouldn't be null"));
             }
@@ -42658,19 +42676,19 @@ fn p36e_media_browser_instance(
             "<init>",
             "(Landroid/content/Context;Landroid/content/ComponentName;Landroid/media/browse/MediaBrowser$ConnectionCallback;Landroid/os/Bundle;)V",
         ) => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_)) {
+            if !matches!(varg(args, 0), Value::Obj(_)) {
                 return Err(iae("context must not be null"));
             }
-            if !matches!(p36a_value(args, 1), Value::Obj(_)) {
+            if !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(iae("service component must not be null"));
             }
-            if !matches!(p36a_value(args, 2), Value::Obj(_)) {
+            if !matches!(varg(args, 2), Value::Obj(_)) {
                 return Err(iae("connection callback must not be null"));
             }
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
-            put(vm, recv, "mServiceComponent", p36a_value(args, 1))?;
-            put(vm, recv, "mCallback", p36a_value(args, 2))?;
-            let hints = p36a_value(args, 3);
+            put(vm, recv, "mContext", varg(args, 0))?;
+            put(vm, recv, "mServiceComponent", varg(args, 1))?;
+            put(vm, recv, "mCallback", varg(args, 2))?;
+            let hints = varg(args, 3);
             let hints = if matches!(hints, Value::Obj(_)) {
                 p36e_clone_bundle(vm, &hints)?
             } else {
@@ -42740,15 +42758,15 @@ fn p36e_media_browser_instance(
         ) => p36e_media_browser_subscribe(
             vm,
             recv,
-            p36a_value(args, 0),
+            varg(args, 0),
             Value::Null,
-            p36a_value(args, 1),
+            varg(args, 1),
         )?,
         (
             "subscribe",
             "(Ljava/lang/String;Landroid/os/Bundle;Landroid/media/browse/MediaBrowser$SubscriptionCallback;)V",
         ) => {
-            let options = p36a_value(args, 1);
+            let options = varg(args, 1);
             if !matches!(options, Value::Obj(_)) {
                 return Err(iae("options cannot be null"));
             }
@@ -42756,33 +42774,33 @@ fn p36e_media_browser_instance(
             p36e_media_browser_subscribe(
                 vm,
                 recv,
-                p36a_value(args, 0),
+                varg(args, 0),
                 options,
-                p36a_value(args, 2),
+                varg(args, 2),
             )?
         }
         ("unsubscribe", "(Ljava/lang/String;)V") => {
-            p36e_media_browser_unsubscribe(vm, recv, p36a_value(args, 0), None)?
+            p36e_media_browser_unsubscribe(vm, recv, varg(args, 0), None)?
         }
         (
             "unsubscribe",
             "(Ljava/lang/String;Landroid/media/browse/MediaBrowser$SubscriptionCallback;)V",
         ) => {
-            let callback = p36a_value(args, 1);
+            let callback = varg(args, 1);
             if !matches!(callback, Value::Obj(_)) {
                 return Err(iae("callback cannot be null"));
             }
-            p36e_media_browser_unsubscribe(vm, recv, p36a_value(args, 0), Some(callback))?
+            p36e_media_browser_unsubscribe(vm, recv, varg(args, 0), Some(callback))?
         }
         (
             "getItem",
             "(Ljava/lang/String;Landroid/media/browse/MediaBrowser$ItemCallback;)V",
         ) => {
-            let media_id = p36a_value(args, 0);
+            let media_id = varg(args, 0);
             if p36e_is_empty_text(vm, &media_id)? {
                 return Err(iae("mediaId cannot be empty."));
             }
-            let callback = match p36a_value(args, 1) {
+            let callback = match varg(args, 1) {
                 Value::Obj(callback) => callback,
                 _ => return Err(iae("cb cannot be null.")),
             };
@@ -42811,7 +42829,7 @@ fn p36e_media_item_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/media/MediaDescription;I)V") => {
-            let description = match p36a_value(args, 0) {
+            let description = match varg(args, 0) {
                 Value::Obj(description) => description,
                 _ => return Err(iae("description cannot be null")),
             };
@@ -42912,7 +42930,7 @@ fn p36e_projection_manager_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Landroid/content/Context;)V") => {
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
             put(vm, recv, "mService", Value::Null)?;
             let callbacks = p36e_new_map(vm, "Landroid/util/ArrayMap;")?;
             put(vm, recv, "mCallbacks", Value::Obj(callbacks))?;
@@ -42925,7 +42943,7 @@ fn p36e_projection_manager_instance(
             if iarg(args, 0) != -1 {
                 return Ok(Some(Value::Null));
             }
-            let intent = match p36a_value(args, 1) {
+            let intent = match varg(args, 1) {
                 Value::Obj(intent) => intent,
                 _ => return Ok(Some(Value::Null)),
             };
@@ -42985,11 +43003,11 @@ fn p36e_projection_manager_instance(
             "addCallback",
             "(Landroid/media/projection/MediaProjectionManager$Callback;Landroid/os/Handler;)V",
         ) => {
-            let callback = p36a_value(args, 0);
+            let callback = varg(args, 0);
             if !matches!(callback, Value::Obj(_)) {
                 return Err(iae("callback must not be null"));
             }
-            let handler = p36a_value(args, 1);
+            let handler = varg(args, 1);
             let handler = if matches!(handler, Value::Obj(_)) {
                 handler
             } else {
@@ -43019,7 +43037,7 @@ fn p36e_projection_manager_instance(
             }
         }
         ("removeCallback", "(Landroid/media/projection/MediaProjectionManager$Callback;)V") => {
-            let callback = p36a_value(args, 0);
+            let callback = varg(args, 0);
             if !matches!(callback, Value::Obj(_)) {
                 return Err(iae("callback must not be null"));
             }
@@ -43066,8 +43084,8 @@ fn p36e_projection_instance(
             "<init>",
             "(Landroid/content/Context;Landroid/media/projection/IMediaProjection;)V",
         ) => {
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
-            put(vm, recv, "mImpl", p36a_value(args, 1))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
+            put(vm, recv, "mImpl", varg(args, 1))?;
             let callbacks = p36e_new_map(vm, "Landroid/util/ArrayMap;")?;
             put(vm, recv, "mCallbacks", Value::Obj(callbacks))?;
             Value::Null
@@ -43076,9 +43094,9 @@ fn p36e_projection_instance(
             "<init>",
             "(Landroid/content/Context;Landroid/media/projection/IMediaProjection;Landroid/hardware/display/DisplayManager;)V",
         ) => {
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
-            put(vm, recv, "mImpl", p36a_value(args, 1))?;
-            put(vm, recv, "mDisplayManager", p36a_value(args, 2))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
+            put(vm, recv, "mImpl", varg(args, 1))?;
+            put(vm, recv, "mDisplayManager", varg(args, 2))?;
             let callbacks = p36e_new_map(vm, "Landroid/util/ArrayMap;")?;
             put(vm, recv, "mCallbacks", Value::Obj(callbacks))?;
             Value::Null
@@ -43087,11 +43105,11 @@ fn p36e_projection_instance(
             "registerCallback",
             "(Landroid/media/projection/MediaProjection$Callback;Landroid/os/Handler;)V",
         ) => {
-            let callback = p36a_value(args, 0);
+            let callback = varg(args, 0);
             if !matches!(callback, Value::Obj(_)) {
                 return Err(npe(""));
             }
-            let handler = p36a_value(args, 1);
+            let handler = varg(args, 1);
             let handler = if matches!(handler, Value::Obj(_)) {
                 handler
             } else {
@@ -43112,7 +43130,7 @@ fn p36e_projection_instance(
             "unregisterCallback",
             "(Landroid/media/projection/MediaProjection$Callback;)V",
         ) => {
-            let callback = p36a_value(args, 0);
+            let callback = varg(args, 0);
             if !matches!(callback, Value::Obj(_)) {
                 return Err(npe(""));
             }
@@ -43150,7 +43168,7 @@ fn p36e_audio_effect_static(
                 "()[Landroid/media/audiofx/AudioEffect$Descriptor;",
                 &[],
             )?;
-            let wanted = p36a_value(args, 0);
+            let wanted = varg(args, 0);
             let mut available = false;
             for descriptor in array_elems(vm, Some(&descriptors)) {
                 let Value::Obj(descriptor_ref) = descriptor else {
@@ -43190,10 +43208,10 @@ fn p36e_audio_effect_instance(
 ) -> StubResult<Option<Value>> {
     let value = match (name, sig) {
         ("<init>", "(Ljava/util/UUID;Ljava/util/UUID;II)V") => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_)) {
+            if !matches!(varg(args, 0), Value::Obj(_)) {
                 return Err(npe(""));
             }
-            if !matches!(p36a_value(args, 1), Value::Obj(_)) {
+            if !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(npe(""));
             }
             return Err(throw(
@@ -43202,10 +43220,10 @@ fn p36e_audio_effect_instance(
             ));
         }
         ("<init>", "(Ljava/util/UUID;Landroid/media/AudioDeviceAttributes;)V") => {
-            if !matches!(p36a_value(args, 0), Value::Obj(_)) {
+            if !matches!(varg(args, 0), Value::Obj(_)) {
                 return Err(npe(""));
             }
-            if !matches!(p36a_value(args, 1), Value::Obj(_)) {
+            if !matches!(varg(args, 1), Value::Obj(_)) {
                 return Err(npe(""));
             }
             return Err(throw(
@@ -43266,13 +43284,13 @@ fn p36e_audio_effect_descriptor_instance(
             "<init>",
             "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
         ) => {
-            let effect_type = p36e_uuid_from_string(vm, &p36a_value(args, 0))?;
-            let uuid = p36e_uuid_from_string(vm, &p36a_value(args, 1))?;
+            let effect_type = p36e_uuid_from_string(vm, &varg(args, 0))?;
+            let uuid = p36e_uuid_from_string(vm, &varg(args, 1))?;
             put(vm, recv, "type", effect_type)?;
             put(vm, recv, "uuid", uuid)?;
-            put(vm, recv, "connectMode", p36a_value(args, 2))?;
-            put(vm, recv, "name", p36a_value(args, 3))?;
-            put(vm, recv, "implementor", p36a_value(args, 4))?;
+            put(vm, recv, "connectMode", varg(args, 2))?;
+            put(vm, recv, "name", varg(args, 3))?;
+            put(vm, recv, "implementor", varg(args, 4))?;
             Value::Null
         }
         ("hashCode", "()I") => {
@@ -43286,7 +43304,7 @@ fn p36e_audio_effect_descriptor_instance(
             Value::Int(p36e_objects_hash(vm, &values)?)
         }
         ("equals", "(Ljava/lang/Object;)Z") => {
-            let other = match p36a_value(args, 0) {
+            let other = match varg(args, 0) {
                 Value::Obj(other) if other == recv => {
                     return Ok(Some(Value::Int(1)));
                 }
@@ -43313,7 +43331,7 @@ fn p36e_audio_effect_descriptor_instance(
             Value::Int(i32::from(equal))
         }
         ("writeToParcel", "(Landroid/os/Parcel;)V") => {
-            let parcel = match p36a_value(args, 0) {
+            let parcel = match varg(args, 0) {
                 Value::Obj(parcel) => parcel,
                 _ => {
                     // AOSP evaluates type.toString() before dereferencing
@@ -43623,7 +43641,7 @@ fn p36f_page_info_builder_instance(
                     return Err(iae("contentRect does not fit the page"));
                 }
             }
-            put(vm, info, "mContentRect", p36a_value(args, 0))?;
+            put(vm, info, "mContentRect", varg(args, 0))?;
             Value::Obj(recv)
         }
         ("create", "()Landroid/graphics/pdf/PdfDocument$PageInfo;") => {
@@ -44439,7 +44457,7 @@ fn p36f_matrix_instance(
             Value::Null
         }
         ("<init>", "([F)V") => {
-            let array = p36a_value(args, 0);
+            let array = varg(args, 0);
             if matches!(array, Value::Null) {
                 return Err(npe("dataArray"));
             }
@@ -44874,13 +44892,13 @@ fn partial36g_instance(
                 req_obj(args, 0, "callingAppInfo must not be null")?;
                 let kind = p36g_check_string_not_empty(
                     vm,
-                    &p36a_value(args, 1),
+                    &varg(args, 1),
                     "type must not be null or empty",
                 )?;
                 req_obj(args, 2, "data must not be null")?;
-                put(vm, recv, "mCallingAppInfo", p36a_value(args, 0))?;
+                put(vm, recv, "mCallingAppInfo", varg(args, 0))?;
                 put(vm, recv, "mType", kind)?;
-                put(vm, recv, "mData", p36a_value(args, 2))?;
+                put(vm, recv, "mData", varg(args, 2))?;
                 Value::Null
             }
         _ => match crate::android_stub_tables::eval_method_range(vm, 1331, 1334, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
@@ -44912,15 +44930,15 @@ fn partial36g_instance(
                 // with a fresh empty ArraySet.
                 let kind = p36g_check_string_not_empty(
                     vm,
-                    &p36a_value(args, 0),
+                    &varg(args, 0),
                     "type must not be empty",
                 )?;
                 req_obj(args, 1, "requestData must not be null")?;
                 req_obj(args, 2, "candidateQueryData must not be null")?;
                 let allowed = new_collection(vm, "Landroid/util/ArraySet;", Vec::new())?;
                 put(vm, recv, "mType", kind)?;
-                put(vm, recv, "mCredentialRetrievalData", p36a_value(args, 1))?;
-                put(vm, recv, "mCandidateQueryData", p36a_value(args, 2))?;
+                put(vm, recv, "mCredentialRetrievalData", varg(args, 1))?;
+                put(vm, recv, "mCandidateQueryData", varg(args, 2))?;
                 put(
                     vm,
                     recv,
@@ -45205,14 +45223,14 @@ fn p36g_freeze_period_instance(
 ) -> StubResult<Option<Value>> {
     let v = match (name, sig) {
         ("<init>", "(Ljava/time/MonthDay;Ljava/time/MonthDay;)V") => {
-            let (sm, sd) = p36g_month_day_parts(vm, &p36a_value(args, 0))?;
-            let (em, ed) = p36g_month_day_parts(vm, &p36a_value(args, 1))?;
+            let (sm, sd) = p36g_month_day_parts(vm, &varg(args, 0))?;
+            let (em, ed) = p36g_month_day_parts(vm, &varg(args, 1))?;
             // AOSP derives the day-of-year from MonthDay.atYear(2001);
             // 2001 is not a leap year, so February 29 resolves to the 28th.
             let sd = if sm == 2 && sd == 29 { 28 } else { sd };
             let ed = if em == 2 && ed == 29 { 28 } else { ed };
-            put(vm, recv, "mStart", p36a_value(args, 0))?;
-            put(vm, recv, "mEnd", p36a_value(args, 1))?;
+            put(vm, recv, "mStart", varg(args, 0))?;
+            put(vm, recv, "mEnd", varg(args, 1))?;
             put(
                 vm,
                 recv,
@@ -45310,10 +45328,10 @@ fn p36g_begin_get_option_instance(
 ) -> StubResult<Option<Value>> {
     Ok(Some(match (name, sig) {
         ("<init>", "(Ljava/lang/String;Ljava/lang/String;Landroid/os/Bundle;)V") => {
-            let id = p36g_check_string_not_empty(vm, &p36a_value(args, 0), "id must not be empty")?;
+            let id = p36g_check_string_not_empty(vm, &varg(args, 0), "id must not be empty")?;
             let kind =
-                p36g_check_string_not_empty(vm, &p36a_value(args, 1), "type must not be empty")?;
-            let copy = p36e_clone_bundle(vm, &p36a_value(args, 2))?;
+                p36g_check_string_not_empty(vm, &varg(args, 1), "type must not be empty")?;
+            let copy = p36e_clone_bundle(vm, &varg(args, 2))?;
             let Value::Obj(copy_ref) = copy else {
                 return Err(npe("candidateQueryData"));
             };
@@ -45358,18 +45376,18 @@ fn p36g_calling_app_info_instance(
         | ("<init>", "(Ljava/lang/String;Landroid/content/pm/SigningInfo;Ljava/lang/String;)V") => {
             let package = p36g_check_string_not_empty(
                 vm,
-                &p36a_value(args, 0),
+                &varg(args, 0),
                 "package namemust not be null or empty",
             )?;
             req_obj(args, 1, "signingInfo")?;
             put(vm, recv, "mPackageName", package)?;
-            put(vm, recv, "mSigningInfo", p36a_value(args, 1))?;
+            put(vm, recv, "mSigningInfo", varg(args, 1))?;
             put(
                 vm,
                 recv,
                 "mOrigin",
                 if args.len() > 2 {
-                    p36a_value(args, 2)
+                    varg(args, 2)
                 } else {
                     Value::Null
                 },
@@ -45399,7 +45417,7 @@ fn p36g_begin_get_req_builder_instance(
             "setBeginGetCredentialOptions",
             "(Ljava/util/List;)Landroid/service/credentials/BeginGetCredentialRequest$Builder;",
         ) => {
-            let value = p36a_value(args, 0);
+            let value = varg(args, 0);
             let items = p36g_collection_not_empty(vm, &value, "getBeginCredentialOptions")?;
             p36g_elements_not_null(&items, "getBeginCredentialOptions")?;
             put(vm, recv, "mBeginGetCredentialOptions", value)?;
@@ -45411,7 +45429,7 @@ fn p36g_begin_get_req_builder_instance(
         ) => {
             req_obj(args, 0, "beginGetCredentialOption must not be null")?;
             let list = p36g_builder_list(vm, recv, "mBeginGetCredentialOptions")?;
-            p36g_list_push(vm, list, p36a_value(args, 0))?;
+            p36g_list_push(vm, list, varg(args, 0))?;
             Value::Obj(recv)
         }
         ("build", "()Landroid/service/credentials/BeginGetCredentialRequest;") => {
@@ -45442,10 +45460,10 @@ fn p36g_begin_create_req_instance(
         ) => {
             let kind = p36g_check_string_not_empty(
                 vm,
-                &p36a_value(args, 0),
+                &varg(args, 0),
                 "type must not be null or empty",
             )?;
-            let copy = p36e_clone_bundle(vm, &p36a_value(args, 1))?;
+            let copy = p36e_clone_bundle(vm, &varg(args, 1))?;
             put(vm, recv, "mType", kind)?;
             put(vm, recv, "mData", copy)?;
             put(
@@ -45453,7 +45471,7 @@ fn p36g_begin_create_req_instance(
                 recv,
                 "mCallingAppInfo",
                 if args.len() > 2 {
-                    p36a_value(args, 2)
+                    varg(args, 2)
                 } else {
                     Value::Null
                 },
@@ -45476,18 +45494,18 @@ fn p36g_credential_entry_instance(
         ("<init>", "(Ljava/lang/String;Ljava/lang/String;Landroid/app/slice/Slice;)V") => {
             let id = p36g_check_string_not_empty(
                 vm,
-                &p36a_value(args, 0),
+                &varg(args, 0),
                 "beginGetCredentialOptionId must not be null, or empty",
             )?;
             let kind = p36g_check_string_not_empty(
                 vm,
-                &p36a_value(args, 1),
+                &varg(args, 1),
                 "type must not be null, or empty",
             )?;
             req_obj(args, 2, "slice must not be null")?;
             put(vm, recv, "mBeginGetCredentialOptionId", id)?;
             put(vm, recv, "mType", kind)?;
-            put(vm, recv, "mSlice", p36a_value(args, 2))?;
+            put(vm, recv, "mSlice", varg(args, 2))?;
             Value::Null
         }
         (
@@ -45508,7 +45526,7 @@ fn p36g_credential_entry_instance(
             req_obj(args, 1, "slice must not be null")?;
             put(vm, recv, "mBeginGetCredentialOptionId", id)?;
             put(vm, recv, "mType", kind)?;
-            put(vm, recv, "mSlice", p36a_value(args, 1))?;
+            put(vm, recv, "mSlice", varg(args, 1))?;
             Value::Null
         }
         _ => match crate::android_stub_tables::eval_method_range(vm, 1363, 1367, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
@@ -45565,7 +45583,7 @@ fn p36g_begin_get_resp_builder_instance(
         ("setRemoteCredentialEntry", s)
             if s == format!("(Landroid/service/credentials/RemoteEntry;){RETURN}") =>
         {
-            put(vm, recv, "mRemoteCredentialEntry", p36a_value(args, 0))?;
+            put(vm, recv, "mRemoteCredentialEntry", varg(args, 0))?;
             Value::Obj(recv)
         }
         ("addCredentialEntry", s)
@@ -45573,7 +45591,7 @@ fn p36g_begin_get_resp_builder_instance(
         {
             req_obj(args, 0, "credentialEntry")?;
             let list = p36g_builder_list(vm, recv, "mCredentialEntries")?;
-            p36g_list_push(vm, list, p36a_value(args, 0))?;
+            p36g_list_push(vm, list, varg(args, 0))?;
             Value::Obj(recv)
         }
         ("addAuthenticationAction", s)
@@ -45581,17 +45599,17 @@ fn p36g_begin_get_resp_builder_instance(
         {
             req_obj(args, 0, "authenticationAction")?;
             let list = p36g_builder_list(vm, recv, "mAuthenticationEntries")?;
-            p36g_list_push(vm, list, p36a_value(args, 0))?;
+            p36g_list_push(vm, list, varg(args, 0))?;
             Value::Obj(recv)
         }
         ("addAction", s) if s == format!("(Landroid/service/credentials/Action;){RETURN}") => {
             req_obj(args, 0, "action must not be null")?;
             let list = p36g_builder_list(vm, recv, "mActions")?;
-            p36g_list_push(vm, list, p36a_value(args, 0))?;
+            p36g_list_push(vm, list, varg(args, 0))?;
             Value::Obj(recv)
         }
         ("setActions", s) if s == format!("(Ljava/util/List;){RETURN}") => {
-            let value = p36a_value(args, 0);
+            let value = varg(args, 0);
             if !matches!(value, Value::Obj(_)) {
                 return Err(npe("actions must not be null"));
             }
@@ -45600,7 +45618,7 @@ fn p36g_begin_get_resp_builder_instance(
             Value::Obj(recv)
         }
         ("setCredentialEntries", s) if s == format!("(Ljava/util/List;){RETURN}") => {
-            let value = p36a_value(args, 0);
+            let value = varg(args, 0);
             if !matches!(value, Value::Obj(_)) {
                 return Err(npe("credentialEntries must not be null"));
             }
@@ -45609,7 +45627,7 @@ fn p36g_begin_get_resp_builder_instance(
             Value::Obj(recv)
         }
         ("setAuthenticationActions", s) if s == format!("(Ljava/util/List;){RETURN}") => {
-            let value = p36a_value(args, 0);
+            let value = varg(args, 0);
             if !matches!(value, Value::Obj(_)) {
                 return Err(npe("authenticationActions must not be null"));
             }
@@ -45651,7 +45669,7 @@ fn p36g_begin_create_resp_builder_instance(
             Value::Null
         }
         ("setCreateEntries", s) if s == format!("(Ljava/util/List;){RETURN}") => {
-            let value = p36a_value(args, 0);
+            let value = varg(args, 0);
             let items = p36g_collection_not_empty(vm, &value, "createEntries")?;
             p36g_elements_not_null(&items, "createEntries")?;
             put(vm, recv, "mCreateEntries", value)?;
@@ -45662,13 +45680,13 @@ fn p36g_begin_create_resp_builder_instance(
         {
             req_obj(args, 0, "createEntry")?;
             let list = p36g_builder_list(vm, recv, "mCreateEntries")?;
-            p36g_list_push(vm, list, p36a_value(args, 0))?;
+            p36g_list_push(vm, list, varg(args, 0))?;
             Value::Obj(recv)
         }
         ("setRemoteCreateEntry", s)
             if s == format!("(Landroid/service/credentials/RemoteEntry;){RETURN}") =>
         {
-            put(vm, recv, "mRemoteCreateEntry", p36a_value(args, 0))?;
+            put(vm, recv, "mRemoteCreateEntry", varg(args, 0))?;
             Value::Obj(recv)
         }
         _ => match crate::android_stub_tables::eval_method_range(vm, 1367, 1368, name, sig, Some(recv), args)? { Some(v) => v, None => return Ok(None) },
@@ -45688,15 +45706,15 @@ fn p36g_credential_option_builder_instance(
         ("<init>", "(Ljava/lang/String;Landroid/os/Bundle;Landroid/os/Bundle;)V") => {
             let kind = p36g_check_string_not_empty(
                 vm,
-                &p36a_value(args, 0),
+                &varg(args, 0),
                 "type must not be null, or empty",
             )?;
             req_obj(args, 1, "credentialRetrievalData must not be null")?;
             req_obj(args, 2, "candidateQueryData must not be null")?;
             let allowed = new_collection(vm, "Landroid/util/ArraySet;", Vec::new())?;
             put(vm, recv, "mType", kind)?;
-            put(vm, recv, "mCredentialRetrievalData", p36a_value(args, 1))?;
-            put(vm, recv, "mCandidateQueryData", p36a_value(args, 2))?;
+            put(vm, recv, "mCredentialRetrievalData", varg(args, 1))?;
+            put(vm, recv, "mCandidateQueryData", varg(args, 2))?;
             put(vm, recv, "mIsSystemProviderRequired", Value::Int(0))?;
             put(vm, recv, "mAllowedProviders", Value::Obj(allowed))?;
             Value::Null
@@ -45713,11 +45731,11 @@ fn p36g_credential_option_builder_instance(
         ("addAllowedProvider", s) if s == format!("(Landroid/content/ComponentName;){RETURN}") => {
             req_obj(args, 0, "allowedProvider must not be null")?;
             let list = p36g_builder_list(vm, recv, "mAllowedProviders")?;
-            p36g_list_push(vm, list, p36a_value(args, 0))?;
+            p36g_list_push(vm, list, varg(args, 0))?;
             Value::Obj(recv)
         }
         ("setAllowedProviders", s) if s == format!("(Ljava/util/Set;){RETURN}") => {
-            let value = p36a_value(args, 0);
+            let value = varg(args, 0);
             if !matches!(value, Value::Obj(_)) {
                 return Err(npe("allowedProviders must not be null"));
             }
@@ -45804,8 +45822,8 @@ fn p36g_dpm_instance(
     Ok(Some(match (name, sig) {
         ("<init>", "(Landroid/content/Context;Landroid/app/admin/IDevicePolicyManager;)V")
         | ("<init>", "(Landroid/content/Context;Landroid/app/admin/IDevicePolicyManager;Z)V") => {
-            put(vm, recv, "mContext", p36a_value(args, 0))?;
-            put(vm, recv, "mService", p36a_value(args, 1))?;
+            put(vm, recv, "mContext", varg(args, 0))?;
+            put(vm, recv, "mService", varg(args, 1))?;
             put(
                 vm,
                 recv,
@@ -47184,7 +47202,7 @@ fn p36h_traffic_selector(
 ) -> StubResult<Option<Value>> {
     let v = match (name, sig) {
         ("<init>", "(IILjava/net/InetAddress;Ljava/net/InetAddress;)V") => {
-            let starting = args.get(2).cloned().unwrap_or(Value::Null);
+            let starting = varg(args, 2);
             let ts_type = if p36h_is_inet4(vm, Some(&starting)) {
                 7
             } else {
@@ -47197,7 +47215,7 @@ fn p36h_traffic_selector(
                 iarg(args, 0),
                 iarg(args, 1),
                 starting,
-                args.get(3).cloned().unwrap_or(Value::Null),
+                varg(args, 3),
             )?
         }
         ("<init>", "(IIILjava/net/InetAddress;Ljava/net/InetAddress;)V") => p36h_ts_init(
@@ -47206,8 +47224,8 @@ fn p36h_traffic_selector(
             iarg(args, 0),
             iarg(args, 1),
             iarg(args, 2),
-            args.get(3).cloned().unwrap_or(Value::Null),
-            args.get(4).cloned().unwrap_or(Value::Null),
+            varg(args, 3),
+            varg(args, 4),
         )?,
         ("equals", "(Ljava/lang/Object;)Z") => {
             let eq = match oarg(args, 0) {
@@ -47265,7 +47283,7 @@ fn p36h_identification(
     recv: ObjRef,
     args: &[Value],
 ) -> StubResult<Option<Value>> {
-    let arg0 = args.first().cloned().unwrap_or(Value::Null);
+    let arg0 = varg(args, 0);
     let v = match (recv_class, name, sig) {
         (P36H_ID_FQDN, "<init>", "(Ljava/lang/String;)V") => {
             let text = req_str(vm, args, 0, "fqdn")?;
@@ -47808,7 +47826,7 @@ fn partial36i_telephony_static(
             ("convertKeypadLettersToDigits", "(Ljava/lang/String;)Ljava/lang/String;") => {
                 match opt_str(vm, args.first()) {
                     None => Value::Null,
-                    Some(s) if s.is_empty() => args.first().cloned().unwrap_or(Value::Null),
+                    Some(s) if s.is_empty() => varg(args, 0),
                     Some(s) => jstr(vm, p36i_convert_keypad(&s))?,
                 }
             }
@@ -48225,8 +48243,8 @@ fn p36i_download_builder(
     let this = Value::Obj(recv);
     let v = match name {
         "<init>" => {
-            let source = args.first().cloned().unwrap_or(Value::Null);
-            let dest = args.get(1).cloned().unwrap_or(Value::Null);
+            let source = varg(args, 0);
+            let dest = varg(args, 1);
             if matches!(source, Value::Null) || matches!(dest, Value::Null) {
                 return Err(iae(
                     "Source and destination URIs must be non-null.".to_string()
@@ -48364,9 +48382,9 @@ fn p36i_account_handle(
                 vm,
                 recv,
                 "mComponentName",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
-            put(vm, recv, "mId", args.get(1).cloned().unwrap_or(Value::Null))?;
+            put(vm, recv, "mId", varg(args, 1))?;
             let user = p36i_my_user_handle(vm)?;
             put(vm, recv, "mUserHandle", user)?;
             Value::Null
@@ -48442,7 +48460,7 @@ fn p36i_account_builder(
     args: &[Value],
 ) -> StubResult<Option<Value>> {
     let this = Value::Obj(recv);
-    let arg0 = args.first().cloned().unwrap_or(Value::Null);
+    let arg0 = varg(args, 0);
     let v = match (name, sig) {
         ("<init>", "(Landroid/telecom/PhoneAccountHandle;Ljava/lang/CharSequence;)V") => {
             p36i_account_builder_init(vm, recv)?;
@@ -48451,7 +48469,7 @@ fn p36i_account_builder(
                 vm,
                 recv,
                 "mLabel",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             Value::Null
         }
@@ -48752,7 +48770,7 @@ fn p36i_disconnect_cause(
                         vm,
                         recv,
                         "mDisconnectReason",
-                        args.get(1).cloned().unwrap_or(Value::Null),
+                        varg(args, 1),
                     )?;
                 }
                 _ => {
@@ -48760,19 +48778,19 @@ fn p36i_disconnect_cause(
                         vm,
                         recv,
                         "mDisconnectLabel",
-                        args.get(1).cloned().unwrap_or(Value::Null),
+                        varg(args, 1),
                     )?;
                     put(
                         vm,
                         recv,
                         "mDisconnectDescription",
-                        args.get(2).cloned().unwrap_or(Value::Null),
+                        varg(args, 2),
                     )?;
                     put(
                         vm,
                         recv,
                         "mDisconnectReason",
-                        args.get(3).cloned().unwrap_or(Value::Null),
+                        varg(args, 3),
                     )?;
                     if args.len() > 4 {
                         put(vm, recv, "mToneToPlay", Value::Int(iarg(args, 4)))?;
@@ -48794,7 +48812,7 @@ fn p36i_disconnect_cause(
                             vm,
                             recv,
                             "mImsReasonInfo",
-                            args.get(7).cloned().unwrap_or(Value::Null),
+                            varg(args, 7),
                         )?;
                     }
                 }
@@ -49166,17 +49184,17 @@ fn p36i_status_hints(
                 vm,
                 recv,
                 "mLabel",
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
             )?;
             // Binder.getCallingUserHandle() is user 0 in this single-user VM.
             let icon =
-                p36i_validate_icon_boundary(vm, args.get(1).cloned().unwrap_or(Value::Null), 0)?;
+                p36i_validate_icon_boundary(vm, varg(args, 1), 0)?;
             put(vm, recv, "mIcon", icon)?;
             put(
                 vm,
                 recv,
                 "mExtras",
-                args.get(2).cloned().unwrap_or(Value::Null),
+                varg(args, 2),
             )?;
             Value::Null
         }
@@ -49202,7 +49220,7 @@ fn p36i_status_hints(
                 vm,
                 recv,
                 "mLabel",
-                args.get(1).cloned().unwrap_or(Value::Null),
+                varg(args, 1),
             )?;
             let icon = p36i_validate_icon_boundary(vm, icon, 0)?;
             put(vm, recv, "mIcon", icon)?;
@@ -49210,7 +49228,7 @@ fn p36i_status_hints(
                 vm,
                 recv,
                 "mExtras",
-                args.get(3).cloned().unwrap_or(Value::Null),
+                varg(args, 3),
             )?;
             Value::Null
         }
@@ -49326,10 +49344,10 @@ fn partial36i_telecom_static(
             "(Landroid/graphics/drawable/Icon;Landroid/os/UserHandle;)Landroid/graphics/drawable/Icon;",
         ) => {
             let calling_user =
-                p36i_user_identifier(vm, &args.get(1).cloned().unwrap_or(Value::Null));
+                p36i_user_identifier(vm, &varg(args, 1));
             p36i_validate_icon_boundary(
                 vm,
-                args.first().cloned().unwrap_or(Value::Null),
+                varg(args, 0),
                 calling_user,
             )?
         }
@@ -49379,8 +49397,8 @@ fn partial36i_telecom_static(
                     _ => Ok(None),
                 }
             };
-            let a = pkg_of(vm, &args.first().cloned().unwrap_or(Value::Null))?;
-            let b = pkg_of(vm, &args.get(1).cloned().unwrap_or(Value::Null))?;
+            let a = pkg_of(vm, &varg(args, 0))?;
+            let b = pkg_of(vm, &varg(args, 1))?;
             bool_value(a == b)
         }
         (
@@ -49544,7 +49562,7 @@ fn p36i_bcd_fragment(
 
 #[cold]
 fn p36i_bcd_args(vm: &Engine, args: &[Value]) -> StubResult<(Vec<u8>, i32, i32)> {
-    let value = args.first().cloned().unwrap_or(Value::Null);
+    let value = varg(args, 0);
     if matches!(value, Value::Null) {
         return Err(npe("bytes"));
     }
