@@ -399,6 +399,9 @@ pub(super) fn instance_call(
             | "startStylusHandwriting"
             | "prepareStylusHandwritingDelegation" => Value::Null,
             "isFullscreenMode" | "isInputMethodSuppressingSpellChecker" => Value::Int(0),
+            // No third-party IME is installed in the model: the enabled and
+            // installed lists are empty (AOSP returns an empty list too).
+            "getEnabledInputMethodList" | "getInputMethodList" => super::list(vm, Vec::new())?,
             "isActive" | "isAcceptingText" => Value::Int(
                 (vm.fw.m9.focused.is_some()
                     && (args.is_empty() || obj(args, 0) == vm.fw.m9.focused))

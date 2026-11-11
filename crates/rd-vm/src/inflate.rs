@@ -943,8 +943,8 @@ fn ref_dimension_px(vm: &Engine, attr: &str, resid: u32, cap: i32) -> Result<i32
                 }
                 return Ok(f as i32);
             }
-            ResolvedValue::Integer(i) if i >= 0 && i <= cap => return Ok(i), // px puro
-            ResolvedValue::Integer(i) if i > cap => {
+            ResolvedValue::Integer(i) | ResolvedValue::Color(i) if i >= 0 && i <= cap => return Ok(i), // px puro
+            ResolvedValue::Integer(i) | ResolvedValue::Color(i) if i > cap => {
                 return Err(inflate_error(format!(
                     "android:{attr}=@0x{resid:08x}: dimensão {i}px excede o viewport de {cap}px no eixo (hostil ou bug do app)"
                 )));
@@ -979,7 +979,7 @@ fn ref_bool(vm: &Engine, attr: &str, resid: u32) -> Result<bool, VmExit> {
                 cur = next;
             }
             ResolvedValue::Boolean(b) => return Ok(b),
-            ResolvedValue::Integer(i) => return Ok(i != 0),
+            ResolvedValue::Integer(i) | ResolvedValue::Color(i) => return Ok(i != 0),
             other => {
                 return Err(inflate_error(format!(
                 "android:{attr}=@0x{resid:08x}: resolve para {other:?} — esperado boolean (@bool)"

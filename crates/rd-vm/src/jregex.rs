@@ -80,6 +80,11 @@ pub(crate) fn gc_purge(t: &mut Tables, alive: &dyn Fn(ObjRef) -> bool) {
     t.matchers.retain(|k, _| alive(*k));
 }
 
+/// Teto de memória (bytes) para o NFA/DFA de cada regex compilada. 8 MiB:
+/// o padrão de limpeza de URL do app (`{1,4096}` × alternativas com `\s`
+/// Unicode) passa de 2 MiB; ainda é um limite fixo contra padrões hostis.
+pub(crate) const REGEX_NFA_LIMIT: usize = 8 << 20;
+
 fn exc(class: &str, msg: impl Into<String>) -> VmExit {
     VmExit::Exception(Throwable::new(class, msg))
 }
@@ -206,8 +211,8 @@ fn compile_with_anchor(
     let build = |pat: &str| -> Result<fancy_regex::Regex, Box<fancy_regex::Error>> {
         fancy_regex::RegexBuilder::new(pat)
             .backtrack_limit(100_000)
-            .delegate_size_limit(2 << 20)
-            .delegate_dfa_size_limit(2 << 20)
+            .delegate_size_limit(REGEX_NFA_LIMIT)
+            .delegate_dfa_size_limit(REGEX_NFA_LIMIT)
             .build()
             .map_err(Box::new)
     };

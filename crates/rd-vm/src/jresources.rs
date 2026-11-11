@@ -211,7 +211,7 @@ fn new_resource_url(vm: &mut Engine, path: &str) -> Result<ObjRef, VmExit> {
     Ok(url)
 }
 
-fn read_resource(vm: &Engine, path: &str) -> Result<Option<Vec<u8>>, VmExit> {
+pub(crate) fn read_resource(vm: &Engine, path: &str) -> Result<Option<Vec<u8>>, VmExit> {
     let Some(apk) = &vm.fw.resources else {
         return Ok(None);
     };
@@ -270,4 +270,31 @@ fn resource_bytes(vm: &Engine, url: ObjRef) -> Result<Vec<u8>, VmExit> {
 
 fn exception(class: &str, message: &str) -> VmExit {
     VmExit::Exception(Throwable::new(class, message))
+}
+
+/// `true` quando o elemento raiz do XML é `<vector>`. Recursos de APK são
+/// AXML binário (aapt); XML de texto também é aceito (ignora prólogo, comentários
+/// e DOCTYPE).
+pub(crate) fn root_is_vector(bytes: &[u8]) -> bool {
+    if let Ok(doc) = rd_apk::axml::parse(bytes) {
+        return doc.root.name == "vector";
+    }
+    let text = String::from_utf8_lossy(bytes);
+    let mut rest = text.as_ref();
+    while let Some(start) = rest.find('<') {
+        rest = &rest[start..];
+        if rest.starts_with("<?") || rest.starts_with("<!") {
+            match rest.find('>') {
+                Some(end) => rest = &rest[end + 1..],
+                None => return false,
+            }
+            continue;
+        }
+        let name: String = rest[1..]
+            .chars()
+            .take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/')
+            .collect();
+        return name == "vector";
+    }
+    false
 }

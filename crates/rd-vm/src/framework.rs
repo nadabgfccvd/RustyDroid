@@ -1025,6 +1025,10 @@ pub struct HostState {
     frag_txs: HashMap<ObjRef, FragTxState>,
     /// activity em execução (o app trivial M3 tem uma por vez)
     pub current_activity: Option<ObjRef>,
+    /// Activity cujo `onCreate` está rodando no lançamento. `finish()` nesse
+    /// intervalo só marca `finished`; o lançamento encerra a Activity depois
+    /// do pós-`onCreate` (como o ActivityThread), sem destruí-la no meio.
+    pub launching_activity: Option<ObjRef>,
     /// Paused activities in this bounded single-task model; GC roots via HostState.
     pub activity_stack: Vec<SuspendedActivity>,
     /// package do app (preenchido no launch_app; getPackageName)
@@ -1075,6 +1079,8 @@ pub struct HostState {
     pub cookie_jar: crate::webkit_cookies::CookieJar,
     /// Instância canônica do `CookieManager` (getInstance devolve sempre a mesma).
     pub cookie_manager: Option<ObjRef>,
+    /// Instância canônica do `CookieSyncManager` (API 28 ainda o expõe; o Zoom o usa).
+    pub cookie_sync_manager: Option<ObjRef>,
 }
 
 impl HostState {
@@ -1665,6 +1671,18 @@ impl Engine {
         package: &str,
         extras: Vec<(String, Value)>,
     ) -> Result<ObjRef, VmExit> {
+        self.start_activity_with(desc, package, extras, None)
+    }
+
+    /// Como `start_activity`, mas o intent de origem traz action, categories,
+    /// flags e data: o intent da nova Activity herda isso (como no AOSP).
+    pub(crate) fn start_activity_with(
+        &mut self,
+        desc: &str,
+        package: &str,
+        extras: Vec<(String, Value)>,
+        intent_meta: Option<crate::bundle::IntentMeta>,
+    ) -> Result<ObjRef, VmExit> {
         if self.cp.find_class(desc).is_none() {
             return Err(crate::err::vm_error(
                 "MISSING_ENTRY",
@@ -1694,7 +1712,7 @@ impl Engine {
             self.run_lifecycle_step(&class, state.activity, "onPause", "()V", Vec::new())?;
             self.fw.activity_stack.push(state);
         }
-        match self.launch_activity_inner(desc, package, extras) {
+        match self.launch_activity_inner(desc, package, extras, intent_meta) {
             Ok(r) => {
                 if let Some(state) = previous {
                     if matches!(
@@ -1750,10 +1768,21 @@ impl Engine {
             }
             _ => return Ok(()),
         }
+        // Ainda em onCreate do próprio lançamento: a destruição fica para o
+        // fim do lançamento (ver `launch_activity_inner`).
+        if self.fw.launching_activity == Some(activity) {
+            return Ok(());
+        }
         let class = self.heap.class_of(activity)?.to_string();
         self.run_lifecycle_step(&class, activity, "onPause", "()V", Vec::new())?;
         self.run_lifecycle_step(&class, activity, "onStop", "()V", Vec::new())?;
         self.run_lifecycle_step(&class, activity, "onDestroy", "()V", Vec::new())?;
+        self.restore_previous_after_finish(activity)
+    }
+
+    /// Após o `finish` de `activity`, a Activity anterior da pilha volta a
+    /// ser a atual (onRestart/onStart/onResume), se `activity` era a atual.
+    fn restore_previous_after_finish(&mut self, activity: ObjRef) -> Result<(), VmExit> {
         if self.fw.current_activity == Some(activity) {
             while let Some(state) = self.fw.activity_stack.pop() {
                 if !matches!(
@@ -1785,7 +1814,7 @@ impl Engine {
         extras: Vec<(String, Value)>,
     ) -> Result<ObjRef, VmExit> {
         let old_depth = self.fw.activity_stack.len();
-        let result = self.launch_activity_inner(desc, package, extras);
+        let result = self.launch_activity_inner(desc, package, extras, None);
         if result.is_ok() {
             self.fw
                 .activity_stack
@@ -1798,6 +1827,7 @@ impl Engine {
         activity_desc: &str,
         package_name: &str,
         intent_extras: Vec<(String, Value)>,
+        intent_meta: Option<crate::bundle::IntentMeta>,
     ) -> Result<ObjRef, VmExit> {
         // issue #82: resolver a classe ANTES de alocar. Uma classe ausente do
         // DEX não pode ser lançada (no Android o `am start` falharia com
@@ -1893,6 +1923,16 @@ impl Engine {
                 extras: intent_extras,
             },
         );
+        if let Some(mut m) = intent_meta {
+            // Herda action, data, mime, categories e flags. Componente, pacote e
+            // seletor são do intent de origem e não valem para a nova Activity.
+            m.component_obj = None;
+            m.package = None;
+            m.selector = None;
+            m.identifier = None;
+            m.source_bounds = None;
+            self.intent_meta.insert(ir, m);
+        }
         if let Some(HostObj::Activity { intent, .. }) = self.fw.objects.get_mut(&r) {
             *intent = Some(ir);
         }
@@ -1910,13 +1950,27 @@ impl Engine {
             self.call(d, def, &m, vec![Value::Obj(r)])?;
         }
         // lifecycle (só o que o DEX declara — super default é no-op)
-        self.run_lifecycle_step(
+        let outer_launching = self.fw.launching_activity.replace(r);
+        let created = self.run_lifecycle_step(
             activity_desc,
             r,
             "onCreate",
             "(Landroid/os/Bundle;)V",
             vec![Value::Null],
-        )?;
+        );
+        self.fw.launching_activity = outer_launching;
+        created?;
+        if matches!(
+            self.fw.get(r),
+            Some(HostObj::Activity { finished: true, .. })
+        ) {
+            // finish() dentro de onCreate: como no ActivityThread, a Activity
+            // nunca chega a onStart/onResume. É destruída depois do pós-onCreate
+            // e a anterior da pilha volta a ser a atual.
+            self.run_lifecycle_step(activity_desc, r, "onDestroy", "()V", Vec::new())?;
+            self.restore_previous_after_finish(r)?;
+            return Ok(r);
+        }
         self.run_lifecycle_step(activity_desc, r, "onStart", "()V", Vec::new())?;
         self.run_lifecycle_step(activity_desc, r, "onResume", "()V", Vec::new())?;
         // handleResumeActivity → makeVisible: ViewRootImpl attaches the
@@ -1949,6 +2003,11 @@ impl Engine {
         if let Some(e) = event {
             dispatch(self, activity, e, Phase::Main, bundle.clone())?;
             dispatch(self, activity, e, Phase::Post, bundle)?;
+        }
+        if name == "onDestroy" {
+            // AOSP `Activity.mDestroyed`: set once onDestroy has run.
+            self.view_props
+                .insert((activity, "rd_destroyed".to_string()), Value::Int(1));
         }
         Ok(())
     }
@@ -2761,6 +2820,7 @@ impl Engine {
         // deferred gesture callbacks due in virtual time (view_gesture.rs:
         // long press, single-tap-confirmed after the double-tap window)
         ran += crate::view_gesture::deliver_pending(self)?;
+        let mut idled = false;
         loop {
             // Menor deadline entre todas as filas devidas: principal primeiro
             // em empate, depois as HandlerThread (ordem de criação), depois
@@ -2785,6 +2845,13 @@ impl Engine {
                 }
             }
             let Some((_, _, idx, owner)) = best else {
+                // Looper ocioso: os idle handlers rodam uma vez por ociosidade.
+                // Se postarem mensagem, o laço volta a procurar.
+                if !idled {
+                    idled = true;
+                    run_main_idle_handlers(self)?;
+                    continue;
+                }
                 break;
             };
             let msg = match self.fw.objects.get_mut(&owner) {
@@ -3587,6 +3654,43 @@ fn call_host_instance_rooted(
         }
         // ── M8: Looper.getThread — thread "main" sintética (VM single-threaded).
         // Métodos de Ljava/lang/Thread; despacham via intrinsics (não Landroid/).
+        // Looper.getQueue(): a fila de mensagens é um singleton por VM (a da
+        // thread principal). Sem idle handlers: o drenado do Looper não os chama.
+        (LOOPER, "getQueue") => {
+            let k = (
+                "Landroid/os/MessageQueue;".to_string(),
+                "rd_queue".to_string(),
+            );
+            let q = match vm.statics.get(&k) {
+                Some(Value::Obj(q)) => *q,
+                _ => {
+                    let q = vm
+                        .heap
+                        .alloc_instance("Landroid/os/MessageQueue;".to_string(), Vec::new())?;
+                    vm.statics.insert(k, Value::Obj(q));
+                    q
+                }
+            };
+            Ok(Some(Value::Obj(q)))
+        }
+        // MessageQueue.addIdleHandler/removeIdleHandler: os handlers ficam num
+        // array no campo `rd_idle` da fila principal e rodam quando o Looper
+        // fica ocioso (ver `run_main_idle_handlers`).
+        (MESSAGE_QUEUE, "addIdleHandler" | "removeIdleHandler")
+            if sig == "(Landroid/os/MessageQueue$IdleHandler;)V" =>
+        {
+            let Some(h) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {
+                return Err(crate::err::vm_error("INVALID_ARG", "IdleHandler nulo").into());
+            };
+            let mut hs = idle_handlers(vm, recv)?;
+            if name == "addIdleHandler" {
+                hs.push(h);
+            } else {
+                hs.retain(|x| *x != h);
+            }
+            set_idle_handlers(vm, recv, &hs)?;
+            Ok(Some(Value::Null))
+        }
         (LOOPER, "getThread") => {
             let owner = vm
                 .fw
@@ -4023,6 +4127,50 @@ fn call_host_instance_rooted(
                     .map_or(Value::Null, Value::Obj),
             ))
         }
+        // Janela única, sem PiP: a Activity nunca está em multi-window (AOSP: false
+        // quando a janela não é multi-window).
+        (ACTIVITY, "isInMultiWindowMode" | "isInPictureInPictureMode") if sig == "()Z" => {
+            Ok(Some(Value::Int(0)))
+        }
+        // `setRequestedOrientation` registra o valor (sem girar a tela); padrão -1
+        // (SCREEN_ORIENTATION_UNSPECIFIED), como o AOSP.
+        (ACTIVITY, "setRequestedOrientation") if sig == "(I)V" => {
+            let v = match args.first() {
+                Some(Value::Int(i)) => *i,
+                _ => -1,
+            };
+            vm.view_props.insert(
+                (recv, "rd_requested_orientation".to_string()),
+                Value::Int(v),
+            );
+            Ok(Some(Value::Null))
+        }
+        (ACTIVITY, "getRequestedOrientation") if sig == "()I" => {
+            let v = match vm
+                .view_props
+                .get(&(recv, "rd_requested_orientation".to_string()))
+            {
+                Some(Value::Int(i)) => *i,
+                _ => -1,
+            };
+            Ok(Some(Value::Int(v)))
+        }
+        // Activity.isFinishing(): verdadeiro depois de finish() (mesmo flag).
+        (ACTIVITY, "isFinishing") if sig == "()Z" => {
+            let finished = matches!(
+                vm.fw.get(recv),
+                Some(HostObj::Activity { finished: true, .. })
+            );
+            Ok(Some(Value::Int(finished as i32)))
+        }
+        // Activity.isDestroyed(): verdadeiro depois de onDestroy (AOSP mDestroyed).
+        (ACTIVITY, "isDestroyed") if sig == "()Z" => {
+            let destroyed = matches!(
+                vm.view_props.get(&(recv, "rd_destroyed".to_string())),
+                Some(Value::Int(1))
+            );
+            Ok(Some(Value::Int(destroyed as i32)))
+        }
         (ACTIVITY, "finish") => {
             vm.finish_activity(recv)?;
             Ok(Some(Value::Null))
@@ -4080,7 +4228,8 @@ fn call_host_instance_rooted(
                 _ => Vec::new(),
             };
             let pkg = vm.fw.package_name.clone();
-            let _new = vm.start_activity(&target, &pkg, extras)?;
+            let meta = vm.intent_meta.get(ir).cloned();
+            let _new = vm.start_activity_with(&target, &pkg, extras, meta)?;
             Ok(Some(Value::Null))
         }
         // lifecycle via super (user chama super.onCreate etc.) → no-op host
@@ -5449,6 +5598,9 @@ pub(crate) fn ensure_window(vm: &mut Engine, activity: ObjRef) -> Result<ObjRef,
     // PhoneWindow starts with its owning Activity as the Window.Callback.
     vm.view_props
         .insert((w, "win:callback".to_string()), Value::Obj(activity));
+    // Window.getContext(): o contexto em que a janela foi criada (a Activity).
+    vm.view_props
+        .insert((w, "win:context".to_string()), Value::Obj(activity));
     if let Some(HostObj::Activity { window, .. }) = vm.fw.objects.get_mut(&activity) {
         *window = Some(w);
     }
@@ -6003,6 +6155,68 @@ impl Engine {
             children,
         }
     }
+}
+
+/// `MessageQueue` (fila principal) é um singleton de VM guardado em statics.
+const MESSAGE_QUEUE: &str = "Landroid/os/MessageQueue;";
+
+fn main_message_queue(vm: &Engine) -> Option<ObjRef> {
+    match vm
+        .statics
+        .get(&(MESSAGE_QUEUE.to_string(), "rd_queue".to_string()))
+    {
+        Some(Value::Obj(q)) => Some(*q),
+        _ => None,
+    }
+}
+
+/// Idle handlers registrados em `q` (campo `rd_idle`, array de objetos).
+fn idle_handlers(vm: &mut Engine, q: ObjRef) -> Result<Vec<ObjRef>, VmExit> {
+    let arr = match vm.heap.get_field(q, "rd_idle") {
+        Ok(Value::Obj(a)) => a,
+        _ => return Ok(Vec::new()),
+    };
+    let (elems, _) = vm.heap.as_array_elems(arr)?;
+    Ok(elems
+        .iter()
+        .filter_map(|v| match v {
+            Value::Obj(o) => Some(*o),
+            _ => None,
+        })
+        .collect())
+}
+
+fn set_idle_handlers(vm: &mut Engine, q: ObjRef, hs: &[ObjRef]) -> Result<(), VmExit> {
+    let arr =
+        vm.heap
+            .alloc_array_exact(crate::heap::ElemKind::Obj, hs.len(), "[Ljava/lang/Object;")?;
+    *vm.heap.array_elems_mut(arr)? = hs.iter().map(|o| Value::Obj(*o)).collect();
+    crate::err::put_field_result(vm.heap.put_field(q, "rd_idle", Value::Obj(arr)))
+}
+
+/// Roda cada idle handler (`queueIdle()Z`). Os que devolvem `false` saem da
+/// lista, como no AOSP. Os demais ficam para a próxima ociosidade.
+fn run_main_idle_handlers(vm: &mut Engine) -> Result<(), VmExit> {
+    let Some(q) = main_message_queue(vm) else {
+        return Ok(());
+    };
+    let hs = idle_handlers(vm, q)?;
+    if hs.is_empty() {
+        return Ok(());
+    }
+    let mut done: Vec<ObjRef> = Vec::with_capacity(hs.len());
+    for h in &hs {
+        let again = vm.invoke_instance(*h, "queueIdle", "()Z", &[])?;
+        if matches!(again, Value::Int(0)) {
+            done.push(*h);
+        }
+    }
+    // Handlers adicionados durante queueIdle() permanecem na lista.
+    let kept: Vec<ObjRef> = idle_handlers(vm, q)?
+        .into_iter()
+        .filter(|c| !done.contains(c))
+        .collect();
+    set_idle_handlers(vm, q, &kept)
 }
 
 #[cfg(test)]

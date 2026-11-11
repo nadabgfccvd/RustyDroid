@@ -14,6 +14,7 @@ use crate::heap::ObjRef;
 use crate::value::Value;
 
 pub(crate) const PQ: &str = "Ljava/util/PriorityQueue;";
+pub(crate) const PBQ: &str = "Ljava/util/concurrent/PriorityBlockingQueue;";
 
 fn cmp_key(r: ObjRef) -> (ObjRef, String) {
     (r, "pq:cmp".to_string())
@@ -97,7 +98,9 @@ pub(crate) fn instance_intrinsic(
     recv: ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
-    let is_pq = recv_class == PQ || vm.view_props.contains_key(&cmp_key(recv));
+    // PriorityBlockingQueue usa a mesma ordenação; put/take bloqueantes não
+    // são modelados e continuam caindo no erro de método não resolvido.
+    let is_pq = recv_class == PQ || recv_class == PBQ || vm.view_props.contains_key(&cmp_key(recv));
     if !is_pq {
         return Ok(None);
     }

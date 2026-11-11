@@ -1849,6 +1849,11 @@ fn resolve_or_run_host_invoke(
     if mref.class == "Ljava/lang/Object;" && mref.name == "<init>" {
         return Ok(InvokeTarget::Value(Value::Null));
     }
+    // Construtor protegido da base abstrata `java.net.Authenticator`: sem estado
+    // de rede no sandbox, então a subclasse do app só precisa dele existir.
+    if mref.class == "Ljava/net/Authenticator;" && mref.name == "<init>" {
+        return Ok(InvokeTarget::Value(Value::Null));
+    }
     // issue #25: construtores são “ação ativa” (JLS 12.4.2) — normalmente já
     // inicializada pelo new-instance imediatamente anterior (no-op aqui)
     if is_direct && mref.name == "<init>" {
@@ -2222,6 +2227,32 @@ fn resolve_or_run_host_invoke(
             inherited_android_host(vm, &start_class, &mref.name, &mref.proto, recv, &slots[1..])?
         {
             return Ok(InvokeTarget::Value(value));
+        }
+    }
+    // JLS 9.2: uma interface (ou classe abstrata) pode redeclarar equals/
+    // hashCode/toString sem corpo. Se o receiver não os implementa, vale a
+    // implementação de java.lang.Object (identidade; toString como
+    // `Classe@hash`). Sem isso, o alvo abstrato falha com NOT_FOUND
+    // (ex.: `com.bumptech.glide.load.Key.equals` em `EngineKey`).
+    if m.code_off == 0 && (m.access_flags & ACC_NATIVE) == 0 && !is_direct {
+        let hash = recv as i32;
+        let value = match (mref.name.as_str(), mref.proto.as_str()) {
+            ("equals", "(Ljava/lang/Object;)Z") => Some(Value::Int(
+                matches!(slots.get(1), Some(Value::Obj(o)) if *o == recv) as i32,
+            )),
+            ("hashCode", "()I") => Some(Value::Int(hash)),
+            ("toString", "()Ljava/lang/String;") => {
+                let java = recv_class
+                    .trim_start_matches('L')
+                    .trim_end_matches(';')
+                    .replace('/', ".");
+                let text = format!("{java}@{:x}", hash as u32);
+                Some(Value::Obj(crate::intrinsics::alloc_string(vm, text)?))
+            }
+            _ => None,
+        };
+        if let Some(v) = value {
+            return Ok(InvokeTarget::Value(v));
         }
     }
     Ok(InvokeTarget::Dex(d2, def, m))

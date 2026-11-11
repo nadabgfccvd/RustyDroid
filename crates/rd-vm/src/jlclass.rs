@@ -131,8 +131,13 @@ pub(crate) fn instance_intrinsic(
             None => Value::Null,
         },
         ("getModifiers", "()I") => {
+            // Classe membro: as flags do InnerClass (com `static`) valem; senão,
+            // as flags da própria classe, como antes.
             const CLASS_MODIFIER_MASK: u32 = 0x0000_761f;
-            Value::Int((access_flags(vm, &d).unwrap_or(0) & CLASS_MODIFIER_MASK) as i32)
+            let flags = crate::jannotations::inner_class_access_flags(vm, &d)
+                .or_else(|| access_flags(vm, &d))
+                .unwrap_or(0);
+            Value::Int((flags & CLASS_MODIFIER_MASK) as i32)
         }
         ("isInterface", "()Z") => b(access_flags(vm, &d).is_some_and(|f| f & ACC_INTERFACE != 0)
             || (crate::classpath::host_class_known(&d)
@@ -191,20 +196,18 @@ pub(crate) fn instance_intrinsic(
             }
             Value::Obj(recv)
         }
-        ("getSuperclass", "()Ljava/lang/Class;") => {
-            if is_primitive(&d)
-                || access_flags(vm, &d).is_some_and(|f| f & ACC_INTERFACE != 0)
-                || d == "Ljava/lang/Object;"
-            {
-                Value::Null
-            } else if d.starts_with('[') {
-                Value::Obj(vm.class_object_for("Ljava/lang/Object;")?)
-            } else {
-                match vm.cp.superclass_of(&d) {
-                    Some(s) => Value::Obj(vm.class_object_for(&s)?),
-                    None => Value::Obj(vm.class_object_for("Ljava/lang/Object;")?),
+        ("getSuperclass", "()Ljava/lang/Class;") => superclass_value(vm, &d)?,
+        ("getGenericSuperclass", "()Ljava/lang/reflect/Type;") => {
+            // Sem superclasse parametrizada, o Type é a própria Class da superclasse.
+            // Com `<…>` na superclasse, ParameterizedType não é modelado: falha visível.
+            if let Some(sig) = crate::jannotations::class_generic_signature(vm, &d) {
+                if superclass_sig_is_parameterized(&sig) {
+                    return Err(VmExit::Error(crate::err::not_implemented(format!(
+                        "Class.getGenericSuperclass de {d} ({sig}): superclasse parametrizada ainda não é modelada"
+                    ))));
                 }
             }
+            superclass_value(vm, &d)?
         }
         ("getInterfaces", "()[Ljava/lang/Class;") => {
             let ifaces = vm.cp.interfaces_of(&d);
@@ -322,5 +325,92 @@ mod enclosing_tests {
     fn anonymous_and_local_classes_have_no_name_derived_enclosing_class() {
         assert_eq!(enclosing_by_name("Lfoo/Bar$1;"), None);
         assert_eq!(enclosing_by_name("Lfoo/Bar$1Local;"), None);
+    }
+}
+
+/// `Class.getSuperclass()` de `d`: `null` para primitivos, interfaces e Object.
+fn superclass_value(vm: &mut Engine, d: &str) -> Result<Value, VmExit> {
+    Ok(
+        if is_primitive(d)
+            || access_flags(vm, d).is_some_and(|f| f & ACC_INTERFACE != 0)
+            || d == "Ljava/lang/Object;"
+        {
+            Value::Null
+        } else if d.starts_with('[') {
+            Value::Obj(vm.class_object_for("Ljava/lang/Object;")?)
+        } else {
+            match vm.cp.superclass_of(d) {
+                Some(s) => Value::Obj(vm.class_object_for(&s)?),
+                None => Value::Obj(vm.class_object_for("Ljava/lang/Object;")?),
+            }
+        },
+    )
+}
+
+/// A superclasse numa assinatura de classe (`<T:…>Lpai<…>;Liface;`) tem `<`?
+/// Os parâmetros formais da própria classe (`<…>` iniciais) são pulados.
+fn superclass_sig_is_parameterized(sig: &str) -> bool {
+    let mut rest = sig;
+    if rest.starts_with('<') {
+        let mut depth = 0usize;
+        let mut end = None;
+        for (i, c) in rest.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        match end {
+            Some(i) => rest = &rest[i + 1..],
+            None => return true,
+        }
+    }
+    rest.split(';')
+        .next()
+        .is_some_and(|head| head.contains('<'))
+}
+
+#[cfg(test)]
+mod generic_superclass_tests {
+    use super::superclass_sig_is_parameterized;
+
+    #[test]
+    fn plain_superclass_is_not_parameterized() {
+        assert!(!superclass_sig_is_parameterized("Ljava/lang/Object;"));
+        assert!(!superclass_sig_is_parameterized(
+            "Lcom/x/Base;Lja/io/Serializable;"
+        ));
+    }
+
+    #[test]
+    fn parameterized_superclass_is_detected() {
+        assert!(superclass_sig_is_parameterized(
+            "Ljava/util/ArrayList<Ljava/lang/String;>;"
+        ));
+        assert!(superclass_sig_is_parameterized(
+            "<T:Ljava/lang/Object;>Lcom/x/Base<TT;>;"
+        ));
+    }
+
+    #[test]
+    fn class_type_parameters_are_skipped_before_superclass() {
+        assert!(!superclass_sig_is_parameterized(
+            "<T:Ljava/lang/Object;>Ljava/lang/Object;"
+        ));
+        assert!(superclass_sig_is_parameterized(
+            "<T:Ljava/lang/Object;>Lcom/x/Base<TT;>;"
+        ));
+    }
+
+    #[test]
+    fn unterminated_type_parameters_are_conservative() {
+        assert!(superclass_sig_is_parameterized("<T:Ljava/lang/Object;"));
     }
 }

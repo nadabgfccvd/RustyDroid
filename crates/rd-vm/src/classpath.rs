@@ -536,7 +536,7 @@ impl Classpath {
     }
 
     /// (name, type) de um field_id (helper de `resolve_static_field`).
-    fn field_info(&self, dex_idx: usize, idx: u32) -> Option<(String, String, String)> {
+    pub(crate) fn field_info(&self, dex_idx: usize, idx: u32) -> Option<(String, String, String)> {
         let d = self.dexes.get(dex_idx)?;
         let f = d.field(idx).ok()?;
         Some((
@@ -1447,6 +1447,14 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Landroid/graphics/drawable/LayerDrawable;" => {
             Some(&["Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;"])
         }
+        "Landroid/graphics/drawable/ShapeDrawable;" => {
+            Some(&["Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;"])
+        }
+        "Landroid/graphics/drawable/shapes/Shape;" => Some(OBJECT),
+        "Landroid/graphics/drawable/shapes/OvalShape;" => Some(&[
+            "Landroid/graphics/drawable/shapes/Shape;",
+            "Ljava/lang/Object;",
+        ]),
         "Landroid/graphics/drawable/RippleDrawable;" => Some(&[
             "Landroid/graphics/drawable/LayerDrawable;",
             "Landroid/graphics/drawable/Drawable;",
@@ -1961,13 +1969,17 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // WebView: o CookieManager é um serviço único do processo (ver
         // `webkit_cookies.rs`), sem relação com a hierarquia de View.
         "Landroid/webkit/CookieManager;" => Some(OBJECT),
+        "Landroid/webkit/CookieSyncManager;" => Some(OBJECT),
+        // Authenticator é base de app (construtor protegido, sem estado de rede
+        // no sandbox): só precisa existir na hierarquia para os apps estenderem.
+        "Ljava/net/Authenticator;" => Some(OBJECT),
         "Ljava/util/EnumSet;" => Some(&[
             "Ljava/util/AbstractSet;",
             "Ljava/util/AbstractCollection;",
             "Ljava/lang/Object;",
         ]),
         "Ljava/util/ArrayDeque;" => Some(&["Ljava/util/AbstractCollection;", "Ljava/lang/Object;"]),
-        "Ljava/util/PriorityQueue;" => Some(&[
+        "Ljava/util/PriorityQueue;" | "Ljava/util/concurrent/PriorityBlockingQueue;" => Some(&[
             "Ljava/util/AbstractQueue;",
             "Ljava/util/AbstractCollection;",
             "Ljava/lang/Object;",
@@ -2012,6 +2024,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         ]),
         // CopyOnWrite*: na JDK real NÃO estendem Abstract* (implementam direto)
         "Ljava/util/concurrent/CopyOnWriteArrayList;" => Some(OBJECT),
+        "Ljava/util/concurrent/ConcurrentLinkedQueue;" => Some(&[
+            "Ljava/util/AbstractQueue;",
+            "Ljava/util/AbstractCollection;",
+            "Ljava/lang/Object;",
+        ]),
         "Ljava/util/concurrent/LinkedBlockingQueue;" => Some(&[
             "Ljava/util/AbstractQueue;",
             "Ljava/util/AbstractCollection;",
@@ -2104,6 +2121,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             Some(&["Ljava/lang/ref/Reference;", "Ljava/lang/Object;"])
         }
         "Ljava/lang/ref/ReferenceQueue;" => Some(OBJECT),
+        // StrictMode.{Thread,Vm}Policy.Builder: ver intrinsics (builders fluentes).
+        "Landroid/os/StrictMode$ThreadPolicy$Builder;"
+        | "Landroid/os/StrictMode$VmPolicy$Builder;" => Some(OBJECT),
         // Appendix C stub surfaces promoted to bounded partial slices.
         "Landroid/webkit/WebSettings;"
         | "Landroid/provider/DocumentsContract;"
@@ -2187,6 +2207,9 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Landroid/animation/Animator;",
             "Ljava/lang/Object;",
         ]),
+        // Base de animações de view (`SwipeRefreshLayout$6` estende `Animation`
+        // e o ctor da base precisa resolver para o app inicializar).
+        "Landroid/view/animation/Animation;" => Some(OBJECT),
         "Landroid/animation/Keyframe$ObjectKeyframe;"
         | "Landroid/animation/Keyframe$IntKeyframe;"
         | "Landroid/animation/Keyframe$FloatKeyframe;" => {
@@ -3217,6 +3240,14 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/lang/Cloneable;",
             "Ljava/io/Serializable;",
         ]),
+        // Class implementa java.lang.reflect.Type (TypeToken do Gson faz o cast).
+        "Ljava/lang/Class;" => Some(&["Ljava/lang/reflect/Type;"]),
+        "Ljava/util/concurrent/ConcurrentLinkedQueue;" => Some(&[
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
         "Ljava/util/concurrent/LinkedBlockingQueue;" => Some(&[
             "Ljava/util/concurrent/BlockingQueue;",
             "Ljava/util/Queue;",
@@ -3230,6 +3261,13 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/lang/Iterable;",
         ]),
         "Ljava/util/PriorityQueue;" => Some(&[
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
+        "Ljava/util/concurrent/PriorityBlockingQueue;" => Some(&[
+            "Ljava/util/concurrent/BlockingQueue;",
             "Ljava/util/Queue;",
             "Ljava/util/Collection;",
             "Ljava/lang/Iterable;",
