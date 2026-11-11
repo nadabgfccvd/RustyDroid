@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794364020889,
+  "lastUpdate": 1794365226276,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -6767,6 +6767,48 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1803,
             "range": "± 21",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f111a04219ccbc75e1b0a022e4d1d9ef2cc75b92",
+          "message": "ci(bench): gate de regressão invariante ao runner fecha a Issue #629 (#630)\n\nci(bench): gate de regressão invariante ao runner fecha a Issue #629",
+          "timestamp": "2026-11-10T23:46:40-03:00",
+          "tree_id": "2f8b7b711b65c8766579b00d3d55dedbe6b33f49",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f111a04219ccbc75e1b0a022e4d1d9ef2cc75b92"
+        },
+        "date": 1794365225124,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "calib_scan_20k",
+            "value": 53840,
+            "range": "± 342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3539,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3578,
+            "range": "± 235",
             "unit": "ns/iter"
           }
         ]
