@@ -1267,6 +1267,24 @@ fn enum_set_intrinsic(
     if name == "copyOf" && sig == "(Ljava/util/Collection;)Ljava/util/EnumSet;" {
         return enum_set_copy_of(vm, args);
     }
+    if name == "copyOf" && sig == "(Ljava/util/EnumSet;)Ljava/util/EnumSet;" {
+        return enum_set_copy_of_set(vm, args);
+    }
+    if name == "noneOf" && sig == "(Ljava/lang/Class;)Ljava/util/EnumSet;" {
+        return enum_set_none_of(vm, args);
+    }
+    if name == "allOf" && sig == "(Ljava/lang/Class;)Ljava/util/EnumSet;" {
+        return enum_set_all_of(vm, args);
+    }
+    if name == "range" && sig == "(Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;" {
+        return enum_set_range(vm, args);
+    }
+    if name == "complementOf" && sig == "(Ljava/util/EnumSet;)Ljava/util/EnumSet;" {
+        return enum_set_complement_of(vm, args);
+    }
+    if name == "of" && sig == "(Ljava/lang/Enum;[Ljava/lang/Enum;)Ljava/util/EnumSet;" {
+        return enum_set_of_varargs(vm, args);
+    }
     let arity = match (name, sig) {
         ("of", "(Ljava/lang/Enum;)Ljava/util/EnumSet;") => 1,
         ("of", "(Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;") => 2,
@@ -1360,6 +1378,223 @@ fn enum_set_copy_of(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, Vm
         .objects
         .insert(set, crate::framework::HostObj::List { elems: uniq });
     Ok(Some(Value::Obj(set)))
+}
+
+/// Extrai o descritor da classe enum de um objeto `Class` (campo `class_name`).
+/// `null` → `NullPointerException` como no JDK.
+fn enum_class_desc(vm: &Engine, args: &[Value]) -> Result<String, VmExit> {
+    match args.first() {
+        Some(Value::Obj(cr)) => match vm.heap.get_field(*cr, "class_name") {
+            Ok(Value::Obj(sr)) => vm.heap.as_str(sr).map(|s| s.to_string()).map_err(|_| {
+                VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "EnumSet class null",
+                ))
+            }),
+            _ => Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet class null",
+            ))),
+        },
+        _ => Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/NullPointerException;",
+            "EnumSet class null",
+        ))),
+    }
+}
+
+/// Enumera as constantes do enum em ordem de declaração (ordem dos campos
+/// estáticos no `class_data`, que é a ordem de declaração no fonte).
+/// Garante `<clinit>` e lê os valores de `vm.statics`. Classe fora do DEX
+/// (enum host) → `Ok(None)` para cair no `NOT_FOUND` tipado, nunca inventado.
+fn enum_constants(vm: &mut Engine, enum_desc: &str) -> Result<Option<Vec<Value>>, VmExit> {
+    vm.ensure_initialized(enum_desc)?;
+    let Some((dex_idx, def)) = vm.cp.find_class(enum_desc) else {
+        return Ok(None);
+    };
+    let def = *def;
+    let data = vm.cp.class_data(dex_idx, &def)?;
+    let mut out = Vec::new();
+    if let Some(cd) = data {
+        for f in &cd.static_fields {
+            let Ok((_fc, fname, ftype)) = vm.cp.field_ref(dex_idx, f.field_idx) else {
+                continue;
+            };
+            if ftype == enum_desc {
+                if let Some(v) = vm
+                    .statics
+                    .get(&(enum_desc.to_string(), fname.clone()))
+                    .cloned()
+                {
+                    out.push(v);
+                }
+            }
+        }
+    }
+    Ok(Some(out))
+}
+
+fn alloc_enum_set(vm: &mut Engine, elems: Vec<Value>) -> Result<Option<Value>, VmExit> {
+    let set = vm
+        .heap
+        .alloc_instance(ENUM_SET.to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    vm.fw
+        .objects
+        .insert(set, crate::framework::HostObj::List { elems });
+    Ok(Some(Value::Obj(set)))
+}
+
+/// `EnumSet.noneOf(Class)` — conjunto vazio. Não precisa enumerar constantes.
+fn enum_set_none_of(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    // Valida que o argumento é um Class não-nulo (JDK: NPE se null).
+    let _ = enum_class_desc(vm, args)?;
+    alloc_enum_set(vm, Vec::new())
+}
+
+/// `EnumSet.allOf(Class)` — todas as constantes em ordem de declaração.
+fn enum_set_all_of(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let desc = enum_class_desc(vm, args)?;
+    match enum_constants(vm, &desc)? {
+        Some(consts) => alloc_enum_set(vm, consts),
+        None => Ok(None),
+    }
+}
+
+/// `EnumSet.range(first, last)` — constantes de `first` a `last` inclusive,
+/// na ordem de declaração. `first`/`last` null → NPE; `first` depois de
+/// `last` → `IllegalArgumentException` como no JDK.
+fn enum_set_range(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let (first, last) = match (args.first(), args.get(1)) {
+        (Some(Value::Obj(f)), Some(Value::Obj(l))) => (*f, *l),
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet.range element null",
+            )));
+        }
+    };
+    let desc = vm
+        .heap
+        .class_of(first)
+        .map(|c| c.to_string())
+        .unwrap_or_default();
+    if desc.is_empty() {
+        return Ok(None);
+    }
+    let Some(consts) = enum_constants(vm, &desc)? else {
+        return Ok(None);
+    };
+    let fi = consts
+        .iter()
+        .position(|v| matches!(v, Value::Obj(r) if *r == first));
+    let li = consts
+        .iter()
+        .position(|v| matches!(v, Value::Obj(r) if *r == last));
+    let (Some(fi), Some(li)) = (fi, li) else {
+        return Ok(None);
+    };
+    if fi > li {
+        return Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/IllegalArgumentException;",
+            "first is after last in EnumSet.range",
+        )));
+    }
+    alloc_enum_set(vm, consts[fi..=li].to_vec())
+}
+
+/// `EnumSet.complementOf(set)` — todas as constantes menos as do conjunto.
+fn enum_set_complement_of(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let src = match args.first() {
+        Some(Value::Obj(r)) => *r,
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet.complementOf set null",
+            )));
+        }
+    };
+    let elems = match vm.fw.objects.get(&src) {
+        Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+        _ => return Ok(None),
+    };
+    if elems.is_empty() {
+        // Sem elementos não há como saber o tipo do enum — JDK usa o
+        // elemento do conjunto; conjunto vazio não tem tipo. Cai no
+        // NOT_FOUND tipado em vez de inventar.
+        return Ok(None);
+    }
+    let desc = match elems.first() {
+        Some(Value::Obj(r)) => vm
+            .heap
+            .class_of(*r)
+            .map(|c| c.to_string())
+            .unwrap_or_default(),
+        _ => return Ok(None),
+    };
+    if desc.is_empty() {
+        return Ok(None);
+    }
+    let Some(consts) = enum_constants(vm, &desc)? else {
+        return Ok(None);
+    };
+    let rest: Vec<Value> = consts.into_iter().filter(|c| !elems.contains(c)).collect();
+    alloc_enum_set(vm, rest)
+}
+
+/// `EnumSet.copyOf(EnumSet)` — cópia independente (o JDK devolve um novo
+/// conjunto; mutar um não afeta o outro).
+fn enum_set_copy_of_set(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let src = match args.first() {
+        Some(Value::Obj(r)) => *r,
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet.copyOf set null",
+            )));
+        }
+    };
+    let elems = match vm.fw.objects.get(&src) {
+        Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+        _ => return Ok(None),
+    };
+    alloc_enum_set(vm, elems)
+}
+
+/// `EnumSet.of(first, rest...)` — forma varargs (o compilador empacota o
+/// restante num array). Mesma validação do `of` fixo: null → NPE,
+/// duplicata → IAE.
+fn enum_set_of_varargs(vm: &mut Engine, args: &[Value]) -> Result<Option<Value>, VmExit> {
+    let first = match args.first() {
+        Some(Value::Obj(r)) => Value::Obj(*r),
+        _ => {
+            return Err(VmExit::Exception(Throwable::new(
+                "Ljava/lang/NullPointerException;",
+                "EnumSet.of element null",
+            )));
+        }
+    };
+    let mut elems = vec![first];
+    if let Some(Value::Obj(arr)) = args.get(1) {
+        if let Ok((items, _)) = vm.heap.as_array_elems(*arr) {
+            for item in items {
+                if matches!(item, Value::Null | Value::Int(0)) {
+                    return Err(VmExit::Exception(Throwable::new(
+                        "Ljava/lang/NullPointerException;",
+                        "EnumSet.of element null",
+                    )));
+                }
+                if elems.contains(item) {
+                    return Err(VmExit::Exception(Throwable::new(
+                        "Ljava/lang/IllegalArgumentException;",
+                        "duplicate element in EnumSet.of",
+                    )));
+                }
+                elems.push(item.clone());
+            }
+        }
+    }
+    alloc_enum_set(vm, elems)
 }
 
 fn collections_sync_wrapper(name: &str, sig: &str) -> bool {
