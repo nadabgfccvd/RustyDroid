@@ -445,6 +445,18 @@ pub(crate) fn static_intrinsic(
         ("Landroid/view/animation/AnimationUtils;", "currentAnimationTimeMillis") => {
             Value::Long(vm.fw.clock() as i64)
         }
+        ("Landroid/view/animation/AnimationUtils;", "loadInterpolator") => {
+            // Interpolator host: linear (identity). Apps use for animations;
+            // headless VM has no animation loop, so identity is honest.
+            let interp = vm
+                .heap
+                .alloc_instance(
+                    "Landroid/view/animation/LinearInterpolator;".to_string(),
+                    Vec::new(),
+                )
+                .map_err(crate::err::oom_throwable)?;
+            Value::Obj(interp)
+        }
         ("Landroid/os/Trace;", n) => match n {
             "isEnabled" => Value::Int(0),
             _ => Value::Null, // beginSection/endSection/async sections/counters: no tracer attached

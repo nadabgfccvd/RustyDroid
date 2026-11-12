@@ -448,6 +448,19 @@ fn framework_color(id: u32) -> Option<ResolvedValue> {
         .map(|(_, argb)| ResolvedValue::Integer(*argb as i32))
 }
 
+/// Framework IDs (`android.R.id.*`, package `0x01`, type `0x06`). The value
+/// of an id resource is the id itself — apps pass it to `findViewById` or
+/// compare it. Without this, `getResourceEntryName`/`getIdentifier` on a
+/// framework id throws `NotFoundException` (Contacts/Gallery hit
+/// `0x106000d` = `android.R.id.` entry 13).
+fn framework_id(id: u32) -> Option<ResolvedValue> {
+    // Package 0x01 (android), type 0x06 (id)
+    if (id >> 24) == 0x01 && ((id >> 16) & 0xff) == 0x06 {
+        return Some(ResolvedValue::Integer(id as i32));
+    }
+    None
+}
+
 /// Lê `path` do APK e, se for um `<vector>`, devolve um
 /// `Landroid/graphics/drawable/VectorDrawable;` com os paths já achatados e as
 /// cores resolvidas. `Ok(None)` = o arquivo não é um vetor (PNG, `<shape>`…),
@@ -568,6 +581,9 @@ fn alloc_vector(
 
 fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
     if let Some(v) = framework_color(id as u32) {
+        return Ok(v);
+    }
+    if let Some(v) = framework_id(id as u32) {
         return Ok(v);
     }
     let mut cur = id as u32;
