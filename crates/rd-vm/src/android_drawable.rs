@@ -440,6 +440,12 @@ pub fn instance_intrinsic(
         }
         ("isAutoMirrored", _) => Value::Int(0),
         ("getLayoutDirection", _) => Value::Int(0),
+        ("getIntrinsicWidth", _) if kind.ends_with("VectorDrawable;") => {
+            Value::Int(geti(vm, recv, "rd_vw", -1))
+        }
+        ("getIntrinsicHeight", _) if kind.ends_with("VectorDrawable;") => {
+            Value::Int(geti(vm, recv, "rd_vh", -1))
+        }
         ("getIntrinsicWidth" | "getIntrinsicHeight", _) => Value::Int(-1),
         ("getMinimumWidth" | "getMinimumHeight", _) => Value::Int(0),
         ("getOpacity", _) => {
@@ -494,6 +500,17 @@ pub fn instance_intrinsic(
             Value::Null
         }
         ("getRadius", _) => Value::Int(geti(vm, recv, "rd_radius", -1)),
+        // `VectorDrawable.draw(canvas)`: os paths já achatados são escalados do
+        // viewport para `bounds` e viram ops de preenchimento. A origem é o
+        // canto do bounds, como no AOSP (`bounds.left/top`).
+        ("draw", _) if kind.ends_with("VectorDrawable;") => {
+            if geti(vm, recv, "rd_visible", 1) != 0 {
+                if let Some(canvas) = obj(0) {
+                    crate::android_drawable::draw_vector(vm, recv, canvas)?;
+                }
+            }
+            Value::Null
+        }
         ("draw", _) => {
             if kind.ends_with("ColorDrawable;") && geti(vm, recv, "rd_visible", 1) != 0 {
                 if let Some(c) = obj(0) {
@@ -516,8 +533,127 @@ pub fn instance_intrinsic(
     }))
 }
 
+/// Emite os paths de um `VectorDrawable` no canvas, escalando do viewport para
+/// `bounds`. Fora do `mod` de intrínsecos porque precisa de `frame_fill`-like
+/// acesso ao `record`.
+pub(crate) fn draw_vector(vm: &mut Engine, recv: ObjRef, canvas: ObjRef) -> Result<(), VmExit> {
+    let Some(crate::graphics::G::Vector(spec)) = vm.gfx.objs.get(&recv).cloned() else {
+        return Ok(());
+    };
+    let b = bounds(vm, recv);
+    let (w, h) = ((b[2] - b[0]) as f32, (b[3] - b[1]) as f32);
+    if w <= 0.0 || h <= 0.0 {
+        return Ok(());
+    }
+    let (sx, sy) = spec.scale_to(w, h);
+    let alpha = geti(vm, recv, "rd_alpha", 255) as f32 / 255.0;
+    for path in &spec.paths {
+        let scaled: Vec<Vec<(f32, f32)>> = path
+            .polylines
+            .iter()
+            .map(|line| {
+                line.iter()
+                    .map(|(x, y)| (b[0] as f32 + x * sx, b[1] as f32 + y * sy))
+                    .collect()
+            })
+            .collect();
+        if scaled.is_empty() {
+            continue;
+        }
+        let (fill, stroke) = (path.fill, path.stroke);
+        // Preenchimento
+        if (fill >> 24) != 0 {
+            vm.gfx_push_polygon(canvas, scaled.clone(), path.even_odd, modulate(fill, alpha));
+        }
+        // Contorno: o renderer não tem stroke de polilinha; o caminho é
+        // desenhado com a cor do stroke só quando não há fill (ícones de
+        // "linha" desenhados como forma cheia). Registrado em `rd_vgaps`.
+        if let Some((color, _width)) = stroke {
+            if (fill >> 24) == 0 && (color >> 24) != 0 {
+                vm.gfx_push_polygon(canvas, scaled, path.even_odd, modulate(color, alpha));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn modulate(color: u32, alpha: f32) -> u32 {
+    let a = (((color >> 24) & 0xFF) as f32 * alpha) as u32;
+    (color & 0x00FF_FFFF) | (a << 24)
+}
+
 #[cfg(test)]
 mod tests {
+    /// O `VectorDrawable` precisa emitir os paths **escalados do viewport para
+    /// os bounds** — se a escala não for aplicada, todo ícone sai no tamanho
+    /// errado (ou fora da tela) e nenhum golden screenshot bate.
+    #[test]
+    fn vector_drawable_emits_paths_scaled_to_bounds() {
+        use crate::graphics::{OpK, G};
+        use crate::vector_drawable::{VPath, VectorSpec};
+        use crate::VmConfig;
+
+        let mut vm = crate::engine::Engine::new(vec![], VmConfig::default());
+        let spec = VectorSpec {
+            viewport: (24.0, 24.0),
+            intrinsic: (24.0, 24.0),
+            paths: vec![VPath {
+                polylines: vec![vec![(0.0, 0.0), (24.0, 0.0), (24.0, 24.0)]],
+                fill: 0xFF00_FF00,
+                stroke: None,
+                even_odd: false,
+            }],
+            gaps: Vec::new(),
+        };
+        let d = vm
+            .heap
+            .alloc_instance("Landroid/graphics/drawable/VectorDrawable;".into(), vec![])
+            .unwrap();
+        for (f, v) in [
+            ("rd_visible", Value::Int(1)),
+            ("rd_alpha", Value::Int(255)),
+            ("rd_vw", Value::Int(24)),
+            ("rd_vh", Value::Int(24)),
+        ] {
+            vm.heap.put_field(d, f, v).unwrap();
+        }
+        vm.gfx.objs.insert(d, G::Vector(spec));
+        let canvas = vm.begin_frame_canvas(720, 1440).unwrap();
+        // bounds 48x48 em (10, 20) → escala 2x, origem (10, 20).
+        vm.invoke_instance(
+            d,
+            "setBounds",
+            "(IIII)V",
+            &[
+                Value::Int(10),
+                Value::Int(20),
+                Value::Int(58),
+                Value::Int(68),
+            ],
+        )
+        .unwrap();
+        vm.invoke_instance(
+            d,
+            "draw",
+            "(Landroid/graphics/Canvas;)V",
+            &[Value::Obj(canvas)],
+        )
+        .unwrap();
+
+        assert_eq!(vm.gfx.frame.len(), 1, "um path = uma op");
+        let op = &vm.gfx.frame[0];
+        assert_eq!(op.p.argb, 0xFF00_FF00, "cor do fill preservada");
+        let OpK::Path(pts, even_odd) = &op.k else {
+            panic!("esperava OpK::Path, veio {:?}", op.k);
+        };
+        assert!(!even_odd);
+        assert_eq!(
+            pts[0],
+            vec![(10.0, 20.0), (58.0, 20.0), (58.0, 68.0)],
+            "viewport 24 → bounds 48 com origem em (10,20)"
+        );
+    }
+
     use super::*;
 
     #[test]

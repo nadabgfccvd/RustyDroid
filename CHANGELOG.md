@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   script sai sem tocar na página e o build publica o último snapshot versionado — só uma
   resposta válida e vazia troca o bloco por "nenhuma release publicada ainda".
   Self-test hermético `tests/scripts/releases_live_test.sh` (21 casos) no `ci.yml`.
+- **`VectorDrawable` (`crates/rd-vm/src/vector_drawable.rs`) — apps AppCompat não abriam sem ele:**
+  `NewPipe` morria antes da primeira tela com *"This app has been built with an incorrect
+  configuration. Please configure your build for VectorDrawableCompat."* — que é o
+  `AppCompatDrawableManager.checkVectorDrawableSetup()` fazendo `getDrawable(abc_vector_test)` e
+  exigindo uma instância de `android.graphics.drawable.VectorDrawable`. Agora `getDrawable`
+  resolve `res/*.xml` como vetor de verdade: `<vector>` + `<path>` + `<group>`
+  (translate/scale/rotate/pivot) e o subconjunto SVG de `pathData` (`M L H V C S Q T A Z`,
+  absolutos e relativos) achatado em polilinhas, com cores `@color` resolvidas no ARSC e
+  `draw` escalando viewport → bounds. Fora do modelo (e dito em `rd_vgaps`): `<gradient>`,
+  `clip-path` e stroke de polilinha (ícones só-contorno são preenchidos com a cor do stroke).
+  Testes: 14 unitários + 4 de integração (classe, intrínseco, subtype, escala para bounds).
 - **Matriz de compatibilidade viva no site (M12):** `nightly-compat.yml` continua só
   produzindo evidência (o artefato `nightly-compat-reports`, retenção de 14 dias) e o
   `docs.yml` segue como único escritor na `gh-pages`. O job `build` agora busca a última

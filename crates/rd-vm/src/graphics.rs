@@ -89,7 +89,7 @@ fn to9(m: &M) -> [f32; 9] {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PaintSnap {
-    argb: u32,
+    pub(crate) argb: u32,
     style: i32,
     sw: f32,
     /// `BlendMode.CLEAR` / `PorterDuff.Mode.CLEAR` transfer mode.
@@ -147,8 +147,10 @@ pub(crate) struct Op {
     m: M,
     clip: [f32; 4],
     alpha: f32,
-    p: PaintSnap,
-    k: OpK,
+    // `p` e `k` são lidos pelo teste de desenho do `VectorDrawable`
+    // (`android_drawable::tests`), que vive em outro módulo.
+    pub(crate) p: PaintSnap,
+    pub(crate) k: OpK,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -285,6 +287,9 @@ pub(crate) enum G {
     Canvas(CanvasS),
     Node(NodeS),
     Bitmap(i32, i32, Vec<Op>),
+    /// `VectorDrawable` já parseado (paths achatados + viewport). Ver
+    /// `vector_drawable.rs` — o desenho é emitido em `android_drawable::draw`.
+    Vector(crate::vector_drawable::VectorSpec),
     Layout(LayoutS),
     Builder(BuilderS),
     Outline(Option<[f32; 4]>, f32, f32),
@@ -1696,6 +1701,9 @@ pub(crate) fn instance_intrinsic(
         G::Matrix(m) => matrix_method(vm, m, name, sig, recv, args),
         G::Canvas(_) => canvas_method(vm, name, sig, recv, args),
         G::Node(n) => node_method(vm, n, name, sig, recv, args),
+        // O vetor é desenhado por `android_drawable::draw`; aqui só o que a
+        // API de `Drawable` consulta antes de desenhar.
+        G::Vector(_) => Ok(None),
         G::Bitmap(w, h, _) => Ok(Some(match name {
             "getWidth" => Value::Int(w),
             "getHeight" => Value::Int(h),
@@ -4467,6 +4475,30 @@ impl Engine {
 
     /// Records host-view backgrounds/text into the frame (for host views
     /// drawn around DEX content).
+    /// Emite polilinhas preenchidas num canvas (usado pelo `VectorDrawable`).
+    /// Mesmo caminho de `Canvas.drawPath`: o `OpK::Path` que o rasterizador já
+    /// conhece, sem inventar um tipo novo de op.
+    pub(crate) fn gfx_push_polygon(
+        &mut self,
+        c: ObjRef,
+        polylines: Vec<Vec<(f32, f32)>>,
+        even_odd: bool,
+        argb: u32,
+    ) {
+        record(
+            self,
+            c,
+            PaintSnap {
+                argb,
+                style: 0,
+                sw: 0.0,
+                clear: false,
+                tint: None,
+                ls: 0.0,
+            },
+            OpK::Path(polylines, even_odd),
+        );
+    }
     pub(crate) fn frame_fill(&mut self, c: ObjRef, x: f32, y: f32, w: f32, h: f32, argb: u32) {
         record(
             self,

@@ -108,6 +108,7 @@ pub mod security_crypto;
 pub mod threads;
 pub(crate) mod throwable;
 pub mod value;
+pub(crate) mod vector_drawable;
 pub(crate) mod view_attach;
 pub(crate) mod view_gesture;
 pub(crate) mod view_layout;
