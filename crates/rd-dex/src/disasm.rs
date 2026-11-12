@@ -2041,14 +2041,13 @@ mod tests {
             put32(&mut d, 104, self.buf.len() as u32);
             put32(&mut d, 108, data_off as u32);
 
-            for i in 0..ns {
-                put32(&mut d, 112 + i * 4, data_base as u32 + self.str_offsets[i]);
+            for (i, &off) in self.str_offsets.iter().enumerate() {
+                put32(&mut d, 112 + i * 4, data_base as u32 + off);
             }
-            for i in 0..nt {
-                put32(&mut d, type_off + i * 4, self.types[i]);
+            for (i, &t) in self.types.iter().enumerate() {
+                put32(&mut d, type_off + i * 4, t);
             }
-            for i in 0..np {
-                let (si, ret, poff) = self.protos[i];
+            for (i, &(si, ret, poff)) in self.protos.iter().enumerate() {
                 put32(&mut d, proto_off + i * 12, si);
                 put32(&mut d, proto_off + i * 12 + 4, ret);
                 put32(
@@ -2061,15 +2060,13 @@ mod tests {
                     },
                 );
             }
-            for i in 0..nf {
-                let (c, t, n) = self.fields[i];
+            for (i, &(c, t, n)) in self.fields.iter().enumerate() {
                 let base = field_off + i * 8;
                 d[base..base + 2].copy_from_slice(&c.to_le_bytes());
                 d[base + 2..base + 4].copy_from_slice(&t.to_le_bytes());
                 put32(&mut d, base + 4, n);
             }
-            for i in 0..nm {
-                let (c, p, n) = self.methods[i];
+            for (i, &(c, p, n)) in self.methods.iter().enumerate() {
                 let base = method_off + i * 8;
                 d[base..base + 2].copy_from_slice(&c.to_le_bytes());
                 d[base + 2..base + 4].copy_from_slice(&p.to_le_bytes());

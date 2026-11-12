@@ -525,8 +525,8 @@ impl Engine {
         let mut freed = 0usize;
         let mut freed_bytes = 0usize;
         let mut live = 0usize;
-        for i in 1..=n {
-            if m.marked[i] {
+        for (i, &is_marked) in m.marked.iter().enumerate().skip(1) {
+            if is_marked {
                 live += 1;
                 continue;
             }
