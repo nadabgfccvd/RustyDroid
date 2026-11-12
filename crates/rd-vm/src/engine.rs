@@ -105,91 +105,108 @@ fn guard_page_below(lines: &[&str], lo: usize) -> bool {
     })
 }
 
+/// Localiza a VMA `rw` que contém `sp` em `/proc/thread-self/maps`.
+/// Fonte ÚNICA compartilhada por `detect_native_stack_budget` e pelo teste
+/// de invariante #643 — as duas leituras independentes divergiam em runners
+/// cujo layout de VMA/mmap faz a varredura encontrar regiões distintas
+/// (flake `budget_floor_never_exceeds_real_stack_headroom_643` no CI).
+/// Retorna `(lo, hi, is_main_stack)` ou `None` se SP não está em VMA `rw`.
+#[cfg(target_os = "linux")]
+fn stack_vma_bounds(sp: usize) -> Option<(usize, usize, bool)> {
+    let maps = std::fs::read_to_string("/proc/thread-self/maps").ok()?;
+    for line in maps.lines() {
+        let Some((range, rest)) = line.split_once(' ') else {
+            continue;
+        };
+        if !rest.starts_with("rw") {
+            continue;
+        }
+        let Some((lo_hex, hi_hex)) = range.split_once('-') else {
+            continue;
+        };
+        let (Ok(lo), Ok(hi)) = (
+            usize::from_str_radix(lo_hex, 16),
+            usize::from_str_radix(hi_hex, 16),
+        ) else {
+            continue;
+        };
+        if sp >= lo && sp <= hi {
+            return Some((lo, hi, line.trim_end().ends_with("[stack]")));
+        }
+    }
+    None
+}
+
 /// Calcula o orçamento seguro de pilha nativa disponível abaixo de `sp_now`
 /// na entrada externa da thread atual (executado apenas 1× quando `entry_sp == 0`).
 fn detect_native_stack_budget(sp_now: usize) -> usize {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(maps) = std::fs::read_to_string("/proc/thread-self/maps") {
-            let lines: Vec<&str> = maps.lines().collect();
-            for &line in &lines {
-                let Some((range, rest)) = line.split_once(' ') else {
-                    continue;
-                };
-                if !rest.starts_with("rw") {
-                    continue;
-                }
-                let Some((lo_hex, hi_hex)) = range.split_once('-') else {
-                    continue;
-                };
-                let (Ok(lo), Ok(hi)) = (
-                    usize::from_str_radix(lo_hex, 16),
-                    usize::from_str_radix(hi_hex, 16),
-                ) else {
-                    continue;
-                };
-                if sp_now >= lo && sp_now <= hi {
-                    // A VMA `[stack]` da thread principal cresce sob demanda até `RLIMIT_STACK`.
-                    if line.trim_end().ends_with("[stack]") {
-                        return main_thread_stack_budget();
-                    }
-                    // Regressão #313 no CI: com só `livre - 512 KiB` uma
-                    // thread de 2 MiB abortava. O guard roda na entrada de
-                    // cada frame, então precisa de folga para o frame mais
-                    // profundo que ainda será empilhado depois da última
-                    // checagem — e esse frame cresce com a versão do rustc em
-                    // build debug. Nunca confiamos em mais de METADE da VMA.
-                    let half_vma = hi.saturating_sub(lo) / 2;
-                    // O tamanho da VMA só é confiável quando ela é *uma pilha
-                    // de thread de verdade*: a glibc mapeia uma página guarda
-                    // `PROT_NONE` imediatamente abaixo. Sem essa âncora o
-                    // kernel pode ter fundido a pilha com mapeamentos anônimos
-                    // vizinhos, e então `hi - lo` (e portanto `free`) descreve
-                    // uma região muito maior que a pilha real — o orçamento
-                    // fica grande demais, o guard nunca dispara e o processo
-                    // aborta com SIGABRT no runner do CI (#313/#394).
-                    let anchored_by_guard_page = guard_page_below(&lines, lo);
-                    let ceiling = if anchored_by_guard_page {
-                        half_vma
-                    } else {
-                        half_vma.min(FALLBACK_NATIVE_STACK_BYTES)
-                    };
-                    // #469: quando a VMA se funde com um mapeamento rw vizinho
-                    // acima da pilha, `half_vma` deixa de limitar e o orçamento
-                    // passa a ser `livre - reserva`. Com a reserva antiga
-                    // (512 KiB) sobrava pouco para o último salto host→host.
-                    // A reserva de 1 MiB garante ≥ 1 MiB de folga abaixo do
-                    // orçamento; na VMA exata de 2 MiB o teto `half_vma` (1 MiB)
-                    // continua valendo, então a profundidade legítima não muda.
-                    let free = sp_now
-                        .saturating_sub(lo)
-                        .saturating_sub(NATIVE_STACK_HEADROOM);
-                    // #637: o piso era `256 KiB` fixos. Numa pilha de 256-320
-                    // KiB isso dava um orçamento maior do que a folga real e o
-                    // processo abortava. O piso agora nunca passa de 1/8 da VMA,
-                    // que é quanto sobra garantido depois de reservar o resto.
-                    let floor = MIN_NATIVE_STACK_BUDGET.min((hi.saturating_sub(lo)) / 8);
-                    // #643: o piso não pode FABRICAR espaço que não existe.
-                    // `free` (folga menos o headroom de 1 MiB) já é 0 em
-                    // pilhas de 256–512 KiB, e o piso devolvia 64 KiB — mais
-                    // pilha do que há entre o SP e a guard page. O guard em
-                    // bytes então nunca disparava antes do SO e a thread
-                    // abortava com SIGABRT (flake #637 no job NDK do CI:
-                    // depende do layout de VMA/mmap do processo — por isso
-                    // intermitente). O piso existe para evitar orçamento
-                    // DEGENERADO (0/1 frame que rejeitaria até chamada
-                    // trivial); ele não é um mínimo garantido de pilha e se
-                    // subordina à folga que resta de verdade. `MIN_DEPTH_FLOOR`
-                    // continua garantindo 16 frames de `entry_depth_cap` mesmo
-                    // com o orçamento no piso absoluto de 64 KiB, e o limite
-                    // combinado de `enter_stack_frame` continua valendo, então
-                    // uma pilha realmente minúscula falha FECHADA com
-                    // `StackOverflowError` tipado em vez de SIGABRT.
-                    let free_raw = sp_now.saturating_sub(lo);
-                    let floor = floor.min(free_raw);
-                    return free.min(ceiling).max(floor);
-                }
+        if let Some((lo, hi, is_main_stack)) = stack_vma_bounds(sp_now) {
+            // A VMA `[stack]` da thread principal cresce sob demanda até `RLIMIT_STACK`.
+            if is_main_stack {
+                return main_thread_stack_budget();
             }
+            // Regressão #313 no CI: com só `livre - 512 KiB` uma
+            // thread de 2 MiB abortava. O guard roda na entrada de
+            // cada frame, então precisa de folga para o frame mais
+            // profundo que ainda será empilhado depois da última
+            // checagem — e esse frame cresce com a versão do rustc em
+            // build debug. Nunca confiamos em mais de METADE da VMA.
+            let half_vma = hi.saturating_sub(lo) / 2;
+            // O tamanho da VMA só é confiável quando ela é *uma pilha
+            // de thread de verdade*: a glibc mapeia uma página guarda
+            // `PROT_NONE` imediatamente abaixo. Sem essa âncora o
+            // kernel pode ter fundido a pilha com mapeamentos anônimos
+            // vizinhos, e então `hi - lo` (e portanto `free`) descreve
+            // uma região muito maior que a pilha real — o orçamento
+            // fica grande demais, o guard nunca dispara e o processo
+            // aborta com SIGABRT no runner do CI (#313/#394).
+            let anchored_by_guard_page = std::fs::read_to_string("/proc/thread-self/maps")
+                .map(|m| {
+                    let ls: Vec<&str> = m.lines().collect();
+                    guard_page_below(&ls, lo)
+                })
+                .unwrap_or(false);
+            let ceiling = if anchored_by_guard_page {
+                half_vma
+            } else {
+                half_vma.min(FALLBACK_NATIVE_STACK_BYTES)
+            };
+            // #469: quando a VMA se funde com um mapeamento rw vizinho
+            // acima da pilha, `half_vma` deixa de limitar e o orçamento
+            // passa a ser `livre - reserva`. Com a reserva antiga
+            // (512 KiB) sobrava pouco para o último salto host→host.
+            // A reserva de 1 MiB garante ≥ 1 MiB de folga abaixo do
+            // orçamento; na VMA exata de 2 MiB o teto `half_vma` (1 MiB)
+            // continua valendo, então a profundidade legítima não muda.
+            let free = sp_now
+                .saturating_sub(lo)
+                .saturating_sub(NATIVE_STACK_HEADROOM);
+            // #637: o piso era `256 KiB` fixos. Numa pilha de 256-320
+            // KiB isso dava um orçamento maior do que a folga real e o
+            // processo abortava. O piso agora nunca passa de 1/8 da VMA,
+            // que é quanto sobra garantido depois de reservar o resto.
+            let floor = MIN_NATIVE_STACK_BUDGET.min((hi.saturating_sub(lo)) / 8);
+            // #643: o piso não pode FABRICAR espaço que não existe.
+            // `free` (folga menos o headroom de 1 MiB) já é 0 em
+            // pilhas de 256–512 KiB, e o piso devolvia 64 KiB — mais
+            // pilha do que há entre o SP e a guard page. O guard em
+            // bytes então nunca disparava antes do SO e a thread
+            // abortava com SIGABRT (flake #637 no job NDK do CI:
+            // depende do layout de VMA/mmap do processo — por isso
+            // intermitente). O piso existe para evitar orçamento
+            // DEGENERADO (0/1 frame que rejeitaria até chamada
+            // trivial); ele não é um mínimo garantido de pilha e se
+            // subordina à folga que resta de verdade. `MIN_DEPTH_FLOOR`
+            // continua garantindo 16 frames de `entry_depth_cap` mesmo
+            // com o orçamento no piso absoluto de 64 KiB, e o limite
+            // combinado de `enter_stack_frame` continua valendo, então
+            // uma pilha realmente minúscula falha FECHADA com
+            // `StackOverflowError` tipado em vez de SIGABRT.
+            let free_raw = sp_now.saturating_sub(lo);
+            let floor = floor.min(free_raw);
+            return free.min(ceiling).max(floor);
         }
     }
     let _ = sp_now;
@@ -1857,36 +1874,26 @@ mod native_stack_budget_tests {
             .stack_size(2 * 1024 * 1024)
             .spawn(|| {
                 let sp = current_stack_addr();
-                let maps = std::fs::read_to_string("/proc/thread-self/maps").unwrap_or_default();
-                let lines: Vec<&str> = maps.lines().collect();
-                // (lo da VMA que contém o SP, linha completa) — para reusar na
-                // checagem de âncora exatamente como o motor faz.
-                let vma = lines.iter().find_map(|l| {
-                    let (range, rest) = l.split_once(' ')?;
-                    let (lo_hex, hi_hex) = range.split_once('-')?;
-                    let (lo, hi) = (
-                        usize::from_str_radix(lo_hex, 16).ok()?,
-                        usize::from_str_radix(hi_hex, 16).ok()?,
-                    );
-                    (rest.starts_with("rw") && sp >= lo && sp <= hi).then_some((lo, *l))
-                });
+                // Fonte única compartilhada com o motor (ver #643).
+                let vma = stack_vma_bounds(sp);
                 let anchored = vma
                     .as_ref()
-                    .map(|(_, l)| {
-                        if l.trim_end().ends_with("[stack]") {
+                    .map(|(lo, _hi, is_main)| {
+                        if *is_main {
                             true
                         } else {
-                            let lo = l.split_once(' ').and_then(|(r, _)| {
-                                r.split_once('-')
-                                    .and_then(|(lo_hex, _)| usize::from_str_radix(lo_hex, 16).ok())
-                            });
-                            lo.map(|lo| guard_page_below(&lines, lo)).unwrap_or(false)
+                            std::fs::read_to_string("/proc/thread-self/maps")
+                                .map(|m| {
+                                    let ls: Vec<&str> = m.lines().collect();
+                                    guard_page_below(&ls, *lo)
+                                })
+                                .unwrap_or(false)
                         }
                     })
                     .unwrap_or(false);
                 (
                     detect_native_stack_budget(sp),
-                    vma.map(|(lo, _)| lo),
+                    vma.map(|(lo, _hi, _main)| lo),
                     anchored,
                     sp,
                 )
@@ -1925,20 +1932,11 @@ mod native_stack_budget_tests {
                 .stack_size(kib * 1024)
                 .spawn(move || {
                     let sp = current_stack_addr();
-                    let maps =
-                        std::fs::read_to_string("/proc/thread-self/maps").unwrap_or_default();
-                    maps.lines()
-                        .filter_map(|l| {
-                            let (range, rest) = l.split_once(' ')?;
-                            let (lo_hex, hi_hex) = range.split_once('-')?;
-                            let (lo, hi) = (
-                                usize::from_str_radix(lo_hex, 16).ok()?,
-                                usize::from_str_radix(hi_hex, 16).ok()?,
-                            );
-                            (rest.starts_with("rw") && sp >= lo && sp <= hi).then_some((lo, hi))
-                        })
-                        .next()
-                        .map(|(lo, _hi)| (detect_native_stack_budget(sp), sp - lo))
+                    // Fonte única compartilhada com `detect_native_stack_budget`:
+                    // a leitura independente aqui divergia no runner do CI
+                    // (VMA fundida) e gerava falso-positivo.
+                    stack_vma_bounds(sp)
+                        .map(|(lo, _hi, _main)| (detect_native_stack_budget(sp), sp - lo))
                 })
                 .expect("spawn budget probe thread");
             if let Some((budget, free_raw)) = handle.join().expect("join budget probe thread") {
