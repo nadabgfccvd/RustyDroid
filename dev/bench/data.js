@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794384078697,
+  "lastUpdate": 1794523640510,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7181,6 +7181,40 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3229,
             "range": "± 76",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "xisto@example.com",
+            "name": "Xisto"
+          },
+          "committer": {
+            "email": "xisto@example.com",
+            "name": "Xisto"
+          },
+          "distinct": true,
+          "id": "477b99aea0ff29b8589bf5986c400cd460123504",
+          "message": "fix(ci): guard find|head pipeline against SIGPIPE under pipefail",
+          "timestamp": "2026-11-12T22:45:20Z",
+          "tree_id": "52029ee174c52fd86cfab9fa1c24f6ddbfa129c6",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/477b99aea0ff29b8589bf5986c400cd460123504"
+        },
+        "date": 1794523639200,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3207,
+            "range": "± 130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3200,
+            "range": "± 171",
             "unit": "ns/iter"
           }
         ]
