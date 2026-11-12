@@ -86,7 +86,7 @@ jobs:
           # target/release/build/<crate>/<hash>/out/ instead of
           # target/release/deps/ — search both with find (ls exits 2 when a
           # glob misses, which set -euo pipefail turns into a step failure).
-          bin="$(find target/release/deps target/release/build/rd-dex -maxdepth 4 -name 'parse_tables-*' -type f ! -name '*.d' 2>/dev/null | head -1)"
+          bin="$(find target/release/deps target/release/build/rd-dex -maxdepth 4 -name 'parse_tables-*' -type f ! -name '*.d' 2>/dev/null | head -1 || true)"
           test -x "$bin" || { echo "::error::bench binary not found"; exit 1; }
           echo "bench binary: ${bin}"
           : > ir.txt
