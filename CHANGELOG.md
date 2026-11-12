@@ -71,6 +71,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Republicar uma tag anterior ao tooling falhava no `release.yml`:** o job `publish`
+  faz `git checkout` da tag e então rodava `tests/scripts/release_scripts_test.sh` e
+  `scripts/release-notes.sh`. A `v0.9.0` não tem **nenhum** dos dois (o `tests/scripts/`
+  nasceu depois), então toda tentativa de republicá-la morria com *exit 101* — e a única
+  release publicada do repositório ficou com **0 artefatos**. O self-test agora roda só
+  se a tag o tiver, e as notas caem para `gh release create --generate-notes` quando
+  `scripts/release-notes.sh` não existe naquele commit. Quatro checks travam a guarda em
+  `tests/scripts/release_scripts_test.sh`.
 - **Guard de pilha nativa agora é relativo à pilha real (#637):** o piso de
   `detect_native_stack_budget` era `256 KiB` fixos, então numa thread menor que
   ~512 KiB o orçamento calculado era maior que a própria pilha — o guard em bytes

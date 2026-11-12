@@ -107,6 +107,21 @@ PATH="$bin:$PATH" bash "$PRUNE" --apply > /dev/null 2>&1
 check "prune: --apply deletes exactly the one candidate" \
   '[ "$(grep -c "DELETE" "$log")" -eq 1 ] && grep -q "DELETE repos/o/r/git/refs/heads/feat/merged-untouched" "$log"'
 
+# ── release.yml: uma tag anterior ao tooling ainda precisa publicar ────────
+# A `v0.9.0` não tem `tests/scripts/` nem `scripts/release-notes.sh`. O job
+# `publish` faz checkout da tag, então rodar os helpers sem guarda tornava
+# aquelas tags **permanentemente impublicáveis** (foi assim que a primeira
+# tentativa de republicar a v0.9.0 morreu no CI). Estes checks travam a guarda.
+WF="$ROOT/.github/workflows/release.yml"
+check "release.yml: self-test só roda se a tag tiver o arquivo" \
+  'grep -q "if \[ -f tests/scripts/release_scripts_test.sh \]" "$WF"'
+check "release.yml: self-test solto (sem guarda) não existe" \
+  '! grep -qE "^ *run: bash tests/scripts/release_scripts_test.sh *$" "$WF"'
+check "release.yml: release-notes.sh só é chamado se for executável" \
+  'grep -q "if \[ -x scripts/release-notes.sh \]" "$WF"'
+check "release.yml: fallback --generate-notes existe" \
+  'grep -q -- "--generate-notes" "$WF"'
+
 if [ "$fails" -ne 0 ]; then
   echo "$fails check(s) failed" >&2
   exit 1
