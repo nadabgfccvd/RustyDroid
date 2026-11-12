@@ -1339,6 +1339,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         "Ljava/lang/AssertionError;" => Some(ERR),
         // ── M3.2: framework host Android ───────────────────────────────────
         "Landroid/content/Context;" => Some(OBJECT),
+        "Landroid/content/UriMatcher;" => Some(OBJECT),
         "Ljava/text/BreakIterator;" => Some(OBJECT),
         // android.text layouts (graphics.rs): StaticLayout/BoringLayout/
         // DynamicLayout are Layouts (Compose casts them to Layout)
@@ -1474,6 +1475,15 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         | "Landroid/view/Display;"
         | "Landroid/content/pm/PackageInfo;"
         | "Landroid/content/pm/PackageItemInfo;" => Some(OBJECT),
+        "Landroid/content/pm/PackageManager$NameNotFoundException;" => Some(&[
+            "Ljava/lang/Exception;",
+            "Ljava/lang/Throwable;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/lang/StackTraceElement;" => Some(OBJECT),
+        "Landroid/util/AttributeSet;" => Some(OBJECT),
+        "Landroid/view/animation/LinearInterpolator;" => Some(OBJECT),
+        "Landroid/graphics/Color;" => Some(OBJECT),
         "Landroid/app/ApplicationPackageManager;" => {
             Some(&["Landroid/content/pm/PackageManager;", "Ljava/lang/Object;"])
         }
@@ -2003,6 +2013,11 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         // CopyOnWrite*: na JDK real NÃO estendem Abstract* (implementam direto)
         "Ljava/util/concurrent/CopyOnWriteArrayList;" => Some(OBJECT),
         "Ljava/util/concurrent/LinkedBlockingQueue;" => Some(&[
+            "Ljava/util/AbstractQueue;",
+            "Ljava/util/AbstractCollection;",
+            "Ljava/lang/Object;",
+        ]),
+        "Ljava/util/concurrent/PriorityBlockingQueue;" => Some(&[
             "Ljava/util/AbstractQueue;",
             "Ljava/util/AbstractCollection;",
             "Ljava/lang/Object;",
@@ -3181,6 +3196,13 @@ fn builtin_interfaces(class: &str) -> Option<&'static [&'static str]> {
             "Ljava/io/Serializable;",
         ]),
         "Ljava/util/concurrent/LinkedBlockingQueue;" => Some(&[
+            "Ljava/util/concurrent/BlockingQueue;",
+            "Ljava/util/Queue;",
+            "Ljava/util/Collection;",
+            "Ljava/lang/Iterable;",
+            "Ljava/io/Serializable;",
+        ]),
+        "Ljava/util/concurrent/PriorityBlockingQueue;" => Some(&[
             "Ljava/util/concurrent/BlockingQueue;",
             "Ljava/util/Queue;",
             "Ljava/util/Collection;",

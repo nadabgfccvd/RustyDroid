@@ -560,8 +560,9 @@ fn inflate_element_depth(
 
 /// DEX custom Views need their Android constructor to initialize host-visible
 /// and library state (for example AppCompat's decor-padding Rect). Constructors
-/// receive the selected Context; attrs are null until the AXML-backed
-/// AttributeSet adapter is available.
+/// receive the selected Context and a non-null empty AttributeSet (Kotlin
+/// views with `attrs: AttributeSet` reject null; AXML-backed adapter is
+/// available for real XML inflation via XmlResourceParser).
 fn construct_inflated_view(
     vm: &mut Engine,
     desc: &str,
@@ -580,14 +581,22 @@ fn construct_inflated_view(
             "View {desc} requires a LayoutInflater Context for its DEX constructor"
         )));
     };
+    // AttributeSet vazio não-nulo (Kotlin null-checks rejeitam null)
+    let attrs = vm
+        .heap
+        .alloc_instance("Landroid/util/AttributeSet;".to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    vm.fw
+        .objects
+        .insert(attrs, crate::framework::HostObj::EmptyAttributeSet);
     let candidates = [
         (
             "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
-            vec![Value::Obj(context), Value::Null, Value::Int(0)],
+            vec![Value::Obj(context), Value::Obj(attrs), Value::Int(0)],
         ),
         (
             "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-            vec![Value::Obj(context), Value::Null],
+            vec![Value::Obj(context), Value::Obj(attrs)],
         ),
         ("(Landroid/content/Context;)V", vec![Value::Obj(context)]),
         ("()V", Vec::new()),
@@ -676,6 +685,7 @@ fn view_desc_of(name: &str) -> Result<String, VmExit> {
         "androidx.recyclerview.widget.RecyclerView" => crate::m8::RECYCLER,
         "RecyclerView" => crate::m8::RECYCLER,
         "FrameLayout" => framework::FRAMELAYOUT,
+        "RelativeLayout" => "Landroid/widget/RelativeLayout;",
         "ProgressBar" => "Landroid/widget/ProgressBar;",
         "RadioButton" => "Landroid/widget/RadioButton;",
         "RadioGroup" => "Landroid/widget/RadioGroup;",

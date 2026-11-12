@@ -903,6 +903,15 @@ pub enum HostObj {
         is_static: bool,
         accessible: bool,
     },
+    /// `android.content.UriMatcher`: patterns (authority, path, code).
+    /// Path segments: `*` = any single segment, `#` = any numeric segment.
+    UriMatcher {
+        default_code: i32,
+        patterns: Vec<(String, String, i32)>,
+    },
+    /// `android.util.AttributeSet` vazio (para view ctors sem XML).
+    /// Kotlin views com `attrs: AttributeSet` (non-null) rejeitam null.
+    EmptyAttributeSet,
 }
 
 #[derive(Debug, Clone)]

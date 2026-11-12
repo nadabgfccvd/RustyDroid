@@ -112,6 +112,11 @@ const CONCURRENT_MAP: &str = "Ljava/util/concurrent/ConcurrentHashMap;";
 /// com fila vazia materializam `IllegalStateException` tipado (honesto:
 /// prefere falha visível a pendurar). `offer`/`add`/`poll()`/`peek` normais.
 const BLOCKING_Q: &str = "Ljava/util/concurrent/LinkedBlockingQueue;";
+/// Gap do Gallery (`PriorityBlockingQueue.<init>`). Min-heap sobre o estado
+/// List (ordenado, menor no índice 0). Ordenação por `Comparator` (campo
+/// `rd_comparator`) ou por `Comparable.compareTo` via DEX. Bloqueantes
+/// fail-fast como o LinkedBlockingQueue.
+const PRIORITY_Q: &str = "Ljava/util/concurrent/PriorityBlockingQueue;";
 /// M8: 19º gap do launch real (`ThreadLocal.<init>`). Single-threaded ⇒ um
 /// valor por ThreadLocal (campo de heap "tl_value" + flag "tl_set"): `get`
 /// chama `initialValue()` (DEX) na primeira leitura, como na JDK;
@@ -355,6 +360,39 @@ fn call_static_intrinsic_rooted(
         if let Some(value) = crate::resbundle::static_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
         }
+    }
+    if class == "Landroid/graphics/Color;" && name == "colorToHSV" {
+        // android.graphics.Color.colorToHSV(int, float[]): RGB → HSV
+        let color = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0) as u32;
+        let r = ((color >> 16) & 0xff) as f32 / 255.0;
+        let g = ((color >> 8) & 0xff) as f32 / 255.0;
+        let b = (color & 0xff) as f32 / 255.0;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+        let h = if delta == 0.0 {
+            0.0
+        } else if max == r {
+            60.0 * (((g - b) / delta) % 6.0)
+        } else if max == g {
+            60.0 * (((b - r) / delta) + 2.0)
+        } else {
+            60.0 * (((r - g) / delta) + 4.0)
+        };
+        let h = if h < 0.0 { h + 360.0 } else { h };
+        let s = if max == 0.0 { 0.0 } else { delta / max };
+        let v = max;
+        if let Some(Value::Obj(arr)) = args.get(1) {
+            if let Ok(elems) = vm.heap.array_elems_mut(*arr) {
+                while elems.len() < 3 {
+                    elems.push(Value::Float(0.0));
+                }
+                elems[0] = Value::Float(h);
+                elems[1] = Value::Float(s);
+                elems[2] = Value::Float(v);
+            }
+        }
+        return Ok(Some(Value::Null));
     }
     if class == "Ljava/util/Objects;" && name == "requireNonNull" {
         let value = args.first().cloned().unwrap_or(Value::Null);
@@ -2119,6 +2157,12 @@ fn unsafe_intrinsic(
             unsafe_write(vm, args, value)?;
             Ok(Some(Value::Null))
         }
+        ("getAndSetObject", "(Ljava/lang/Object;JLjava/lang/Object;)Ljava/lang/Object;") => {
+            let current = unsafe_read(vm, args, Value::Null)?;
+            let update = args.get(2).cloned().unwrap_or(Value::Null);
+            unsafe_write(vm, args, update)?;
+            Ok(Some(current))
+        }
         ("compareAndSwapObject", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z")
         | ("compareAndSetObject", "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z") => {
             let current = unsafe_read(vm, args, Value::Null)?;
@@ -2691,6 +2735,7 @@ fn thread_supported(name: &str, sig: &str) -> bool {
             | ("isDaemon", "()Z")
             | ("isAlive", "()Z")
             | ("toString", "()Ljava/lang/String;")
+            | ("getStackTrace", "()[Ljava/lang/StackTraceElement;")
     )
 }
 
@@ -2707,6 +2752,67 @@ fn thread_intrinsic(vm: &mut Engine, name: &str, _sig: &str) -> Result<Option<Va
             vm,
             "Thread[main,1,main]".to_string(),
         )?))),
+        // Stack trace mínimo (1 elemento): a VM não modela frames Java como
+        // StackTraceElement, mas apps acessam [0] para logging — um elemento
+        // sintético honesto (classe/método do thread main).
+        "getStackTrace" => {
+            // Pilha real do VM (frame_labels: (dex_idx, method_idx) innermost-first).
+            // Apps de logging (ex.: k4.p) procuram a própria classe no trace
+            // para achar o chamador — um trace sintético sem a classe do
+            // chamador faz o loop sair do array (AIOOBE). Usar os frames reais.
+            let labels: Vec<(usize, u32)> = vm.frame_labels.clone();
+            let arr = vm
+                .heap
+                .alloc_array(
+                    crate::heap::ElemKind::Obj,
+                    labels.len().max(1),
+                    "Ljava/lang/StackTraceElement;",
+                )
+                .map_err(crate::err::oom_throwable)?;
+            // Thread.getStackTrace é o frame 0 na JVM
+            let thread_elem = vm
+                .heap
+                .alloc_instance("Ljava/lang/StackTraceElement;".to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            let dc = alloc_string(vm, "java.lang.Thread".to_string())?;
+            let mn = alloc_string(vm, "getStackTrace".to_string())?;
+            let _ = vm
+                .heap
+                .put_field(thread_elem, "declaringClass", Value::Obj(dc));
+            let _ = vm.heap.put_field(thread_elem, "methodName", Value::Obj(mn));
+            let _ = vm.heap.put_field(thread_elem, "fileName", Value::Null);
+            let _ = vm.heap.put_field(thread_elem, "lineNumber", Value::Int(-2));
+            if let Ok(elems) = vm.heap.array_elems_mut(arr) {
+                elems.push(Value::Obj(thread_elem));
+            }
+            // Frames DEX reais (innermost primeiro = ordem de frame_labels)
+            for (dex_idx, method_idx) in labels.iter().rev() {
+                let label = vm.label_of(*dex_idx, *method_idx);
+                // label é "Lclass;->method(proto)" — extrai classe e método
+                let (cls, rest) = label.split_once("->").unwrap_or((&label, ""));
+                let method = rest.split('(').next().unwrap_or(rest);
+                let elem = vm
+                    .heap
+                    .alloc_instance("Ljava/lang/StackTraceElement;".to_string(), Vec::new())
+                    .map_err(crate::err::oom_throwable)?;
+                let dc = alloc_string(
+                    vm,
+                    cls.trim_start_matches('L')
+                        .trim_end_matches(';')
+                        .replace('/', ".")
+                        .to_string(),
+                )?;
+                let mn = alloc_string(vm, method.to_string())?;
+                let _ = vm.heap.put_field(elem, "declaringClass", Value::Obj(dc));
+                let _ = vm.heap.put_field(elem, "methodName", Value::Obj(mn));
+                let _ = vm.heap.put_field(elem, "fileName", Value::Null);
+                let _ = vm.heap.put_field(elem, "lineNumber", Value::Int(-2));
+                if let Ok(elems) = vm.heap.array_elems_mut(arr) {
+                    elems.push(Value::Obj(elem));
+                }
+            }
+            Ok(Some(Value::Obj(arr)))
+        }
         _ => Ok(None),
     }
 }
@@ -3767,6 +3873,179 @@ fn queue_blocked() -> VmExit {
     ))
 }
 
+/// `android.content.UriMatcher` host: padrões (authority, path, code).
+/// `match(uri)`: authority deve casar exatamente; path é comparado por
+/// segmentos (`*` = qualquer segmento, `#` = segmento numérico). Sem match
+/// → `NO_MATCH` (-1). Sem Uri host modelado, o match usa a string do Uri
+/// via `toString` (o Uri host guarda a string codificada).
+fn uri_matcher_intrinsic(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    name: &str,
+    sig: &str,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    use crate::framework::HostObj;
+    match (name, sig) {
+        ("<init>", "(I)V") => {
+            let code = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+            vm.fw.objects.insert(
+                recv,
+                HostObj::UriMatcher {
+                    default_code: code,
+                    patterns: Vec::new(),
+                },
+            );
+            Ok(Some(Value::Null))
+        }
+        ("addURI", "(Ljava/lang/String;Ljava/lang/String;I)V") => {
+            let authority = match args.first() {
+                Some(Value::Obj(s)) => vm.heap.as_str(*s).unwrap_or_default().to_string(),
+                _ => String::new(),
+            };
+            let path = match args.get(1) {
+                Some(Value::Obj(s)) => vm.heap.as_str(*s).unwrap_or_default().to_string(),
+                _ => String::new(),
+            };
+            let code = args.get(2).and_then(|v| v.as_int().ok()).unwrap_or(0);
+            // lazy-init se o <init> não rodou (defesa)
+            if !matches!(vm.fw.objects.get(&recv), Some(HostObj::UriMatcher { .. })) {
+                vm.fw.objects.insert(
+                    recv,
+                    HostObj::UriMatcher {
+                        default_code: 0,
+                        patterns: Vec::new(),
+                    },
+                );
+            }
+            if let Some(HostObj::UriMatcher { patterns, .. }) = vm.fw.objects.get_mut(&recv) {
+                patterns.push((authority, path, code));
+            }
+            Ok(Some(Value::Null))
+        }
+        ("match", "(Landroid/net/Uri;)I") => {
+            // Extrai authority + path do Uri (string codificada via toString)
+            let (authority, path) = match args.first() {
+                Some(Value::Obj(u)) => {
+                    let s = vm.heap.as_str(*u).unwrap_or_default().to_string();
+                    parse_uri_authority_path(&s)
+                }
+                _ => (String::new(), String::new()),
+            };
+            let patterns = match vm.fw.objects.get(&recv) {
+                Some(HostObj::UriMatcher { patterns, .. }) => patterns.clone(),
+                _ => Vec::new(),
+            };
+            for (p_auth, p_path, code) in &patterns {
+                if *p_auth == authority && path_matches(p_path, &path) {
+                    return Ok(Some(Value::Int(*code)));
+                }
+            }
+            Ok(Some(Value::Int(-1))) // NO_MATCH
+        }
+        _ => Ok(None),
+    }
+}
+
+/// `android.util.AttributeSet` vazio: count=0, valores null, defaults.
+fn attribute_set_intrinsic(
+    _vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    match (name, sig) {
+        ("getAttributeCount", "()I") => Ok(Some(Value::Int(0))),
+        ("getAttributeValue", "(ILjava/lang/String;)Ljava/lang/String;")
+        | ("getAttributeValue", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;")
+        | ("getClassAttribute", "()Ljava/lang/String;")
+        | ("getIdAttribute", "()Ljava/lang/String;")
+        | ("getStyleAttribute", "()Ljava/lang/String;") => Ok(Some(Value::Null)),
+        ("getAttributeIntValue", "(ILjava/lang/String;I)I")
+        | ("getAttributeIntValue", "(Ljava/lang/String;Ljava/lang/String;I)I")
+        | ("getAttributeFloatValue", "(ILjava/lang/String;F)F")
+        | ("getAttributeFloatValue", "(Ljava/lang/String;Ljava/lang/String;F)F")
+        | ("getAttributeBooleanValue", "(ILjava/lang/String;Z)Z")
+        | ("getAttributeBooleanValue", "(Ljava/lang/String;Ljava/lang/String;Z)Z") => {
+            // Devolve o default (último argumento)
+            Ok(Some(args.last().cloned().unwrap_or(Value::Null)))
+        }
+        ("getAttributeName", "(I)Ljava/lang/String;")
+        | ("getAttributeNamespace", "(I)Ljava/lang/String;") => Ok(Some(Value::Null)),
+        ("getIndexCount", "()I") => Ok(Some(Value::Int(0))),
+        ("getIndex", "(Ljava/lang/String;Ljava/lang/String;)I") => Ok(Some(Value::Int(-1))),
+        _ => Ok(None),
+    }
+}
+
+/// `java.lang.StackTraceElement` getters (campos de heap do getStackTrace host).
+fn stack_trace_element_intrinsic(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    name: &str,
+    sig: &str,
+) -> Result<Option<Value>, VmExit> {
+    let field = match (name, sig) {
+        ("getClassName", "()Ljava/lang/String;") => "declaringClass",
+        ("getMethodName", "()Ljava/lang/String;") => "methodName",
+        ("getFileName", "()Ljava/lang/String;") => "fileName",
+        ("getLineNumber", "()I") => "lineNumber",
+        _ => return Ok(None),
+    };
+    let v = vm.heap.get_field(recv, field).unwrap_or(Value::Null);
+    // getFileName pode devolver null (JDK); getLineNumber default -2
+    if field == "lineNumber" && matches!(v, Value::Null) {
+        return Ok(Some(Value::Int(-2)));
+    }
+    Ok(Some(v))
+}
+
+/// Extrai (authority, path) de uma URI string. Suporta `scheme://auth/path`.
+fn parse_uri_authority_path(s: &str) -> (String, String) {
+    // Remove scheme
+    let rest = if let Some(idx) = s.find("://") {
+        &s[idx + 3..]
+    } else if let Some(idx) = s.find(':') {
+        &s[idx + 1..]
+    } else {
+        s
+    };
+    // Authority até o primeiro /
+    let (auth, path) = match rest.find('/') {
+        Some(idx) => (&rest[..idx], &rest[idx..]),
+        None => (rest, "/"),
+    };
+    // Remove query/fragment do path
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    (auth.to_string(), path.to_string())
+}
+
+/// Casa um path de padrão contra um path real, por segmentos.
+/// `*` casa qualquer segmento; `#` casa segmento numérico.
+fn path_matches(pattern: &str, path: &str) -> bool {
+    let p_segs: Vec<&str> = pattern.split('/').collect();
+    let a_segs: Vec<&str> = path.split('/').collect();
+    if p_segs.len() != a_segs.len() {
+        return false;
+    }
+    for (p, a) in p_segs.iter().zip(a_segs.iter()) {
+        match *p {
+            "*" => {} // qualquer segmento
+            "#" => {
+                if a.is_empty() || !a.chars().all(|c| c.is_ascii_digit()) {
+                    return false;
+                }
+            }
+            other => {
+                if other != *a {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 /// LinkedBlockingQueue host (M8): FIFO sobre `HostObj::List` (frente = 0).
 /// Capacidade é ignorada (unbounded — como o default da JDK); null rejeitado.
 fn queue_intrinsic(
@@ -3911,6 +4190,260 @@ fn queue_intrinsic(
         ("remainingCapacity", _) => Ok(Some(Value::Int(i32::MAX))), // unbounded
         _ => Ok(None),
     }
+}
+
+/// (name, sig) de PriorityBlockingQueue host suportados.
+fn priority_queue_supported(name: &str, sig: &str) -> bool {
+    matches!(
+        (name, sig),
+        ("<init>", "()V")
+            | ("<init>", "(I)V")
+            | ("<init>", "(Ljava/util/Collection;)V")
+            | ("<init>", "(ILjava/util/Comparator;)V")
+            | ("offer", "(Ljava/lang/Object;)Z")
+            | (
+                "offer",
+                "(Ljava/lang/Object;JLjava/util/concurrent/TimeUnit;)Z"
+            )
+            | ("add", "(Ljava/lang/Object;)Z")
+            | ("put", "(Ljava/lang/Object;)V")
+            | ("poll", "()Ljava/lang/Object;")
+            | (
+                "poll",
+                "(JLjava/util/concurrent/TimeUnit;)Ljava/lang/Object;"
+            )
+            | ("take", "()Ljava/lang/Object;")
+            | ("peek", "()Ljava/lang/Object;")
+            | ("element", "()Ljava/lang/Object;")
+            | ("remove", "(Ljava/lang/Object;)Z")
+            | ("contains", "(Ljava/lang/Object;)Z")
+            | ("size", "()I")
+            | ("isEmpty", "()Z")
+            | ("clear", "()V")
+            | ("remainingCapacity", "()I")
+            | ("drainTo", "(Ljava/util/Collection;)I")
+            | ("drainTo", "(Ljava/util/Collection;I)I")
+            | ("comparator", "()Ljava/util/Comparator;")
+    )
+}
+
+/// Compara dois elementos para a PriorityBlockingQueue: via Comparator
+/// (campo `rd_comparator`) ou via `Comparable.compareTo` (DEX).
+/// Retorna o resultado de `compare`/`compareTo` como i32.
+fn priority_compare(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    a: &Value,
+    b: &Value,
+) -> Result<i32, VmExit> {
+    // Comparator explícito?
+    let comparator = vm.heap.get_field(recv, "rd_comparator").ok();
+    if let Some(Value::Obj(cmp)) = comparator {
+        let cmp_class = vm.heap.class_of(cmp).unwrap_or_default();
+        if let Some((d, def, m)) = vm.cp.resolve_method(
+            cmp_class,
+            "compare",
+            "(Ljava/lang/Object;Ljava/lang/Object;)I",
+        ) {
+            let r = vm.call(d, def, &m, vec![Value::Obj(cmp), a.clone(), b.clone()])?;
+            return Ok(r.as_int()?);
+        }
+    }
+    // Natural ordering: a.compareTo(b)
+    let a_class = match a {
+        Value::Obj(o) => vm.heap.class_of(*o).unwrap_or_default(),
+        _ => return Ok(0),
+    };
+    if let Some((d, def, m)) = vm
+        .cp
+        .resolve_method(a_class, "compareTo", "(Ljava/lang/Object;)I")
+    {
+        let r = vm.call(d, def, &m, vec![a.clone(), b.clone()])?;
+        return Ok(r.as_int()?);
+    }
+    // Sem Comparator e sem Comparable: JDK lança ClassCastException
+    Err(VmExit::Exception(Throwable::new(
+        "Ljava/lang/ClassCastException;",
+        "elemento sem Comparator e sem Comparable (como na JDK)",
+    )))
+}
+
+/// PriorityBlockingQueue host: min-heap sobre `HostObj::List` (ordenado,
+/// menor no índice 0). Inserção encontra a posição por comparação (O(n),
+/// correto para VM single-threaded). Null rejeitado (JDK). Bloqueantes
+/// fail-fast como o LinkedBlockingQueue.
+fn priority_queue_intrinsic(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+    name: &str,
+    sig: &str,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    use crate::framework::HostObj;
+    if name == "<init>" {
+        vm.fw
+            .objects
+            .insert(recv, HostObj::List { elems: Vec::new() });
+        // Comparator: só na sobrecarga (I, Comparator)V — args[1]
+        let cmp = if sig == "(ILjava/util/Comparator;)V" {
+            args.get(1).cloned().unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        };
+        let _ = vm.heap.put_field(recv, "rd_comparator", cmp);
+        // Collection: adiciona todos os elementos (ordenando)
+        if sig == "(Ljava/util/Collection;)V" {
+            if let Some(Value::Obj(src)) = args.first() {
+                if let Some(HostObj::List { elems }) = vm.fw.objects.get(src).cloned() {
+                    for e in elems {
+                        priority_insert(vm, recv, e)?;
+                    }
+                }
+            }
+        }
+        return Ok(Some(Value::Null));
+    }
+    if !matches!(vm.fw.objects.get(&recv), Some(HostObj::List { .. })) {
+        vm.fw
+            .objects
+            .insert(recv, HostObj::List { elems: Vec::new() });
+    }
+    match (name, sig) {
+        ("offer", _) | ("add", _) | ("put", _) => {
+            if matches!(args[0], Value::Null) {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "PriorityBlockingQueue não aceita null (como na JDK)",
+                )));
+            }
+            priority_insert(vm, recv, args[0].clone())?;
+            Ok(Some(if name == "put" {
+                Value::Null
+            } else {
+                Value::Int(1)
+            }))
+        }
+        ("poll", "()Ljava/lang/Object;") | ("peek", _) => {
+            let v = {
+                let elems = list_elems(vm, recv)?;
+                elems.first().cloned()
+            };
+            if name == "poll" {
+                if v.is_none() {
+                    return Ok(Some(Value::Null));
+                }
+                list_elems(vm, recv)?.remove(0);
+            }
+            Ok(Some(v.unwrap_or(Value::Null)))
+        }
+        ("poll", _) | ("take", _) | ("element", _) => {
+            let elems = list_elems(vm, recv)?;
+            if elems.is_empty() {
+                if name == "element" {
+                    return Err(deque_empty_nse());
+                }
+                return Err(queue_blocked());
+            }
+            Ok(Some(elems.remove(0)))
+        }
+        ("remove", _) | ("contains", _) => {
+            let idx = find_elem(vm, recv, &args[0])?;
+            if name == "remove" {
+                if let Some(i) = idx {
+                    list_elems(vm, recv)?.remove(i);
+                }
+            }
+            Ok(Some(Value::Int(idx.is_some() as i32)))
+        }
+        ("size", _) => {
+            let n = list_elems(vm, recv)?.len();
+            Ok(Some(Value::Int(n as i32)))
+        }
+        ("isEmpty", _) => {
+            let empty = list_elems(vm, recv)?.is_empty();
+            Ok(Some(Value::Int(empty as i32)))
+        }
+        ("clear", _) => {
+            list_elems(vm, recv)?.clear();
+            Ok(Some(Value::Null))
+        }
+        ("remainingCapacity", _) => Ok(Some(Value::Int(i32::MAX))),
+        ("comparator", _) => {
+            let cmp = vm
+                .heap
+                .get_field(recv, "rd_comparator")
+                .unwrap_or(Value::Null);
+            Ok(Some(cmp))
+        }
+        ("drainTo", _) => {
+            // Reusa a semântica do LinkedBlockingQueue: drena na ordem da fila
+            let Some(dst) = args[0].as_ref()? else {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/NullPointerException;",
+                    "drainTo com Collection destino null",
+                )));
+            };
+            if dst == recv {
+                return Err(VmExit::Exception(Throwable::new(
+                    "Ljava/lang/IllegalArgumentException;",
+                    "drainTo para a própria fila",
+                )));
+            }
+            let max = if sig == "(Ljava/util/Collection;I)I" {
+                args[1].as_int()?.max(0) as usize
+            } else {
+                usize::MAX
+            };
+            let is_set = matches!(
+                vm.heap.class_of(dst),
+                Ok(dc) if vm.cp.is_subtype(dc, "Ljava/util/Set;")
+            );
+            let is_collection = matches!(
+                vm.heap.class_of(dst),
+                Ok(dc) if vm.cp.is_subtype(dc, "Ljava/util/Collection;")
+            );
+            if !is_collection {
+                return Err(
+                    "drainTo: destino fora da superfície de Collection host (coleção do app)"
+                        .to_string()
+                        .into(),
+                );
+            }
+            if !matches!(vm.fw.objects.get(&dst), Some(HostObj::List { .. })) {
+                vm.fw
+                    .objects
+                    .insert(dst, HostObj::List { elems: Vec::new() });
+            }
+            let k = list_elems(vm, recv)?.len().min(max);
+            let drained: Vec<Value> = list_elems(vm, recv)?.drain(..k).collect();
+            let mut taken = 0usize;
+            for v in drained {
+                if !(is_set && find_elem(vm, dst, &v)?.is_some()) {
+                    list_elems(vm, dst)?.push(v);
+                }
+                taken += 1;
+            }
+            Ok(Some(Value::Int(taken as i32)))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Insere um elemento mantendo a ordem (menor no índice 0).
+fn priority_insert(vm: &mut Engine, recv: crate::heap::ObjRef, elem: Value) -> Result<(), VmExit> {
+    // Copia os elementos atuais para comparar sem segurar o borrow do Vec
+    // (priority_compare precisa de &mut Engine para chamar DEX).
+    let snapshot: Vec<Value> = list_elems(vm, recv)?.clone();
+    let mut pos = snapshot.len();
+    for (i, existing) in snapshot.iter().enumerate() {
+        let cmp = priority_compare(vm, recv, &elem, existing)?;
+        if cmp < 0 {
+            pos = i;
+            break;
+        }
+    }
+    list_elems(vm, recv)?.insert(pos, elem);
+    Ok(())
 }
 
 /// (name, sig) de ArrayDeque host suportados (M8).
@@ -5537,6 +6070,17 @@ fn instance_intrinsic_core(
         {
             Ok(Some(Value::Obj(vm.application_obj()?)))
         }
+        // ── Activity.getTaskId: task id sintético (1). Apps usam para
+        // agrupar activities na mesma task; VM executa uma activity por vez.
+        (_, "getTaskId", "()I") if vm.cp.is_subtype(recv_class, crate::framework::ACTIVITY) => {
+            Ok(Some(Value::Int(1)))
+        }
+        // ── Activity.isFinishing/isDestroyed: estado do lifecycle host.
+        (_, "isFinishing", "()Z") | (_, "isDestroyed", "()Z")
+            if vm.cp.is_subtype(recv_class, crate::framework::ACTIVITY) =>
+        {
+            Ok(Some(Value::Int(0)))
+        }
         // ── Context.getApplicationContext (M8, 39º gap real): final na
         // plataforma (ContextWrapper delega ao base); para Activities é o
         // MESMO objeto de getApplication (o app registra si mesmo como base).
@@ -5546,6 +6090,31 @@ fn instance_intrinsic_core(
                 || vm.cp.is_subtype(recv_class, crate::framework::CONTEXT) =>
         {
             Ok(Some(Value::Obj(vm.application_obj()?)))
+        }
+        // ── android.content.UriMatcher ─────────────────────────────────────
+        // addURI(authority, path, code) registra padrão; match(uri) devolve
+        // o code do primeiro padrão que casa (authority + segmentos de path;
+        // `*` = qualquer segmento, `#` = segmento numérico) ou NO_MATCH (-1).
+        (_, name, sig) if mref_class == "Landroid/content/UriMatcher;" => {
+            uri_matcher_intrinsic(vm, recv, name, sig, args)
+        }
+        // ── java.lang.StackTraceElement ────────────────────────────────────
+        // Getters sobre os campos de heap (declaringClass/methodName/fileName/
+        // lineNumber) gravados pelo Thread.getStackTrace host.
+        (_, name, sig) if mref_class == "Ljava/lang/StackTraceElement;" => {
+            stack_trace_element_intrinsic(vm, recv, name, sig)
+        }
+        // ── android.util.AttributeSet (vazio) ──────────────────────────────
+        // getAttributeCount=0, getAttributeValue=null, getClassAttribute=null.
+        // Views customizadas leem attrs no ctor; vazio é honesto.
+        (_, name, sig)
+            if mref_class == "Landroid/util/AttributeSet;"
+                && matches!(
+                    vm.fw.objects.get(&recv),
+                    Some(crate::framework::HostObj::EmptyAttributeSet)
+                ) =>
+        {
+            attribute_set_intrinsic(vm, name, sig, args)
         }
         // sun.misc.Unsafe (and Android's jdk.internal alias) use deterministic
         // synthetic offsets backed by per-object heap fields.
@@ -5872,6 +6441,17 @@ fn instance_intrinsic_core(
         // ── AtomicInteger (M8) ──────────────────────────────────────────────
         // Estado no campo "value" (Int). Overflow i32 segue a semântica Java
         // (silencioso/wrapping); longValue/floatValue/doubleValue alargam.
+        // Subclasses DEX de ThreadPoolExecutor (ex.: Lry2; no Gallery): o
+        // receiver é a subclasse, mas o mref declara ThreadPoolExecutor —
+        // casa por mref.class como os ctors de coleções abstratas.
+        (_, "<init>", sig) if mref_class == THREAD_POOL_EXECUTOR && thread_pool_ctor(sig) => {
+            if sig.contains("ThreadFactory;") {
+                if let Some(f @ Value::Obj(_)) = args.get(5) {
+                    crate::err::put_field_result(vm.heap.put_field(recv, "rd_factory", f.clone()))?;
+                }
+            }
+            Ok(Some(Value::Null))
+        }
         (THREAD_POOL_EXECUTOR, "<init>", sig) if thread_pool_ctor(sig) => {
             // ThreadFactory (índice 5) é guardada e usada em execute/submit.
             if sig.contains("ThreadFactory;") {
@@ -6216,6 +6796,10 @@ fn instance_intrinsic_core(
         // LinkedBlockingQueue (M8): FIFO; bloqueantes fail-fast (sem deadlock)
         (c, name, sig) if c == BLOCKING_Q && queue_supported(name, sig) => {
             queue_intrinsic(vm, recv, name, sig, args)
+        }
+        // PriorityBlockingQueue: min-heap ordenado; bloqueantes fail-fast
+        (c, name, sig) if c == PRIORITY_Q && priority_queue_supported(name, sig) => {
+            priority_queue_intrinsic(vm, recv, name, sig, args)
         }
         // ThreadLocal (M8): um valor por VM. <init> só quando o mref DECLARA
         // ThreadLocal (super() de subclasse inclusa; ctor da subclasse segue o
