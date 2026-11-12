@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794523640510,
+  "lastUpdate": 1794526925854,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7215,6 +7215,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3200,
             "range": "± 171",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "15920b65b6f290ff4ad7da034e505002073aef15",
+          "message": "feat(rd-vm): close target-app launch gaps (PriorityBlockingQueue, UriMatcher, Thread.getStackTrace, framework IDs, AttributeSet, Color, Activity methods) (#648)\n\nTarget apps (docs/target-apps.md) launch probing found concrete gaps:\n\n- PriorityBlockingQueue host (Gallery): min-heap with Comparator/Comparable\n  ordering via DEX callbacks; all BlockingQueue methods; classpath hierarchy\n- UriMatcher host (Gallery): addURI/match with * and # path segments\n- ThreadPoolExecutor subclass ctor fix (Gallery): match by mref_class for\n  DEX subclasses (Lry2;) calling super ctor\n- Thread.getStackTrace (Contacts): real DEX call stack from frame_labels\n  (apps search own class in trace for logging — synthetic trace caused AIOOBE)\n- StackTraceElement getters (Contacts): getClassName/getMethodName/etc.\n- Framework IDs (Contacts/Gallery): android.R.id.* returns the ID itself\n  instead of NotFoundException (0x106000d)\n- NameNotFoundException hierarchy (Contacts/Gallery): added to classpath\n  so catch(Exception) matches (isPackageInstalled pattern)\n- Empty AttributeSet (Contacts): non-null attrs for view ctors (Kotlin\n  null-checks reject null); AttributeSet methods (getClassAttribute etc.)\n- RelativeLayout inflate tag (Contacts)\n- Color.colorToHSV (VolumeScroll): RGB→HSV conversion\n- Activity.getTaskId/isFinishing/isDestroyed (Klick'r)\n- Unsafe.getAndSetObject (Klick'r)\n- AnimationUtils.loadInterpolator (Contacts): LinearInterpolator host\n- LinearInterpolator classpath entry\n\nKlick'r (com.buzbuz.smartautoclicker) now launches to first frame.\nContacts/Gallery advance deep into launch (resource resolution next).\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-12T20:41:06-03:00",
+          "tree_id": "3a4508e6907d9f60472bbb7f6b44fe1931b2aabc",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/15920b65b6f290ff4ad7da034e505002073aef15"
+        },
+        "date": 1794526924609,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3308,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3303,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
