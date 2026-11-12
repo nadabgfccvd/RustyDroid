@@ -82,7 +82,10 @@ jobs:
         run: |-
           set -euo pipefail
           cargo bench -p rd-dex --bench parse_tables --no-run --locked
-          bin="$(ls -t target/release/deps/parse_tables-* | grep -v '\.d$' | head -1)"
+          # Cargo ≥ 1.100 places harness=false bench binaries under
+          # target/release/build/<crate>/<hash>/out/ instead of
+          # target/release/deps/ — search both.
+          bin="$(ls -t target/release/deps/parse_tables-* target/release/build/rd-dex/*/out/parse_tables-* 2>/dev/null | grep -v '\.d$' | head -1)"
           test -x "$bin" || { echo "::error::bench binary not found"; exit 1; }
           echo "bench binary: ${bin}"
           : > ir.txt
