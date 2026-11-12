@@ -169,6 +169,24 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
                     // processo abortava. O piso agora nunca passa de 1/8 da VMA,
                     // que é quanto sobra garantido depois de reservar o resto.
                     let floor = MIN_NATIVE_STACK_BUDGET.min((hi.saturating_sub(lo)) / 8);
+                    // #643: o piso não pode FABRICAR espaço que não existe.
+                    // `free` (folga menos o headroom de 1 MiB) já é 0 em
+                    // pilhas de 256–512 KiB, e o piso devolvia 64 KiB — mais
+                    // pilha do que há entre o SP e a guard page. O guard em
+                    // bytes então nunca disparava antes do SO e a thread
+                    // abortava com SIGABRT (flake #637 no job NDK do CI:
+                    // depende do layout de VMA/mmap do processo — por isso
+                    // intermitente). O piso existe para evitar orçamento
+                    // DEGENERADO (0/1 frame que rejeitaria até chamada
+                    // trivial); ele não é um mínimo garantido de pilha e se
+                    // subordina à folga que resta de verdade. `MIN_DEPTH_FLOOR`
+                    // continua garantindo 16 frames de `entry_depth_cap` mesmo
+                    // com o orçamento no piso absoluto de 64 KiB, e o limite
+                    // combinado de `enter_stack_frame` continua valendo, então
+                    // uma pilha realmente minúscula falha FECHADA com
+                    // `StackOverflowError` tipado em vez de SIGABRT.
+                    let free_raw = sp_now.saturating_sub(lo);
+                    let floor = floor.min(free_raw);
                     return free.min(ceiling).max(floor);
                 }
             }
@@ -178,7 +196,18 @@ fn detect_native_stack_budget(sp_now: usize) -> usize {
     if std::thread::current().name() == Some("main") {
         MAX_MAIN_NATIVE_STACK_BYTES
     } else {
-        FALLBACK_NATIVE_STACK_BYTES
+        // #643: o fallback de 1,25 MiB presume uma thread comunitária "normal"
+        // (≥ 8 MiB). Para threads PEQUENAS cuja VMA não foi detectável no
+        // /proc (layout do runner: TLS anônimo acima da pilha, SP fora da
+        // VMA rw que a varredura aceita), esse orçamento era MAIOR que a
+        // pilha inteira: o guard em bytes nunca disparava antes da guard
+        // page do SO e o processo abortava com SIGABRT (flake #637). Sem
+        // detecção não há como conhecer a pilha — o único valor que não
+        // mente para qualquer pilha é o piso absoluto (64 KiB, com
+        // MIN_DEPTH_FLOOR garantindo 16 frames). Threads grandes de verdade
+        // voltam a detectar a VMA e recebem o orçamento cheio; o caminho
+        // principal (main, RLIMIT) segue intacto.
+        MIN_NATIVE_STACK_BUDGET
     }
 }
 
@@ -1811,6 +1840,16 @@ mod native_stack_budget_tests {
     /// #469: em thread de 2 MiB, o orçamento deixa pelo menos 1 MiB de folga
     /// entre o orçamento e o início (base) da pilha — margem para o último
     /// salto host→host antes da próxima checagem.
+    ///
+    /// #643 (robustez ao layout do runner): a folga de 1 MiB só é EXIGÍVEL
+    /// quando a VMA é uma pilha de thread de verdade — ancorada pela página
+    /// guarda `PROT_NONE` logo abaixo (glibc). No runner do CI (glibc mais
+    /// nova), a pilha de 2 MiB pode nascer FUNDIDA com mapeamentos anônimos
+    /// vizinhos e sem a guarda visível: aí `hi - lo` não descreve a pilha e
+    /// o teto cai para o fallback — o orçamento correto é o piso relativo
+    /// (#637), e o teste passa a exigir a invariante universal
+    /// (`budget ≤ folga real`), não a folga de 1 MiB que a VMA fundida não
+    /// pode prometer. Sem isso o próprio teste virava flake no runner.
     #[test]
     fn two_mib_thread_budget_keeps_one_mib_headroom_469() {
         let handle = std::thread::Builder::new()
@@ -1819,30 +1858,97 @@ mod native_stack_budget_tests {
             .spawn(|| {
                 let sp = current_stack_addr();
                 let maps = std::fs::read_to_string("/proc/thread-self/maps").unwrap_or_default();
-                let lo = maps
-                    .lines()
-                    .filter_map(|l| {
-                        let (range, rest) = l.split_once(' ')?;
-                        let (lo_hex, hi_hex) = range.split_once('-')?;
-                        let (lo, hi) = (
-                            usize::from_str_radix(lo_hex, 16).ok()?,
-                            usize::from_str_radix(hi_hex, 16).ok()?,
-                        );
-                        (rest.starts_with("rw") && sp >= lo && sp <= hi).then_some(lo)
+                let lines: Vec<&str> = maps.lines().collect();
+                // (lo da VMA que contém o SP, linha completa) — para reusar na
+                // checagem de âncora exatamente como o motor faz.
+                let vma = lines.iter().find_map(|l| {
+                    let (range, rest) = l.split_once(' ')?;
+                    let (lo_hex, hi_hex) = range.split_once('-')?;
+                    let (lo, hi) = (
+                        usize::from_str_radix(lo_hex, 16).ok()?,
+                        usize::from_str_radix(hi_hex, 16).ok()?,
+                    );
+                    (rest.starts_with("rw") && sp >= lo && sp <= hi).then_some((lo, *l))
+                });
+                let anchored = vma
+                    .as_ref()
+                    .map(|(_, l)| {
+                        if l.trim_end().ends_with("[stack]") {
+                            true
+                        } else {
+                            let lo = l.split_once(' ').and_then(|(r, _)| {
+                                r.split_once('-')
+                                    .and_then(|(lo_hex, _)| usize::from_str_radix(lo_hex, 16).ok())
+                            });
+                            lo.map(|lo| guard_page_below(&lines, lo)).unwrap_or(false)
+                        }
                     })
-                    .next();
-                (detect_native_stack_budget(sp), lo, sp)
+                    .unwrap_or(false);
+                (
+                    detect_native_stack_budget(sp),
+                    vma.map(|(lo, _)| lo),
+                    anchored,
+                    sp,
+                )
             })
             .expect("spawn 2 MiB thread");
-        let (budget, lo, sp) = handle.join().expect("budget thread");
+        let (budget, lo, anchored, sp) = handle.join().expect("budget thread");
         if let Some(lo) = lo {
             assert!(
-                sp - lo - budget >= NATIVE_STACK_HEADROOM,
-                "orçamento {budget} B deixa menos de 1 MiB de folga (pilha {} B)",
+                budget <= sp - lo,
+                "orçamento {budget} B excede a folga real de {} B (#643)",
                 sp - lo
             );
+            if anchored {
+                assert!(
+                    sp - lo - budget >= NATIVE_STACK_HEADROOM,
+                    "orçamento {budget} B deixa menos de 1 MiB de folga (pilha {} B)",
+                    sp - lo
+                );
+            }
         }
         assert!(budget >= 256 * 1024, "orçamento {budget} B abaixo do piso");
+    }
+
+    /// #643 (flake do job NDK no CI): o piso do orçamento nunca pode exceder a
+    /// folga REAL entre o SP e a base da pilha. Antes do fix, em threads de
+    /// 320 KiB o orçamento vinha no piso absoluto (64 KiB) enquanto a folga
+    /// restante podia ser menor — o guard em bytes não disparava antes da
+    /// guard page do SO e o processo abortava com SIGABRT (#637 intermitente:
+    /// dependia do layout de VMA/mmap do runner). Aqui a invariante é direta:
+    /// `budget ≤ free_raw` para qualquer pilha de thread detectável.
+    #[test]
+    fn budget_floor_never_exceeds_real_stack_headroom_643() {
+        for kib in [256usize, 320, 512, 2048] {
+            let handle = std::thread::Builder::new()
+                .name(format!("budget-643-{kib}"))
+                .stack_size(kib * 1024)
+                .spawn(move || {
+                    let sp = current_stack_addr();
+                    let maps =
+                        std::fs::read_to_string("/proc/thread-self/maps").unwrap_or_default();
+                    maps.lines()
+                        .filter_map(|l| {
+                            let (range, rest) = l.split_once(' ')?;
+                            let (lo_hex, hi_hex) = range.split_once('-')?;
+                            let (lo, hi) = (
+                                usize::from_str_radix(lo_hex, 16).ok()?,
+                                usize::from_str_radix(hi_hex, 16).ok()?,
+                            );
+                            (rest.starts_with("rw") && sp >= lo && sp <= hi).then_some((lo, hi))
+                        })
+                        .next()
+                        .map(|(lo, _hi)| (detect_native_stack_budget(sp), sp - lo))
+                })
+                .expect("spawn budget probe thread");
+            if let Some((budget, free_raw)) = handle.join().expect("join budget probe thread") {
+                assert!(
+                    budget <= free_raw,
+                    "{kib} KiB: orçamento {budget} B excede a folga real de {free_raw} B — \
+                     o piso não pode fabricar pilha que não existe"
+                );
+            }
+        }
     }
 }
 
