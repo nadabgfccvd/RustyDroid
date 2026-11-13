@@ -1745,12 +1745,21 @@ impl Engine {
         // pass never laid it out: eager `addView` layouts leave a stale
         // wrap-content size on the parent (see host_add_view) that must not
         // be mistaken for a laid-out window.
-        let needs_layout = roots.iter().any(|r| {
-            matches!(bounds(self, *r), Some((_, _, w, h, _)) if w <= 0 || h <= 0)
-                || prop(self, *r, "rd_host_root").is_none()
-        });
-        if needs_layout {
+        let zero_size = roots
+            .iter()
+            .any(|r| matches!(bounds(self, *r), Some((_, _, w, h, _)) if w <= 0 || h <= 0));
+        let never_laid_out = roots
+            .iter()
+            .any(|r| prop(self, *r, "rd_host_root").is_none());
+        if zero_size {
             self.draw_frame()?;
+        } else if never_laid_out {
+            // Window pass only: a frame would also advance the virtual clock
+            // (vsync tick), which must not change for a size that is already set.
+            self.fw.in_traversal = true;
+            let laid = self.layout_pass();
+            self.fw.in_traversal = false;
+            laid?;
         }
         Ok(())
     }
