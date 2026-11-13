@@ -260,7 +260,15 @@ pub(crate) fn instance_intrinsic(
         }
         ("newInstance", "()Ljava/lang/Object;") => {
             if vm.cp.find_class(&d).is_none() {
-                return Ok(None);
+                // Platform class (android.*, java.*): host object + host no-arg
+                // constructor. Unknown host classes still fall through to the
+                // generic dispatch (NOT_FOUND) instead of a silent null.
+                if !d.starts_with("Landroid/") && !d.starts_with("Ljava/") {
+                    return Ok(None);
+                }
+                let o = vm.new_object(&d)?;
+                vm.invoke_instance(o, "<init>", "()V", &[])?;
+                return Ok(Some(Value::Obj(o)));
             }
             vm.ensure_initialized(&d)?;
             let Some((dx, def, m)) = vm.cp.resolve_method(&d, "<init>", "()V") else {

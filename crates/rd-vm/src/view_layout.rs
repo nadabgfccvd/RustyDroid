@@ -1733,18 +1733,33 @@ impl Engine {
         let Some(content) = self.window_content_of(activity) else {
             return Ok(());
         };
-        let mut roots = Vec::new();
-        self.collect_dex_roots(content, &mut roots, 0);
+        let mut collected = Vec::new();
+        self.collect_dex_roots(content, &mut collected, 0);
+        let mut roots = self.window_layout_roots(content, collected);
         roots.extend(
             crate::m8::showing_dialog_roots(self)
                 .into_iter()
                 .map(|(_, r)| r),
         );
-        let needs_layout = roots
+        // A root needs the window pass when it has no size yet OR the window
+        // pass never laid it out: eager `addView` layouts leave a stale
+        // wrap-content size on the parent (see host_add_view) that must not
+        // be mistaken for a laid-out window.
+        let zero_size = roots
             .iter()
             .any(|r| matches!(bounds(self, *r), Some((_, _, w, h, _)) if w <= 0 || h <= 0));
-        if needs_layout {
+        let never_laid_out = roots
+            .iter()
+            .any(|r| prop(self, *r, "rd_host_root").is_none());
+        if zero_size {
             self.draw_frame()?;
+        } else if never_laid_out {
+            // Window pass only: a frame would also advance the virtual clock
+            // (vsync tick), which must not change for a size that is already set.
+            self.fw.in_traversal = true;
+            let laid = self.layout_pass();
+            self.fw.in_traversal = false;
+            laid?;
         }
         Ok(())
     }
@@ -1773,7 +1788,8 @@ impl Engine {
         let phases = self.launch_trace.is_some();
         let (f0, t0) = (self.fuel_used, std::time::Instant::now());
         self.fw.in_traversal = true;
-        let laid = self.layout_roots(&dex_roots, &dialogs);
+        let layout_targets = self.window_layout_roots(content, dex_roots.clone());
+        let laid = self.layout_roots(&layout_targets, &dialogs);
         self.fw.in_traversal = false;
         laid?;
         let (f1, t1) = (self.fuel_used, t0.elapsed());
@@ -1821,7 +1837,33 @@ impl Engine {
         let mut dex_roots = Vec::new();
         self.collect_dex_roots(content, &mut dex_roots, 0);
         let dialogs = crate::m8::showing_dialog_roots(self);
-        self.layout_roots(&dex_roots, &dialogs)
+        let layout_targets = self.window_layout_roots(content, dex_roots);
+        self.layout_roots(&layout_targets, &dialogs)
+    }
+
+    /// Roots measured/laid out for a window. A DEX view nested under a host
+    /// container (LinearLayout/FrameLayout inflated from XML) must be measured
+    /// by that container, or its `layout_weight`/margins never apply and the
+    /// subtree keeps its wrap-content size. So when the window content is a
+    /// host view and DEX views live beneath it, the content IS the root.
+    /// Host-only windows keep their previous (no-op) treatment.
+    pub(crate) fn window_layout_roots(
+        &self,
+        content: ObjRef,
+        dex_roots: Vec<ObjRef>,
+    ) -> Vec<ObjRef> {
+        if dex_roots.is_empty() {
+            return dex_roots;
+        }
+        let content_is_dex = self
+            .heap
+            .class_of(content)
+            .map(|c| self.cp.find_class(c).is_some())
+            .unwrap_or(false);
+        if !content_is_dex && matches!(self.fw.get(content), Some(HostObj::View { .. })) {
+            return vec![content];
+        }
+        dex_roots
     }
 
     fn layout_roots(
@@ -1834,18 +1876,30 @@ impl Engine {
             let Some((x, y, w, h, _)) = bounds(self, *v) else {
                 continue;
             };
-            let (w, h) = (
-                if w > 0 {
-                    w
-                } else {
-                    fw_.saturating_sub(x).max(0)
-                },
-                if h > 0 {
-                    h
-                } else {
-                    fh_.saturating_sub(y).max(0)
-                },
-            );
+            // A host window root the window pass has never laid out carries
+            // only the eager addView wrap size: the window spec is the viewport.
+            let host_window_root = prop(self, *v, "rd_host_root").is_none()
+                && self
+                    .heap
+                    .class_of(*v)
+                    .map(|c| self.cp.find_class(c).is_none())
+                    .unwrap_or(false);
+            let (w, h) = if host_window_root {
+                (fw_, fh_)
+            } else {
+                (
+                    if w > 0 {
+                        w
+                    } else {
+                        fw_.saturating_sub(x).max(0)
+                    },
+                    if h > 0 {
+                        h
+                    } else {
+                        fh_.saturating_sub(y).max(0)
+                    },
+                )
+            };
             measure(
                 self,
                 *v,

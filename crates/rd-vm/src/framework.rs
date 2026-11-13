@@ -805,6 +805,10 @@ impl Vis {
 
 #[derive(Debug, Clone)]
 pub enum HostObj {
+    /// `android.view.Menu` (host): items in declaration order (MenuItem objs).
+    Menu {
+        items: Vec<ObjRef>,
+    },
     /// Activity — window com a árvore de views; finished encerra o M3.
     Activity {
         window: Option<ObjRef>,
@@ -1963,6 +1967,10 @@ impl Engine {
                     if point_in_view_bounds(x, y, (*rx, *ry, *w, *h)));
             if inside {
                 if let Some(t) = self.hit_test(root, x, y) {
+                    // AlertDialog button (materialized by m8::materialize_alert_view)
+                    if let Some((owner, which)) = self.dialog_button_of(t) {
+                        return self.m8_click_dialog_button(owner, which);
+                    }
                     if self.touch_listener_of(t).is_some() {
                         let consumed = self.touch_sequence(root, &[(x, y)])?;
                         if !consumed
@@ -2844,14 +2852,20 @@ impl Engine {
     /// Dump textual da árvore de views da activity corrente (seed do UI dump
     /// do M4 — formato estável para agentes).
     pub fn dump_ui(&self) -> String {
-        let Some(activity) = self.fw.current_activity else {
-            return String::new();
-        };
-        let Some(content) = self.window_content_of(activity) else {
-            return String::new();
-        };
         let mut out = String::new();
-        self.dump_view(content, 0, &mut out);
+        if let Some(activity) = self.fw.current_activity {
+            if let Some(content) = self.window_content_of(activity) {
+                self.dump_view(content, 0, &mut out);
+            }
+        }
+        // Showing dialogs are separate windows above the activity; the dump
+        // must show them too (AlertDialog buttons/messages are otherwise
+        // invisible to the agent after a tap).
+        for (dialog, root) in crate::m8::showing_dialog_roots(self) {
+            let class = self.heap.class_of(dialog).unwrap_or("?");
+            out.push_str(&format!("--- dialog window {class} ---\n"));
+            self.dump_view(root, 0, &mut out);
+        }
         out
     }
 
@@ -2881,6 +2895,18 @@ impl Engine {
     fn click_listener_of(&self, v: ObjRef) -> Option<ObjRef> {
         match self.fw.get(v)? {
             HostObj::View { click_listener, .. } => *click_listener,
+            _ => None,
+        }
+    }
+
+    /// (dialog, which) when `v` is a button of an AlertDialog window.
+    pub(crate) fn dialog_button_of(&self, v: ObjRef) -> Option<(ObjRef, i32)> {
+        let which = match self.view_props.get(&(v, "dlg:button".to_string())) {
+            Some(Value::Int(which)) => *which,
+            _ => return None,
+        };
+        match self.view_props.get(&(v, "dlg:owner".to_string())) {
+            Some(Value::Obj(owner)) => Some((*owner, which)),
             _ => None,
         }
     }
@@ -4089,6 +4115,32 @@ fn call_host_instance_rooted(
             // Platform View subclasses are represented by the common host
             // View state; constructor-specific rendering parameters are
             // intentionally not modeled here.
+            Ok(Some(Value::Null))
+        }
+        // DEX animations extend the platform Animation: its no-arg constructor
+        // only sets defaults, which the host model does not need.
+        ("Landroid/view/animation/Animation;", "<init>") if sig == "()V" => Ok(Some(Value::Null)),
+        // Headless device: the only user (0) is unlocked and running.
+        ("Landroid/os/UserManager;", "isUserUnlocked") if sig == "()Z" => Ok(Some(Value::Int(1))),
+        ("Landroid/os/UserManager;", "isUserRunning") if sig == "(Landroid/os/UserHandle;)Z" => {
+            Ok(Some(Value::Int(1)))
+        }
+        // Color filters/tints tint pixels; headless rendering has no pixels to
+        // tint, so the setters are accepted and the state is not kept.
+        ("Landroid/widget/ImageView;", "setColorFilter")
+            if (sig == "(ILandroid/graphics/PorterDuff$Mode;)V"
+                || sig == "(Landroid/graphics/ColorFilter;)V")
+                && is_view(vm) =>
+        {
+            Ok(Some(Value::Null))
+        }
+        ("Landroid/widget/ImageView;", "clearColorFilter") if sig == "()V" && is_view(vm) => {
+            Ok(Some(Value::Null))
+        }
+        ("Landroid/widget/ImageView;", "setImageTintList")
+        | ("Landroid/widget/ImageView;", "setImageTintMode")
+            if is_view(vm) =>
+        {
             Ok(Some(Value::Null))
         }
         ("Landroid/widget/ImageView;", "getDrawable") if is_view(vm) => {
