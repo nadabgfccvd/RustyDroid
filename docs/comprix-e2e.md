@@ -140,9 +140,10 @@ The raw rows are in `comprix/mcp-delays.jsonl`, outside this repository.
    - An NPE raised by the interpreter on a null dereference, once caught
      and rethrown by guest code, still has no frames. That is exactly the
      current blocker.
-9. **Throwable `toString` without a message prints `Class@id`.** This
-   happens for some host-materialized exceptions; AOSP prints the class
-   name.
+9. **Throwable `toString` without a message printed `Class@id`.** Fixed in
+   the shared host-object fallback: throwables now print `Class` or
+   `Class: message` using `getLocalizedMessage()`, and DEX message/`toString`
+   overrides still dispatch to app code.
 10. **Error messages should name both declarer and receiver.** The
     `ListIterator.hasNext` failure was really an `Iterator.hasNext` mref on
     a host `ListIterator`. `NOT_FOUND` should print both the resolved
