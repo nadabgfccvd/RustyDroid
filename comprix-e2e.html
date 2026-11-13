@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-59f098dc.js";
+            window.path_to_searchindex_js = "searchindex-f7e50750.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -423,8 +423,12 @@ boxes by value.</li>
 <li><strong>Character classification:</strong> approximated with Rust Unicode tables.</li>
 <li><strong>Collections:</strong> <code>subList</code> returns a copy; host ListIterators iterate a
 snapshot; TreeMap/TreeSet views are snapshots.</li>
-<li><strong>Resources:</strong> themes are not resolved, so <code>?attr</code> references in XML are
-reported as absent; default styles are ignored. TypedArray <code>getValue</code>
+<li><strong>Resources:</strong> <code>?attr</code> in <code>android:background</code> is resolved through the
+context’s theme (the manifest <code>application android:theme</code>, then the style
+item): a color or a drawable reference is applied; an attribute the theme
+does not define keeps a transparent stand-in. Theme drawables are not
+rasterized (base <code>Drawable</code>, no pixels). Other <code>?attr</code> references in XML
+are still reported as absent, and default styles are ignored. TypedArray <code>getValue</code>
 reports ints as colors when the attribute name contains “color” or “tint”.
 <code>getBaseContext</code> returns the receiver.</li>
 <li><strong>Device:</strong> moto-e5, 720×1440 at 280 dpi, locale en-US (<code>RD_LOCALE</code>
