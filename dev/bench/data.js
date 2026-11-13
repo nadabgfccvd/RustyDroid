@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794531122970,
+  "lastUpdate": 1794534700770,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7287,6 +7287,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2760,
             "range": "± 5",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f33d2129905cd703cd37567b56d09c43c6436e1c",
+          "message": "feat(rd-vm): ?attr backgrounds via theme, SubMenu, SoundPool load callbacks (#650)\n\nThree gaps from the media/layout probe:\n\n- android:background=\"?attr/x\" resolves through the context's theme\n  (manifest application theme, then the style item): a color or drawable\n  reference is applied. Missing attributes keep the transparent\n  ColorDrawable stand-in. Theme drawables are not rasterized (base\n  Drawable, no pixels; documented deviation).\n- Menus: <item> with a <menu> child becomes a SubMenu (nested up to 8\n  levels). Menu.addSubMenu (4 overloads), MenuItem.getSubMenu/hasSubMenu,\n  SubMenu.getItem and its header setters. SubMenu extends Menu in the\n  builtin hierarchy.\n- SoundPool.setOnLoadCompleteListener: load() queues a completion that\n  drain_looper delivers as onLoadComplete(pool, id, 0). The listener is\n  read at delivery time. The queue is a GC root (write_gc_roots).\n\nTests: theme_attr_background (4), menu_submenu (3), sound_pool_load_complete\n(4). The GC test uses high ObjRef ids because root scanning is conservative\nand small ids collide with ordinary ints; it fails without the queue root.\nFixture: apkfix gains AxVal::Attr, ArscVal::Attr/Style, add_attr/add_color/\nadd_style/add_menu_file and build_apk_themed.\n\nDocs: comprix-e2e.md no longer says themes are never resolved.\n\nCo-authored-by: rustydroid-agent <agent@rustydroid.invalid>",
+          "timestamp": "2026-11-12T22:51:09-03:00",
+          "tree_id": "13b387baecd76f6dbad178ea3efc7830d60ca2e6",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/f33d2129905cd703cd37567b56d09c43c6436e1c"
+        },
+        "date": 1794534699410,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2764,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2762,
+            "range": "± 7",
             "unit": "ns/iter"
           }
         ]
