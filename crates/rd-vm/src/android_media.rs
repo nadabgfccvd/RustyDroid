@@ -5,7 +5,11 @@
 //! keep running, so this module models the *contract* and renders nothing:
 //!
 //! - `SoundPool.load*` hands out increasing, non-zero sound ids (what the app
-//!   stores and later passes to `play`).
+//!   stores and later passes to `play`), and queues an
+//!   `OnLoadCompleteListener.onLoadComplete(pool, id, 0)` callback. The queue
+//!   is drained on the main Looper (`drain_looper`), as Android delivers it
+//!   asynchronously; the listener is read at delivery time, so one set after
+//!   `load` still receives the callback.
 //! - `SoundPool.play` accepts the request and returns a positive stream id
 //!   (the app's "is playing" state stays consistent); no samples are produced.
 //! - `pause`/`resume`/`stop`/`setVolume`/`setRate`/`setLoop`/`release` are
@@ -24,6 +28,44 @@ pub(crate) const SOUND_POOL: &str = "Landroid/media/SoundPool;";
 pub(crate) const SOUND_POOL_BUILDER: &str = "Landroid/media/SoundPool$Builder;";
 pub(crate) const AUDIO_ATTRIBUTES: &str = "Landroid/media/AudioAttributes;";
 pub(crate) const AUDIO_ATTRIBUTES_BUILDER: &str = "Landroid/media/AudioAttributes$Builder;";
+
+/// Instance field holding the app's `OnLoadCompleteListener` (a DEX object).
+const ON_LOAD_LISTENER: &str = "rd_on_load_listener";
+const ON_LOAD_COMPLETE_SIG: &str = "(Landroid/media/SoundPool;II)V";
+
+/// A finished `SoundPool.load*`, waiting for the Looper to deliver it.
+/// Kept in `Engine::pending_sound_loads`, which is a GC root.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PendingSoundLoad {
+    pub pool: ObjRef,
+    pub sample_id: i32,
+    /// 0 = success (the only status the headless loader reports).
+    pub status: i32,
+}
+
+/// Delivers queued load completions in FIFO order. Returns how many callbacks
+/// ran; a pool whose listener is unset (or a non-listener value) is skipped.
+pub(crate) fn deliver_load_completions(vm: &mut Engine) -> Result<usize, VmExit> {
+    let pending = std::mem::take(&mut vm.pending_sound_loads);
+    let mut delivered = 0usize;
+    for p in pending {
+        let Ok(Value::Obj(listener)) = vm.heap.get_field(p.pool, ON_LOAD_LISTENER) else {
+            continue;
+        };
+        vm.invoke_instance(
+            listener,
+            "onLoadComplete",
+            ON_LOAD_COMPLETE_SIG,
+            &[
+                Value::Obj(p.pool),
+                Value::Int(p.sample_id),
+                Value::Int(p.status),
+            ],
+        )?;
+        delivered += 1;
+    }
+    Ok(delivered)
+}
 
 /// Static constants of the media classes modeled here.
 pub(crate) fn host_static(
@@ -124,6 +166,11 @@ fn sound_pool(
         {
             let id = field_int(vm, recv, "rd_next_sound").max(1);
             set_int(vm, recv, "rd_next_sound", id + 1)?;
+            vm.pending_sound_loads.push(PendingSoundLoad {
+                pool: recv,
+                sample_id: id,
+                status: 0,
+            });
             Value::Int(id)
         }
         ("play", "(IFFIIF)I") => {
@@ -142,7 +189,11 @@ fn sound_pool(
         | ("release", "()V") => Value::Null,
         ("setVolume", "(IFF)V") | ("setLoop", "(II)V") | ("setPriority", "(II)V") => Value::Null,
         ("setRate", "(IF)V") => Value::Null,
-        ("setOnLoadCompleteListener", _) => Value::Null,
+        ("setOnLoadCompleteListener", _) => {
+            let listener = args.first().cloned().unwrap_or(Value::Null);
+            put_field_result(vm.heap.put_field(recv, ON_LOAD_LISTENER, listener))?;
+            Value::Null
+        }
         _ => return Ok(None),
     };
     Ok(Some(v))

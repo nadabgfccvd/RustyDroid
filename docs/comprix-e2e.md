@@ -222,8 +222,12 @@ subclasses are covered too.
 - **Character classification:** approximated with Rust Unicode tables.
 - **Collections:** `subList` returns a copy; host ListIterators iterate a
   snapshot; TreeMap/TreeSet views are snapshots.
-- **Resources:** themes are not resolved, so `?attr` references in XML are
-  reported as absent; default styles are ignored. TypedArray `getValue`
+- **Resources:** `?attr` in `android:background` is resolved through the
+  context's theme (the manifest `application android:theme`, then the style
+  item): a color or a drawable reference is applied; an attribute the theme
+  does not define keeps a transparent stand-in. Theme drawables are not
+  rasterized (base `Drawable`, no pixels). Other `?attr` references in XML
+  are still reported as absent, and default styles are ignored. TypedArray `getValue`
   reports ints as colors when the attribute name contains "color" or "tint".
   `getBaseContext` returns the receiver.
 - **Device:** moto-e5, 720×1440 at 280 dpi, locale en-US (`RD_LOCALE`

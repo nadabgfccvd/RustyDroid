@@ -549,7 +549,7 @@ fn inflate_element_depth(
         })?;
     vm.attach_host_state(&desc, r)?;
     construct_inflated_view(vm, &desc, r, context)?;
-    apply_attrs(vm, r, el, caps)?;
+    apply_attrs(vm, r, el, caps, context)?;
     let child_caps = caps_for_desc(vm, &desc, caps);
     // issue #45: attach SEM re-layout — o setContentView leita a raiz
     // UMA vez (O(N)); re-layout por filho era O(N²). `<include>` é expandido
@@ -658,7 +658,7 @@ fn inflate_children(
                     inflate_element_depth(vm, &included.root, depth + 1, count, context, caps)?;
                 // Os atributos android:* do include sobrescrevem atributos
                 // correspondentes da view raiz incluída (notavelmente id).
-                apply_attrs(vm, view, child, caps)?;
+                apply_attrs(vm, view, child, caps, context)?;
                 assign_layout_params(vm, parent, view, &[child, &included.root], caps)?;
                 framework::attach_child(vm, parent, view)?;
             }
@@ -707,7 +707,13 @@ fn view_desc_of(name: &str) -> Result<String, VmExit> {
 }
 
 /// Aplica os atributos android:* de um elemento à view host recém-inflada.
-fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement, caps: AxisCaps) -> Result<(), VmExit> {
+fn apply_attrs(
+    vm: &mut Engine,
+    r: ObjRef,
+    el: &XmlElement,
+    caps: AxisCaps,
+    context: Option<ObjRef>,
+) -> Result<(), VmExit> {
     for a in &el.attrs {
         if !a.is_android() {
             continue; // app:/tools:/custom — fora do escopo M3
@@ -726,18 +732,25 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement, caps: AxisCaps) -> R
                 // android:background="@color/x" / "@drawable/x" → Drawable via the
                 // same resolution as Resources.getDrawable. Unsupported files are
                 // a logged gap (RD_FW_DEBUG), not a failed inflate.
-                if let AttrValue::Attribute(_) = &a.value {
-                    // `?attr/selectableItemBackground` and friends: the theme
-                    // drawable has no headless pixels. A transparent ColorDrawable
-                    // keeps the view's background non-null (apps read it back)
-                    // without inventing a color.
-                    let d = vm.new_object("Landroid/graphics/drawable/ColorDrawable;")?;
-                    vm.invoke_instance(d, "<init>", "(I)V", &[Value::Int(0)])?;
+                if let AttrValue::Attribute(attr) = &a.value {
+                    // `?attr/x`: resolved through the context's theme. Without a
+                    // theme or a modelable value, a transparent ColorDrawable keeps
+                    // the background non-null (apps read it back) without inventing
+                    // a color. Theme drawables are not rasterized (no pixels).
+                    let d = match crate::android_res::theme_attribute_drawable(vm, context, *attr)?
+                    {
+                        Some(d) => d,
+                        None => {
+                            let d = vm.new_object("Landroid/graphics/drawable/ColorDrawable;")?;
+                            vm.invoke_instance(d, "<init>", "(I)V", &[Value::Int(0)])?;
+                            Value::Obj(d)
+                        }
+                    };
                     vm.invoke_instance(
                         r,
                         "setBackground",
                         "(Landroid/graphics/drawable/Drawable;)V",
-                        &[Value::Obj(d)],
+                        &[d],
                     )?;
                 }
                 if let AttrValue::Reference(res) = &a.value {

@@ -206,6 +206,8 @@ impl Engine {
         // happens to look like an ObjRef key) was pinned for the whole session.
         // It is now traced precisely as an engine-level ephemeron map instead
         // (see `ephem_keys` / `trace_ephemeron_owner` / `purge_dead` below).
+        // SoundPool load completions (android_media.rs) hold their pool alive.
+        let _ = write!(s, "|{:?}", self.pending_sound_loads);
         let _ = write!(
             s,
             "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
