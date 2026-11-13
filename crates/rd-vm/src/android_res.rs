@@ -1565,6 +1565,52 @@ mod framework_color_tests {
     }
 }
 
+/// `ColorDrawable` de uma cor ARGB8 (mesmo modelo de `drawable_of_resid`).
+pub(crate) fn color_drawable(vm: &mut Engine, color: i32) -> Result<Value, VmExit> {
+    let d = vm
+        .heap
+        .alloc_instance(
+            "Landroid/graphics/drawable/ColorDrawable;".to_string(),
+            Vec::new(),
+        )
+        .map_err(crate::err::oom_throwable)?;
+    put(vm, d, "rd_color", Value::Int(color))?;
+    put(vm, d, "rd_base", Value::Int(color))?;
+    put(vm, d, "rd_alpha", Value::Int(255))?;
+    put(vm, d, "rd_visible", Value::Int(1))?;
+    Ok(Value::Obj(d))
+}
+
+/// `?attr/x` resolvido pelo tema do contexto (tema da activity ou da aplicação).
+/// `Ok(None)` quando não há tema, o atributo não existe nele, ou o valor não é
+/// drawable/cor modelável: o chamador mantém o stand-in transparente.
+pub(crate) fn theme_attribute_drawable(
+    vm: &mut Engine,
+    context: Option<ObjRef>,
+    attr_id: u32,
+) -> Result<Option<Value>, VmExit> {
+    let Some(ctx) = context else {
+        return Ok(None);
+    };
+    let Some(style) = theme_id_for_context(vm, ctx) else {
+        return Ok(None);
+    };
+    match style_attribute(vm, style, attr_id) {
+        Some(ResolvedValue::Reference(res)) => match drawable_of_resid(vm, res as i32) {
+            Ok(d @ Value::Obj(_)) => Ok(Some(d)),
+            Ok(_) => Ok(None),
+            Err(e) => {
+                if std::env::var("RD_FW_DEBUG").is_ok() {
+                    eprintln!("[theme] ?attr 0x{attr_id:08x} -> 0x{res:08x} sem drawable: {e:?}");
+                }
+                Ok(None)
+            }
+        },
+        Some(ResolvedValue::Integer(argb)) => color_drawable(vm, argb).map(Some),
+        _ => Ok(None),
+    }
+}
+
 /// `Resources.getDrawable(id)` / `Context.getDrawable(id)`: colors become a
 /// ColorDrawable, `<vector>` files a VectorDrawable, anything else is a
 /// structured gap (see the Context arm's comment).
@@ -1595,20 +1641,7 @@ pub(crate) fn drawable_of_resid(vm: &mut Engine, id: i32) -> Result<Value, VmExi
                     }
                 }
             }
-            ResolvedValue::Integer(color) => {
-                let d = vm
-                    .heap
-                    .alloc_instance(
-                        "Landroid/graphics/drawable/ColorDrawable;".to_string(),
-                        Vec::new(),
-                    )
-                    .map_err(crate::err::oom_throwable)?;
-                put(vm, d, "rd_color", Value::Int(color))?;
-                put(vm, d, "rd_base", Value::Int(color))?;
-                put(vm, d, "rd_alpha", Value::Int(255))?;
-                put(vm, d, "rd_visible", Value::Int(1))?;
-                Value::Obj(d)
-            }
+            ResolvedValue::Integer(color) => color_drawable(vm, color)?,
             _ => Value::Null,
         }
     };

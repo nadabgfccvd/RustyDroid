@@ -70,6 +70,7 @@ pub const NO_INDEX: u32 = 0xFFFF_FFFF;
 pub const NS_ANDROID: &str = "http://schemas.android.com/apk/res/android";
 
 pub const TYPE_REFERENCE: u8 = 0x01;
+pub const TYPE_ATTRIBUTE: u8 = 0x02;
 pub const TYPE_STRING: u8 = 0x03;
 pub const TYPE_DIMENSION: u8 = 0x05;
 pub const TYPE_FIRST_INT: u8 = 0x10;
@@ -80,6 +81,8 @@ pub enum AxVal {
     Str(String),
     /// referência de recurso (ex.: @+id/tv → 0x7f030000)
     Ref(u32),
+    /// referência a atributo de tema (`?attr/x`); data = resid do atributo
+    Attr(u32),
     Int(i32),
     Bool(bool),
     /// dimensão crua Res_value (mantissa<<8 | unit) — ex.: (80<<8)|1 = 80dp
@@ -192,6 +195,13 @@ fn emit_start_element(node: &AxNode, strs: &[String], out: &mut Vec<u8>) {
                 el.extend(8u16.to_le_bytes());
                 el.push(0u8);
                 el.push(TYPE_REFERENCE);
+                el.extend(r.to_le_bytes());
+            }
+            AxVal::Attr(r) => {
+                el.extend(NO_INDEX.to_le_bytes());
+                el.extend(8u16.to_le_bytes());
+                el.push(0u8);
+                el.push(TYPE_ATTRIBUTE);
                 el.extend(r.to_le_bytes());
             }
             AxVal::Int(i) => {
@@ -660,6 +670,14 @@ pub enum ArscVal {
     Dim(u32),
     /// issue #61: boolean (TYPE_BOOLEAN, data 0/1)
     Bool(bool),
+    /// referência a atributo (`?attr/x`) como valor de entrada ou de item
+    Attr(u32),
+    /// style bag: parent (0 = nenhum) e itens (resid do atributo, valor).
+    /// Valores de item: Ref, Attr, Int, Bool, Dim (não `Str`).
+    Style {
+        parent: u32,
+        items: Vec<(u32, ArscVal)>,
+    },
 }
 
 pub struct ArscEntry {
@@ -716,6 +734,21 @@ impl ArscFix {
             lang: None,
         });
         self.resid_of("layout", name)
+    }
+
+    /// Menu cuja entrada ARSC aponta para `res/menu/<name>.xml` (como o aapt
+    /// emite), lido por `MenuInflater.inflate`.
+    pub fn add_menu_file(&mut self, name: &str) -> u32 {
+        let path = format!("res/menu/{name}.xml");
+        if !self.values.contains(&path) {
+            self.values.push(path.clone());
+        }
+        self.slot("menu").push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Str(path),
+            lang: None,
+        });
+        self.resid_of("menu", name)
     }
 
     /// Layout cuja entrada ARSC aponta para o arquivo `res/layout/<name>.xml`
@@ -809,6 +842,52 @@ impl ArscFix {
         self.resid_of("bool", name)
     }
 
+    /// (Res_value.dataType, data) de um valor simples.
+    fn value_of(&self, v: &ArscVal) -> (u8, u32) {
+        match v {
+            ArscVal::Str(s) => (
+                TYPE_STRING,
+                self.values.iter().position(|x| x == s).unwrap() as u32,
+            ),
+            ArscVal::Int(i) => (TYPE_FIRST_INT, *i as u32),
+            ArscVal::Ref(r) => (TYPE_REFERENCE, *r),
+            ArscVal::Attr(r) => (TYPE_ATTRIBUTE, *r),
+            ArscVal::Dim(raw) => (TYPE_DIMENSION, *raw),
+            ArscVal::Bool(b) => (TYPE_BOOLEAN, *b as u32),
+            ArscVal::Style { .. } => (0, 0),
+        }
+    }
+
+    /// `attr` — resid de atributo de tema (para `?attr/…` e itens de style).
+    pub fn add_attr(&mut self, name: &str) -> u32 {
+        self.slot("attr").push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Int(0),
+            lang: None,
+        });
+        self.resid_of("attr", name)
+    }
+
+    /// `color` com valor ARGB8 (vira `ResolvedValue::Integer`).
+    pub fn add_color(&mut self, name: &str, argb: u32) -> u32 {
+        self.slot("color").push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Int(argb as i32),
+            lang: None,
+        });
+        self.resid_of("color", name)
+    }
+
+    /// `style` com parent (0 = nenhum) e itens `(resid do atributo, valor)`.
+    pub fn add_style(&mut self, name: &str, parent: u32, items: Vec<(u32, ArscVal)>) -> u32 {
+        self.slot("style").push(ArscEntry {
+            name: name.to_string(),
+            val: ArscVal::Style { parent, items },
+            lang: None,
+        });
+        self.resid_of("style", name)
+    }
+
     pub fn build(&self) -> Vec<u8> {
         // strings de tipo e chave (ordem de inserção → type_id/entry idx estáveis)
         let type_names: Vec<&str> = self.types.iter().map(|(n, _)| *n).collect();
@@ -881,19 +960,26 @@ impl ArscFix {
                     };
                     offsets.push(body.len() as u32);
                     let key_idx = keys.iter().position(|k| *k == e.name).unwrap() as u32;
+                    if let ArscVal::Style { parent, items } = &e.val {
+                        body.extend(16u16.to_le_bytes()); // ResTable_map_entry.size
+                        body.extend(0x0001u16.to_le_bytes()); // FLAG_COMPLEX
+                        body.extend(key_idx.to_le_bytes());
+                        body.extend(parent.to_le_bytes());
+                        body.extend((items.len() as u32).to_le_bytes());
+                        for (attr, item) in items {
+                            let (dtype, data) = self.value_of(item);
+                            body.extend(attr.to_le_bytes());
+                            body.extend(8u16.to_le_bytes());
+                            body.push(0u8);
+                            body.push(dtype);
+                            body.extend(data.to_le_bytes());
+                        }
+                        continue;
+                    }
                     body.extend(8u16.to_le_bytes()); // ResTable_entry.size
                     body.extend(0u16.to_le_bytes()); // flags (simples)
                     body.extend(key_idx.to_le_bytes());
-                    let (dtype, data) = match &e.val {
-                        ArscVal::Str(s) => (
-                            TYPE_STRING,
-                            self.values.iter().position(|v| v == s).unwrap() as u32,
-                        ),
-                        ArscVal::Int(i) => (TYPE_FIRST_INT, *i as u32),
-                        ArscVal::Ref(r) => (TYPE_REFERENCE, *r),
-                        ArscVal::Dim(raw) => (TYPE_DIMENSION, *raw),
-                        ArscVal::Bool(b) => (TYPE_BOOLEAN, *b as u32),
-                    };
+                    let (dtype, data) = self.value_of(&e.val);
                     body.extend(8u16.to_le_bytes()); // Res_value.size
                     body.push(0u8); // res0
                     body.push(dtype);
@@ -1146,4 +1232,78 @@ pub fn build_large_inventory_apk(asset_count: usize) -> Vec<u8> {
         zip.add(&format!("assets/{i}"), Vec::new());
     }
     zip.build_zip64()
+}
+
+/// Manifest com `application android:theme` (tema de aplicação, base de `?attr/`).
+pub fn build_manifest_axml_themed(package: &str, activity_desc: &str, theme_res: u32) -> Vec<u8> {
+    let root = AxNode::new(
+        "manifest",
+        vec![
+            a(false, "package", AxVal::Str(package.to_string())),
+            a(true, "versionCode", AxVal::Int(1)),
+        ],
+        vec![
+            AxNode::new(
+                "uses-sdk",
+                vec![
+                    a(true, "minSdkVersion", AxVal::Int(26)),
+                    a(true, "targetSdkVersion", AxVal::Int(36)),
+                ],
+                vec![],
+            ),
+            AxNode::new(
+                "application",
+                vec![a(true, "theme", AxVal::Ref(theme_res))],
+                vec![AxNode::new(
+                    "activity",
+                    vec![a(true, "name", AxVal::Str(activity_desc.to_string()))],
+                    vec![AxNode::new(
+                        "intent-filter",
+                        vec![],
+                        vec![
+                            AxNode::new(
+                                "action",
+                                vec![a(
+                                    true,
+                                    "name",
+                                    AxVal::Str("android.intent.action.MAIN".to_string()),
+                                )],
+                                vec![],
+                            ),
+                            AxNode::new(
+                                "category",
+                                vec![a(
+                                    true,
+                                    "name",
+                                    AxVal::Str("android.intent.category.LAUNCHER".to_string()),
+                                )],
+                                vec![],
+                            ),
+                        ],
+                    )],
+                )],
+            ),
+        ],
+    );
+    build_axml(&root)
+}
+
+/// APK cujo manifest declara o tema de aplicação `theme_res`.
+pub fn build_apk_themed(
+    package: &str,
+    activity_desc: &str,
+    arsc: Vec<u8>,
+    extras: Vec<(&str, Vec<u8>)>,
+    theme_res: u32,
+) -> Vec<u8> {
+    let mut z = ZipFix::new();
+    z.add(
+        "AndroidManifest.xml",
+        build_manifest_axml_themed(package, activity_desc, theme_res),
+    );
+    z.add("resources.arsc", arsc);
+    for (name, data) in extras {
+        z.add(name, data);
+    }
+    z.build()
 }

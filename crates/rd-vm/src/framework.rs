@@ -2752,6 +2752,8 @@ impl Engine {
         let mut ran = 0usize;
         // async results queued by requestPermissions (perms.rs)
         ran += crate::perms::deliver_pending(self)?;
+        // SoundPool.OnLoadCompleteListener callbacks queued by load() (android_media.rs)
+        ran += crate::android_media::deliver_load_completions(self)?;
         // deferred gesture callbacks due in virtual time (view_gesture.rs:
         // long press, single-tap-confirmed after the double-tap window)
         ran += crate::view_gesture::deliver_pending(self)?;

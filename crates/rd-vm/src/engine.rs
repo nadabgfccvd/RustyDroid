@@ -376,6 +376,8 @@ pub struct Engine {
     /// do diálogo). Vazio por padrão: sem sessão, nada tem justificativa.
     pub permission_rationale: HashSet<String>,
     pub(crate) pending_permission_results: Vec<crate::perms::PendingPermissionResult>,
+    /// `SoundPool.load` completions waiting for the Looper (android_media.rs).
+    pub(crate) pending_sound_loads: Vec<crate::android_media::PendingSoundLoad>,
     /// window → (decor, content frame) (window.rs)
     pub(crate) window_decor:
         HashMap<crate::heap::ObjRef, (crate::heap::ObjRef, crate::heap::ObjRef)>,
@@ -523,6 +525,7 @@ impl Engine {
             instant_app: false,
             permission_rationale: HashSet::new(),
             pending_permission_results: Vec::new(),
+            pending_sound_loads: Vec::new(),
             window_decor: HashMap::new(),
             system_ui_visibility: HashMap::new(),
             view_props: HashMap::new(),

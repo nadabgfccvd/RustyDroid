@@ -4,10 +4,13 @@
 //! AXML parser and fills the host `Menu` (`HostObj::Menu`) with `MenuItem`
 //! objects: `android:id`, `android:title` (literal or string resource),
 //! `android:visible`, `android:enabled`, `android:checkable`, `android:checked`.
-//! `<group>` children are flattened into the menu; `<item>` submenus are not
-//! modeled. Menu items do not render: they are state the app can query and
-//! change (`findItem`, `setVisible`, `setTitle`, …), which keeps the app's own
-//! logic running without a visible action bar.
+//! `<group>` children are flattened into the menu. An `<item>` with a `<menu>`
+//! child becomes a `SubMenu` (`Menu.addSubMenu`, `MenuItem.getSubMenu`), nested
+//! up to `MAX_MENU_DEPTH` levels. Menu items do not render: they are state the
+//! app can query and change (`findItem`, `setVisible`, `setTitle`, …), which
+//! keeps the app's own logic running without a visible action bar. A submenu's
+//! header (`setHeaderTitle`/`setHeaderIcon`/`setHeaderView`) is stored by
+//! nothing and rendered by nothing: the calls are accepted and chain.
 
 use crate::engine::Engine;
 use crate::err::{put_field_result, VmExit};
@@ -19,6 +22,10 @@ use rd_apk::axml::{AttrValue, XmlElement};
 pub(crate) const MENU_INFLATER: &str = "Landroid/view/MenuInflater;";
 pub(crate) const MENU: &str = "Landroid/view/Menu;";
 pub(crate) const MENU_ITEM: &str = "Landroid/view/MenuItem;";
+pub(crate) const SUB_MENU: &str = "Landroid/view/SubMenu;";
+
+/// Nesting cap for `<menu>` inside `<item>` (hostile XML must not recurse forever).
+const MAX_MENU_DEPTH: usize = 8;
 
 /// Instance methods of the menu surface. `Ok(None)` = not ours.
 pub(crate) fn instance(
@@ -40,6 +47,9 @@ pub(crate) fn instance(
     }
     if recv_class == MENU_ITEM {
         return item(vm, name, sig, recv, args);
+    }
+    if recv_class == SUB_MENU {
+        return sub_menu(vm, name, sig, recv, args);
     }
     Ok(None)
 }
@@ -64,64 +74,86 @@ fn inflater(
                 return Ok(Some(Value::Null));
             };
             let specs = inflate_menu_resource(vm, resid)?;
-            // Through the menu's own `add` + item setters: the target may be a
-            // host Menu or a DEX Menu (AppCompat's MenuBuilder).
-            for spec in specs {
-                let title = match &spec.title {
-                    Some(t) => Value::Obj(crate::intrinsics::alloc_string(vm, t.clone())?),
-                    None => Value::Null,
-                };
-                let it = vm.invoke_instance(
-                    menu,
-                    "add",
-                    "(IIILjava/lang/CharSequence;)Landroid/view/MenuItem;",
-                    &[
-                        Value::Int(spec.group),
-                        Value::Int(spec.id),
-                        Value::Int(spec.order),
-                        title,
-                    ],
-                )?;
-                let Value::Obj(it) = it else {
-                    continue;
-                };
-                if !spec.visible {
-                    vm.invoke_instance(
-                        it,
-                        "setVisible",
-                        "(Z)Landroid/view/MenuItem;",
-                        &[Value::Int(0)],
-                    )?;
-                }
-                if !spec.enabled {
-                    vm.invoke_instance(
-                        it,
-                        "setEnabled",
-                        "(Z)Landroid/view/MenuItem;",
-                        &[Value::Int(0)],
-                    )?;
-                }
-                if spec.checkable {
-                    vm.invoke_instance(
-                        it,
-                        "setCheckable",
-                        "(Z)Landroid/view/MenuItem;",
-                        &[Value::Int(1)],
-                    )?;
-                }
-                if spec.checked {
-                    vm.invoke_instance(
-                        it,
-                        "setChecked",
-                        "(Z)Landroid/view/MenuItem;",
-                        &[Value::Int(1)],
-                    )?;
-                }
-            }
+            apply_specs(vm, menu, &specs)?;
             Ok(Some(Value::Null))
         }
         _ => Ok(None),
     }
+}
+
+/// Adds `specs` to `menu` through the menu's own `add`/`addSubMenu` and item
+/// setters: the target may be a host `Menu` or a DEX `Menu` (AppCompat's
+/// `MenuBuilder`), so the same calls work for both.
+fn apply_specs(vm: &mut Engine, menu: ObjRef, specs: &[ItemSpec]) -> Result<(), VmExit> {
+    for spec in specs {
+        let title = match &spec.title {
+            Some(t) => Value::Obj(crate::intrinsics::alloc_string(vm, t.clone())?),
+            None => Value::Null,
+        };
+        let args = [
+            Value::Int(spec.group),
+            Value::Int(spec.id),
+            Value::Int(spec.order),
+            title,
+        ];
+        let it = match &spec.submenu {
+            Some(children) => {
+                let sub = vm.invoke_instance(
+                    menu,
+                    "addSubMenu",
+                    "(IIILjava/lang/CharSequence;)Landroid/view/SubMenu;",
+                    &args,
+                )?;
+                let Value::Obj(sub) = sub else {
+                    continue;
+                };
+                apply_specs(vm, sub, children)?;
+                vm.invoke_instance(sub, "getItem", "()Landroid/view/MenuItem;", &[])?
+            }
+            None => vm.invoke_instance(
+                menu,
+                "add",
+                "(IIILjava/lang/CharSequence;)Landroid/view/MenuItem;",
+                &args,
+            )?,
+        };
+        let Value::Obj(it) = it else {
+            continue;
+        };
+        if !spec.visible {
+            vm.invoke_instance(
+                it,
+                "setVisible",
+                "(Z)Landroid/view/MenuItem;",
+                &[Value::Int(0)],
+            )?;
+        }
+        if !spec.enabled {
+            vm.invoke_instance(
+                it,
+                "setEnabled",
+                "(Z)Landroid/view/MenuItem;",
+                &[Value::Int(0)],
+            )?;
+        }
+        if spec.checkable {
+            vm.invoke_instance(
+                it,
+                "setCheckable",
+                "(Z)Landroid/view/MenuItem;",
+                &[Value::Int(1)],
+            )?;
+        }
+        if spec.checked {
+            vm.invoke_instance(
+                it,
+                "setChecked",
+                "(Z)Landroid/view/MenuItem;",
+                &[Value::Int(1)],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Parsed `<item>` of a menu resource.
@@ -135,6 +167,8 @@ struct ItemSpec {
     enabled: bool,
     checkable: bool,
     checked: bool,
+    /// `<menu>` filho de `<item>`: itens do submenu, em ordem de declaração.
+    submenu: Option<Vec<ItemSpec>>,
 }
 
 fn attr<'a>(el: &'a XmlElement, name: &str) -> Option<&'a AttrValue> {
@@ -179,23 +213,38 @@ fn title_attr(vm: &Engine, el: &XmlElement) -> Option<String> {
     }
 }
 
-/// Flattens `<menu>` → `<item>`/`<group>` into specs, declaration order.
-fn collect(vm: &Engine, el: &XmlElement, group: i32, out: &mut Vec<ItemSpec>) {
+/// Flattens `<menu>` → `<item>`/`<group>` into specs, declaration order. An
+/// `<item>` whose `<menu>` child exists (within the depth cap) carries that
+/// child's items as its submenu.
+fn collect(vm: &Engine, el: &XmlElement, group: i32, out: &mut Vec<ItemSpec>, depth: usize) {
     for child in &el.children {
         match child.name.as_str() {
-            "item" => out.push(ItemSpec {
-                id: int_attr(vm, child, "id"),
-                group,
-                order: int_attr(vm, child, "orderInCategory"),
-                title: title_attr(vm, child),
-                visible: bool_attr(child, "visible", true),
-                enabled: bool_attr(child, "enabled", true),
-                checkable: bool_attr(child, "checkable", false),
-                checked: bool_attr(child, "checked", false),
-            }),
+            "item" => {
+                let submenu = child
+                    .children
+                    .iter()
+                    .find(|c| c.name == "menu")
+                    .filter(|_| depth < MAX_MENU_DEPTH)
+                    .map(|menu| {
+                        let mut sub = Vec::new();
+                        collect(vm, menu, 0, &mut sub, depth + 1);
+                        sub
+                    });
+                out.push(ItemSpec {
+                    id: int_attr(vm, child, "id"),
+                    group,
+                    order: int_attr(vm, child, "orderInCategory"),
+                    title: title_attr(vm, child),
+                    visible: bool_attr(child, "visible", true),
+                    enabled: bool_attr(child, "enabled", true),
+                    checkable: bool_attr(child, "checkable", false),
+                    checked: bool_attr(child, "checked", false),
+                    submenu,
+                })
+            }
             "group" => {
                 let gid = int_attr(vm, child, "id");
-                collect(vm, child, gid, out);
+                collect(vm, child, gid, out, depth);
             }
             _ => {}
         }
@@ -232,7 +281,7 @@ fn inflate_menu_resource(vm: &mut Engine, resid: u32) -> Result<Vec<ItemSpec>, V
         return Ok(Vec::new());
     };
     let mut out = Vec::new();
-    collect(vm, &doc.root, 0, &mut out);
+    collect(vm, &doc.root, 0, &mut out, 0);
     Ok(out)
 }
 
@@ -279,6 +328,79 @@ fn add_item(vm: &mut Engine, menu: ObjRef, spec: ItemSpec) -> Result<Value, VmEx
         items.push(it);
     }
     Ok(Value::Obj(it))
+}
+
+/// Spec of an `addSubMenu` overload (same argument shapes as `add`).
+fn sub_spec(vm: &Engine, sig: &str, args: &[Value]) -> Option<ItemSpec> {
+    let arg_int = |i: usize| args.get(i).and_then(|v| v.as_int().ok()).unwrap_or(0);
+    let text = |i: usize| match args.get(i) {
+        Some(Value::Obj(s)) => vm.heap.as_str(*s).ok().map(|t| t.to_string()),
+        _ => None,
+    };
+    let plain = |id, group, order, title| ItemSpec {
+        id,
+        group,
+        order,
+        title,
+        visible: true,
+        enabled: true,
+        checkable: false,
+        checked: false,
+        submenu: None,
+    };
+    match sig {
+        "(Ljava/lang/CharSequence;)Landroid/view/SubMenu;" => Some(plain(0, 0, 0, text(0))),
+        "(I)Landroid/view/SubMenu;" => Some(plain(0, 0, 0, res_string(vm, arg_int(0) as u32))),
+        "(IIII)Landroid/view/SubMenu;" => Some(plain(
+            arg_int(1),
+            arg_int(0),
+            arg_int(2),
+            res_string(vm, arg_int(3) as u32),
+        )),
+        "(IIILjava/lang/CharSequence;)Landroid/view/SubMenu;" => {
+            Some(plain(arg_int(1), arg_int(0), arg_int(2), text(3)))
+        }
+        _ => None,
+    }
+}
+
+/// Adds the item that opens a submenu and returns its `SubMenu`, linked both
+/// ways (`MenuItem.getSubMenu` ↔ `SubMenu.getItem`).
+fn add_sub_item(vm: &mut Engine, menu: ObjRef, spec: ItemSpec) -> Result<Value, VmExit> {
+    let it = make_item(vm, &spec)?;
+    if let Some(HostObj::Menu { items }) = vm.fw.objects.get_mut(&menu) {
+        items.push(it);
+    }
+    let sub = vm.heap.alloc_instance(SUB_MENU.to_string(), Vec::new())?;
+    vm.fw
+        .objects
+        .insert(sub, HostObj::Menu { items: Vec::new() });
+    put_field_result(vm.heap.put_field(sub, "rd_item", Value::Obj(it)))?;
+    put_field_result(vm.heap.put_field(it, "rd_submenu", Value::Obj(sub)))?;
+    Ok(Value::Obj(sub))
+}
+
+/// `SubMenu`: its own getters/header setters; everything else is `Menu`.
+fn sub_menu(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let v = match (name, sig) {
+        ("getItem", "()Landroid/view/MenuItem;") => {
+            vm.heap.get_field(recv, "rd_item").unwrap_or(Value::Null)
+        }
+        ("clearHeader", "()V") => Value::Null,
+        ("setHeaderTitle" | "setHeaderIcon" | "setHeaderView" | "setIcon", s)
+            if s.ends_with("Landroid/view/SubMenu;") =>
+        {
+            Value::Obj(recv)
+        }
+        _ => return menu(vm, name, sig, recv, args),
+    };
+    Ok(Some(v))
 }
 
 fn items_of(vm: &Engine, menu: ObjRef) -> Vec<ObjRef> {
@@ -337,6 +459,10 @@ fn menu(
             }
             Value::Null
         }
+        ("addSubMenu", _) => match sub_spec(vm, sig, args) {
+            Some(spec) => add_sub_item(vm, recv, spec)?,
+            None => return Ok(None),
+        },
         // AOSP overloads: add(CharSequence), add(int titleRes),
         // add(int group, int id, int order, CharSequence|int titleRes).
         ("add", "(Ljava/lang/CharSequence;)Landroid/view/MenuItem;") => {
@@ -356,6 +482,7 @@ fn menu(
                     enabled: true,
                     checkable: false,
                     checked: false,
+                    submenu: None,
                 },
             )?
         }
@@ -373,6 +500,7 @@ fn menu(
                     enabled: true,
                     checkable: false,
                     checked: false,
+                    submenu: None,
                 },
             )?
         }
@@ -390,6 +518,7 @@ fn menu(
                     enabled: true,
                     checkable: false,
                     checked: false,
+                    submenu: None,
                 },
             )?
         }
@@ -410,6 +539,7 @@ fn menu(
                     enabled: true,
                     checkable: false,
                     checked: false,
+                    submenu: None,
                 },
             )?
         }
@@ -473,6 +603,12 @@ fn item(
             Value::Obj(recv)
         }
         ("isCheckable", "()Z") => Value::Int(flag(vm, "rd_checkable") as i32),
+        ("getSubMenu", "()Landroid/view/SubMenu;") => {
+            vm.heap.get_field(recv, "rd_submenu").unwrap_or(Value::Null)
+        }
+        ("hasSubMenu", "()Z") => {
+            Value::Int(matches!(vm.heap.get_field(recv, "rd_submenu"), Ok(Value::Obj(_))) as i32)
+        }
         ("setIcon", _)
         | ("setShowAsAction", "(I)V")
         | ("setShowAsActionFlags", "(I)Landroid/view/MenuItem;")
