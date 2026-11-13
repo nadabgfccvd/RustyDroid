@@ -7127,14 +7127,23 @@ fn instance_intrinsic_core(
             crate::err::put_field_result(vm.heap.put_field(recv, "message", msg))?;
             Ok(Some(Value::Null))
         }
-        (_, "getMessage", "()Ljava/lang/String;") if is_throwable_class(vm, recv_class) => Ok(
-            Some(vm.heap.get_field(recv, "message").unwrap_or(Value::Null)),
-        ),
-        (_, "getLocalizedMessage", "()Ljava/lang/String;")
-            if is_throwable_class(vm, recv_class) =>
+        (_, "getMessage", "()Ljava/lang/String;")
+            if is_throwable_class(vm, recv_class)
+                && vm.cp.resolve_method(recv_class, name, sig).is_none() =>
         {
             Ok(Some(
                 vm.heap.get_field(recv, "message").unwrap_or(Value::Null),
+            ))
+        }
+        (_, "getLocalizedMessage", "()Ljava/lang/String;")
+            if is_throwable_class(vm, recv_class)
+                && vm.cp.resolve_method(recv_class, name, sig).is_none() =>
+        {
+            Ok(Some(
+                match throwable_localized_message(vm, recv_class, recv)? {
+                    Some(message) => Value::Obj(alloc_string(vm, message)?),
+                    None => Value::Null,
+                },
             ))
         }
 
@@ -7296,10 +7305,14 @@ fn instance_intrinsic_core(
                     Ok(Some(Value::Int((other == Some(recv)) as i32)))
                 }
                 ("hashCode", "()I") => Ok(Some(Value::Int(recv as i32))),
-                ("toString", "()Ljava/lang/String;") => Ok(Some(Value::Obj(alloc_string(
-                    vm,
-                    default_to_string(recv_class, recv),
-                )?))),
+                ("toString", "()Ljava/lang/String;") => {
+                    let text = if is_throwable_class(vm, recv_class) {
+                        throwable_to_string(vm, recv_class, recv)?
+                    } else {
+                        default_to_string(recv_class, recv)
+                    };
+                    Ok(Some(Value::Obj(alloc_string(vm, text)?)))
+                }
                 _ => Ok(None),
             }
         }
@@ -7322,6 +7335,54 @@ pub(crate) fn default_to_string(class_desc: &str, r: crate::heap::ObjRef) -> Str
         .trim_end_matches(';')
         .replace('/', ".");
     format!("{name}@{r:x}")
+}
+
+/// Java's `Throwable.toString()`: binary class name, followed by the localized
+/// message when present. A DEX override of `getLocalizedMessage` is real app
+/// code and must not be bypassed by the host fallback.
+fn throwable_to_string(
+    vm: &mut Engine,
+    class: &str,
+    recv: crate::heap::ObjRef,
+) -> Result<String, VmExit> {
+    let class_name = class
+        .strip_prefix('L')
+        .unwrap_or(class)
+        .trim_end_matches(';')
+        .replace('/', ".");
+    Ok(match throwable_localized_message(vm, class, recv)? {
+        Some(message) => format!("{class_name}: {message}"),
+        None => class_name,
+    })
+}
+
+/// Implements `Throwable.getLocalizedMessage()`: dispatch an app override,
+/// otherwise inherit the base implementation's virtual call to `getMessage()`.
+fn throwable_localized_message(
+    vm: &mut Engine,
+    class: &str,
+    recv: crate::heap::ObjRef,
+) -> Result<Option<String>, VmExit> {
+    let sig = "()Ljava/lang/String;";
+    let (name, dex_method) = match vm.cp.resolve_method(class, "getLocalizedMessage", sig) {
+        Some(method) => ("getLocalizedMessage", Some(method)),
+        None => ("getMessage", vm.cp.resolve_method(class, "getMessage", sig)),
+    };
+    if let Some((dex_idx, def, method)) = dex_method {
+        return match vm.call(dex_idx, def, &method, vec![Value::Obj(recv)])? {
+            Value::Obj(text) => Ok(Some(vm.heap.as_str(text)?.to_string())),
+            Value::Null => Ok(None),
+            _ => Err(crate::err::vm_error(
+                "INVALID_FORMAT",
+                format!("{class}->{name}() retornou não-string"),
+            )
+            .into()),
+        };
+    }
+    match vm.heap.get_field(recv, "message") {
+        Ok(Value::Obj(text)) => Ok(Some(vm.heap.as_str(text)?.to_string())),
+        _ => Ok(None),
+    }
 }
 
 pub(crate) fn is_throwable_class(vm: &Engine, class: &str) -> bool {
