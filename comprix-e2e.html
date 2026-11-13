@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-f7e50750.js";
+            window.path_to_searchindex_js = "searchindex-466961b6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -334,9 +334,10 @@ and rethrown by guest code, still has no frames. That is exactly the
 current blocker.</li>
 </ul>
 </li>
-<li><strong>Throwable <code>toString</code> without a message prints <code>Class@id</code>.</strong> This
-happens for some host-materialized exceptions; AOSP prints the class
-name.</li>
+<li><strong>Throwable <code>toString</code> without a message printed <code>Class@id</code>.</strong> Fixed in
+the shared host-object fallback: throwables now print <code>Class</code> or
+<code>Class: message</code> using <code>getLocalizedMessage()</code>, and DEX message/<code>toString</code>
+overrides still dispatch to app code.</li>
 <li><strong>Error messages should name both declarer and receiver.</strong> The
 <code>ListIterator.hasNext</code> failure was really an <code>Iterator.hasNext</code> mref on
 a host <code>ListIterator</code>. <code>NOT_FOUND</code> should print both the resolved

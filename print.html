@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-f7e50750.js";
+            window.path_to_searchindex_js = "searchindex-466961b6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -1477,8 +1477,8 @@ matriz oficial por API, que não depende de APK, continua em
 versões, que é o <a href="https://github.com/nadabgfccvd/RustyDroid/blob/main/CHANGELOG.md">CHANGELOG</a>.</p>
 <!-- compat-live:begin -->
 <p><strong>Status da última execução noturna: ✅ verde</strong></p>
-<p>execução de <code>2026-11-12T13:12:20Z</code> · commit <code>75e6f8f</code> · run #14</p>
-<p><a href="https://github.com/nadabgfccvd/RustyDroid/actions/runs/43225059832">Log da execução no GitHub Actions</a></p>
+<p>execução de <code>2026-11-13T12:34:50Z</code> · commit <code>f33d212</code> · run #15</p>
+<p><a href="https://github.com/nadabgfccvd/RustyDroid/actions/runs/43426370203">Log da execução no GitHub Actions</a></p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -6175,9 +6175,10 @@ and rethrown by guest code, still has no frames. That is exactly the
 current blocker.</li>
 </ul>
 </li>
-<li><strong>Throwable <code>toString</code> without a message prints <code>Class@id</code>.</strong> This
-happens for some host-materialized exceptions; AOSP prints the class
-name.</li>
+<li><strong>Throwable <code>toString</code> without a message printed <code>Class@id</code>.</strong> Fixed in
+the shared host-object fallback: throwables now print <code>Class</code> or
+<code>Class: message</code> using <code>getLocalizedMessage()</code>, and DEX message/<code>toString</code>
+overrides still dispatch to app code.</li>
 <li><strong>Error messages should name both declarer and receiver.</strong> The
 <code>ListIterator.hasNext</code> failure was really an <code>Iterator.hasNext</code> mref on
 a host <code>ListIterator</code>. <code>NOT_FOUND</code> should print both the resolved
