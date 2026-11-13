@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794526925854,
+  "lastUpdate": 1794531122970,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7251,6 +7251,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3303,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c6fe968cfef9164b9f31a6e5c1542c8ef2f11153",
+          "message": "feat(rd-vm): M3 layout weights, AlertDialog views, android.media, menus, resource fixes (#649)\n\n* feat(rd-vm): layout weights in M3 layouts, AlertDialog views, android.media + menus + Class.newInstance gaps\n\n- layout: a host window root with DEX children is the single layout root\n  (weighted GameView under a host LinearLayout gets the leftover height);\n  a host root never laid out by the window pass uses the viewport, not the\n  stale eager addView size; ensure_laid_out keys on rd_host_root.\n- AlertDialog: builder dialogs materialize title/message/Button column;\n  Button taps route to m8_click_dialog_button; dump_ui lists dialog windows\n  even without an activity.\n- android.media: SoundPool (silent, consistent ids/streams), AudioAttributes\n  (+Builder, constants, AudioManager STREAM_*) in android_media.rs.\n- android.view.Menu/MenuItem/MenuInflater: inflate parses res/menu XML\n  (ARSC path first) through the menu's own add/setters (host or DEX menu).\n- Class.newInstance() on platform classes (host object + no-arg ctor).\n- resources: Theme.resolveAttribute no longer puts the attribute id in\n  TypedValue.resourceId; framework color refs resolve on every hop;\n  Resources.getDrawable shares Context's drawable path; android:background\n  applied from XML (?attr → transparent stand-in).\n- misc: ImageView color filters/tints no-op, UserManager unlocked, Animation\n  super ctor, rd-apk dump_res diagnostic harness (skips without env).\n\n* fix(rd-vm): window layout pass must not advance the virtual clock\n\nensure_laid_out ran draw_frame (a vsync tick) when a host root had never\nbeen through the window pass, which made rd-agent's wait_for_view observe\n116ms instead of 100ms. Zero-size roots still take draw_frame; otherwise\nonly the window layout pass runs.\n\n---------\n\nCo-authored-by: Xisto <xisto@example.com>",
+          "timestamp": "2026-11-12T21:51:25-03:00",
+          "tree_id": "41020fa2dab9437aff1cde896c246efbd3e06be0",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/c6fe968cfef9164b9f31a6e5c1542c8ef2f11153"
+        },
+        "date": 1794531121264,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2762,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2760,
+            "range": "± 5",
             "unit": "ns/iter"
           }
         ]
