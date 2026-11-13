@@ -722,6 +722,43 @@ fn apply_attrs(vm: &mut Engine, r: ObjRef, el: &XmlElement, caps: AxisCaps) -> R
                     }
                 }
             }
+            "background" => {
+                // android:background="@color/x" / "@drawable/x" → Drawable via the
+                // same resolution as Resources.getDrawable. Unsupported files are
+                // a logged gap (RD_FW_DEBUG), not a failed inflate.
+                if let AttrValue::Attribute(_) = &a.value {
+                    // `?attr/selectableItemBackground` and friends: the theme
+                    // drawable has no headless pixels. A transparent ColorDrawable
+                    // keeps the view's background non-null (apps read it back)
+                    // without inventing a color.
+                    let d = vm.new_object("Landroid/graphics/drawable/ColorDrawable;")?;
+                    vm.invoke_instance(d, "<init>", "(I)V", &[Value::Int(0)])?;
+                    vm.invoke_instance(
+                        r,
+                        "setBackground",
+                        "(Landroid/graphics/drawable/Drawable;)V",
+                        &[Value::Obj(d)],
+                    )?;
+                }
+                if let AttrValue::Reference(res) = &a.value {
+                    match crate::android_res::drawable_of_resid(vm, *res as i32) {
+                        Ok(drawable @ Value::Obj(_)) => {
+                            vm.invoke_instance(
+                                r,
+                                "setBackground",
+                                "(Landroid/graphics/drawable/Drawable;)V",
+                                &[drawable],
+                            )?;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            if std::env::var("RD_FW_DEBUG").is_ok() {
+                                eprintln!("[inflate] background {res:#x} sem drawable: {e:?}");
+                            }
+                        }
+                    }
+                }
+            }
             "text" => {
                 let s = attr_text(vm, a)?;
                 if let Some(framework::HostObj::View { text, .. }) = vm.fw.objects.get_mut(&r) {

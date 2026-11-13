@@ -588,6 +588,11 @@ fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
     }
     let mut cur = id as u32;
     for _ in 0..8 {
+        // Every hop may leave the app's table: `@color/x` → `@android:color/y`
+        // is a framework reference that the APK's ARSC cannot resolve.
+        if let Some(v) = framework_color(cur).or_else(|| framework_id(cur)) {
+            return Ok(v);
+        }
         match vm.resolve_resource_value(cur) {
             Ok(ResolvedValue::Reference(next)) => cur = next,
             Ok(v) => return Ok(v),
@@ -885,6 +890,14 @@ pub(crate) fn instance_intrinsic(
         }
         RESOURCES => {
             return Ok(Some(match (name, sig) {
+                ("getDrawable", "(I)Landroid/graphics/drawable/Drawable;")
+                | (
+                    "getDrawable",
+                    "(ILandroid/content/res/Resources$Theme;)Landroid/graphics/drawable/Drawable;",
+                ) => {
+                    let id = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+                    drawable_of_resid(vm, id)?
+                }
                 ("getDisplayMetrics", _) => Value::Obj(metrics(vm)?),
                 ("getConfiguration", _) => Value::Obj(configuration(vm)?),
                 ("getAssets", "()Landroid/content/res/AssetManager;") => {
@@ -1017,6 +1030,14 @@ pub(crate) fn instance_intrinsic(
                         }
                     }
                     fill_typed_value(vm, *out, attr_id as i32, &value)?;
+                    // AOSP: `resourceId` is the referenced resource only when the
+                    // resolved value IS a reference; never the attribute id itself
+                    // (Material then calls getColor(attrId) → NotFoundException).
+                    let referenced = match &value {
+                        ResolvedValue::Reference(r) => *r as i32,
+                        _ => 0,
+                    };
+                    put(vm, *out, "resourceId", Value::Int(referenced))?;
                     Value::Int(1)
                 }
                 "obtainStyledAttributes" => {
@@ -1403,48 +1424,9 @@ pub(crate) fn instance_intrinsic(
                     return Err(crate::err::vm_error("INVALID_ARG", "getDrawable sem resid").into())
                 }
             };
-            let value = value_of(vm, id)?;
-            match value {
-                ResolvedValue::Str(path) if path.starts_with("res/") => {
-                    // #: `<vector>` é o formato de ícone de praticamente todo
-                    // app Android atual — e o AppCompat **exige** que
-                    // `getDrawable(abc_vector_test)` devolva um
-                    // `android.graphics.drawable.VectorDrawable`, senão lança
-                    // `IllegalStateException` e o app não abre. Por isso o
-                    // vetor é parseado de verdade (ver `vector_drawable.rs`).
-                    match vector_drawable_for(vm, &path)? {
-                        Some(d) => d,
-                        None => {
-                            return Err(crate::err::with_suggestion(
-                                crate::err::vm_error(
-                                    "NOT_IMPLEMENTED",
-                                    format!(
-                                        "drawable 0x{id:08x} ({path}) não é rasterizado: nem <vector> nem PNG/bitmap modelados para este arquivo"
-                                    ),
-                                ),
-                                "vetores (fill sólido + stroke) são modelados; bitmaps e <shape> XML ainda não",
-                            )
-                            .into())
-                        }
-                    }
-                }
-                ResolvedValue::Integer(color) => {
-                    let d = vm
-                        .heap
-                        .alloc_instance(
-                            "Landroid/graphics/drawable/ColorDrawable;".to_string(),
-                            Vec::new(),
-                        )
-                        .map_err(crate::err::oom_throwable)?;
-                    put(vm, d, "rd_color", Value::Int(color))?;
-                    put(vm, d, "rd_base", Value::Int(color))?;
-                    put(vm, d, "rd_alpha", Value::Int(255))?;
-                    put(vm, d, "rd_visible", Value::Int(1))?;
-                    Value::Obj(d)
-                }
-                _ => Value::Null,
-            }
+            drawable_of_resid(vm, id)?
         }
+
         ("getTheme", _) => {
             let k = ("Lrd/Resources;".to_string(), "theme".to_string());
             let theme = match vm.statics.get(&k) {
@@ -1581,4 +1563,54 @@ mod framework_color_tests {
         assert_eq!(framework_color(0x0106_0001), None);
         assert_eq!(framework_color(0x7f01_0000), None);
     }
+}
+
+/// `Resources.getDrawable(id)` / `Context.getDrawable(id)`: colors become a
+/// ColorDrawable, `<vector>` files a VectorDrawable, anything else is a
+/// structured gap (see the Context arm's comment).
+pub(crate) fn drawable_of_resid(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
+    let value: Value = {
+        let value = value_of(vm, id)?;
+        match value {
+            ResolvedValue::Str(path) if path.starts_with("res/") => {
+                // #: `<vector>` é o formato de ícone de praticamente todo
+                // app Android atual — e o AppCompat **exige** que
+                // `getDrawable(abc_vector_test)` devolva um
+                // `android.graphics.drawable.VectorDrawable`, senão lança
+                // `IllegalStateException` e o app não abre. Por isso o
+                // vetor é parseado de verdade (ver `vector_drawable.rs`).
+                match vector_drawable_for(vm, &path)? {
+                    Some(d) => d,
+                    None => {
+                        return Err(crate::err::with_suggestion(
+                            crate::err::vm_error(
+                                "NOT_IMPLEMENTED",
+                                format!(
+                                    "drawable 0x{id:08x} ({path}) não é rasterizado: nem <vector> nem PNG/bitmap modelados para este arquivo"
+                                ),
+                            ),
+                            "vetores (fill sólido + stroke) são modelados; bitmaps e <shape> XML ainda não",
+                        )
+                        .into())
+                    }
+                }
+            }
+            ResolvedValue::Integer(color) => {
+                let d = vm
+                    .heap
+                    .alloc_instance(
+                        "Landroid/graphics/drawable/ColorDrawable;".to_string(),
+                        Vec::new(),
+                    )
+                    .map_err(crate::err::oom_throwable)?;
+                put(vm, d, "rd_color", Value::Int(color))?;
+                put(vm, d, "rd_base", Value::Int(color))?;
+                put(vm, d, "rd_alpha", Value::Int(255))?;
+                put(vm, d, "rd_visible", Value::Int(1))?;
+                Value::Obj(d)
+            }
+            _ => Value::Null,
+        }
+    };
+    Ok(value)
 }

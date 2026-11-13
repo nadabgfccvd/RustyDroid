@@ -5369,6 +5369,16 @@ fn instance_intrinsic_dispatch(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    // android.media SoundPool / AudioAttributes (silent headless audio).
+    if let Some(v) = crate::android_media::instance(vm, recv_class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    // android.view.MenuInflater base (AppCompat's subclass calls its <init>).
+    if let Some(v) =
+        crate::android_menu::instance(vm, recv_class, mref_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
+    }
     if recv_class == STRING
         && (mref_class == STRING || mref_class == CHAR_SEQUENCE)
         && matches!((name, sig), ("charAt", "(I)C") | ("length", "()I"))

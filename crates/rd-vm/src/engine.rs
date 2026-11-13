@@ -1441,6 +1441,9 @@ impl Engine {
         if let Some(v) = crate::android_sysservices::host_static(self, owner, field)? {
             return Ok(Some(v));
         }
+        if let Some(v) = crate::android_media::host_static(self, owner, field)? {
+            return Ok(Some(v));
+        }
         if let Some(v) = crate::android_stub_surfaces::host_static(self, owner, field)? {
             return Ok(Some(v));
         }

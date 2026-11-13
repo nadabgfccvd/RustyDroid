@@ -2700,6 +2700,14 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
             "Landroid/nfc/tech/BasicTagTechnology;",
             "Ljava/lang/Object;",
         ]),
+        "Landroid/view/MenuInflater;" | "Landroid/view/Menu;" | "Landroid/view/MenuItem;" => {
+            Some(OBJECT)
+        }
+        // android.media audio (headless, silent): see android_media.rs.
+        "Landroid/media/SoundPool;"
+        | "Landroid/media/SoundPool$Builder;"
+        | "Landroid/media/AudioAttributes;"
+        | "Landroid/media/AudioAttributes$Builder;" => Some(OBJECT),
         // Appendix C Batch 36-E bounded media values / session /
         // browse / projection / audiofx slices.
         "Landroid/media/MediaMetadata;"

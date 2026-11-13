@@ -15,6 +15,8 @@ pub(crate) mod android_display;
 pub(crate) mod android_drawable;
 pub(crate) mod android_env;
 pub(crate) mod android_json;
+pub(crate) mod android_media;
+pub(crate) mod android_menu;
 pub(crate) mod android_motion;
 pub(crate) mod android_net;
 pub(crate) mod android_observable;

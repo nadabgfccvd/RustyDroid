@@ -1392,6 +1392,7 @@ fn dialog(
                 let mut st = st;
                 st.showing = true;
                 vm.fw.m8.dialogs.insert(d, st);
+                materialize_alert_view(vm, d)?;
                 vm.fw.m8.last_dialog = Some(d);
                 Ok(Some(Value::Obj(d)))
             } else {
@@ -1433,6 +1434,73 @@ fn dialog(
         _ => Ok(None),
     }
 }
+/// AOSP AlertDialog window content: a vertical column with the title, the
+/// message and one Button per dialog button (neutral, negative, positive).
+/// A builder dialog without `setView` has no view otherwise: it would be
+/// missing from the dump, have no bounds and be untappable.
+fn materialize_alert_view(vm: &mut Engine, dialog: ObjRef) -> Result<(), VmExit> {
+    let Some(st) = vm.fw.m8.dialogs.get(&dialog).cloned() else {
+        return Ok(());
+    };
+    if st.view.is_some() {
+        return Ok(());
+    }
+    fn host_view(vm: &mut Engine, class: &str) -> Result<ObjRef, VmExit> {
+        let v = vm.heap.alloc_instance(class.to_string(), Vec::new())?;
+        vm.attach_host_state(class, v)?;
+        Ok(v)
+    }
+    fn set_text(vm: &mut Engine, view: ObjRef, text: &str) -> Result<(), VmExit> {
+        let s = intrinsics::alloc_string(vm, text.to_string())?;
+        vm.invoke_instance(
+            view,
+            "setText",
+            "(Ljava/lang/CharSequence;)V",
+            &[Value::Obj(s)],
+        )?;
+        Ok(())
+    }
+    let column = host_view(vm, "Landroid/widget/LinearLayout;")?;
+    vm.invoke_instance(column, "setOrientation", "(I)V", &[Value::Int(1)])?;
+    for text in [st.title.as_deref(), st.message.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let tv = host_view(vm, "Landroid/widget/TextView;")?;
+        set_text(vm, tv, text)?;
+        vm.invoke_instance(
+            column,
+            "addView",
+            "(Landroid/view/View;)V",
+            &[Value::Obj(tv)],
+        )?;
+    }
+    let mut buttons: Vec<(i32, String)> = st
+        .buttons
+        .iter()
+        .map(|(which, (label, _))| (*which, label.clone()))
+        .collect();
+    buttons.sort_by_key(|(which, _)| *which);
+    for (which, label) in buttons {
+        let b = host_view(vm, "Landroid/widget/Button;")?;
+        set_text(vm, b, &label)?;
+        vm.view_props
+            .insert((b, "dlg:button".to_string()), Value::Int(which));
+        vm.view_props
+            .insert((b, "dlg:owner".to_string()), Value::Obj(dialog));
+        vm.invoke_instance(
+            column,
+            "addView",
+            "(Landroid/view/View;)V",
+            &[Value::Obj(b)],
+        )?;
+    }
+    if let Some(s) = vm.fw.m8.dialogs.get_mut(&dialog) {
+        s.view = Some(column);
+    }
+    Ok(())
+}
+
 /// AOSP `Dialog.show()`: the first show dispatches `onCreate(null)`, then
 /// every show `onStart()`; `dismiss()` dispatches `onStop()`. Virtual
 /// dispatch, so DEX subclasses (ComponentDialog, Compose DialogWrapper, …)
