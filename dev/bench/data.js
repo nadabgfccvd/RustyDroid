@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794534700770,
+  "lastUpdate": 1794622188729,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7323,6 +7323,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2762,
             "range": "± 7",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4dda7057aef48a5860048f26325dcfd5e6128f80",
+          "message": "fix(ci): refresh apt index before installing valgrind in bench gate (#652)\n\nThe ubuntu-latest label now resolves to the ubuntu-26.04 image, which no\nlonger ships valgrind. 'apt-get install' without 'apt-get update' exits\n100, failing the bench regression gate on main (run 43528674247).\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-13T23:09:03-03:00",
+          "tree_id": "f9970ebcf42a0626b36236bd0372f41498fef88a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/4dda7057aef48a5860048f26325dcfd5e6128f80"
+        },
+        "date": 1794622186877,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2773,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2769,
+            "range": "± 5",
             "unit": "ns/iter"
           }
         ]
