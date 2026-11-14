@@ -280,6 +280,11 @@ pub fn instance_intrinsic(
         Some(Value::Obj(o)) => Some(*o),
         _ => None,
     };
+    if kind.ends_with("/GradientDrawable;") {
+        if let Some(v) = gradient_drawable(vm, name, sig, recv, args)? {
+            return Ok(Some(v));
+        }
+    }
     Ok(Some(match (name, sig) {
         ("<init>", _) => {
             put(vm, recv, "rd_alpha", Value::Int(255))?;
@@ -575,6 +580,251 @@ pub(crate) fn draw_vector(vm: &mut Engine, recv: ObjRef, canvas: ObjRef) -> Resu
         }
     }
     Ok(())
+}
+
+const RADII: [&str; 4] = ["rd_rtl", "rd_rtr", "rd_rbr", "rd_rbl"];
+
+fn getf(vm: &Engine, r: ObjRef, f: &str) -> f32 {
+    match vm.heap.get_field(r, f) {
+        Ok(Value::Float(v)) => v,
+        Ok(Value::Int(v)) => v as f32,
+        _ => 0.0,
+    }
+}
+
+fn float(args: &[Value], i: usize) -> f32 {
+    match args.get(i) {
+        Some(Value::Float(v)) => *v,
+        Some(Value::Int(v)) => *v as f32,
+        _ => 0.0,
+    }
+}
+
+/// Color argument that may be an `int` or a `ColorStateList` (default color).
+fn color_arg(vm: &Engine, v: Option<&Value>) -> i32 {
+    match v {
+        Some(Value::Int(c)) => *c,
+        Some(Value::Obj(csl)) => {
+            let (states, colors) = csl_get(vm, *csl);
+            csl_default(&states, &colors)
+        }
+        _ => 0,
+    }
+}
+
+/// `GradientDrawable`: the programmatic half of `<shape>` (see
+/// `shape_drawable.rs`). Geometry lives in `rd_gshape`, `rd_r{tl,tr,br,bl}`,
+/// `rd_sw`/`rd_sc` (stroke) and `rd_iw`/`rd_ih` (`setSize`). Gradients are
+/// drawn with their first color and recorded in `rd_ggaps`.
+fn gradient_drawable(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    use crate::shape_drawable::{LINE, RING};
+    Ok(Some(match (name, sig) {
+        ("<init>", _) => {
+            let first = match args.get(1) {
+                Some(v @ Value::Obj(_)) => int_array(vm, Some(v)).first().copied(),
+                _ => None,
+            };
+            for (f, v) in [
+                ("rd_alpha", Value::Int(255)),
+                ("rd_visible", Value::Int(1)),
+                ("rd_color", Value::Int(first.unwrap_or(0))),
+                ("rd_gshape", Value::Int(0)),
+                ("rd_sw", Value::Int(0)),
+                ("rd_sc", Value::Int(0)),
+                ("rd_iw", Value::Int(-1)),
+                ("rd_ih", Value::Int(-1)),
+            ] {
+                put(vm, recv, f, v)?;
+            }
+            for f in RADII {
+                put(vm, recv, f, Value::Float(0.0))?;
+            }
+            if first.is_some() {
+                gradient_gap(vm, recv)?;
+            }
+            Value::Null
+        }
+        ("setShape", "(I)V") => {
+            put(vm, recv, "rd_gshape", Value::Int(int(args, 0)))?;
+            Value::Null
+        }
+        ("getShape", "()I") => Value::Int(geti(vm, recv, "rd_gshape", 0)),
+        ("setCornerRadius", "(F)V") => {
+            let r = float(args, 0).max(0.0);
+            for f in RADII {
+                put(vm, recv, f, Value::Float(r))?;
+            }
+            Value::Null
+        }
+        ("getCornerRadius", "()F") => Value::Float(getf(vm, recv, RADII[0])),
+        ("setCornerRadii", "([F)V") => {
+            // 8 floats: (rx, ry) per corner, TL, TR, BR, BL. Elliptical
+            // corners are drawn circular with the x radius.
+            let radii: Vec<f32> = match args.first() {
+                Some(Value::Obj(a)) => vm
+                    .heap
+                    .as_array_elems(*a)
+                    .map(|(e, _)| {
+                        e.iter()
+                            .map(|x| match x {
+                                Value::Float(f) => *f,
+                                _ => 0.0,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            if !radii.is_empty() && radii.len() < 8 {
+                return Err(crate::android_sysservices::iae("radii[] needs 8 values"));
+            }
+            for (i, f) in RADII.iter().enumerate() {
+                let r = radii.get(i * 2).copied().unwrap_or(0.0).max(0.0);
+                put(vm, recv, f, Value::Float(r))?;
+            }
+            Value::Null
+        }
+        ("setStroke", _) => {
+            put(vm, recv, "rd_sw", Value::Int(int(args, 0).max(0)))?;
+            let c = color_arg(vm, args.get(1));
+            put(vm, recv, "rd_sc", Value::Int(c))?;
+            Value::Null
+        }
+        ("setSize", "(II)V") => {
+            put(vm, recv, "rd_iw", Value::Int(int(args, 0)))?;
+            put(vm, recv, "rd_ih", Value::Int(int(args, 1)))?;
+            Value::Null
+        }
+        ("getIntrinsicWidth", "()I") => Value::Int(geti(vm, recv, "rd_iw", -1)),
+        ("getIntrinsicHeight", "()I") => Value::Int(geti(vm, recv, "rd_ih", -1)),
+        ("setColor", "(Landroid/content/res/ColorStateList;)V") => {
+            let c = color_arg(vm, args.first());
+            put(vm, recv, "rd_color", Value::Int(c))?;
+            Value::Null
+        }
+        ("getColor", "()Landroid/content/res/ColorStateList;") => {
+            let c = geti(vm, recv, "rd_color", 0);
+            Value::Obj(csl_new(vm, vec![vec![]], vec![c])?)
+        }
+        ("setColors", _) => {
+            let colors = int_array(vm, args.first());
+            put(
+                vm,
+                recv,
+                "rd_color",
+                Value::Int(colors.first().copied().unwrap_or(0)),
+            )?;
+            gradient_gap(vm, recv)?;
+            Value::Null
+        }
+        (
+            "setGradientType" | "setOrientation" | "setGradientRadius" | "setGradientCenter"
+            | "setUseLevel" | "setInnerRadius" | "setThickness",
+            _,
+        ) => {
+            gradient_gap(vm, recv)?;
+            Value::Null
+        }
+        ("getGradientType", "()I") => Value::Int(0),
+        ("getOpacity", "()I") => {
+            let opaque = geti(vm, recv, "rd_gshape", 0) == 0
+                && RADII.iter().all(|f| getf(vm, recv, f) == 0.0)
+                && geti(vm, recv, "rd_sw", 0) == 0
+                && (geti(vm, recv, "rd_color", 0) as u32 >> 24) == 255
+                && geti(vm, recv, "rd_alpha", 255) == 255;
+            Value::Int(if opaque { -1 } else { -3 })
+        }
+        ("draw", _) => {
+            let shape = geti(vm, recv, "rd_gshape", 0);
+            if geti(vm, recv, "rd_visible", 1) != 0 && shape != RING {
+                if let Some(Value::Obj(canvas)) = args.first() {
+                    draw_gradient(vm, recv, *canvas, shape == LINE);
+                }
+            }
+            Value::Null
+        }
+        _ => return Ok(None),
+    }))
+}
+
+fn gradient_gap(vm: &mut Engine, recv: ObjRef) -> Result<(), VmExit> {
+    let s = crate::intrinsics::alloc_string(
+        vm,
+        "gradiente desenhado com a primeira cor (sem interpolação)".to_string(),
+    )
+    .map_err(|_| crate::err::vm_error("OOM", "string de gap"))?;
+    put(vm, recv, "rd_ggaps", Value::Obj(s))
+}
+
+/// Fill then stroke, as AOSP `GradientDrawable.draw`: with a stroke, the shape
+/// rect is inset by half the stroke width and the stroke is centered on it.
+fn draw_gradient(vm: &mut Engine, recv: ObjRef, canvas: ObjRef, line: bool) {
+    use crate::shape_drawable::outline;
+    let b = bounds(vm, recv).map(|v| v as f32);
+    let shape = geti(vm, recv, "rd_gshape", 0);
+    let alpha = geti(vm, recv, "rd_alpha", 255) as f32 / 255.0;
+    let fill = geti(vm, recv, "rd_color", 0) as u32;
+    let sw = geti(vm, recv, "rd_sw", 0).max(0) as f32;
+    let sc = geti(vm, recv, "rd_sc", 0) as u32;
+    let has_stroke = sw > 0.0 && (sc >> 24) != 0;
+    if line {
+        // `shape="line"`: a horizontal stroke through the vertical center.
+        if has_stroke {
+            let y = (b[1] + b[3]) / 2.0;
+            let pts = outline(0, b[0], y - sw / 2.0, b[2], y + sw / 2.0, [0.0; 4]);
+            if !pts.is_empty() {
+                vm.gfx_push_polygon(canvas, vec![pts], false, modulate(sc, alpha));
+            }
+        }
+        return;
+    }
+    let radii = RADII.map(|f| getf(vm, recv, f));
+    let half = if has_stroke { sw / 2.0 } else { 0.0 };
+    if (fill >> 24) != 0 {
+        let pts = outline(
+            shape,
+            b[0] + half,
+            b[1] + half,
+            b[2] - half,
+            b[3] - half,
+            radii,
+        );
+        if !pts.is_empty() {
+            vm.gfx_push_polygon(canvas, vec![pts], false, modulate(fill, alpha));
+        }
+    }
+    if has_stroke {
+        let outer = outline(
+            shape,
+            b[0],
+            b[1],
+            b[2],
+            b[3],
+            radii.map(|r| if r > 0.0 { r + half } else { 0.0 }),
+        );
+        if outer.is_empty() {
+            return;
+        }
+        let inner = outline(
+            shape,
+            b[0] + sw,
+            b[1] + sw,
+            b[2] - sw,
+            b[3] - sw,
+            radii.map(|r| (r - half).max(0.0)),
+        );
+        let mut ring = vec![outer];
+        if !inner.is_empty() {
+            ring.push(inner);
+        }
+        vm.gfx_push_polygon(canvas, ring, true, modulate(sc, alpha));
+    }
 }
 
 fn modulate(color: u32, alpha: f32) -> u32 {
