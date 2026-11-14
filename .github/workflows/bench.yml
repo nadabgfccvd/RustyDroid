@@ -62,12 +62,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      # valgrind ships in the runner image; the install is a no-op guard for the
-      # day it does not.
+      # valgrind is no longer guaranteed in the runner image (the ubuntu-latest
+      # migration to Ubuntu 26 dropped it). Installing without refreshing the
+      # package index exits 100 ("Unable to locate package"), so refresh first.
       - name: Ensure valgrind
         run: |
           set -euo pipefail
-          command -v valgrind || sudo apt-get install -y valgrind
+          if ! command -v valgrind >/dev/null; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends valgrind
+          fi
           valgrind --version
 
       # ── wall clock: advisory history ──────────────────────────────────────
