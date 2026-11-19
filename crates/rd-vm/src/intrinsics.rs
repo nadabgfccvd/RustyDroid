@@ -135,7 +135,6 @@ const THREAD_LOCAL: &str = "Ljava/lang/ThreadLocal;";
 const INHERITABLE_TL: &str = "Ljava/lang/InheritableThreadLocal;";
 /// Coleções abstratas da plataforma modeladas no classpath cujo `<init>()V`
 /// é no-op host (M8, 37º gap) — ver `call_instance_intrinsic_mref`.
-const SHORTCUT_MANAGER: &str = "Landroid/content/pm/ShortcutManager;";
 /// Builders de StrictMode (ver o braço em `instance_intrinsic_core`).
 const STRICT_POLICY_BUILDERS: [&str; 2] = [
     "Landroid/os/StrictMode$ThreadPolicy$Builder;",
@@ -6501,19 +6500,12 @@ fn instance_intrinsic_core(
         // nosso modelo — no-op correto, na linha do <init> de Object/
         // Activity/Application/Context/Fragment. Casa por mref.class: o
         // receiver é subclasse DEX, então recv_class nunca bate o nome.
-        // ShortcutManager sem launcher: `setDynamicShortcuts` aceita (true) e
-        // as demais operações são no-op. O ShortcutInfo.Builder NÃO entra aqui:
-        // o modelo M9 (`m9/shortcuts.rs`) o implementa e registra o atalho para
-        // `requestPinShortcut`. Um no-op aqui engolia o `build()` e o pin falhava
-        // com "shortcut invalid" (regressão do merge do Zoom).
-        (_, "setDynamicShortcuts", "(Ljava/util/List;)Z") if mref_class == SHORTCUT_MANAGER => {
-            Ok(Some(Value::Int(1)))
-        }
-        (_, "enableShortcuts" | "disableShortcuts" | "removeAllDynamicShortcuts", _)
-            if mref_class == SHORTCUT_MANAGER =>
-        {
-            Ok(Some(Value::Null))
-        }
+        // ShortcutManager / ShortcutInfo.Builder: NÃO há intrínseco aqui. O modelo
+        // M9 (`m9/shortcuts.rs`) implementa setDynamicShortcuts, enable/disable,
+        // removeAll e o builder, e grava o atalho que `shortcuts` e
+        // `requestPinShortcut` listam. Um no-op aqui (vindo do merge do Zoom)
+        // engolia essas chamadas: `setDynamicShortcuts` devolvia 1 sem gravar, e
+        // `build()` devolvia um ShortcutInfo fantasma. Smoke do app C: shortcuts == [].
         // StrictMode.{Thread,Vm}Policy.Builder: o device virtual não impõe
         // StrictMode (como o AOSP com a checagem desligada), então os métodos
         // fluentes (detect*/permit*/penalty*) não mudam nada e devolvem o
