@@ -107,6 +107,7 @@ pub(crate) mod reflect;
 pub mod repr;
 pub(crate) mod resbundle;
 pub mod security_crypto;
+pub(crate) mod shape_drawable;
 pub mod threads;
 pub(crate) mod throwable;
 pub mod value;

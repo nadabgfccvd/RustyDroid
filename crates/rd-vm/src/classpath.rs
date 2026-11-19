@@ -1439,6 +1439,7 @@ pub(crate) fn builtin_hierarchy(class: &str) -> Option<&'static [&'static str]> 
         }
         "Landroid/graphics/drawable/ColorDrawable;"
         | "Landroid/graphics/drawable/VectorDrawable;"
+        | "Landroid/graphics/drawable/GradientDrawable;"
         | "Landroid/graphics/drawable/LayerDrawable;" => {
             Some(&["Landroid/graphics/drawable/Drawable;", "Ljava/lang/Object;"])
         }

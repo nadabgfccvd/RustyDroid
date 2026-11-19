@@ -543,6 +543,100 @@ fn vector_drawable_for(vm: &mut Engine, path: &str) -> Result<Option<Value>, VmE
     alloc_vector(vm, spec, path)
 }
 
+/// `<shape>` → `GradientDrawable` (ver `shape_drawable.rs`). `Ok(None)` quando
+/// o arquivo não é um `<shape>`.
+fn shape_drawable_for(vm: &mut Engine, path: &str) -> Result<Option<Value>, VmExit> {
+    use crate::shape_drawable::{self, RawDim};
+    use crate::vector_drawable::RawColor;
+
+    if path.split('/').any(|seg| seg == ".." || seg.is_empty()) {
+        return Ok(None);
+    }
+    let Ok(bytes) = vm.resources().and_then(|apk| {
+        apk.zip
+            .read(path)
+            .map_err(|e| crate::err::vm_error("NOT_FOUND", format!("{path}: {e}")).into())
+    }) else {
+        return Ok(None);
+    };
+    let Some(raw) = shape_drawable::parse_shape(&bytes) else {
+        return Ok(None);
+    };
+    let mut gaps = raw.gaps;
+    let color = |c: Option<RawColor>, what: &str, gaps: &mut Vec<String>| -> i32 {
+        match c {
+            None => 0,
+            Some(RawColor::Literal(v)) => v as i32,
+            Some(RawColor::Ref(id)) => match value_of(vm, id as i32) {
+                Ok(ResolvedValue::Integer(v)) => v,
+                _ => {
+                    gaps.push(format!("{what} 0x{id:08x} não resolve para cor"));
+                    0
+                }
+            },
+        }
+    };
+    let solid = color(raw.solid, "cor do <solid>", &mut gaps);
+    let (stroke_color, stroke_width) = match raw.stroke {
+        Some((c, w)) => (color(Some(c), "cor do <stroke>", &mut gaps), Some(w)),
+        None => (0, None),
+    };
+    let px = |d: Option<RawDim>, gaps: &mut Vec<String>| -> Option<f32> {
+        let v = match d? {
+            RawDim::Lit(value, unit) => ResolvedValue::Dimension { value, unit },
+            RawDim::Ref(id) => match value_of(vm, id as i32) {
+                Ok(v) => v,
+                Err(_) => {
+                    gaps.push(format!("dimensão 0x{id:08x} não resolvida"));
+                    return None;
+                }
+            },
+        };
+        match dimension_px(vm, &v, 0) {
+            Ok(f) => Some(f.max(0.0)),
+            Err(_) => {
+                gaps.push("dimensão do <shape> em unidade não suportada".into());
+                None
+            }
+        }
+    };
+    let radius = px(raw.radius, &mut gaps).unwrap_or(0.0);
+    let corners = raw.corners.map(|c| px(c, &mut gaps).unwrap_or(radius));
+    let stroke_px = px(stroke_width, &mut gaps).unwrap_or(0.0);
+    let iw = px(raw.size.0, &mut gaps).map_or(-1, |v| v.round() as i32);
+    let ih = px(raw.size.1, &mut gaps).map_or(-1, |v| v.round() as i32);
+
+    let d = vm
+        .heap
+        .alloc_instance(
+            "Landroid/graphics/drawable/GradientDrawable;".to_string(),
+            Vec::new(),
+        )
+        .map_err(crate::err::oom_throwable)?;
+    for (field, value) in [
+        ("rd_visible", Value::Int(1)),
+        ("rd_alpha", Value::Int(255)),
+        ("rd_color", Value::Int(solid)),
+        ("rd_gshape", Value::Int(raw.shape)),
+        ("rd_rtl", Value::Float(corners[0])),
+        ("rd_rtr", Value::Float(corners[1])),
+        ("rd_rbr", Value::Float(corners[2])),
+        ("rd_rbl", Value::Float(corners[3])),
+        ("rd_sw", Value::Int(stroke_px.round() as i32)),
+        ("rd_sc", Value::Int(stroke_color)),
+        ("rd_iw", Value::Int(iw)),
+        ("rd_ih", Value::Int(ih)),
+    ] {
+        put(vm, d, field, value)?;
+    }
+    if !gaps.is_empty() {
+        let sref = crate::intrinsics::alloc_string(vm, gaps.join("; "))
+            .map_err(|_| crate::err::vm_error("OOM", "string de gap"))?;
+        put(vm, d, "rd_ggaps", Value::Obj(sref))?;
+    }
+    Ok(Some(Value::Obj(d)))
+}
+
 fn apply_alpha(color: u32, alpha: f32) -> u32 {
     let a = ((color >> 24) & 0xFF) as f32 * alpha.clamp(0.0, 1.0);
     (color & 0x00FF_FFFF) | ((a as u32) << 24)
@@ -1625,17 +1719,21 @@ pub(crate) fn drawable_of_resid(vm: &mut Engine, id: i32) -> Result<Value, VmExi
                 // `android.graphics.drawable.VectorDrawable`, senão lança
                 // `IllegalStateException` e o app não abre. Por isso o
                 // vetor é parseado de verdade (ver `vector_drawable.rs`).
-                match vector_drawable_for(vm, &path)? {
+                let drawable = match vector_drawable_for(vm, &path)? {
+                    Some(d) => Some(d),
+                    None => shape_drawable_for(vm, &path)?,
+                };
+                match drawable {
                     Some(d) => d,
                     None => {
                         return Err(crate::err::with_suggestion(
                             crate::err::vm_error(
                                 "NOT_IMPLEMENTED",
                                 format!(
-                                    "drawable 0x{id:08x} ({path}) não é rasterizado: nem <vector> nem PNG/bitmap modelados para este arquivo"
+                                    "drawable 0x{id:08x} ({path}) não é rasterizado: nem <vector>, nem <shape>, nem PNG/bitmap modelados para este arquivo"
                                 ),
                             ),
-                            "vetores (fill sólido + stroke) são modelados; bitmaps e <shape> XML ainda não",
+                            "<vector> e <shape> são modelados; bitmaps, <selector> e <layer-list> ainda não",
                         )
                         .into())
                     }
