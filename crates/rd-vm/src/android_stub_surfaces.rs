@@ -768,6 +768,11 @@ pub(crate) fn instance_intrinsic(
         {
             return text_classifier_instance(vm, name, sig, recv, args);
         }
+        // Construtor da base `Animation`: sem estado modelado nesta fatia (no-op).
+        // Subclasses DEX (ex.: `SwipeRefreshLayout$6`) chamam `<init>()V` no super.
+        if mref_class == "Landroid/view/animation/Animation;" && name == "<init>" {
+            return Ok(Some(Value::Null));
+        }
         if let Some(value) = partial57_instance(vm, recv_class, mref_class, name, sig, recv, args)?
         {
             return Ok(Some(value));
@@ -2058,6 +2063,12 @@ fn webview_static(
             );
             Value::Null
         }
+        // Restored from the Zoom branch: the table-driven refactor (594c1c4) dropped these
+        // no-ops. setDataDirectorySuffix: sem processo WebView separado no device virtual,
+        // o sufixo não tem efeito observável.
+        "enablePlatformNotifications"
+        | "disablePlatformNotifications"
+        | "setDataDirectorySuffix" => Value::Null,
         "clearClientCertPreferences" => {
             if let Some(r) = oarg(args, 0) {
                 // The interface is java.lang.Runnable; a guest implementation

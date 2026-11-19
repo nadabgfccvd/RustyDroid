@@ -471,6 +471,9 @@ pub enum ResolvedValue {
     Str(String),
     Boolean(bool),
     Integer(i32),
+    /// Cor ARGB (`TYPE_INT_COLOR_*`). Mesmo payload de `Integer`, mas o tipo do
+    /// `TypedValue` continua sendo cor: `ResourcesCompat.isColorInt` depende disso.
+    Color(i32),
     Float(f32),
     /// Valor complexo (mantissa×radix) com unidade — px/dp/sp/…
     Dimension {
@@ -650,7 +653,7 @@ impl Arsc {
             0x11 => Some(ResolvedValue::Integer(best.data as i32)),
             0x12 => Some(ResolvedValue::Boolean(best.data != 0)),
             // INT_COLOR_ARGB8/RGB8/ARGB4/RGB4: aapt2 stores the expanded ARGB
-            0x1c..=0x1f => Some(ResolvedValue::Integer(best.data as i32)),
+            0x1c..=0x1f => Some(ResolvedValue::Color(best.data as i32)),
             0x04 => Some(ResolvedValue::Float(f32::from_bits(best.data))),
             0x05 => Some(ResolvedValue::Dimension {
                 value: complex_to_float(best.data),
@@ -758,7 +761,8 @@ impl Arsc {
                     value: complex_to_float(value.data),
                     unit: complex_unit_of(value.data),
                 },
-                0x10 | 0x11 | 0x1c..=0x1f => ResolvedValue::Integer(value.data as i32),
+                0x10 | 0x11 => ResolvedValue::Integer(value.data as i32),
+                0x1c..=0x1f => ResolvedValue::Color(value.data as i32),
                 0x12 => ResolvedValue::Boolean(value.data != 0),
                 _ => return None,
             };

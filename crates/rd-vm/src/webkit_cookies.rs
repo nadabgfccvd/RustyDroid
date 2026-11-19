@@ -223,6 +223,46 @@ pub fn instance_object(vm: &mut Engine) -> Result<ObjRef, VmExit> {
     Ok(obj)
 }
 
+/// `android.webkit.CookieSyncManager` (deprecado desde a API 21, presente no SDK 28).
+/// O armazém é em memória, então sincronizar com o disco é no-op.
+pub const COOKIE_SYNC_MANAGER: &str = "Landroid/webkit/CookieSyncManager;";
+
+/// `createInstance(Context)` / `getInstance()`: um CookieSyncManager por processo.
+pub fn sync_manager_object(vm: &mut Engine) -> Result<ObjRef, VmExit> {
+    if let Some(obj) = vm.fw.cookie_sync_manager {
+        return Ok(obj);
+    }
+    let obj = vm
+        .heap
+        .alloc_instance(COOKIE_SYNC_MANAGER.to_string(), Vec::new())
+        .map_err(crate::err::oom_throwable)?;
+    vm.fw.cookie_sync_manager = Some(obj);
+    Ok(obj)
+}
+
+pub fn sync_manager_static(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    _args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let factory = (name == "createInstance"
+        && sig == "(Landroid/content/Context;)Landroid/webkit/CookieSyncManager;")
+        || (name == "getInstance" && sig == "()Landroid/webkit/CookieSyncManager;");
+    if factory {
+        return Ok(Some(Value::Obj(sync_manager_object(vm)?)));
+    }
+    Ok(None)
+}
+
+/// Métodos de instância do CookieSyncManager: sincronização é no-op aqui.
+pub fn sync_manager_instance(name: &str, sig: &str) -> Option<Value> {
+    match (name, sig) {
+        ("sync" | "startSync" | "stopSync", "()V") => Some(Value::Null),
+        _ => None,
+    }
+}
+
 pub fn static_intrinsic(
     vm: &mut Engine,
     name: &str,

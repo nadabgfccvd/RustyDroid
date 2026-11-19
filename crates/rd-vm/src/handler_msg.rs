@@ -125,7 +125,7 @@ fn enqueue_message(vm: &mut Engine, handler: ObjRef, m: ObjRef, when: u64) -> Re
     )
 }
 
-fn enqueue_runnable(
+pub(crate) fn enqueue_runnable(
     vm: &mut Engine,
     handler: ObjRef,
     r: ObjRef,

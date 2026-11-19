@@ -312,34 +312,35 @@ pub(crate) fn fill_theme_typed_array(
     let Some(arsc) = vm.fw.resources.as_ref().and_then(|apk| apk.arsc.as_ref()) else {
         return;
     };
-    let values = ids
-        .iter()
-        .map(|id| {
-            let Value::Int(attr_id) = id else {
-                return None;
-            };
-            let attr_id = *attr_id as u32;
-            let value = arsc.resolve_style_attribute(style_id, attr_id)?;
-            let value = match value {
-                rd_apk::arsc::ResolvedValue::Str(s) => AttrValue::String(s),
-                rd_apk::arsc::ResolvedValue::Boolean(b) => AttrValue::Bool(b),
-                rd_apk::arsc::ResolvedValue::Integer(i) => AttrValue::Int(i),
-                rd_apk::arsc::ResolvedValue::Float(f) => AttrValue::Float(f),
-                rd_apk::arsc::ResolvedValue::Dimension { value, unit } => {
-                    AttrValue::Dimension(value, unit)
-                }
-                rd_apk::arsc::ResolvedValue::Reference(r) => AttrValue::Reference(r),
-                rd_apk::arsc::ResolvedValue::Attribute(a) => AttrValue::Attribute(a),
-            };
-            Some(XmlAttribute {
-                ns: None,
-                name: arsc.resolve_name(attr_id).unwrap_or_default(),
-                raw: None,
-                value,
-                res_id: Some(attr_id),
+    let values =
+        ids.iter()
+            .map(|id| {
+                let Value::Int(attr_id) = id else {
+                    return None;
+                };
+                let attr_id = *attr_id as u32;
+                let value = arsc.resolve_style_attribute(style_id, attr_id)?;
+                let value = match value {
+                    rd_apk::arsc::ResolvedValue::Str(s) => AttrValue::String(s),
+                    rd_apk::arsc::ResolvedValue::Boolean(b) => AttrValue::Bool(b),
+                    rd_apk::arsc::ResolvedValue::Integer(i)
+                    | rd_apk::arsc::ResolvedValue::Color(i) => AttrValue::Int(i),
+                    rd_apk::arsc::ResolvedValue::Float(f) => AttrValue::Float(f),
+                    rd_apk::arsc::ResolvedValue::Dimension { value, unit } => {
+                        AttrValue::Dimension(value, unit)
+                    }
+                    rd_apk::arsc::ResolvedValue::Reference(r) => AttrValue::Reference(r),
+                    rd_apk::arsc::ResolvedValue::Attribute(a) => AttrValue::Attribute(a),
+                };
+                Some(XmlAttribute {
+                    ns: None,
+                    name: arsc.resolve_name(attr_id).unwrap_or_default(),
+                    raw: None,
+                    value,
+                    res_id: Some(attr_id),
+                })
             })
-        })
-        .collect();
+            .collect();
     vm.fw.xml.arrays.insert(ta, values);
 }
 
@@ -400,7 +401,7 @@ fn as_f32(vm: &Engine, v: &AttrValue) -> Option<f32> {
     use rd_apk::arsc::ResolvedValue as R;
     Some(match deref(vm, v)? {
         R::Float(f) => f,
-        R::Integer(i) => i as f32,
+        R::Integer(i) | R::Color(i) => i as f32,
         R::Dimension { value, unit } => to_px(value, unit),
         R::Str(s) => s.parse().ok()?,
         R::Boolean(b) => b as i32 as f32,
@@ -411,7 +412,7 @@ fn as_f32(vm: &Engine, v: &AttrValue) -> Option<f32> {
 fn as_i32(vm: &Engine, v: &AttrValue) -> Option<i32> {
     use rd_apk::arsc::ResolvedValue as R;
     Some(match deref(vm, v)? {
-        R::Integer(i) => i,
+        R::Integer(i) | R::Color(i) => i,
         R::Boolean(b) => b as i32,
         R::Float(f) => f as i32,
         R::Dimension { value, unit } => to_px(value, unit) as i32,

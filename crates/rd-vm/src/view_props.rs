@@ -53,6 +53,8 @@ const EXCLUDED: &[&str] = &[
 /// Object getters whose Android default is null.
 const NULLABLE: &[&str] = &[
     "getTag",
+    "getButtonTintList",
+    "getButtonTintMode",
     "getBackground",
     "getForeground",
     "getLayoutParams",
@@ -152,6 +154,25 @@ pub(crate) fn fallback(
     };
     if EXCLUDED.contains(&name) {
         return Ok(None);
+    }
+    // TextView.getCompoundDrawables(Relative): array de 4 posições (esquerda,
+    // topo, direita, base), sem drawable de texto guardado: todas nulas.
+    if matches!(
+        (name, sig),
+        (
+            "getCompoundDrawables" | "getCompoundDrawablesRelative",
+            "()[Landroid/graphics/drawable/Drawable;"
+        )
+    ) {
+        let arr = vm
+            .heap
+            .alloc_array_zeroed(
+                crate::heap::ElemKind::Obj,
+                4,
+                "[Landroid/graphics/drawable/Drawable;",
+            )
+            .map_err(crate::err::oom_throwable)?;
+        return Ok(Some(Value::Obj(arr)));
     }
     let ret = ret_type(sig);
     // geometry from the host layout
@@ -275,6 +296,14 @@ pub(crate) fn fallback(
         }
         ("playSoundEffect", "(I)V") | ("drawableHotspotChanged", "(FF)V") => {
             return Ok(Some(Value::Null))
+        }
+        // Two-arg setter the generic single-arg rule below cannot take:
+        // the layer paint is recorded but not rasterized headless.
+        ("setLayerType", "(ILandroid/graphics/Paint;)V") => {
+            let t = args.first().and_then(|v| v.as_int().ok()).unwrap_or(0);
+            vm.view_props
+                .insert((recv, "LayerType".to_string()), Value::Int(t));
+            return Ok(Some(Value::Null));
         }
         ("performHapticFeedback", _) => return Ok(Some(Value::Int(0))),
         _ => {}

@@ -333,6 +333,10 @@ enum AppSub {
         /// capturadas (stack trace estilo JVM — diagnóstico de call site)
         #[arg(long)]
         trace: bool,
+        /// Liga os dispositivos virtuais (M10) para esta execução: AudioManager,
+        /// câmera, sensores etc. passam a responder. Padrão: desligado (ADR 011).
+        #[arg(long)]
+        virtual_devices: bool,
         #[arg(long)]
         json: bool,
         /// Limite d’instructions DEX (anti-loop; default VmConfig::fuel)
@@ -560,9 +564,18 @@ fn run(cli: Cli) -> i32 {
                 activity,
                 scripts,
                 trace,
+                virtual_devices,
                 json,
                 fuel,
-            } => cmd_app_run(path, activity.as_deref(), scripts, *trace, *json, *fuel),
+            } => cmd_app_run(
+                path,
+                activity.as_deref(),
+                scripts,
+                *trace,
+                *virtual_devices,
+                *json,
+                *fuel,
+            ),
             AppSub::Dump {
                 path,
                 activity,
@@ -1528,6 +1541,7 @@ fn boot_app(
     path: &Path,
     activity: Option<&str>,
     exception_trace: bool,
+    virtual_devices: bool,
     fuel: Option<u64>,
 ) -> Result<(rd_vm::Engine, String, String), RdError> {
     let apk = open_apk(path).ok();
@@ -1578,6 +1592,19 @@ fn boot_app(
             ..rd_vm::VmConfig::app_runtime()
         },
     );
+    #[cfg(feature = "virtual-devices")]
+    if virtual_devices {
+        // Opt-in por execução (ADR 011): mesmo estado que o agente MCP habilita.
+        eng.m10_enable_virtual_devices();
+    }
+    #[cfg(not(feature = "virtual-devices"))]
+    if virtual_devices {
+        return Err(RdError::new(
+            "UNSUPPORTED",
+            "--virtual-devices exige a feature virtual-devices",
+            "rd-cli",
+        ));
+    }
     if let Some(a) = apk {
         // M8 (38º gap): classe de Application do manifest → o launch cria a
         // Application real do app antes da activity (getApplication).
@@ -1636,6 +1663,7 @@ fn cmd_app_run(
     activity: Option<&str>,
     scripts: &[String],
     trace: bool,
+    virtual_devices: bool,
     json: bool,
     fuel: Option<u64>,
 ) -> Result<(), RdError> {
@@ -1645,7 +1673,17 @@ fn cmd_app_run(
     let worker = std::thread::Builder::new()
         .name("rd-app".into())
         .stack_size(APP_RUNTIME_STACK_BYTES)
-        .spawn(move || cmd_app_run_inner(&path, activity.as_deref(), &scripts, trace, json, fuel))
+        .spawn(move || {
+            cmd_app_run_inner(
+                &path,
+                activity.as_deref(),
+                &scripts,
+                trace,
+                virtual_devices,
+                json,
+                fuel,
+            )
+        })
         .map_err(|e| {
             RdError::new(
                 "THREAD",
@@ -1668,10 +1706,11 @@ fn cmd_app_run_inner(
     activity: Option<&str>,
     scripts: &[String],
     trace: bool,
+    virtual_devices: bool,
     json: bool,
     fuel: Option<u64>,
 ) -> Result<(), RdError> {
-    let (mut eng, activity_desc, package) = boot_app(path, activity, trace, fuel)?;
+    let (mut eng, activity_desc, package) = boot_app(path, activity, trace, virtual_devices, fuel)?;
 
     let mut dumps: Vec<String> = Vec::new();
     let mut xmls: Vec<String> = Vec::new();
@@ -1896,7 +1935,7 @@ fn cmd_app_dump(
     text: bool,
     json: bool,
 ) -> Result<(), RdError> {
-    let (mut eng, activity_desc, package) = boot_app(path, activity, false, None)?;
+    let (mut eng, activity_desc, package) = boot_app(path, activity, false, false, None)?;
     eng.ensure_laid_out().map_err(vm_err_to_rd)?;
     if text {
         let d = eng.dump_ui();
@@ -1936,7 +1975,7 @@ fn cmd_app_dump(
 /// M4 DoD "screenshot correto": PNG headless 720×1440 da tela corrente —
 /// software renderer determinístico do rd-render.
 fn cmd_app_shot(path: &Path, activity: Option<&str>, out: &Path) -> Result<(), RdError> {
-    let (mut eng, _activity, _package) = boot_app(path, activity, false, None)?;
+    let (mut eng, _activity, _package) = boot_app(path, activity, false, false, None)?;
     let draw_result = eng.draw_frame();
     // Diagnóstico de memória (RD_MEM_REPORT=1): contadores do heap da VM no
     // fim do primeiro quadro. Desligado por padrão.
