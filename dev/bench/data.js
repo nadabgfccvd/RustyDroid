@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794622188729,
+  "lastUpdate": 1795132457500,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7359,6 +7359,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2769,
             "range": "± 5",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cabd81a7346477ab8e31478653f4356617f82c79",
+          "message": "feat(rd-vm): <shape> XML drawables as GradientDrawable (#653)\n\nButton and card backgrounds in res/drawable/*.xml with a <shape> root\nreturned NOT_IMPLEMENTED from getDrawable, so views lost their fill,\nborder and rounded corners.\n\n- shape_drawable.rs parses <shape> (rectangle/oval/line), <solid>,\n  <stroke>, <corners> (global or per-corner radius) and <size>. Colors\n  and dimensions accept literals and @color/@dimen references, resolved\n  with the Resources density.\n- getDrawable falls back to the <shape> loader after <vector>.\n- GradientDrawable natives: setShape/getShape, setColor (int and\n  ColorStateList), setColors, setCornerRadius/setCornerRadii, setStroke,\n  setSize, intrinsic size, getOpacity and draw. Fill is a polygon from\n  the rounded-rect/oval outline; stroke is an even-odd ring centered on\n  the edge, as in AOSP. Radii are clamped to half the shortest side.\n- GradientDrawable is a Drawable subtype in the builtin hierarchy.\n\nDocumented deviations (rd_ggaps): ring is not drawn, <gradient> uses\nits start color, dashed strokes are drawn solid, <padding> is ignored.\n\nTests: tests/shape_drawable.rs (3), shape_drawable unit tests (5).\n\nCo-authored-by: Xisto <xisto@users.noreply.github.com>",
+          "timestamp": "2026-11-19T20:53:30-03:00",
+          "tree_id": "5af943b26c9f7fcbf8a9630b43b4c2ab12e67f98",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/cabd81a7346477ab8e31478653f4356617f82c79"
+        },
+        "date": 1795132454897,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 2778,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 2773,
+            "range": "± 38",
             "unit": "ns/iter"
           }
         ]
