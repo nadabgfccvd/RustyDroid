@@ -41,6 +41,7 @@ pub(crate) mod bundle;
 pub(crate) mod choreographer;
 pub mod classpath;
 pub(crate) mod collections;
+pub(crate) mod color_selector;
 pub(crate) mod content;
 pub mod credentials;
 pub mod engine;

@@ -31,7 +31,7 @@ Itens que a VM aceita com comportamento aproximado. Cada um é observável no c�
 | `Locale.getDefault(Category)` / `setDefault(Category, …)` | Um único locale padrão para todas as categorias. | `android_res.rs` |
 | `CompoundButton` (checked, tint list/mode, button drawable) | Guardados em `view_props` pelo fallback genérico, sem render. `getButtonTintList`/`getButtonTintMode` começam `null`. | `view_props.rs` |
 | `TextView.getCompoundDrawables(Relative)` | Devolve 4 posições nulas. Drawables de texto definidos pelo app não são guardados. | `view_props.rs` |
-| `Resources.getColorStateList` | Cor simples vira `ColorStateList.valueOf`. Seletor XML (`res/color/*.xml`) falha com `NOT_IMPLEMENTED` e o caminho. | `android_res.rs` (`color_state_list_of`) |
+| `Resources.getColorStateList` | Cor simples vira `ColorStateList.valueOf`. Seletor XML (`res/color/*.xml`) com `<item android:color>` literal e `state_*` booleano é lido do APK (IDs do resource map). Referência `@color/…` dentro do seletor e demais formas falham com `NOT_IMPLEMENTED` e o caminho. | `android_res.rs` (`color_state_list_of`), `color_selector.rs` |
 | `Field.getGenericType` / `Class.getGenericSuperclass` | Sem `Signature`, devolvem a classe crua. Com tipo parametrizado, falham com `NOT_IMPLEMENTED` (sem `ParameterizedType`). | `intrinsics.rs`, `jlclass.rs` |
 | `finish()` durante o `onCreate` do lançamento | A destruição é adiada até depois do pós-`onCreate`; a Activity não recebe `onStart`/`onResume`, como no `ActivityThread`. | `framework.rs` (`launch_activity_inner`) |
 | Intent de lançamento | Herda action, data, mime, categories e flags do intent de origem; componente, pacote e seletor não são herdados. | `framework.rs` (`start_activity_with`) |

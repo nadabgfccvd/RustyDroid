@@ -420,8 +420,9 @@ fn locale_list_items(vm: &Engine, r: ObjRef) -> Vec<Value> {
 // ── arsc-backed lookups ────────────────────────────────────────────────
 
 /// `Resources.getColorStateList`: cor simples vira `ColorStateList.valueOf`
-/// (um estado vazio). Seletor XML (`res/color/*.xml`) ainda não é modelado:
-/// falha visível com o caminho, não um `null` silencioso.
+/// (um estado vazio). Seletor XML (`res/color/*.xml`) é lido por
+/// `color_selector::parse_selector`; forma fora do modelo falha visível com o
+/// caminho, não um `null` silencioso.
 fn color_state_list_of(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
     match value_of(vm, id)? {
         ResolvedValue::Color(c) => Ok(Value::Obj(crate::android_drawable::csl_new(
@@ -430,10 +431,20 @@ fn color_state_list_of(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
             vec![c],
         )?)),
         ResolvedValue::Str(path) if path.ends_with(".xml") => {
-            Err(VmExit::Error(crate::err::not_implemented(format!(
-                "Resources.getColorStateList(0x{:x}): seletor de cor {path} ainda não é modelado",
-                id as u32
-            ))))
+            let Some(bytes) = crate::jresources::read_resource(vm, &path)? else {
+                return Err(not_found(id));
+            };
+            match crate::color_selector::parse_selector(&bytes) {
+                Some(sel) => Ok(Value::Obj(crate::android_drawable::csl_new(
+                    vm,
+                    sel.states,
+                    sel.colors,
+                )?)),
+                None => Err(VmExit::Error(crate::err::not_implemented(format!(
+                    "Resources.getColorStateList(0x{:x}): seletor de cor {path} tem forma não modelada",
+                    id as u32
+                )))),
+            }
         }
         _ => Err(not_found(id)),
     }

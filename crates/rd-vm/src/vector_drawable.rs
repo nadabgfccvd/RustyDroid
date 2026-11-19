@@ -339,7 +339,7 @@ fn float_attr(el: &XmlElement, name: &str) -> Option<f32> {
 
 /// `fillColor`/`strokeColor`: literal (`#ff0000`, já decodificado como `Int`
 /// pelo aapt) ou referência a `@color/…`, resolvida no ARSC pelo chamador.
-fn color_attr(el: &XmlElement, name: &str) -> Option<RawColor> {
+pub(crate) fn color_attr(el: &XmlElement, name: &str) -> Option<RawColor> {
     let a = el.android_attr(name)?;
     match &a.value {
         AttrValue::Reference(r) | AttrValue::Attribute(r) => Some(RawColor::Ref(*r)),
