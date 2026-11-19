@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795132457500,
+  "lastUpdate": 1795132521531,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7395,6 +7395,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2773,
             "range": "± 38",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "efa2c8119a5286374f32646d29ae8555797cc3ec",
+          "message": "chore(deps)(deps): bump fancy-regex (#654)\n\nBumps the cargo-minor-and-patch group with 1 update: [fancy-regex](https://github.com/fancy-regex/fancy-regex).\n\n\nUpdates `fancy-regex` from 0.20.0 to 0.20.2\n- [Release notes](https://github.com/fancy-regex/fancy-regex/releases)\n- [Changelog](https://github.com/fancy-regex/fancy-regex/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/fancy-regex/fancy-regex/compare/0.20.0...0.20.2)\n\n---\nupdated-dependencies:\n- dependency-name: fancy-regex\n  dependency-version: 0.20.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-19T20:53:34-03:00",
+          "tree_id": "e9116b076725820eff423fcf951aa8bde50b5b52",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/efa2c8119a5286374f32646d29ae8555797cc3ec"
+        },
+        "date": 1795132519733,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3742,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3738,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
