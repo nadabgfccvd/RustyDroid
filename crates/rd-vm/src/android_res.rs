@@ -419,6 +419,37 @@ fn locale_list_items(vm: &Engine, r: ObjRef) -> Vec<Value> {
 
 // ── arsc-backed lookups ────────────────────────────────────────────────
 
+/// `Resources.getColorStateList`: cor simples vira `ColorStateList.valueOf`
+/// (um estado vazio). Seletor XML (`res/color/*.xml`) é lido por
+/// `color_selector::parse_selector`; forma fora do modelo falha visível com o
+/// caminho, não um `null` silencioso.
+fn color_state_list_of(vm: &mut Engine, id: i32) -> Result<Value, VmExit> {
+    match value_of(vm, id)? {
+        ResolvedValue::Color(c) => Ok(Value::Obj(crate::android_drawable::csl_new(
+            vm,
+            vec![Vec::new()],
+            vec![c],
+        )?)),
+        ResolvedValue::Str(path) if path.ends_with(".xml") => {
+            let Some(bytes) = crate::jresources::read_resource(vm, &path)? else {
+                return Err(not_found(id));
+            };
+            match crate::color_selector::parse_selector(&bytes) {
+                Some(sel) => Ok(Value::Obj(crate::android_drawable::csl_new(
+                    vm,
+                    sel.states,
+                    sel.colors,
+                )?)),
+                None => Err(VmExit::Error(crate::err::not_implemented(format!(
+                    "Resources.getColorStateList(0x{:x}): seletor de cor {path} tem forma não modelada",
+                    id as u32
+                )))),
+            }
+        }
+        _ => Err(not_found(id)),
+    }
+}
+
 fn not_found(id: i32) -> VmExit {
     exc(
         "Landroid/content/res/Resources$NotFoundException;",
@@ -445,7 +476,24 @@ fn framework_color(id: u32) -> Option<ResolvedValue> {
     FRAMEWORK_COLORS
         .iter()
         .find(|(rid, _)| *rid == id)
-        .map(|(_, argb)| ResolvedValue::Integer(*argb as i32))
+        .map(|(_, argb)| ResolvedValue::Color(*argb as i32))
+}
+
+/// Framework integers (`android.R.integer.config_*AnimTime`, package `0x01`,
+/// ids from the public `R.integer` docs: short `0x010e0000`, medium
+/// `0x010e0001`, long `0x010e0002`). Values are the AOSP `config.xml`
+/// defaults in milliseconds: short 200, medium 400, long 500.
+const FRAMEWORK_INTEGERS: &[(u32, i32)] = &[
+    (0x010e_0000, 200), // android.R.integer.config_shortAnimTime
+    (0x010e_0001, 400), // android.R.integer.config_mediumAnimTime
+    (0x010e_0002, 500), // android.R.integer.config_longAnimTime
+];
+
+fn framework_integer(id: u32) -> Option<ResolvedValue> {
+    FRAMEWORK_INTEGERS
+        .iter()
+        .find(|(rid, _)| *rid == id)
+        .map(|(_, v)| ResolvedValue::Integer(*v))
 }
 
 /// Framework IDs (`android.R.id.*`, package `0x01`, type `0x06`). The value
@@ -680,6 +728,9 @@ fn value_of(vm: &Engine, id: i32) -> Result<ResolvedValue, VmExit> {
     if let Some(v) = framework_id(id as u32) {
         return Ok(v);
     }
+    if let Some(v) = framework_integer(id as u32) {
+        return Ok(v);
+    }
     let mut cur = id as u32;
     for _ in 0..8 {
         // Every hop may leave the app's table: `@color/x` → `@android:color/y`
@@ -709,7 +760,7 @@ fn dimension_px(vm: &Engine, v: &ResolvedValue, id: i32) -> Result<f32, VmExit> 
             ComplexUnit::Mm => value * d.dpi as f32 / 25.4,
             _ => return Err(not_found(id)),
         },
-        ResolvedValue::Integer(i) => *i as f32,
+        ResolvedValue::Integer(i) | ResolvedValue::Color(i) => *i as f32,
         ResolvedValue::Float(f) => *f,
         _ => {
             let _ = vm;
@@ -771,6 +822,8 @@ fn fill_typed_value(vm: &mut Engine, tv: ObjRef, id: i32, v: &ResolvedValue) -> 
         ResolvedValue::Float(f) => (4, f.to_bits() as i32, None),
         ResolvedValue::Dimension { .. } => (5, dimension_px(vm, v, id)?.round() as i32, None),
         ResolvedValue::Integer(i) => (16, *i, None),
+        // TYPE_INT_COLOR_ARGB8 (TypedValue.TYPE_FIRST_COLOR_INT)
+        ResolvedValue::Color(i) => (28, *i, None),
         ResolvedValue::Boolean(b) => (18, *b as i32, None),
     };
     put(vm, tv, "type", Value::Int(ty))?;
@@ -810,11 +863,24 @@ fn parse_theme_id(raw: &str) -> Option<u32> {
 }
 
 fn theme_id_for_context(vm: &Engine, context: ObjRef) -> Option<u32> {
-    if let Some(Value::Int(id)) = vm
-        .view_props
-        .get(&(context, "rd_theme_override".to_string()))
-    {
-        return (*id != 0).then_some(*id as u32);
+    // A wrapper (ContextThemeWrapper, TintContextWrapper, ...) answers with its
+    // own non-zero theme override. `themeResId == 0` (or no override) means
+    // "inherit": the theme of the context it wraps, up to the Activity (AOSP
+    // ContextThemeWrapper.initializeTheme).
+    let mut context = context;
+    for _ in 0..16 {
+        if let Some(Value::Int(id)) = vm
+            .view_props
+            .get(&(context, "rd_theme_override".to_string()))
+        {
+            if *id != 0 {
+                return Some(*id as u32);
+            }
+        }
+        match vm.view_props.get(&(context, "ctx:mBase".to_string())) {
+            Some(Value::Obj(base)) if *base != context => context = *base,
+            _ => break,
+        }
     }
     let apk = vm.fw.resources.as_ref()?;
     let class = vm.heap.class_of(context).ok()?;
@@ -905,6 +971,18 @@ pub(crate) fn static_intrinsic(
         }
         (RESOURCES, "getSystem", _) => Value::Obj(resources(vm)?),
         (LOCALE, "getDefault", "()Ljava/util/Locale;") => Value::Obj(default_locale(vm)?),
+        // `Locale.getDefault(Category)`: o modelo tem um único locale padrão, então
+        // as categorias (DISPLAY/FORMAT) devolvem o mesmo valor.
+        (LOCALE, "getDefault", "(Ljava/util/Locale$Category;)Ljava/util/Locale;") => {
+            Value::Obj(default_locale(vm)?)
+        }
+        (LOCALE, "setDefault", "(Ljava/util/Locale$Category;Ljava/util/Locale;)V") => {
+            if let Some(Value::Obj(l)) = args.get(1) {
+                vm.statics
+                    .insert(("Lrd/Resources;".into(), "locale".into()), Value::Obj(*l));
+            }
+            Value::Null
+        }
         (LOCALE, "setDefault", "(Ljava/util/Locale;)V") => {
             if let Some(Value::Obj(l)) = args.first() {
                 vm.statics
@@ -1035,13 +1113,39 @@ pub(crate) fn instance_intrinsic(
                     let v = value_of(vm, int(0))?;
                     Value::Int(dimension_px(vm, &v, int(0))? as i32)
                 }
+                ("getDrawable", _) => {
+                    // Color resources become a ColorDrawable carrying the
+                    // colour; anything else is a plain Drawable state
+                    // object (XML drawable rasterization is handled by
+                    // the layout inflater path, not Resources).
+                    match value_of(vm, int(0))? {
+                        ResolvedValue::Integer(i) | ResolvedValue::Color(i) => {
+                            let d = vm.heap.alloc_instance(
+                                "Landroid/graphics/drawable/ColorDrawable;".to_string(),
+                                vec![("rd_color".to_string(), Value::Int(i))],
+                            )?;
+                            Value::Obj(d)
+                        }
+                        _ => Value::Obj(vm.heap.alloc_instance(
+                            "Landroid/graphics/drawable/Drawable;".to_string(),
+                            Vec::new(),
+                        )?),
+                    }
+                }
+                ("getColorStateList", "(I)Landroid/content/res/ColorStateList;")
+                | (
+                    "getColorStateList",
+                    "(ILandroid/content/res/Resources$Theme;)Landroid/content/res/ColorStateList;",
+                ) => color_state_list_of(vm, int(0))?,
                 ("getInteger", "(I)I") | ("getColor", _) => match value_of(vm, int(0))? {
-                    ResolvedValue::Integer(i) => Value::Int(i),
+                    ResolvedValue::Integer(i) | ResolvedValue::Color(i) => Value::Int(i),
                     _ => return Err(not_found(int(0))),
                 },
                 ("getBoolean", "(I)Z") => match value_of(vm, int(0))? {
                     ResolvedValue::Boolean(b) => Value::Int(b as i32),
-                    ResolvedValue::Integer(i) => Value::Int((i != 0) as i32),
+                    ResolvedValue::Integer(i) | ResolvedValue::Color(i) => {
+                        Value::Int((i != 0) as i32)
+                    }
                     _ => return Err(not_found(int(0))),
                 },
                 ("getFloat", "(I)F") => match value_of(vm, int(0))? {
@@ -1117,21 +1221,22 @@ pub(crate) fn instance_intrinsic(
                         ));
                     };
                     let resolve_refs = args.get(2).and_then(|v| v.as_int().ok()).unwrap_or(0) != 0;
+                    // AOSP: with resolveRefs, a reference value is followed and
+                    // `resourceId` is the referenced resource (SplashScreen reads
+                    // `postSplashScreenTheme` this way to call setTheme).
+                    // resourceId: the reference the value came from (0 when it did not come
+                    // from one, never the attribute id). Taken before resolveRefs follows it.
+                    let referenced = match &value {
+                        ResolvedValue::Reference(r) => *r as i32,
+                        _ => 0,
+                    };
                     if resolve_refs {
                         if let ResolvedValue::Reference(id) = &value {
                             value =
                                 value_of(vm, *id as i32).unwrap_or(ResolvedValue::Reference(*id));
                         }
                     }
-                    fill_typed_value(vm, *out, attr_id as i32, &value)?;
-                    // AOSP: `resourceId` is the referenced resource only when the
-                    // resolved value IS a reference; never the attribute id itself
-                    // (Material then calls getColor(attrId) → NotFoundException).
-                    let referenced = match &value {
-                        ResolvedValue::Reference(r) => *r as i32,
-                        _ => 0,
-                    };
-                    put(vm, *out, "resourceId", Value::Int(referenced))?;
+                    fill_typed_value(vm, *out, referenced, &value)?;
                     Value::Int(1)
                 }
                 "obtainStyledAttributes" => {
@@ -1607,7 +1712,7 @@ pub(crate) fn instance_intrinsic(
             format_string(vm, t, &args[1])?
         }
         ("getColor", "(I)I") => match value_of(vm, int(0))? {
-            ResolvedValue::Integer(i) => Value::Int(i),
+            ResolvedValue::Integer(i) | ResolvedValue::Color(i) => Value::Int(i),
             _ => return Err(not_found(int(0))),
         },
         _ => return Ok(None),
@@ -1636,17 +1741,17 @@ mod framework_color_tests {
     fn framework_colors_match_the_documented_argb_values() {
         assert_eq!(
             framework_color(0x0106_000c),
-            Some(ResolvedValue::Integer(0xff00_0000u32 as i32)),
+            Some(ResolvedValue::Color(0xff00_0000u32 as i32)),
             "android.R.color.black"
         );
         assert_eq!(
             framework_color(0x0106_000b),
-            Some(ResolvedValue::Integer(0xffff_ffffu32 as i32)),
+            Some(ResolvedValue::Color(0xffff_ffffu32 as i32)),
             "android.R.color.white"
         );
         assert_eq!(
             framework_color(0x0106_0000),
-            Some(ResolvedValue::Integer(0xffaa_aaaau32 as i32)),
+            Some(ResolvedValue::Color(0xffaa_aaaau32 as i32)),
             "android.R.color.darker_gray"
         );
     }

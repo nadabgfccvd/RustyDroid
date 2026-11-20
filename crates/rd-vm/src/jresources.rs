@@ -211,7 +211,7 @@ fn new_resource_url(vm: &mut Engine, path: &str) -> Result<ObjRef, VmExit> {
     Ok(url)
 }
 
-fn read_resource(vm: &Engine, path: &str) -> Result<Option<Vec<u8>>, VmExit> {
+pub(crate) fn read_resource(vm: &Engine, path: &str) -> Result<Option<Vec<u8>>, VmExit> {
     let Some(apk) = &vm.fw.resources else {
         return Ok(None);
     };

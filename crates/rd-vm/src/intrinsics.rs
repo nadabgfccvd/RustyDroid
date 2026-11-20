@@ -47,6 +47,9 @@ const FORK_JOIN_POOL: &str = "Ljava/util/concurrent/ForkJoinPool;";
 /// handler are accepted and not applied (documented in `compat_gaps`).
 const THREAD_POOL_EXECUTOR: &str = "Ljava/util/concurrent/ThreadPoolExecutor;";
 const ABSTRACT_EXECUTOR_SERVICE: &str = "Ljava/util/concurrent/AbstractExecutorService;";
+const SCHEDULED_POOL: &str = "Ljava/util/concurrent/ScheduledThreadPoolExecutor;";
+const SCHEDULED_FUTURE: &str = "Ljava/util/concurrent/ScheduledFuture;";
+const SYNC_QUEUE: &str = "Ljava/util/concurrent/SynchronousQueue;";
 const FUTURE: &str = "Ljava/util/concurrent/Future;";
 /// M8: 24º gap do launch real (`ServiceLoader.load`). Sem leitura de
 /// `META-INF/services` no APK, o loader é deliberadamente vazio; isso mantém
@@ -117,6 +120,10 @@ const BLOCKING_Q: &str = "Ljava/util/concurrent/LinkedBlockingQueue;";
 /// `rd_comparator`) ou por `Comparable.compareTo` via DEX. Bloqueantes
 /// fail-fast como o LinkedBlockingQueue.
 const PRIORITY_Q: &str = "Ljava/util/concurrent/PriorityBlockingQueue;";
+/// ConcurrentLinkedQueue: FIFO não bloqueante, sem null (mesmo modelo host do LBQ).
+const CONCURRENT_LINKED_QUEUE: &str = "Ljava/util/concurrent/ConcurrentLinkedQueue;";
+const VALUE_ANIMATOR: &str = "Landroid/animation/ValueAnimator;";
+const BIT_SET: &str = "Ljava/util/BitSet;";
 /// M8: 19º gap do launch real (`ThreadLocal.<init>`). Single-threaded ⇒ um
 /// valor por ThreadLocal (campo de heap "tl_value" + flag "tl_set"): `get`
 /// chama `initialValue()` (DEX) na primeira leitura, como na JDK;
@@ -128,6 +135,11 @@ const THREAD_LOCAL: &str = "Ljava/lang/ThreadLocal;";
 const INHERITABLE_TL: &str = "Ljava/lang/InheritableThreadLocal;";
 /// Coleções abstratas da plataforma modeladas no classpath cujo `<init>()V`
 /// é no-op host (M8, 37º gap) — ver `call_instance_intrinsic_mref`.
+/// Builders de StrictMode (ver o braço em `instance_intrinsic_core`).
+const STRICT_POLICY_BUILDERS: [&str; 2] = [
+    "Landroid/os/StrictMode$ThreadPolicy$Builder;",
+    "Landroid/os/StrictMode$VmPolicy$Builder;",
+];
 const ABSTRACT_COLLECTION_CTORS: [&str; 8] = [
     "Ljava/util/ResourceBundle;",
     "Ljava/util/ListResourceBundle;",
@@ -346,6 +358,18 @@ fn call_static_intrinsic_rooted(
             return Ok(Some(value));
         }
     }
+    if class == crate::webkit_cookies::COOKIE_SYNC_MANAGER {
+        if let Some(value) = crate::webkit_cookies::sync_manager_static(vm, name, sig, args)? {
+            return Ok(Some(value));
+        }
+    }
+    if class == "Ljava/net/Authenticator;"
+        && name == "setDefault"
+        && sig == "(Ljava/net/Authenticator;)V"
+    {
+        // Sem rede de verdade no sandbox: o autenticador padrão é só guardado (no-op).
+        return Ok(Some(Value::Null));
+    }
     if class == crate::java_util_logging::LOGGER {
         if let Some(value) = crate::java_util_logging::static_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -447,6 +471,36 @@ fn call_static_intrinsic_rooted(
         }
         return Ok(Some(Value::Int(0)));
     }
+    // Icon.createWithResource: handle opaco de ícone, sem pixels (mesmo desvio
+    // de drawable de arquivo, ver docs/compat-desvios.md). Usado por atalhos.
+    if class == "Landroid/graphics/drawable/Icon;"
+        && name == "createWithResource"
+        && sig == "(Landroid/content/Context;I)Landroid/graphics/drawable/Icon;"
+    {
+        return Ok(Some(Value::Obj(vm.heap.alloc_instance(
+            "Landroid/graphics/drawable/Icon;".to_string(),
+            Vec::new(),
+        )?)));
+    }
+    // Objects.toString(o[, nullDefault]): não-nulo → toString virtual do objeto;
+    // nulo → o default (2 argumentos) ou "null".
+    if class == "Ljava/util/Objects;"
+        && name == "toString"
+        && matches!(
+            sig,
+            "(Ljava/lang/Object;)Ljava/lang/String;"
+                | "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;"
+        )
+    {
+        let obj = args.first().cloned().unwrap_or(Value::Null);
+        return match obj {
+            Value::Obj(r) => vm
+                .invoke_instance(r, "toString", "()Ljava/lang/String;", &[])
+                .map(Some),
+            _ if sig.contains("String;)") => Ok(Some(args.get(1).cloned().unwrap_or(Value::Null))),
+            _ => Ok(Some(Value::Obj(alloc_string(vm, "null".to_string())?))),
+        };
+    }
     if class == "Landroid/text/method/LinkMovementMethod;"
         && name == "getInstance"
         && sig == "()Landroid/text/method/MovementMethod;"
@@ -535,6 +589,43 @@ fn call_static_intrinsic_rooted(
         return Ok(Some(v));
     }
     if let Some(v) = crate::jregex::static_intrinsic(vm, class, name, args)? {
+        return Ok(Some(v));
+    }
+    if class == "Ljava/util/logging/Logger;" && name == "getLogger" {
+        // Named Logger singletons; logging output is discarded (the
+        // headless VM has no log sink), levels are never enabled.
+        let name_str = args
+            .first()
+            .and_then(|v| v.as_ref().ok().flatten())
+            .and_then(|o| vm.heap.as_str(o).ok())
+            .unwrap_or_default();
+        let key = (
+            "Ljava/util/logging/Logger;".to_string(),
+            format!("logger:{name_str}"),
+        );
+        if let Some(v) = vm.statics.get(&key).cloned() {
+            return Ok(Some(v));
+        }
+        let logger = vm
+            .heap
+            .alloc_instance("Ljava/util/logging/Logger;".to_string(), Vec::new())
+            .map_err(crate::err::oom_throwable)?;
+        crate::err::put_field_result(vm.heap.put_field(
+            logger,
+            "name",
+            args.first().cloned().unwrap_or(Value::Null),
+        ))?;
+        vm.statics.insert(key, Value::Obj(logger));
+        return Ok(Some(Value::Obj(logger)));
+    }
+    if let Some(v) = crate::jnio::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
+    // javax.crypto / MessageDigest (jcrypto.rs) and org.json (jjson.rs)
+    if let Some(v) = crate::jcrypto::static_intrinsic(vm, class, name, sig, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jjson::static_intrinsic(vm, class, name, sig, args)? {
         return Ok(Some(v));
     }
     if let Some(v) = crate::jfile::static_intrinsic(vm, class, name, args)? {
@@ -663,7 +754,34 @@ fn call_static_intrinsic_rooted(
             return Ok(Some(Value::Obj(alloc_string(vm, text)?)));
         }
     }
+    // dalvik.system.ZipPathValidator (API 34): apps register/clear a
+    // zip-entry name callback at startup. The headless runtime extracts
+    // nothing to the host file system, so validation is a no-op and no
+    // callback is ever installed.
+    if class == "Ldalvik/system/ZipPathValidator;" {
+        return Ok(Some(match sig.rsplit(')').next().unwrap_or("V") {
+            "Z" => Value::Int(0),
+            "I" | "B" | "S" | "C" => Value::Int(0),
+            "J" => Value::Long(0),
+            "F" => Value::Float(0.0),
+            "D" => Value::Double(0.0),
+            _ => Value::Null,
+        }));
+    }
     match (class, name, sig) {
+        // ConcurrentHashMap.newKeySet(): a Set view over a CHM. The host
+        // model is a plain HashSet (single-threaded VM; same Set contract).
+        (CONCURRENT_MAP, "newKeySet", "()Ljava/util/concurrent/ConcurrentHashMap$KeySetView;")
+        | (CONCURRENT_MAP, "newKeySet", "(I)Ljava/util/concurrent/ConcurrentHashMap$KeySetView;") => {
+            let s = vm
+                .heap
+                .alloc_instance(VIEW_SET.to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            vm.fw
+                .objects
+                .insert(s, crate::framework::HostObj::List { elems: Vec::new() });
+            Ok(Some(Value::Obj(s)))
+        }
         ("Ljava/util/Arrays;", "asList", "([Ljava/lang/Object;)Ljava/util/List;") => {
             let array = args.first().and_then(|v| v.as_ref().ok().flatten()).ok_or_else(|| VmExit::Exception(Throwable::new("Ljava/lang/NullPointerException;", "Arrays.asList array null")))?;
             let elems = vm.heap.as_array_elems(array)?.0.to_vec();
@@ -1200,7 +1318,23 @@ fn call_static_intrinsic_rooted(
             Ok(Some(Value::Obj(f)))
         }
         (c, n, s) if c == EXECUTORS && executors_factory(n, s) => {
-            let r = vm.heap.alloc_instance(EXECUTOR_SVC.to_string(), vec![])?;
+            // Allocate the concrete JDK class (apps check-cast
+            // newFixedThreadPool/newCachedThreadPool results to
+            // ThreadPoolExecutor, scheduled factories to
+            // ScheduledThreadPoolExecutor).
+            let cls = if n.contains("Scheduled") || n.contains("scheduled") {
+                SCHEDULED_POOL
+            } else if n == "newSingleThreadExecutor" {
+                // JDK returns a DelegatedExecutorService wrapper (not a
+                // ThreadPoolExecutor); the interface descriptor keeps a
+                // cast to ThreadPoolExecutor honestly failing.
+                EXECUTOR_SVC
+            } else if n == "newWorkStealingPool" {
+                FORK_JOIN_POOL
+            } else {
+                THREAD_POOL_EXECUTOR
+            };
+            let r = vm.heap.alloc_instance(cls.to_string(), vec![])?;
             if let Some(f @ Value::Obj(_)) = args.last() {
                 crate::err::put_field_result(vm.heap.put_field(r, "rd_factory", f.clone()))?;
             }
@@ -1912,7 +2046,22 @@ fn class_intrinsic(
         return Ok(Some(Value::Obj(array)));
     }
     if name == "getDeclaredFields" {
-        let fields = vm.cp.declared_fields_info(&desc);
+        let mut fields = vm.cp.declared_fields_info(&desc);
+        // Host Unsafe classes carry no DEX field metadata; protobuf's
+        // UnsafeUtil scans getDeclaredFields() for theUnsafe and calls
+        // Field.get(null) on it, so it must be listed (Field.get has the
+        // matching special case returning the singleton).
+        if (desc == UNSAFE_CLASS || desc == "Ljdk/internal/misc/Unsafe;")
+            && !fields.iter().any(|(_, n, _, _, _)| n == "theUnsafe")
+        {
+            fields.push((
+                desc.clone(),
+                "theUnsafe".to_string(),
+                desc.clone(),
+                0x001A,
+                true,
+            ));
+        }
         let array = vm
             .heap
             .alloc_array(
@@ -2201,6 +2350,38 @@ fn unsafe_intrinsic(
                 Ok(Some(Value::Int(0)))
             }
         }
+        ("getByte", "(Ljava/lang/Object;J)B") | ("getByte", "(Ljava/lang/Object;J)I") => {
+            // byte[] base-offset addressing (base 16, scale 1)
+            let target = args.first().and_then(|v| v.as_ref().ok().flatten());
+            let offset = args.get(1).and_then(|v| v.as_long().ok()).unwrap_or(0);
+            match target {
+                Some(t) => {
+                    let idx = (offset - 16) as usize;
+                    let v = vm
+                        .heap
+                        .as_array_elems(t)
+                        .ok()
+                        .and_then(|(e, _)| e.get(idx).and_then(|v| v.as_int().ok()))
+                        .unwrap_or(0);
+                    Ok(Some(Value::Int(v)))
+                }
+                None => Ok(Some(Value::Int(0))),
+            }
+        }
+        ("putByte", "(Ljava/lang/Object;JB)V") => {
+            let target = args.first().and_then(|v| v.as_ref().ok().flatten());
+            let offset = args.get(1).and_then(|v| v.as_long().ok()).unwrap_or(0);
+            let val = args.get(3).and_then(|v| v.as_int().ok()).unwrap_or(0);
+            if let Some(t) = target {
+                let idx = (offset - 16) as usize;
+                if let Ok(elems) = vm.heap.array_elems_mut(t) {
+                    if let Some(slot) = elems.get_mut(idx) {
+                        *slot = Value::Int(val);
+                    }
+                }
+            }
+            Ok(Some(Value::Null))
+        }
         ("ensureClassInitialized", "(Ljava/lang/Class;)V") => Ok(Some(Value::Null)),
         ("shouldBeInitialized", "(Ljava/lang/Class;)Z") => Ok(Some(Value::Int(0))),
         _ => Ok(None),
@@ -2250,11 +2431,44 @@ fn reflect_field_intrinsic(
         }
         ("getName", "()Ljava/lang/String;") => Ok(Some(Value::Obj(alloc_string(vm, field_name)?))),
         ("getModifiers", "()I") => Ok(Some(Value::Int(modifiers as i32))),
+        // Campo gerado pelo compilador (ex.: `this$0` de classe interna): o javac
+        // usa `this$…` e `$…`, sem marca no DEX que o modelo leia. Gson exclui
+        // campos sintéticos (Excluder.excludeField).
+        ("isSynthetic", "()Z") => Ok(Some(Value::Int(i32::from(
+            field_name.starts_with("this$") || field_name.starts_with('$'),
+        )))),
         ("getType", "()Ljava/lang/Class;") => {
             Ok(Some(Value::Obj(vm.class_object_for(&field_type)?)))
         }
+        // Tipo genérico do campo: sem a Signature (dalvik.annotation.Signature)
+        // é a própria classe. Com `<…>` ou tipo variável, ParameterizedType/
+        // TypeVariable ainda não são modelados: falha visível, não a classe crua.
+        (
+            "getAnnotation" | "getDeclaredAnnotation" | "isAnnotationPresent" | "getAnnotations"
+            | "getDeclaredAnnotations",
+            _,
+        ) => crate::jannotations::field_annotation_intrinsic(
+            vm,
+            name,
+            sig,
+            &declaring_class,
+            &field_name,
+            args,
+        ),
+        ("getGenericType", "()Ljava/lang/reflect/Type;") => {
+            match crate::jannotations::field_generic_signature(vm, &declaring_class, &field_name) {
+                Some(sig) if sig.contains('<') || sig.starts_with('T') || sig.starts_with("[T") => {
+                    Err(VmExit::Error(crate::err::not_implemented(format!(
+                        "Field.getGenericType de {declaring_class}.{field_name} ({sig}): tipos genéricos de campo ainda não são modelados"
+                    ))))
+                }
+                _ => Ok(Some(Value::Obj(vm.class_object_for(&field_type)?))),
+            }
+        }
         ("get", "(Ljava/lang/Object;)Ljava/lang/Object;") => {
-            if declaring_class == UNSAFE_CLASS && field_name == "theUnsafe" {
+            if (declaring_class == UNSAFE_CLASS || declaring_class == "Ljdk/internal/misc/Unsafe;")
+                && field_name == "theUnsafe"
+            {
                 return Ok(Some(Value::Obj(unsafe_singleton(vm, &declaring_class)?)));
             }
             if is_static {
@@ -2267,25 +2481,7 @@ fn reflect_field_intrinsic(
                         platform_static(vm, &declaring_class, &field_name)?.unwrap_or(Value::Null)
                     }
                 };
-                // Field.get returns Object: primitives come back boxed
-                let wrapper = match field_type.as_str() {
-                    "I" => Some("Ljava/lang/Integer;"),
-                    "J" => Some("Ljava/lang/Long;"),
-                    "Z" => Some("Ljava/lang/Boolean;"),
-                    "F" => Some("Ljava/lang/Float;"),
-                    "D" => Some("Ljava/lang/Double;"),
-                    "S" => Some("Ljava/lang/Short;"),
-                    "B" => Some("Ljava/lang/Byte;"),
-                    "C" => Some("Ljava/lang/Character;"),
-                    _ => None,
-                };
-                return Ok(Some(match (wrapper, &v) {
-                    (
-                        Some(w),
-                        Value::Int(_) | Value::Long(_) | Value::Float(_) | Value::Double(_),
-                    ) => Value::Obj(crate::boxes::box_value(vm, w, v)?),
-                    _ => v,
-                }));
+                return Ok(Some(box_field_value(vm, &field_type, v)?));
             }
             let Some(target) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {
                 return Err(VmExit::Exception(Throwable::new(
@@ -2293,11 +2489,11 @@ fn reflect_field_intrinsic(
                     "Field.get target null",
                 )));
             };
-            Ok(Some(
-                vm.heap
-                    .get_field(target, &field_name)
-                    .map_err(|e| crate::err::vm_error("INVALID_FORMAT", e))?,
-            ))
+            let v = vm
+                .heap
+                .get_field(target, &field_name)
+                .map_err(|e| crate::err::vm_error("INVALID_FORMAT", e))?;
+            Ok(Some(box_field_value(vm, &field_type, v)?))
         }
         ("getInt", "(Ljava/lang/Object;)I") | ("getLong", "(Ljava/lang/Object;)J") => {
             let value = if is_static {
@@ -2376,7 +2572,24 @@ fn executors_factory(name: &str, sig: &str) -> bool {
         ) | (
             "newCachedThreadPool",
             "(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;"
-        )
+        ) | ("newWorkStealingPool", "()Ljava/util/concurrent/ExecutorService;")
+            | ("newWorkStealingPool", "(I)Ljava/util/concurrent/ExecutorService;")
+            | (
+                "newScheduledThreadPool",
+                "(I)Ljava/util/concurrent/ScheduledExecutorService;"
+            )
+            | (
+                "newScheduledThreadPool",
+                "(ILjava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ScheduledExecutorService;"
+            )
+            | (
+                "newSingleThreadScheduledExecutor",
+                "()Ljava/util/concurrent/ScheduledExecutorService;"
+            )
+            | (
+                "newSingleThreadScheduledExecutor",
+                "(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ScheduledExecutorService;"
+            )
     )
 }
 
@@ -2417,7 +2630,63 @@ fn future_supported(name: &str, sig: &str) -> bool {
             | ("isDone", "()Z")
             | ("isCancelled", "()Z")
             | ("cancel", "(Z)Z")
+            | ("getDelay", "(Ljava/util/concurrent/TimeUnit;)J")
+            | ("compareTo", "(Ljava/lang/Object;)I")
     )
+}
+
+/// `Object.clone()`: cópia rasa de um array, ou de uma instância `Cloneable`.
+/// Instância não-`Cloneable` lança `CloneNotSupportedException`, como na JVM.
+fn object_shallow_clone(
+    vm: &mut Engine,
+    recv: crate::heap::ObjRef,
+) -> Result<crate::heap::ObjRef, VmExit> {
+    use crate::heap::HeapObj;
+    let class = vm.heap.class_of(recv)?.to_string();
+    if class.starts_with('[') {
+        let (elem, elems) = match vm.heap.get(recv)? {
+            HeapObj::Array { elem, elems, .. } => (*elem, elems.clone()),
+            _ => return Err(VmExit::from("clone de array sem elementos".to_string())),
+        };
+        let copy = vm.heap.alloc_array_exact(elem, elems.len(), &class)?;
+        *vm.heap.array_elems_mut(copy)? = elems;
+        return Ok(copy);
+    }
+    if !vm.cp.is_subtype(&class, "Ljava/lang/Cloneable;") {
+        return Err(VmExit::Exception(Throwable::new(
+            "Ljava/lang/CloneNotSupportedException;",
+            class,
+        )));
+    }
+    let fields: Vec<(String, Value)> = match vm.heap.get(recv)? {
+        HeapObj::Instance { fields, .. } => fields
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.clone()))
+            .collect(),
+        _ => Vec::new(),
+    };
+    Ok(vm.heap.alloc_instance(class, fields)?)
+}
+
+/// Roda uma tarefa de executor como worker. Sem green thread ativa, a tarefa
+/// roda inline: se ela bloquear para sempre (ex.: `ReferenceQueue.remove()`
+/// sem referências pendentes, no loop de limpeza do Glide), o worker fica
+/// parkeado e a tarefa termina sem retomar, como a thread real que espera.
+/// Dentro de uma green thread o park segue para o escalonador.
+fn exec_as_worker(
+    vm: &mut Engine,
+    f: impl FnOnce(&mut Engine) -> Result<(), VmExit>,
+) -> Result<(), VmExit> {
+    if vm.threads.current.is_some() {
+        return f(vm);
+    }
+    vm.threads.inline_worker += 1;
+    let r = f(vm);
+    vm.threads.inline_worker -= 1;
+    match r {
+        Err(VmExit::Error(e)) if e.code == crate::threads::PARK_SIGNAL => Ok(()),
+        other => other,
+    }
 }
 
 /// Roda `Runnable.run()` inline (mesmo mecanismo do drain do Looper).
@@ -2426,8 +2695,9 @@ fn exec_run_inline(vm: &mut Engine, r: crate::heap::ObjRef) -> Result<(), VmExit
     let Some((d, def, m)) = vm.cp.resolve_method(&rclass, "run", "()V") else {
         return Err(crate::classpath::unresolved_method(&rclass, "run", "()V").into());
     };
-    vm.call(d, def, &m, vec![Value::Obj(r)])?;
-    Ok(())
+    exec_as_worker(vm, |vm| {
+        vm.call(d, def, &m, vec![Value::Obj(r)]).map(|_| ())
+    })
 }
 
 /// Roda uma tarefa do executor. Se o executor tem ThreadFactory (`rd_factory`),
@@ -2447,8 +2717,9 @@ fn exec_run_task(
                 &[Value::Obj(r)],
             )?;
             if let Value::Obj(t) = t {
-                vm.invoke_instance(t, "run", "()V", &[])?;
-                return Ok(());
+                return exec_as_worker(vm, |vm| {
+                    vm.invoke_instance(t, "run", "()V", &[]).map(|_| ())
+                });
             }
         }
     }
@@ -2489,6 +2760,81 @@ fn exec_intrinsic(
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
     match (name, sig) {
+        ("<init>", _) => {
+            // ThreadPoolExecutor/ScheduledThreadPoolExecutor ctor: pool
+            // sizing/queue/factory are inert under inline execution; the
+            // work queue (first BlockingQueue argument, if any) is kept
+            // for getQueue().
+            for a in args {
+                if let Value::Obj(o) = a {
+                    if vm.fw.objects.contains_key(o) {
+                        crate::err::put_field_result(vm.heap.put_field(
+                            recv,
+                            "exec_queue",
+                            Value::Obj(*o),
+                        ))?;
+                        break;
+                    }
+                }
+            }
+            Ok(Some(Value::Null))
+        }
+        ("schedule", _) | ("scheduleAtFixedRate", _) | ("scheduleWithFixedDelay", _) => {
+            // Deterministic inline scheduling: the task runs once, now
+            // (delays/periods are virtual-clock concepts the inline
+            // executor does not defer; documented deviation).
+            let Some(r) = args.first().and_then(|v| v.as_ref().ok().flatten()) else {
+                return Err(exec_npe("schedule sem task"));
+            };
+            let result = if sig.contains("Callable") {
+                exec_call_inline(vm, r)?
+            } else {
+                exec_run_inline(vm, r)?;
+                Value::Null
+            };
+            let f = vm
+                .heap
+                .alloc_instance(SCHEDULED_FUTURE.to_string(), vec![])?;
+            crate::err::put_field_result(vm.heap.put_field(f, "future_result", result))?;
+            Ok(Some(Value::Obj(f)))
+        }
+        ("invokeAll", _) => {
+            let tasks: Vec<Value> = match args.first().and_then(|v| v.as_ref().ok().flatten()) {
+                Some(c) => match vm.fw.objects.get(&c) {
+                    Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+                    _ => Vec::new(),
+                },
+                None => Vec::new(),
+            };
+            let mut futs = Vec::new();
+            for task in tasks {
+                let v = match task.as_ref().ok().flatten() {
+                    Some(r) => exec_call_inline(vm, r)?,
+                    None => Value::Null,
+                };
+                if let Some(f) = exec_completed_future(vm, v)? {
+                    futs.push(f)
+                }
+            }
+            let l = vm.heap.alloc_instance(ARRAY_LIST.to_string(), vec![])?;
+            vm.fw
+                .objects
+                .insert(l, crate::framework::HostObj::List { elems: futs });
+            Ok(Some(Value::Obj(l)))
+        }
+        ("invokeAny", _) => {
+            let tasks: Vec<Value> = match args.first().and_then(|v| v.as_ref().ok().flatten()) {
+                Some(c) => match vm.fw.objects.get(&c) {
+                    Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+                    _ => Vec::new(),
+                },
+                None => Vec::new(),
+            };
+            match tasks.first().and_then(|v| v.as_ref().ok().flatten()) {
+                Some(r) => exec_call_inline(vm, r).map(Some),
+                None => Ok(Some(Value::Null)),
+            }
+        }
         ("execute", _) => {
             let Some(r) = args[0].as_ref()? else {
                 return Err(exec_npe("execute sem runnable"));
@@ -2558,6 +2904,8 @@ fn future_intrinsic(
                 .get_field(recv, "future_result")
                 .unwrap_or(Value::Null),
         )),
+        "getDelay" => Ok(Some(Value::Long(0))),
+        "compareTo" => Ok(Some(Value::Int(0))),
         "isDone" => Ok(Some(Value::Int(1))),
         "isCancelled" => Ok(Some(Value::Int(0))),
         "cancel" => Ok(Some(Value::Int(0))), // já completado → não cancelável
@@ -3388,6 +3736,7 @@ fn list_supported(name: &str, sig: &str) -> bool {
             | ("size", "()I")
             | ("isEmpty", "()Z")
             | ("clear", "()V")
+            | ("sort", "(Ljava/util/Comparator;)V")
     )
 }
 
@@ -3408,6 +3757,8 @@ fn vector_supported(name: &str, sig: &str) -> bool {
             | ("trimToSize", "()V")
             | ("setSize", "(I)V")
             | ("copyInto", "([Ljava/lang/Object;)V")
+            | ("toArray", "()[Ljava/lang/Object;")
+            | ("toArray", "([Ljava/lang/Object;)[Ljava/lang/Object;")
     )
 }
 
@@ -3486,6 +3837,12 @@ fn vector_intrinsic(
             let elems = list_elems(vm, recv)?;
             elems.resize(req, Value::Null);
             Ok(Some(Value::Null))
+        }
+        // Vector.toArray(): same snapshot semantics as Collection.toArray.
+        ("toArray", _) => {
+            let items = list_elems(vm, recv)?.clone();
+            let arr = crate::jcollections::to_array(vm, items, args.first())?;
+            Ok(Some(arr))
         }
         ("copyInto", _) => {
             let Some(Value::Obj(array)) = args.first() else {
@@ -3840,6 +4197,8 @@ fn queue_supported(name: &str, sig: &str) -> bool {
         (name, sig),
         ("<init>", "()V")
             | ("<init>", "(I)V")
+            | ("<init>", "(Z)V")
+            | ("<init>", "(Ljava/util/Collection;)V")
             | ("offer", "(Ljava/lang/Object;)Z")
             | (
                 "offer",
@@ -5226,6 +5585,19 @@ fn list_intrinsic(
             list_elems(vm, recv)?.clear();
             Ok(Some(Value::Null))
         }
+        ("sort", _) => {
+            // List.sort(Comparator) (Java 8 default method): stable sort
+            // in place; a null comparator means natural ordering, exactly
+            // like Collections.sort.
+            let items = list_elems(vm, recv)?.clone();
+            let cmp = args
+                .first()
+                .filter(|v| !matches!(v, Value::Null | Value::Int(0)))
+                .cloned();
+            let sorted = crate::arrays::merge_sort(vm, items, cmp.as_ref())?;
+            *list_elems(vm, recv)? = sorted;
+            Ok(Some(Value::Null))
+        }
         _ => Ok(None),
     }
 }
@@ -5323,8 +5695,59 @@ fn call_instance_intrinsic_mref_rooted(
         return call_instance_intrinsic_mref(vm, &tc, mref_class, name, sig, target, args);
     }
     let r = instance_intrinsic_dispatch(vm, recv_class, mref_class, name, sig, recv, args)?;
-    if r.is_some() || name == "<init>" {
+    if r.is_some() {
         return Ok(r);
+    }
+    // super-<init> retry under the declaring (platform) class: a DEX
+    // subclass constructor calls invoke-direct PlatformBase.<init>, but
+    // the intrinsic gates key on the receiver class (the DEX subclass),
+    // so the platform arm misses. <init> is direct (never virtual), so
+    // dispatching as the platform class itself cannot hijack an override.
+    if name == "<init>" {
+        if recv_class != mref_class && vm.cp.find_class(mref_class).is_none() {
+            return instance_intrinsic_dispatch(vm, mref_class, mref_class, name, sig, recv, args);
+        }
+        return Ok(r);
+    }
+    // Symmetric host-mref case: the method reference names a host
+    // (platform) class directly while the receiver is a DEX subclass of
+    // it (e.g. protobuf's MapFieldLite extends LinkedHashMap and calls
+    // AbstractMap methods). Class-gated arms key on recv_class and miss;
+    // dispatch as the host class itself, but only when no DEX class in
+    // the receiver chain overrides the method.
+    if recv_class != mref_class
+        && vm.cp.find_class(mref_class).is_none()
+        && vm.cp.resolve_method(recv_class, name, sig).is_none()
+        && vm.cp.is_subtype(recv_class, mref_class)
+    {
+        if let Some(v) =
+            instance_intrinsic_dispatch(vm, mref_class, mref_class, name, sig, recv, args)?
+        {
+            return Ok(Some(v));
+        }
+        // A referência pode ser uma superclasse abstrata (ex.: protobuf
+        // `MapFieldLite` chama `AbstractMap.isEmpty` e estende
+        // `LinkedHashMap`): os braços gateiam pela classe concreta que tem
+        // o estado host. Sobe a cadeia DEX do receptor até a primeira classe
+        // de plataforma e despacha como ela (mesmo critério do braço
+        // "herdado" abaixo, que não cobre referência de plataforma).
+        let mut c = recv_class.to_string();
+        for _ in 0..64 {
+            let Some(sup) = vm.cp.superclass_of(&c) else {
+                break;
+            };
+            if sup == c || sup == OBJECT {
+                break;
+            }
+            if vm.cp.find_class(&sup).is_none() {
+                if let Some(v) = instance_intrinsic_dispatch(vm, &sup, &sup, name, sig, recv, args)?
+                {
+                    return Ok(Some(v));
+                }
+                break;
+            }
+            c = sup;
+        }
     }
     // Inherited platform method named through a DEX subclass (e.g.
     // `invoke-virtual LApp/MyRef;->get()` on `class MyRef extends
@@ -5345,7 +5768,10 @@ fn call_instance_intrinsic_mref_rooted(
                 if sup == OBJECT {
                     break;
                 }
-                return instance_intrinsic_dispatch(vm, recv_class, &sup, name, sig, recv, args);
+                // Dispatch as the platform ancestor itself: class-gated
+                // arms key on recv_class, which is still the DEX
+                // subclass here and would miss them.
+                return instance_intrinsic_dispatch(vm, &sup, &sup, name, sig, recv, args);
             }
             c = sup;
         }
@@ -5474,6 +5900,11 @@ fn instance_intrinsic_dispatch_full(
             return Ok(Some(value));
         }
     }
+    if mref_class == crate::webkit_cookies::COOKIE_SYNC_MANAGER {
+        if let Some(value) = crate::webkit_cookies::sync_manager_instance(name, sig) {
+            return Ok(Some(value));
+        }
+    }
     if mref_class == crate::resbundle::RESOURCE_BUNDLE
         || mref_class == crate::resbundle::LIST_BUNDLE
     {
@@ -5534,6 +5965,20 @@ fn instance_intrinsic_dispatch_full(
     // java.util.Collections reverse comparators (collections.rs).
     if let Some(v) = crate::collections::instance_intrinsic(vm, recv_class, name, sig, recv, args)?
     {
+        return Ok(Some(v));
+    }
+    // java.nio ByteBuffer/Buffer (heap-backed).
+    if let Some(v) =
+        crate::jnio::instance_intrinsic(vm, recv_class, mref_class, name, sig, recv, args)?
+    {
+        return Ok(Some(v));
+    }
+    // javax.crypto / MessageDigest (jcrypto.rs)
+    if let Some(v) = crate::jcrypto::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    // org.json JSONObject/JSONArray (jjson.rs)
+    if let Some(v) = crate::jjson::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
     // java.security.Permission / java.lang.RuntimePermission.
@@ -5635,6 +6080,9 @@ fn instance_intrinsic_dispatch_full(
     // PackageManager backed by the manifest, plus the install sessions it
     // hands out (android_pm.rs)
     if name == "getPackageManager"
+        || (name == "getApplicationInfo"
+            && args.is_empty()
+            && vm.cp.is_subtype(recv_class, "Landroid/content/Context;"))
         || recv_class == crate::android_pm::APM
         || recv_class == "Landroid/content/pm/PackageInfo;"
         || recv_class == "Landroid/content/pm/PackageInstaller;"
@@ -5793,6 +6241,12 @@ fn instance_intrinsic_dispatch_full(
         return Ok(Some(v));
     }
     if let Some(v) = crate::jregex::instance_intrinsic(vm, recv_class, name, recv, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jtimer::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
+        return Ok(Some(v));
+    }
+    if let Some(v) = crate::jraf::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
         return Ok(Some(v));
     }
     if let Some(v) = crate::jfile::instance_intrinsic(vm, recv_class, name, sig, recv, args)? {
@@ -6007,6 +6461,13 @@ fn instance_intrinsic_core(
         return Ok(Some(Value::Null));
     }
     // ContentProvider(): base dos providers do app, sem estado próprio.
+    // BluetoothGattCallback(): base abstrata sem estado. Sem BLE no device
+    // virtual os callbacks nunca disparam; o construtor precisa existir para
+    // o SDK instanciar a subclasse (BlueParrott) sem falhar.
+    if mref_class == "Landroid/bluetooth/BluetoothGattCallback;" && name == "<init>" && sig == "()V"
+    {
+        return Ok(Some(Value::Null));
+    }
     if mref_class == "Landroid/content/ContentProvider;" && name == "<init>" && sig == "()V" {
         return Ok(Some(Value::Null));
     }
@@ -6039,6 +6500,32 @@ fn instance_intrinsic_core(
         // nosso modelo — no-op correto, na linha do <init> de Object/
         // Activity/Application/Context/Fragment. Casa por mref.class: o
         // receiver é subclasse DEX, então recv_class nunca bate o nome.
+        // ShortcutManager / ShortcutInfo.Builder: NÃO há intrínseco aqui. O modelo
+        // M9 (`m9/shortcuts.rs`) implementa setDynamicShortcuts, enable/disable,
+        // removeAll e o builder, e grava o atalho que `shortcuts` e
+        // `requestPinShortcut` listam. Um no-op aqui (vindo do merge do Zoom)
+        // engolia essas chamadas: `setDynamicShortcuts` devolvia 1 sem gravar, e
+        // `build()` devolvia um ShortcutInfo fantasma. Smoke do app C: shortcuts == [].
+        // StrictMode.{Thread,Vm}Policy.Builder: o device virtual não impõe
+        // StrictMode (como o AOSP com a checagem desligada), então os métodos
+        // fluentes (detect*/permit*/penalty*) não mudam nada e devolvem o
+        // próprio builder; build() devolve uma policy nova.
+        (_, "<init>", "()V") if STRICT_POLICY_BUILDERS.contains(&mref_class) => {
+            Ok(Some(Value::Null))
+        }
+        (_, "build", sig)
+            if STRICT_POLICY_BUILDERS.contains(&mref_class) && sig.starts_with("()") =>
+        {
+            let policy = if mref_class.contains("ThreadPolicy") {
+                "Landroid/os/StrictMode$ThreadPolicy;"
+            } else {
+                "Landroid/os/StrictMode$VmPolicy;"
+            };
+            Ok(Some(Value::Obj(
+                vm.heap.alloc_instance(policy.to_string(), Vec::new())?,
+            )))
+        }
+        (_, _, _) if STRICT_POLICY_BUILDERS.contains(&mref_class) => Ok(Some(Value::Obj(recv))),
         (_, "<init>", "()V") if ABSTRACT_COLLECTION_CTORS.contains(&mref_class) => {
             Ok(Some(Value::Null))
         }
@@ -6051,6 +6538,16 @@ fn instance_intrinsic_core(
             let cls = vm.heap.class_of(recv)?.to_string();
             let c = vm.class_object_for(&cls)?;
             Ok(Some(Value::Obj(c)))
+        }
+        // ── Object.clone (protected, implementado por Object): cópia rasa,
+        // como a JVM. Instâncias precisam ser Cloneable; arrays sempre. Estado
+        // de host (`fw.objects`) não é copiado: sem interceptar, segue o
+        // caminho de antes.
+        (_, "clone", "()Ljava/lang/Object;")
+            if (mref_class == OBJECT || mref_class.starts_with('['))
+                && !vm.fw.objects.contains_key(&recv) =>
+        {
+            Ok(Some(Value::Obj(object_shallow_clone(vm, recv)?)))
         }
         // ── Object monitor methods: final on Object, so no DEX class can
         // declare them. The VM is single-threaded: notify/notifyAll have no
@@ -6240,6 +6737,14 @@ fn instance_intrinsic_core(
                 nanos / target_scale
             })))
         }
+        // `Runtime.exec`: o VM não executa comandos do host. Lança IOException, como
+        // um `exec` que falha ao iniciar (apps testam root com `su`/`sh` e tratam isso).
+        (_, "exec", _) if mref_class == "Ljava/lang/Runtime;" => {
+            Err(VmExit::Exception(crate::err::Throwable::new(
+                "Ljava/io/IOException;",
+                "Cannot run program: processos do host não são executados pelo VM",
+            )))
+        }
         (_, "availableProcessors", "()I") if mref_class == "Ljava/lang/Runtime;" => {
             Ok(Some(Value::Int(1)))
         }
@@ -6381,6 +6886,19 @@ fn instance_intrinsic_core(
         {
             if name == "<init>" {
                 Ok(Some(Value::Null))
+            } else if name == "remove"
+                && sig == "()Ljava/lang/ref/Reference;"
+                && vm.threads.worker_blocks()
+                && !matches!(vm.heap.get_field(recv, "rd$head"), Ok(Value::Obj(_)))
+            {
+                // remove() sem timeout bloqueia até haver referência pendente.
+                // Num worker, o bloqueio é um park (o GC não acorda o worker:
+                // desvio documentado em compat_gaps); fora de worker, null.
+                Err(crate::err::vm_error(
+                    crate::threads::PARK_SIGNAL,
+                    "ReferenceQueue.remove() bloqueia: nenhuma referência pendente",
+                )
+                .into())
             } else {
                 ref_queue_poll(vm, recv)
             }
@@ -6803,8 +7321,262 @@ fn instance_intrinsic_core(
         (c, name, sig) if (c == ARRAY_DEQUE || c == LINKED_LIST) && deque_supported(name, sig) => {
             deque_intrinsic(vm, recv, name, sig, args, c == LINKED_LIST)
         }
+        // ValueAnimator: deterministic — animations do not tick with
+        // wall time here. start() jumps straight to the final value and
+        // fires update listeners once, so end-state UI is what renders.
+        (c, name, sig) if vm.cp.is_subtype(c, VALUE_ANIMATOR) => {
+            match (name, sig) {
+                ("<init>", "()V") => Ok(Some(Value::Null)),
+                ("setFloatValues", "([F)V") | ("setIntValues", "([I)V") => {
+                    if let Some(v) = args.first() {
+                        let _ = vm.heap.put_field(recv, "anim_values", v.clone());
+                    }
+                    Ok(Some(Value::Null))
+                }
+                ("setDuration", "(J)Landroid/animation/ValueAnimator;")
+                | ("setStartDelay", "(J)Landroid/animation/ValueAnimator;") => {
+                    Ok(Some(Value::Obj(recv)))
+                }
+                ("setInterpolator", "(Landroid/animation/TimeInterpolator;)V")
+                | ("setEvaluator", "(Landroid/animation/TypeEvaluator;)V")
+                | ("setRepeatCount", "(I)V")
+                | ("setRepeatMode", "(I)V")
+                | ("setCurrentPlayTime", "(J)V")
+                | ("setCurrentFraction", "(F)V")
+                | ("addPauseListener", "(Landroid/animation/Animator$AnimatorPauseListener;)V") => {
+                    Ok(Some(Value::Null))
+                }
+                (
+                    "addUpdateListener",
+                    "(Landroid/animation/ValueAnimator$AnimatorUpdateListener;)V",
+                )
+                | ("addListener", "(Landroid/animation/Animator$AnimatorListener;)V") => {
+                    let key = if name == "addUpdateListener" {
+                        "anim_update_listeners"
+                    } else {
+                        "anim_listeners"
+                    };
+                    let list = match vm.heap.get_field(recv, key) {
+                        Ok(Value::Obj(l)) => l,
+                        _ => {
+                            let l = vm
+                                .heap
+                                .alloc_instance("Ljava/util/ArrayList;".to_string(), vec![])?;
+                            vm.fw
+                                .objects
+                                .insert(l, crate::framework::HostObj::List { elems: Vec::new() });
+                            let _ = vm.heap.put_field(recv, key, Value::Obj(l));
+                            l
+                        }
+                    };
+                    if let Some(l) = args.first() {
+                        if let Some(crate::framework::HostObj::List { elems }) =
+                            vm.fw.objects.get_mut(&list)
+                        {
+                            elems.push(l.clone());
+                        }
+                    }
+                    Ok(Some(Value::Null))
+                }
+                ("start", "()V") | ("end", "()V") => {
+                    // Jump to the end state and notify update listeners.
+                    let _ = vm.heap.put_field(recv, "anim_fraction", Value::Float(1.0));
+                    let listeners = match vm.heap.get_field(recv, "anim_update_listeners") {
+                        Ok(Value::Obj(l)) => match vm.fw.objects.get(&l) {
+                            Some(crate::framework::HostObj::List { elems }) => elems.clone(),
+                            _ => Vec::new(),
+                        },
+                        _ => Vec::new(),
+                    };
+                    for l in listeners {
+                        if let Ok(Some(listener)) = l.as_ref() {
+                            let _ = vm.invoke_instance(
+                                listener,
+                                "onAnimationUpdate",
+                                "(Landroid/animation/ValueAnimator;)V",
+                                &[Value::Obj(recv)],
+                            );
+                        }
+                    }
+                    Ok(Some(Value::Null))
+                }
+                ("cancel", "()V") | ("pause", "()V") | ("resume", "()V") => Ok(Some(Value::Null)),
+                ("isRunning", "()Z") | ("isStarted", "()Z") => Ok(Some(Value::Int(0))),
+                ("getAnimatedFraction", "()F") => Ok(Some(
+                    vm.heap
+                        .get_field(recv, "anim_fraction")
+                        .unwrap_or(Value::Float(0.0)),
+                )),
+                ("getAnimatedValue", "()Ljava/lang/Object;") => {
+                    // Last configured float/int value, boxed; null when
+                    // none was set (matches a fresh animator).
+                    let v = match vm.heap.get_field(recv, "anim_values") {
+                        Ok(Value::Obj(a)) => vm
+                            .heap
+                            .as_array_elems(a)
+                            .ok()
+                            .and_then(|(elems, _)| elems.last().cloned())
+                            .unwrap_or(Value::Null),
+                        _ => Value::Null,
+                    };
+                    match v {
+                        Value::Float(f) => Ok(Some(Value::Obj(vm.heap.alloc_instance(
+                            "Ljava/lang/Float;".to_string(),
+                            vec![("value".to_string(), Value::Float(f))],
+                        )?))),
+                        Value::Int(i) => Ok(Some(Value::Obj(vm.heap.alloc_instance(
+                            "Ljava/lang/Integer;".to_string(),
+                            vec![("value".to_string(), Value::Int(i))],
+                        )?))),
+                        other => Ok(Some(other)),
+                    }
+                }
+                ("getDuration", "()J")
+                | ("getStartDelay", "()J")
+                | ("getCurrentPlayTime", "()J") => Ok(Some(Value::Long(0))),
+                _ => Ok(None),
+            }
+        }
+        // BitSet: words stored as a host list of Longs on the receiver.
+        (c, name, sig) if c == BIT_SET => {
+            fn words(
+                vm: &mut Engine,
+                recv: crate::heap::ObjRef,
+            ) -> Result<&mut Vec<Value>, VmExit> {
+                if !matches!(
+                    vm.fw.objects.get(&recv),
+                    Some(crate::framework::HostObj::List { .. })
+                ) {
+                    vm.fw
+                        .objects
+                        .insert(recv, crate::framework::HostObj::List { elems: Vec::new() });
+                }
+                match vm.fw.objects.get_mut(&recv) {
+                    Some(crate::framework::HostObj::List { elems }) => Ok(elems),
+                    _ => Err(crate::err::vm_error("VM_TYPE_ERROR", "BitSet sem estado").into()),
+                }
+            }
+            fn bit(words: &[Value], i: i32) -> bool {
+                if i < 0 {
+                    return false;
+                }
+                let w = (i / 64) as usize;
+                words
+                    .get(w)
+                    .and_then(|v| v.as_long().ok())
+                    .map(|word| (word >> (i % 64)) & 1 == 1)
+                    .unwrap_or(false)
+            }
+            let ai = |i: usize| args.get(i).and_then(|v| v.as_int().ok()).unwrap_or(0);
+            match (name, sig) {
+                ("<init>", "()V") | ("<init>", "(I)V") => {
+                    let _ = words(vm, recv)?;
+                    Ok(Some(Value::Null))
+                }
+                ("set", "(I)V") | ("set", "(IZ)V") => {
+                    let i = ai(0);
+                    let on = sig == "(I)V" || ai(1) != 0;
+                    let ws = words(vm, recv)?;
+                    let w = (i / 64).max(0) as usize;
+                    while ws.len() <= w {
+                        ws.push(Value::Long(0));
+                    }
+                    let cur = ws[w].as_long().unwrap_or(0);
+                    ws[w] = Value::Long(if on {
+                        cur | (1i64 << (i % 64))
+                    } else {
+                        cur & !(1i64 << (i % 64))
+                    });
+                    Ok(Some(Value::Null))
+                }
+                ("clear", "(I)V") | ("flip", "(I)V") => {
+                    let i = ai(0);
+                    let ws = words(vm, recv)?;
+                    let w = (i / 64).max(0) as usize;
+                    while ws.len() <= w {
+                        ws.push(Value::Long(0));
+                    }
+                    let cur = ws[w].as_long().unwrap_or(0);
+                    ws[w] = Value::Long(if name == "clear" {
+                        cur & !(1i64 << (i % 64))
+                    } else {
+                        cur ^ (1i64 << (i % 64))
+                    });
+                    Ok(Some(Value::Null))
+                }
+                ("clear", "()V") => {
+                    words(vm, recv)?.clear();
+                    Ok(Some(Value::Null))
+                }
+                ("get", "(I)Z") => {
+                    let ws = words(vm, recv)?.clone();
+                    Ok(Some(Value::Int(bit(&ws, ai(0)) as i32)))
+                }
+                ("cardinality", "()I") => {
+                    let n: i32 = words(vm, recv)?
+                        .iter()
+                        .map(|v| v.as_long().unwrap_or(0).count_ones() as i32)
+                        .sum();
+                    Ok(Some(Value::Int(n)))
+                }
+                ("isEmpty", "()Z") => {
+                    let e = words(vm, recv)?
+                        .iter()
+                        .all(|v| v.as_long().unwrap_or(0) == 0);
+                    Ok(Some(Value::Int(e as i32)))
+                }
+                ("length", "()I") => {
+                    let ws = words(vm, recv)?;
+                    let mut hi = 0i32;
+                    for (wi, v) in ws.iter().enumerate() {
+                        let word = v.as_long().unwrap_or(0);
+                        if word != 0 {
+                            hi = wi as i32 * 64 + (63 - word.leading_zeros() as i32) + 1;
+                        }
+                    }
+                    Ok(Some(Value::Int(hi)))
+                }
+                ("size", "()I") => Ok(Some(Value::Int(words(vm, recv)?.len() as i32 * 64))),
+                _ => Ok(None),
+            }
+        }
+        // java.util.logging.Logger: output discarded, nothing loggable.
+        ("Ljava/util/logging/Logger;", name, _sig) => match name {
+            "log"
+            | "severe"
+            | "warning"
+            | "info"
+            | "config"
+            | "fine"
+            | "finer"
+            | "finest"
+            | "entering"
+            | "exiting"
+            | "throwing"
+            | "addHandler"
+            | "removeHandler"
+            | "setLevel"
+            | "setParent"
+            | "setUseParentHandlers"
+            | "addFilter"
+            | "setFilter" => Ok(Some(Value::Null)),
+            "isLoggable" => Ok(Some(Value::Int(0))),
+            "getName" => Ok(Some(vm.heap.get_field(recv, "name").unwrap_or(Value::Null))),
+            "getLevel" | "getParent" | "getFilter" => Ok(Some(Value::Null)),
+            "getUseParentHandlers" => Ok(Some(Value::Int(1))),
+            "getHandlers" => Ok(Some(crate::arrays::new_array(
+                vm,
+                "[Ljava/util/logging/Handler;",
+                crate::heap::ElemKind::Obj,
+                Vec::new(),
+            )?)),
+            _ => Ok(None),
+        },
         // LinkedBlockingQueue (M8): FIFO; bloqueantes fail-fast (sem deadlock)
-        (c, name, sig) if c == BLOCKING_Q && queue_supported(name, sig) => {
+        (c, name, sig)
+            if (c == BLOCKING_Q || c == SYNC_QUEUE || c == CONCURRENT_LINKED_QUEUE)
+                && queue_supported(name, sig) =>
+        {
             queue_intrinsic(vm, recv, name, sig, args)
         }
         // PriorityBlockingQueue: min-heap ordenado; bloqueantes fail-fast
@@ -7927,4 +8699,27 @@ mod launch_gap_tests {
         .expect("tratado");
         assert_eq!(assertion_message(&mut vm, n), "null");
     }
+}
+
+/// `Field.get` devolve Object: primitivo vem boxado conforme o tipo declarado do
+/// campo (`I` -> Integer…). Sem isso, `instanceof`/`checkcast` no app falham
+/// (ex.: `DebugMetadataKt.getLabel` do Kotlin, ciclo 66).
+fn box_field_value(vm: &mut Engine, field_type: &str, v: Value) -> Result<Value, VmExit> {
+    let wrapper = match field_type {
+        "I" => Some("Ljava/lang/Integer;"),
+        "J" => Some("Ljava/lang/Long;"),
+        "Z" => Some("Ljava/lang/Boolean;"),
+        "F" => Some("Ljava/lang/Float;"),
+        "D" => Some("Ljava/lang/Double;"),
+        "S" => Some("Ljava/lang/Short;"),
+        "B" => Some("Ljava/lang/Byte;"),
+        "C" => Some("Ljava/lang/Character;"),
+        _ => None,
+    };
+    Ok(match (wrapper, &v) {
+        (Some(w), Value::Int(_) | Value::Long(_) | Value::Float(_) | Value::Double(_)) => {
+            Value::Obj(crate::boxes::box_value(vm, w, v)?)
+        }
+        _ => v,
+    })
 }

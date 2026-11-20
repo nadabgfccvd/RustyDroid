@@ -209,6 +209,12 @@ pub(crate) fn instance_intrinsic(
             _ => None,
         }
     };
+    if mref_class == RESOLVER && name == "query" && sig.starts_with("(Landroid/net/Uri;") {
+        // Nenhum provedor de conteúdo do sandbox responde a `content://`. Como
+        // no AOSP quando o provider não existe, o resultado é `null`, não um
+        // cursor inventado.
+        return Ok(Some(Value::Null));
+    }
     if mref_class == RESOLVER {
         return Ok(match (name, sig) {
             (

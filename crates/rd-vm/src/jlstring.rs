@@ -27,6 +27,7 @@ use crate::engine::Engine;
 use crate::err::{Throwable, VmExit};
 use crate::framework::HostObj;
 use crate::heap::{ElemKind, ObjRef};
+use crate::jregex::REGEX_NFA_LIMIT;
 use crate::value::Value;
 
 const STRING: &str = "Ljava/lang/String;";
@@ -300,8 +301,8 @@ fn string_matches(input: &str, pat: &str) -> Result<bool, VmExit> {
     let build = |s: &str| -> Result<fancy_regex::Regex, Box<fancy_regex::Error>> {
         fancy_regex::RegexBuilder::new(s)
             .backtrack_limit(100_000)
-            .delegate_size_limit(2 << 20)
-            .delegate_dfa_size_limit(2 << 20)
+            .delegate_size_limit(REGEX_NFA_LIMIT)
+            .delegate_dfa_size_limit(REGEX_NFA_LIMIT)
             .build()
             .map_err(Box::new)
     };
@@ -353,6 +354,7 @@ pub(crate) fn instance_intrinsic(
             | "toUpperCase"
             | "trim"
             | "strip"
+            | "toCharArray"
             | "stripLeading"
             | "stripTrailing"
             | "isBlank"
@@ -524,6 +526,19 @@ pub(crate) fn instance_intrinsic(
             }
         }
         ("strip", "()Ljava/lang/String;") => new_str(vm, this.trim().to_string())?,
+        ("toCharArray", "()[C") => {
+            // UTF-16 code units, como String.toCharArray() no JDK.
+            let units: Vec<u16> = this.encode_utf16().collect();
+            let arr = vm
+                .heap
+                .alloc_array_zeroed(ElemKind::Int, units.len(), "[C")
+                .map_err(crate::err::oom_throwable)?;
+            let elems = vm.heap.array_elems_mut(arr)?;
+            for (slot, u) in elems.iter_mut().zip(&units) {
+                *slot = Value::Int(i32::from(*u));
+            }
+            Value::Obj(arr)
+        }
         ("stripLeading", "()Ljava/lang/String;") => new_str(vm, this.trim_start().to_string())?,
         ("stripTrailing", "()Ljava/lang/String;") => new_str(vm, this.trim_end().to_string())?,
         ("isBlank", "()Z") => b(this.trim().is_empty()),
@@ -739,6 +754,19 @@ pub(crate) fn static_intrinsic(
                 });
             }
             Ok(Some(new_str(vm, parts.join(&d))?))
+        }
+        // String.join(delim, CharSequence[]): a variante Iterable já está acima.
+        ("join", "(Ljava/lang/CharSequence;[Ljava/lang/CharSequence;)Ljava/lang/String;") => {
+            let delim = charseq(vm, &args[0])?;
+            let elems = obj_array(vm, args.get(1))?;
+            let mut parts = Vec::with_capacity(elems.len());
+            for e in &elems {
+                parts.push(match e {
+                    Value::Null => "null".to_string(),
+                    other => charseq(vm, other)?,
+                });
+            }
+            Ok(Some(new_str(vm, parts.join(&delim))?))
         }
         _ => Ok(None),
     }
