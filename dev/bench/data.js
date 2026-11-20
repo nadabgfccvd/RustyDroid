@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795218174161,
+  "lastUpdate": 1795218838810,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7575,6 +7575,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3559,
             "range": "± 8",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "86b58876493fc2a732945544fde68fba06755754",
+          "message": "docs(comprix): registra execução do fluxo do Scanner no VM (2026-11-20) (#659)\n\nCo-authored-by: rustydroid-agent <rustydroid-agent@users.noreply.github.com>",
+          "timestamp": "2026-11-20T20:53:29-03:00",
+          "tree_id": "75e0543c31f1fdfaf6f857bc460ea8a31981b9fd",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/86b58876493fc2a732945544fde68fba06755754"
+        },
+        "date": 1795218836754,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3282,
+            "range": "± 57",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3278,
+            "range": "± 39",
             "unit": "ns/iter"
           }
         ]
