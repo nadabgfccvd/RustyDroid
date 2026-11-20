@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795134116436,
+  "lastUpdate": 1795135459164,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7467,6 +7467,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3195,
             "range": "± 20",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dcb4fa94f81be6d01114ce8097de6b6ffbf01e2b",
+          "message": "ci(deps)(deps): bump taiki-e/install-action (#655)\n\nBumps the github-actions-minor-and-patch group with 1 update: [taiki-e/install-action](https://github.com/taiki-e/install-action).\n\n\nUpdates `taiki-e/install-action` from 2.90.1 to 2.90.3\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/c509219cf42fba86913069efd0ade2458c59337b...cfdb7ed4ccc7c7dce37759eae89dc5674b469b39)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.90.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions-minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-19T21:37:58-03:00",
+          "tree_id": "3c431de0ad20fc2f1189a107e4d87f5676657c1b",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/dcb4fa94f81be6d01114ce8097de6b6ffbf01e2b"
+        },
+        "date": 1795135457612,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3300,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3296,
+            "range": "± 8",
             "unit": "ns/iter"
           }
         ]
