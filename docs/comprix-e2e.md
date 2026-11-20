@@ -630,3 +630,23 @@ Limites desta validação:
 - Não é teste ponta a ponta do Scanner no VM. A leitura de código de barras e de texto pelo ML Kit no VM é stub (`host_stub` em `interp.rs` devolve lista vazia, decisão do usuário; `gms.rs` marca ML Kit como `not_implemented`). Trocar esse comportamento exige confirmação explícita.
 - O VM não injeta imagem PNG na câmera CameraX. `m10/camera.rs` cobre só Camera2 e frames sintéticos (`RD-CAM…`).
 - RapidOCR e zbar não são o ML Kit real. Isso é um desvio de fidelidade e deve ser revisto antes de qualquer alegação de compatibilidade.
+
+## Execução no VM do fluxo do Scanner (2026-11-20)
+
+Comando: `rd app run comprix-v1.6.0-x86_64-release.apk --virtual-devices` com taps por coordenadas. APK sha256 prefixo `39a4930c89f1a3670eca`.
+
+| Passo | Tap / ação | Resultado |
+|---|---|---|
+| Abrir | (onboarding) | Renderiza |
+| Pular | 632,118 | "Minhas listas" vazia |
+| Nova lista | 360,906 | Sheet "Criar nova lista" |
+| Criar e adicionar itens | 360,1376 | Tela da lista "Compras de janeiro", vazia, com "Escanear um produto" |
+| Escanear um produto | 360,1250 | Tela "Escanear preço" (100% offline, abas Foto / Vídeo 30 s / Código) |
+| Aba Código | 580,166 | Tela "Ler código de barras" com moldura |
+
+Observações:
+- O fluxo chega ao Scanner pelo botão "Escanear um produto" da lista vazia. Na tentativa anterior, o tap na aba Scanner da barra inferior não tinha efeito; o botão da lista funciona.
+- Em todas as telas de câmera o visor fica preto. A VM não entrega quadros com código de barras nem com etiqueta, então leitura ao vivo, OCR e inclusão de item não foram testados.
+- Logs: `comprix_run5.log`, `comprix_run6.log`, `comprix_run7.log` (fora do repositório). Capturas: `run_20261120_lista.png`, `run_20261120_scanner2.png`, `run_20261120_codigo.png` em `/home/user/comprix/`.
+
+Conclusão: o caminho de navegação até o Scanner e o modo Código está validado no VM. A leitura de código de barras e de texto continua **não validada** no VM, pelos motivos já listados acima (stub de ML Kit e câmera sem imagem).
