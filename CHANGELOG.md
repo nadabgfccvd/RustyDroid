@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   script sai sem tocar na página e o build publica o último snapshot versionado — só uma
   resposta válida e vazia troca o bloco por "nenhuma release publicada ainda".
   Self-test hermético `tests/scripts/releases_live_test.sh` (21 casos) no `ci.yml`.
+- **`<shape>` → `GradientDrawable` (`crates/rd-vm/src/shape_drawable.rs`):** fundos de
+  botões e cards em `res/drawable/*.xml` com raiz `<shape>` deixavam de devolver
+  `NOT_IMPLEMENTED` e passam a virar `GradientDrawable` com `rectangle`/`oval`/`line`,
+  `<solid>`, `<stroke>` (anel com `even_odd`), `<corners>` (raio global ou por canto,
+  limitado à metade do menor lado como no AOSP) e `<size>`. Cores e dimensões aceitam
+  literais e `@color`/`@dimen`. A API programática (`setShape`, `setColor`,
+  `setCornerRadius`/`setCornerRadii`, `setStroke`, `setSize`, `getOpacity`, `draw`)
+  usa o mesmo estado. Desvios registrados em `rd_ggaps`: `ring` não é desenhado,
+  `<gradient>` usa a cor inicial, traço tracejado sai contínuo e `<padding>` é
+  ignorado. Testes: `tests/shape_drawable.rs` (3) e 5 testes de geometria.
 - **`VectorDrawable` (`crates/rd-vm/src/vector_drawable.rs`) — apps AppCompat não abriam sem ele:**
   `NewPipe` morria antes da primeira tela com *"This app has been built with an incorrect
   configuration. Please configure your build for VectorDrawableCompat."* — que é o
