@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-4435f936.js";
+            window.path_to_searchindex_js = "searchindex-0f704573.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -224,8 +224,9 @@ response when <code>action</code> is omitted or <code>"get"</code>.</li>
 </ul>
 <h2 id="feature-flags"><a class="header" href="#feature-flags">Feature flags</a></h2>
 <p>Opt-in na compilação: <code>virtual-devices</code> <strong>não</strong> está em <code>default</code> (<code>Cargo.toml</code>). A
-ativação por execução (<code>rd app run --virtual-devices</code>) existe no branch do Zoom
-(PR #626) e ainda não está em <code>main</code>; ver a emenda da ADR 011.</p>
+ativação por execução é <code>rd app run --virtual-devices</code> (padrão: desligado, ADR 011).
+A flag está em <code>main</code> desde o merge do Zoom (#656, <code>2f9aa64</code>, 2026-11-20); ver a
+emenda da ADR 011.</p>
 <div class="table-wrapper">
 <table>
 <thead>

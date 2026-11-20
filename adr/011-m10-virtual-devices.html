@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-4435f936.js";
+            window.path_to_searchindex_js = "../searchindex-0f704573.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-b1665057.js"></script>
@@ -313,7 +313,11 @@ returning silent nulls.</li>
 <p>Esta emenda corrige a Decisão acima com o estado real do código. O texto original foi mantido; a emenda registra a diferença.</p>
 <ul>
 <li><strong>Feature padrão (corrige “enabled by default”):</strong> <code>virtual-devices</code> não está em <code>default</code> de <code>rd-vm</code>, <code>rd-agent</code> nem <code>rd-cli</code> (<code>Cargo.toml</code>; a feature foi introduzida em <code>5922e0f</code> sem entrar no <code>default</code>). A compilação é opt-in, e o próprio item 3 da Decisão já dizia “Opt-in”. A política vigente é ativação por execução, como nos emuladores Android.</li>
-<li><strong>Flag por execução:</strong> a flag <code>--virtual-devices</code> de <code>rd app run</code> existe no branch do Zoom (PR #626), ainda não em <code>main</code>. Até essa mesclagem, <code>main</code> não expõe a flag.</li>
+<li><strong>Flag por execução:</strong> a flag <code>--virtual-devices</code> de <code>rd app run</code> existe no branch do Zoom (PR #626), ainda não em <code>main</code>. Até essa mesclagem, <code>main</code> não expõe a flag.
+<ul>
+<li><strong>Atualização (2026-11-20):</strong> a flag está em <code>main</code> desde o merge do Zoom (#656, <code>2f9aa64</code>). O padrão continua desligado: sem <code>--virtual-devices</code>, o hardware virtual não responde.</li>
+</ul>
+</li>
 <li><strong>Contagem de tools MCP (corrige “47”):</strong> o catálogo tem <strong>52 tools</strong> na build padrão (<code>rd mcp --describe-tools</code>, igual a <code>docs/mcp-tools.md</code>). A contagem independe de feature, porque <code>device_profile</code> é sempre registrada. O número 47 desta ADR é histórico: o ADR 023 registrou 50 e o catálogo cresceu depois.</li>
 <li><strong><code>baseline.json</code>:</strong> <code>.github/rd-sentinel/baseline.json</code> ainda diz <code>mcp_tool_count: 50</code>, mas nenhum script lê esse campo. O RD Sentinel foi removido (ver ADR 010).</li>
 </ul>

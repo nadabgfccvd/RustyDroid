@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-4435f936.js";
+            window.path_to_searchindex_js = "searchindex-0f704573.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -1477,18 +1477,18 @@ matriz oficial por API, que não depende de APK, continua em
 versões, que é o <a href="https://github.com/nadabgfccvd/RustyDroid/blob/main/CHANGELOG.md">CHANGELOG</a>.</p>
 <!-- compat-live:begin -->
 <p><strong>Status da última execução noturna: ✅ verde</strong></p>
-<p>execução de <code>2026-11-19T13:50:40Z</code> · commit <code>4dda705</code> · run #21</p>
-<p><a href="https://github.com/nadabgfccvd/RustyDroid/actions/runs/44537499680">Log da execução no GitHub Actions</a></p>
+<p>execução de <code>2026-11-20T13:33:16Z</code> · commit <code>dcb4fa9</code> · run #22</p>
+<p><a href="https://github.com/nadabgfccvd/RustyDroid/actions/runs/44745315366">Log da execução no GitHub Actions</a></p>
 <div class="table-wrapper">
 <table>
 <thead>
 <tr><th>suíte</th><th style="text-align: right">testes</th><th style="text-align: right">falhas</th><th style="text-align: right">erros</th><th style="text-align: right">pulados</th><th style="text-align: right">tempo</th></tr>
 </thead>
 <tbody>
-<tr><td>contract-no-app</td><td style="text-align: right">8</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">2 ms</td></tr>
+<tr><td>contract-no-app</td><td style="text-align: right">8</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">1 ms</td></tr>
 <tr><td>m10-virtual-devices</td><td style="text-align: right">2</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0 ms</td></tr>
-<tr><td>m8-compat</td><td style="text-align: right">2</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">4 ms</td></tr>
-<tr><td><strong>total</strong></td><td style="text-align: right"><strong>12</strong></td><td style="text-align: right"><strong>0</strong></td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right"><strong>6 ms</strong></td></tr>
+<tr><td>m8-compat</td><td style="text-align: right">2</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right">3 ms</td></tr>
+<tr><td><strong>total</strong></td><td style="text-align: right"><strong>12</strong></td><td style="text-align: right"><strong>0</strong></td><td style="text-align: right">0</td><td style="text-align: right">0</td><td style="text-align: right"><strong>4 ms</strong></td></tr>
 </tbody>
 </table>
 </div>
@@ -5462,8 +5462,9 @@ response when <code>action</code> is omitted or <code>"get"</code>.</li>
 </ul>
 <h2 id="feature-flags-1"><a class="header" href="#feature-flags-1">Feature flags</a></h2>
 <p>Opt-in na compilação: <code>virtual-devices</code> <strong>não</strong> está em <code>default</code> (<code>Cargo.toml</code>). A
-ativação por execução (<code>rd app run --virtual-devices</code>) existe no branch do Zoom
-(PR #626) e ainda não está em <code>main</code>; ver a emenda da ADR 011.</p>
+ativação por execução é <code>rd app run --virtual-devices</code> (padrão: desligado, ADR 011).
+A flag está em <code>main</code> desde o merge do Zoom (#656, <code>2f9aa64</code>, 2026-11-20); ver a
+emenda da ADR 011.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -9077,7 +9078,11 @@ returning silent nulls.</li>
 <p>Esta emenda corrige a Decisão acima com o estado real do código. O texto original foi mantido; a emenda registra a diferença.</p>
 <ul>
 <li><strong>Feature padrão (corrige “enabled by default”):</strong> <code>virtual-devices</code> não está em <code>default</code> de <code>rd-vm</code>, <code>rd-agent</code> nem <code>rd-cli</code> (<code>Cargo.toml</code>; a feature foi introduzida em <code>5922e0f</code> sem entrar no <code>default</code>). A compilação é opt-in, e o próprio item 3 da Decisão já dizia “Opt-in”. A política vigente é ativação por execução, como nos emuladores Android.</li>
-<li><strong>Flag por execução:</strong> a flag <code>--virtual-devices</code> de <code>rd app run</code> existe no branch do Zoom (PR #626), ainda não em <code>main</code>. Até essa mesclagem, <code>main</code> não expõe a flag.</li>
+<li><strong>Flag por execução:</strong> a flag <code>--virtual-devices</code> de <code>rd app run</code> existe no branch do Zoom (PR #626), ainda não em <code>main</code>. Até essa mesclagem, <code>main</code> não expõe a flag.
+<ul>
+<li><strong>Atualização (2026-11-20):</strong> a flag está em <code>main</code> desde o merge do Zoom (#656, <code>2f9aa64</code>). O padrão continua desligado: sem <code>--virtual-devices</code>, o hardware virtual não responde.</li>
+</ul>
+</li>
 <li><strong>Contagem de tools MCP (corrige “47”):</strong> o catálogo tem <strong>52 tools</strong> na build padrão (<code>rd mcp --describe-tools</code>, igual a <code>docs/mcp-tools.md</code>). A contagem independe de feature, porque <code>device_profile</code> é sempre registrada. O número 47 desta ADR é histórico: o ADR 023 registrou 50 e o catálogo cresceu depois.</li>
 <li><strong><code>baseline.json</code>:</strong> <code>.github/rd-sentinel/baseline.json</code> ainda diz <code>mcp_tool_count: 50</code>, mas nenhum script lê esse campo. O RD Sentinel foi removido (ver ADR 010).</li>
 </ul>
