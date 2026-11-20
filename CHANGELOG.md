@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Configuração órfã do RD Sentinel removida (2026-11-20, PR #658):** `.github/rd-sentinel/` (`policy.json`, `baseline.json`) e as entradas `rd-sentinel*` do `CODEOWNERS` saíram do repositório. Nenhum workflow as lia. Cópia em `_archive/` no workspace do agente (ADR 010, emenda de 2026-11-20).
+
 - **Documentação revisada (2026-11-11):** o RD Sentinel foi retirado e o guia dele
   foi para `docs/archive/` (ADR 010, emenda). ADR 011 ganhou emenda: `virtual-devices`
   é opt-in na compilação, não `default`. O catálogo MCP tem 52 tools (não 47).

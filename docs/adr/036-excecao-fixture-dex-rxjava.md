@@ -6,7 +6,7 @@
 
 ## Contexto
 
-`.github/rd-sentinel/policy.json` (arquivo mantido, sem gate que o leia) lista `.dex` em `diff.binary_extensions_blocking`.
+`.github/rd-sentinel/policy.json` lista `.dex` em `diff.binary_extensions_blocking`. Esse arquivo foi removido em 2026-11-20 (PR #658, ADR 010, emenda de 2026-11-20); a lista não tem mais efeito em nenhum gate.
 Enquanto o RD Sentinel estava ativo, um arquivo desse tipo commitado era finding bloqueante (P0/P1), e a ADR 010 exigia
 `sentinel:policy-approved` aplicado por mantenedor para liberá-lo.
 
