@@ -126,5 +126,6 @@ Esta emenda corrige a Decisão acima com o estado real do código. O texto origi
 
 - **Feature padrão (corrige "enabled by default"):** `virtual-devices` não está em `default` de `rd-vm`, `rd-agent` nem `rd-cli` (`Cargo.toml`; a feature foi introduzida em `5922e0f` sem entrar no `default`). A compilação é opt-in, e o próprio item 3 da Decisão já dizia "Opt-in". A política vigente é ativação por execução, como nos emuladores Android.
 - **Flag por execução:** a flag `--virtual-devices` de `rd app run` existe no branch do Zoom (PR #626), ainda não em `main`. Até essa mesclagem, `main` não expõe a flag.
+  - **Atualização (2026-11-20):** a flag está em `main` desde o merge do Zoom (#656, `2f9aa64`). O padrão continua desligado: sem `--virtual-devices`, o hardware virtual não responde.
 - **Contagem de tools MCP (corrige "47"):** o catálogo tem **52 tools** na build padrão (`rd mcp --describe-tools`, igual a `docs/mcp-tools.md`). A contagem independe de feature, porque `device_profile` é sempre registrada. O número 47 desta ADR é histórico: o ADR 023 registrou 50 e o catálogo cresceu depois.
 - **`baseline.json`:** `.github/rd-sentinel/baseline.json` ainda diz `mcp_tool_count: 50`, mas nenhum script lê esse campo. O RD Sentinel foi removido (ver ADR 010).
