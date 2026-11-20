@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795135459164,
+  "lastUpdate": 1795216476364,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7503,6 +7503,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3296,
             "range": "± 8",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9370c2ff141642d55b4fabe65e76e96accfc98a0",
+          "message": "docs: --virtual-devices já está em main (#656) (#657)\n\ndocs/m10.md e a emenda da ADR 011 diziam que a flag existia só no branch do\nZoom (#626). Com o merge #656 ela está em main. O padrão continua desligado\n(ADR 011, sem a flag o hardware virtual não responde).\n\nCo-authored-by: rustydroid-agent <agent@rustydroid.invalid>",
+          "timestamp": "2026-11-20T20:14:08-03:00",
+          "tree_id": "afc7c994e99bfafafb041002bd9ed650f8055c28",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9370c2ff141642d55b4fabe65e76e96accfc98a0"
+        },
+        "date": 1795216474619,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1916,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1933,
+            "range": "± 41",
             "unit": "ns/iter"
           }
         ]
