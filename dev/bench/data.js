@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795216476364,
+  "lastUpdate": 1795218174161,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7539,6 +7539,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 1933,
             "range": "± 41",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a9ec257ba1b5b511e50aec649c3e91d1f44d481b",
+          "message": "chore: remove RD Sentinel config órfã (.github/rd-sentinel) e entradas do CODEOWNERS (#658)\n\nO RD Sentinel foi retirado pela ADR 010. Os arquivos de política\n(.github/rd-sentinel/policy.json e baseline.json) não eram lidos por nenhum\nworkflow ou script, e o CODEOWNERS apontava para workflows rd-sentinel*.yml que\nnão existem mais. Removidos; continuam no histórico do git. Cópia local\narquivada em appc/_archive/2026-11-20_rd_sentinel/ (fora do repo).\n\nRegras de governança que não dependem do Sentinel (dependabot.yml, CODEOWNERS,\ndeny.toml) continuam com @nadabgfccvd.\n\nCo-authored-by: rustydroid-agent <rustydroid-agent@users.noreply.github.com>",
+          "timestamp": "2026-11-20T20:42:04-03:00",
+          "tree_id": "3aae1c348d13a3d22bf065af7eb5734b2dde5969",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/a9ec257ba1b5b511e50aec649c3e91d1f44d481b"
+        },
+        "date": 1795218172103,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3561,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3559,
+            "range": "± 8",
             "unit": "ns/iter"
           }
         ]
