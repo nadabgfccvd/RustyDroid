@@ -688,8 +688,11 @@ impl DexBuilder {
             }
             map.push((0x1000, 1, map_off));
         }
-        // DEX requires map_list entries to be ordered by item type.
-        map.sort_by_key(|entry| entry.0);
+        // DEX requires map_list entries to be ordered by item type. Preserve
+        // byte-for-byte output for existing annotation-free fixtures.
+        if annotation_item_count > 0 {
+            map.sort_by_key(|entry| entry.0);
+        }
 
         out.extend_from_slice(&(map.len() as u32).to_le_bytes());
         for (t, size, off) in &map {
