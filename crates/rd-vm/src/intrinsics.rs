@@ -5694,6 +5694,46 @@ fn call_instance_intrinsic_mref_rooted(
         let tc = vm.heap.class_of(target)?.to_string();
         return call_instance_intrinsic_mref(vm, &tc, mref_class, name, sig, target, args);
     }
+    // These methods are declared on ContextWrapper but D8 may name an
+    // inherited owner such as Application. Resolve the real platform method
+    // before the generic Context resource fallback, which otherwise invents a
+    // ContextImpl even when a wrapper has an explicitly null or custom base.
+    // A virtual call through a platform reference must not steal a DEX
+    // override. The interpreter's invoke-super path passes its selected host
+    // ancestor as recv_class, so that path still reaches the platform method.
+    if matches!(
+        (name, sig),
+        ("attachBaseContext", "(Landroid/content/Context;)V")
+            | ("getBaseContext", "()Landroid/content/Context;")
+    ) && vm
+        .cp
+        .is_subtype(mref_class, "Landroid/content/ContextWrapper;")
+    {
+        if vm.cp.find_class(recv_class).is_some()
+            && vm.cp.resolve_method(recv_class, name, sig).is_some()
+        {
+            return Ok(None);
+        }
+        if let Some(value) = crate::activity_extras::instance_intrinsic(
+            vm,
+            "Landroid/content/ContextWrapper;",
+            name,
+            sig,
+            recv,
+            args,
+        )? {
+            return Ok(Some(value));
+        }
+        // Application/ordinary wrappers start unattached. Activities and
+        // services still use the existing process ContextImpl fallback until
+        // their separate lifecycle attachment is modelled.
+        if name == "getBaseContext"
+            && !vm.cp.is_subtype(recv_class, "Landroid/app/Activity;")
+            && !vm.cp.is_subtype(recv_class, "Landroid/app/Service;")
+        {
+            return Ok(Some(Value::Null));
+        }
+    }
     let r = instance_intrinsic_dispatch(vm, recv_class, mref_class, name, sig, recv, args)?;
     if r.is_some() {
         return Ok(r);

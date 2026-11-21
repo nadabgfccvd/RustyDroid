@@ -45,7 +45,11 @@ pub(crate) fn instance_intrinsic(
         "Landroid/content/ContextWrapper;" | "Landroid/view/ContextThemeWrapper;"
     ) {
         match (name, sig) {
-            ("<init>", "()V") => return Ok(Some(Value::Null)),
+            ("<init>", "()V") => {
+                vm.view_props
+                    .insert((recv, "ctx:mBase".to_string()), Value::Null);
+                return Ok(Some(Value::Null));
+            }
             (
                 "<init>",
                 "(Landroid/content/Context;)V"
@@ -53,16 +57,35 @@ pub(crate) fn instance_intrinsic(
                 | "(Landroid/content/Context;Landroid/content/res/Resources$Theme;)V",
             )
             | ("attachBaseContext", "(Landroid/content/Context;)V") => {
-                if let Some(base @ Value::Obj(_)) = args.first() {
-                    vm.view_props
-                        .insert((recv, "ctx:mBase".to_string()), base.clone());
+                let key = (recv, "ctx:mBase".to_string());
+                // AOSP ContextWrapper.attachBaseContext rejects a second
+                // non-null attachment and leaves the original base unchanged.
+                if name == "attachBaseContext"
+                    && matches!(vm.view_props.get(&key), Some(Value::Obj(_)))
+                {
+                    return Err(VmExit::Exception(crate::err::Throwable::new(
+                        "Ljava/lang/IllegalStateException;",
+                        "Base context already set",
+                    )));
                 }
+                let base = match args.first().and_then(|v| v.as_ref().ok()) {
+                    Some(Some(base)) => Value::Obj(base),
+                    Some(None) => Value::Null,
+                    None => {
+                        return Err(crate::err::vm_error(
+                            "INVALID_ARG",
+                            "ContextWrapper requires a Context reference",
+                        )
+                        .into())
+                    }
+                };
+                vm.view_props.insert(key, base);
                 // ContextThemeWrapper(context, themeResId): the theme is
                 // what getTheme()/obtainStyledAttributes must resolve
                 // against (theme_id_for_context reads rd_theme_override).
                 // Dropping it made Material's ThemeEnforcement reject
                 // wrapped contexts of apps with no application theme.
-                if sig == "(Landroid/content/Context;I)V" {
+                if name == "<init>" && sig == "(Landroid/content/Context;I)V" {
                     if let Some(theme @ Value::Int(_)) = args.get(1) {
                         vm.view_props
                             .insert((recv, "rd_theme_override".to_string()), theme.clone());
