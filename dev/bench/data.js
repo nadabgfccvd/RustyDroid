@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795220552323,
+  "lastUpdate": 1795222844518,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7647,6 +7647,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3162,
             "range": "± 13",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5b80da99c91fbca1433daa46035a3e0031b6061a",
+          "message": "fix(vm): budget recursive host dispatch stack (#661)\n\nGuard recursive host dispatch with a weighted native-stack budget and prove it fires before the generic recursion cap.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-20T21:59:16-03:00",
+          "tree_id": "31797703cf0c49be69ec74c8a58c0c4e2870b4bd",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/5b80da99c91fbca1433daa46035a3e0031b6061a"
+        },
+        "date": 1795222842842,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3213,
+            "range": "± 30",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3239,
+            "range": "± 166",
             "unit": "ns/iter"
           }
         ]
