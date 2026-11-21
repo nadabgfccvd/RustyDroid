@@ -101,6 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`~4 KiB` por frame) para que o erro seja lançado muito antes de a pilha acabar,
   independentemente do tamanho de frame. Teste de regressão novo cobre 256/320/512 KiB
   (antes: SIGABRT; agora: `Ljava/lang/StackOverflowError;`).
+- **Guard de pilha pondera reentrância host (#313):** o custo de ~4 KiB usado para
+  limitar frames DEX não representava ciclos entre shims Rust (ex.: `Base64InputStream.available`).
+  `enter_stack_frame` mantém o guard real por SP e soma uma estimativa conservadora de 48 KiB
+  por frame host antes de aceitar reentrância; ciclos profundos agora falham com
+  `StackOverflowError` tipado antes de o runner abortar a thread. Coberto pelo teste
+  `host_to_host_mutual_collection_cycle_throws_soe_and_recovers_313`.
 - **Link morto `archive/README.html` no site (M12):** o mdBook renderiza
   `docs/archive/README.md` como `archive/index.html`, então o link de `docs/index.md`
   para `./archive/README.md` — correto na visão do repositório — virava
