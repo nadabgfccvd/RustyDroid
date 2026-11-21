@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795222844518,
+  "lastUpdate": 1795223703480,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7683,6 +7683,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3239,
             "range": "± 166",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c0cb977340cb116827b40b92f075df3e2234df41",
+          "message": "fix(vm): increase host stack safety margin (#662)\n\nIncrease the weighted host-frame budget to 128 KiB after the 48 KiB estimate still allowed the 2 MiB regression thread to abort in a post-merge CI run. Keep the live SP guard and prove the host cycle stops before the generic cap.\n\nCo-authored-by: Xisto <xisto@example.invalid>",
+          "timestamp": "2026-11-20T22:14:35-03:00",
+          "tree_id": "0065c4789948dfb01eeabfea9693b00c6aabe923",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/c0cb977340cb116827b40b92f075df3e2234df41"
+        },
+        "date": 1795223701786,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3758,
+            "range": "± 45",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3755,
+            "range": "± 99",
             "unit": "ns/iter"
           }
         ]
