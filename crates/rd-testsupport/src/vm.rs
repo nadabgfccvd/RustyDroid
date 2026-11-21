@@ -836,7 +836,7 @@ pub fn write_uleb(out: &mut Vec<u8>, mut v: u64) {
 
 /// Encodes the index payload of VALUE_METHOD/VALUE_TYPE in minimal little-endian width.
 fn write_encoded_index(out: &mut Vec<u8>, value_type: u8, index: u32) {
-    let width = ((32 - index.leading_zeros() as usize + 7) / 8).max(1);
+    let width = (32 - index.leading_zeros()).div_ceil(8).max(1) as usize;
     out.push(value_type | (((width - 1) as u8) << 5));
     out.extend(index.to_le_bytes().into_iter().take(width));
 }
