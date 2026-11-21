@@ -242,6 +242,9 @@ fn host_to_host_mutual_collection_cycle_throws_soe_and_recovers_313() {
         .stack_size(2 * 1024 * 1024)
         .spawn(|| {
             let mut vm = engine_of(&DexBuilder::new());
+            // Exercise the native-stack guard, not the generic recursion cap:
+            // the weighted host-frame budget must stop this 2 MiB cycle first.
+            vm.config.max_depth = 512;
             let b1 = vm
                 .heap
                 .alloc_instance("Landroid/util/Base64InputStream;".into(), Vec::new())

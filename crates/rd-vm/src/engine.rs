@@ -64,14 +64,19 @@ const MAX_MAIN_NATIVE_STACK_BYTES: usize = 6 * 1024 * 1024;
 /// recebia um orçamento igual ao tamanho inteiro da pilha e abortava com SIGABRT
 /// em vez de lançar `StackOverflowError` (#637). O piso agora é relativo à pilha.
 const MIN_NATIVE_STACK_BUDGET: usize = 64 * 1024;
-/// Estimativa conservadora do custo nativo de um frame do interpretador, usada
-/// para derivar um **teto de profundidade** a partir do orçamento de pilha.
+/// Estimativa conservadora do custo nativo de um frame DEX do interpretador,
+/// usada para derivar um **teto de profundidade** a partir do orçamento de pilha.
 ///
 /// Medido em build debug neste repositório: a recursão de 128 frames de
 /// `catchRecurse` precisa de ~350 KiB (a 384 KiB roda, a 320 KiB aborta), ou
-/// seja ~2,7 KiB/frame. 4 KiB/frame é a estimativa com folga; em release o frame
-/// é menor ainda, então o teto só morde em pilhas pequenas.
+/// seja ~2,7 KiB/frame. 4 KiB/frame é a estimativa com folga para frames DEX.
 const FRAME_COST_BYTES: usize = 4 * 1024;
+/// Dispatches host recursivos passam por várias funções Rust por nível e podem
+/// usar muito mais pilha que um frame DEX (issue #313 registrou 12–40 KiB por
+/// nível de reentrância). Pesamos esses frames separadamente: sem isso, um ciclo
+/// host→host podia atingir `max_depth` antes do guard de bytes em runners CI e
+/// terminar em SIGABRT em vez de StackOverflowError capturável.
+const HOST_FRAME_COST_BYTES: usize = 48 * 1024;
 /// Nº mínimo de frames que o teto derivado do orçamento pode impor. Evita que
 /// uma pilha minúscula produza um teto degenerado (0/1 frame) que rejeitaria
 /// até uma chamada trivial; com 16 frames × ~4 KiB = 64 KiB, ainda cabe numa
@@ -918,7 +923,28 @@ impl Engine {
         let combined = self.depth.saturating_add(self.host_depth);
         let stack_exceeded =
             self.entry_sp != 0 && self.entry_sp.abs_diff(sp_now) >= self.entry_stack_budget;
-        if combined >= self.config.max_depth || combined >= self.entry_depth_cap || stack_exceeded {
+        // #313/#637: a medição do SP continua sendo a fonte real. A estimativa
+        // ponderada é um segundo guard para caminhos host→host, cuja cadeia de
+        // funções Rust pode crescer muito mais por nível que um frame DEX; o
+        // orçamento de 4 KiB/frame sozinho deixava o ciclo atingir max_depth
+        // antes do SO em alguns runners.
+        let next_frame_cost = if count_vm_frame {
+            FRAME_COST_BYTES
+        } else {
+            HOST_FRAME_COST_BYTES
+        };
+        let estimated_stack_bytes = self
+            .depth
+            .saturating_mul(FRAME_COST_BYTES)
+            .saturating_add(self.host_depth.saturating_mul(HOST_FRAME_COST_BYTES))
+            .saturating_add(next_frame_cost);
+        let estimated_stack_exceeded =
+            self.entry_sp != 0 && estimated_stack_bytes >= self.entry_stack_budget;
+        if combined >= self.config.max_depth
+            || combined >= self.entry_depth_cap
+            || stack_exceeded
+            || estimated_stack_exceeded
+        {
             return Err(VmExit::Exception(Throwable::new(
                 "Ljava/lang/StackOverflowError;",
                 format!(
@@ -931,14 +957,9 @@ impl Engine {
         let anchored = if self.entry_sp == 0 {
             self.entry_sp = sp_now;
             self.entry_stack_budget = detect_native_stack_budget(sp_now);
-            // #637: o orçamento em bytes só é conferido quando se cria um frame.
-            // Um frame do interpretador custa alguns KiB de pilha nativa entre
-            // duas checagens? Não: custa ~4 KiB, mas o salto entre a checagem e
-            // o consumo real pode ser grande em caminhos host<->DEX. Derivar
-            // também um TETO DE PROFUNDIDADE do orçamento garante que o erro
-            // seja lançado muito antes de a pilha acabar, independentemente do
-            // tamanho de frame — em pilhas pequenas (256-512 KiB) o
-            // `max_depth` configurado pelo chamador podia ser grande demais.
+            // #637: derive a separate DEX-depth ceiling from the measured
+            // budget. Host-frame cost is also checked explicitly above because
+            // 4 KiB/frame was measured for `catchRecurse`, not host dispatch.
             self.entry_depth_cap =
                 (self.entry_stack_budget / FRAME_COST_BYTES).max(MIN_DEPTH_FLOOR);
             true
