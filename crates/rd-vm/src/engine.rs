@@ -940,6 +940,25 @@ impl Engine {
             .saturating_add(next_frame_cost);
         let estimated_stack_exceeded =
             self.entry_sp != 0 && estimated_stack_bytes >= self.entry_stack_budget;
+        if std::thread::current().name() == Some("vm-2mib-host-cycle-313") {
+            let stack_delta = if self.entry_sp == 0 {
+                0
+            } else {
+                self.entry_sp.abs_diff(sp_now)
+            };
+            eprintln!(
+                "STACK_GUARD depth={} host={} delta={} budget={} estimate={} max={} cap={} stack={} estimate_hit={}",
+                self.depth,
+                self.host_depth,
+                stack_delta,
+                self.entry_stack_budget,
+                estimated_stack_bytes,
+                self.config.max_depth,
+                self.entry_depth_cap,
+                stack_exceeded,
+                estimated_stack_exceeded
+            );
+        }
         if combined >= self.config.max_depth
             || combined >= self.entry_depth_cap
             || stack_exceeded
