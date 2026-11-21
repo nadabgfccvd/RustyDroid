@@ -76,7 +76,15 @@ const FRAME_COST_BYTES: usize = 4 * 1024;
 /// nível de reentrância). Pesamos esses frames separadamente: sem isso, um ciclo
 /// host→host podia atingir `max_depth` antes do guard de bytes em runners CI e
 /// terminar em SIGABRT em vez de StackOverflowError capturável.
-const HOST_FRAME_COST_BYTES: usize = 48 * 1024;
+///
+/// A medição local do ciclo `Base64InputStream.available()` mostra ~69 KiB por
+/// nível com debuginfo completo; builds de CI podem crescer ainda mais. O valor
+/// antigo de 48 KiB deixava a estimativa abaixo do custo real e o guard só
+/// disparava depois que a pilha nativa já havia consumido o orçamento. 256 KiB
+/// é uma margem conservadora que mantém o ciclo host→host fechado mesmo em
+/// runners com frames Rust maiores, sem afetar frames DEX (que continuam com
+/// `FRAME_COST_BYTES`).
+const HOST_FRAME_COST_BYTES: usize = 256 * 1024;
 /// Nº mínimo de frames que o teto derivado do orçamento pode impor. Evita que
 /// uma pilha minúscula produza um teto degenerado (0/1 frame) que rejeitaria
 /// até uma chamada trivial; com 16 frames × ~4 KiB = 64 KiB, ainda cabe numa
