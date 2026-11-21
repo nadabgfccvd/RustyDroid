@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795218838810,
+  "lastUpdate": 1795220552323,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7611,6 +7611,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3278,
             "range": "± 39",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d58fb07bf696fc98c7089baf3e50d1984f669285",
+          "message": "docs: registra remoção da configuração órfã do RD Sentinel (#660)\n\nCo-authored-by: rustydroid-agent <rustydroid-agent@users.noreply.github.com>",
+          "timestamp": "2026-11-20T21:21:33-03:00",
+          "tree_id": "5bfb15ee26709726da40797e436d1b337356ed99",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/d58fb07bf696fc98c7089baf3e50d1984f669285"
+        },
+        "date": 1795220551482,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3169,
+            "range": "± 88",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3162,
+            "range": "± 13",
             "unit": "ns/iter"
           }
         ]
