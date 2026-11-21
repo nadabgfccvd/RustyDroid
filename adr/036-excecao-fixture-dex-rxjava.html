@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-1f417462.js";
+            window.path_to_searchindex_js = "../searchindex-50c38c43.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-b1665057.js"></script>
@@ -187,7 +187,7 @@
 <li><strong>Escopo:</strong> Apêndice D (S12), <code>androidx</code>/<code>rxjava</code> como <code>dex-passthrough</code>.</li>
 </ul>
 <h2 id="contexto"><a class="header" href="#contexto">Contexto</a></h2>
-<p><code>.github/rd-sentinel/policy.json</code> (arquivo mantido, sem gate que o leia) lista <code>.dex</code> em <code>diff.binary_extensions_blocking</code>.
+<p><code>.github/rd-sentinel/policy.json</code> lista <code>.dex</code> em <code>diff.binary_extensions_blocking</code>. Esse arquivo foi removido em 2026-11-20 (PR #658, ADR 010, emenda de 2026-11-20); a lista não tem mais efeito em nenhum gate.
 Enquanto o RD Sentinel estava ativo, um arquivo desse tipo commitado era finding bloqueante (P0/P1), e a ADR 010 exigia
 <code>sentinel:policy-approved</code> aplicado por mantenedor para liberá-lo.</p>
 <p>Testar a biblioteca real (e não um DEX sintético) é a única forma de validar que o

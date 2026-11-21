@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "../searchindex-1f417462.js";
+            window.path_to_searchindex_js = "../searchindex-50c38c43.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-b1665057.js"></script>
@@ -431,6 +431,13 @@ comment/labels/commit-status decision remains authoritative.</li>
 <li>Não há mais gate <code>rd-sentinel/gate</code> no CI. As regras de merge que citavam o Sentinel em <code>CONTRIBUTING.md</code>, <code>GOVERNANCE.md</code> e no template de PR foram atualizadas para refletir isso.</li>
 <li>O guia operacional foi movido para <a href="../archive/rd-sentinel.html"><code>docs/archive/rd-sentinel.md</code></a> como histórico.</li>
 <li><code>.github/rd-sentinel/</code> (política e baseline) e as entradas em <code>CODEOWNERS</code> foram mantidos pelo commit de #436. Decisão de remoção pendente do mantenedor.</li>
+</ul>
+<h2 id="emenda-2026-11-20-remoção-da-configuração-órfã"><a class="header" href="#emenda-2026-11-20-remoção-da-configuração-órfã">Emenda (2026-11-20): remoção da configuração órfã</a></h2>
+<ul>
+<li>A decisão pendente acima foi tomada pelo mantenedor (pedido explícito, 2026-11-20) e executada no PR #658 (squash <code>a9ec257</code>): <code>.github/rd-sentinel/</code> (<code>policy.json</code>, <code>baseline.json</code>) e as entradas <code>rd-sentinel*</code> / <code>tools/rd-sentinel/</code> em <code>CODEOWNERS</code> foram removidos.</li>
+<li>Cópia do conteúdo removido, para histórico: <code>_archive/2026-11-20_rd_sentinel/</code> no workspace do agente (fora do repositório).</li>
+<li>Verificado antes da remoção: nenhum workflow ou script lia <code>policy.json</code> nem <code>baseline.json</code>.</li>
+<li>As decisões de ADR 011, 018 e 036 que citam esses arquivos continuam como registro histórico, exceto onde há nota explícita de estado atual.</li>
 </ul>
 
                     </main>
