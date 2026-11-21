@@ -114,6 +114,52 @@ pub(crate) fn class_generic_signature(vm: &Engine, desc: &str) -> Option<String>
     None
 }
 
+/// Method or constructor that encloses a local/anonymous class, from the
+/// system-visible `dalvik.annotation.EnclosingMethod` annotation.
+pub(crate) fn class_enclosing_method(vm: &Engine, desc: &str) -> Option<(String, String, String)> {
+    for (di, ann) in class_annotations(vm, desc, Visibility::System) {
+        if vm.cp.dexes[di].type_str(ann.type_idx) != "Ldalvik/annotation/EnclosingMethod;" {
+            continue;
+        }
+        for element in &ann.elements {
+            if vm.cp.dexes[di].string(element.name_idx) != "value" {
+                continue;
+            }
+            let EncodedValue::Method(method_idx) = &element.value else {
+                continue;
+            };
+            let method = vm.cp.method_ref(di, *method_idx).ok()?;
+            return Some((
+                method.class.clone(),
+                method.name.clone(),
+                method.proto.clone(),
+            ));
+        }
+    }
+    None
+}
+
+/// Lexical enclosing class from `EnclosingMethod` or `EnclosingClass`.
+pub(crate) fn class_enclosing_class(vm: &Engine, desc: &str) -> Option<String> {
+    if let Some((class, _, _)) = class_enclosing_method(vm, desc) {
+        return Some(class);
+    }
+    for (di, ann) in class_annotations(vm, desc, Visibility::System) {
+        if vm.cp.dexes[di].type_str(ann.type_idx) != "Ldalvik/annotation/EnclosingClass;" {
+            continue;
+        }
+        for element in &ann.elements {
+            if vm.cp.dexes[di].string(element.name_idx) != "value" {
+                continue;
+            }
+            if let EncodedValue::Type(type_idx) = &element.value {
+                return Some(vm.cp.dexes[di].type_str(*type_idx).to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Assinatura genérica de um campo (`dalvik.annotation.Signature` no
 /// `annotations_directory` da classe declarante). `None` sem a anotação.
 pub(crate) fn field_generic_signature(vm: &Engine, desc: &str, field: &str) -> Option<String> {
