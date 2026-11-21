@@ -273,6 +273,22 @@ fn host_to_host_mutual_collection_cycle_throws_soe_and_recovers_313() {
             match av {
                 Err(VmExit::Exception(ex)) => {
                     assert_eq!(ex.class, "Ljava/lang/StackOverflowError;");
+                    let message = ex.message.as_deref().expect("stack overflow message");
+                    let (depth_message, limit_message) = message
+                        .split_once(" (limite do motor: ")
+                        .expect("stack overflow message includes the effective limit");
+                    let depth = depth_message
+                        .rsplit_once("≥ ")
+                        .and_then(|(_, value)| value.parse::<usize>().ok())
+                        .expect("stack overflow message includes the call depth");
+                    let limit = limit_message
+                        .strip_suffix(')')
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .expect("stack overflow message includes a numeric limit");
+                    assert!(
+                        depth < 64 && limit > 64,
+                        "native-stack guard should stop the host cycle before its depth cap: {message}"
+                    );
                 }
                 other => panic!("expected StackOverflowError on host cycle, got {other:?}"),
             }
