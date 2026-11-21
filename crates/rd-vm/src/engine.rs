@@ -73,10 +73,11 @@ const MIN_NATIVE_STACK_BUDGET: usize = 64 * 1024;
 const FRAME_COST_BYTES: usize = 4 * 1024;
 /// Dispatches host recursivos passam por várias funções Rust por nível e podem
 /// usar muito mais pilha que um frame DEX (issue #313 registrou 12–40 KiB por
-/// nível de reentrância). Pesamos esses frames separadamente: sem isso, um ciclo
-/// host→host podia atingir `max_depth` antes do guard de bytes em runners CI e
-/// terminar em SIGABRT em vez de StackOverflowError capturável.
-const HOST_FRAME_COST_BYTES: usize = 48 * 1024;
+/// nível de reentrância). A estimativa inicial de 48 KiB ainda permitiu um
+/// SIGABRT no ciclo host→host do CI (a causa exata da diferença não foi isolada),
+/// então não era um limite superior confiável. Usamos 128 KiB (~3,2× o máximo
+/// medido) para reservar margem antes da guard page e lançar StackOverflowError.
+const HOST_FRAME_COST_BYTES: usize = 128 * 1024;
 /// Nº mínimo de frames que o teto derivado do orçamento pode impor. Evita que
 /// uma pilha minúscula produza um teto degenerado (0/1 frame) que rejeitaria
 /// até uma chamada trivial; com 16 frames × ~4 KiB = 64 KiB, ainda cabe numa
