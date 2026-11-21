@@ -141,8 +141,26 @@ pub struct ClassE {
     pub instances: Vec<(String, String)>,
     pub directs: Vec<MethodSlot>,
     pub virtuals: Vec<MethodSlot>,
+    pub annotations: Vec<ClassAnnotationE>,
     /// access_flags do class_def (default ACC_PUBLIC; 0x0200 = interface).
     pub access: u32,
+}
+
+/// Valor de annotation_item usado pelos fixtures de DEX.
+#[derive(Clone)]
+pub enum ClassAnnotationValueE {
+    /// `VALUE_METHOD` (`0x1a`) apontando para method_ids.
+    Method(u16),
+    /// `VALUE_TYPE` (`0x18`) apontando para type_ids.
+    Type(String),
+}
+
+/// Anotação de classe sintética (visibility: 0 build, 1 runtime, 2 system).
+#[derive(Clone)]
+pub struct ClassAnnotationE {
+    pub visibility: u8,
+    pub ty: String,
+    pub elements: Vec<(String, ClassAnnotationValueE)>,
 }
 
 #[derive(Default)]
@@ -242,6 +260,7 @@ impl DexBuilder {
             instances: Vec::new(),
             directs: Vec::new(),
             virtuals: Vec::new(),
+            annotations: Vec::new(),
             access: 0x1,
         });
         self.classes.len() - 1
@@ -250,6 +269,29 @@ impl DexBuilder {
     /// Define as flags de acesso do class_def (ex.: 0x0200 para interface).
     pub fn set_access(&mut self, cls: usize, access: u32) {
         self.classes[cls].access = access;
+    }
+
+    /// Add a system/runtime/build class annotation to a synthetic DEX fixture.
+    /// `elements` are encoded in DEX name-index order by `finish()`.
+    pub fn class_annotation(
+        &mut self,
+        cls: usize,
+        visibility: u8,
+        ty: &str,
+        elements: Vec<(String, ClassAnnotationValueE)>,
+    ) {
+        self.type_idx(ty);
+        for (name, value) in &elements {
+            self.intern(name);
+            if let ClassAnnotationValueE::Type(desc) = value {
+                self.type_idx(desc);
+            }
+        }
+        self.classes[cls].annotations.push(ClassAnnotationE {
+            visibility,
+            ty: ty.to_string(),
+            elements,
+        });
     }
 
     pub fn static_field(&mut self, cls: usize, name: &str, ftype: &str, init: SVal) {
@@ -496,6 +538,86 @@ impl DexBuilder {
             }
         }
 
+        // class annotations: annotation_item -> annotation_set_item -> directory.
+        // Each map-list kind is emitted contiguously, as required by DEX.
+        let mut class_annotation_items = vec![Vec::<(u16, u32)>::new(); self.classes.len()];
+        let mut annotation_item_first = 0u32;
+        let mut annotation_item_count = 0u32;
+        for (ci, class) in self.classes.iter().enumerate() {
+            let mut annotations: Vec<_> = class.annotations.iter().collect();
+            annotations.sort_by_key(|annotation| self.type_idx_cached(&annotation.ty));
+            for annotation in annotations {
+                let type_idx = self.type_idx_cached(&annotation.ty);
+                let item_off = out.len() as u32;
+                if annotation_item_first == 0 {
+                    annotation_item_first = item_off;
+                }
+                out.push(annotation.visibility);
+                write_uleb(&mut out, type_idx as u64);
+                let mut elements: Vec<_> = annotation.elements.iter().collect();
+                elements.sort_by_key(|(name, _)| self.string_idx_cached(name));
+                write_uleb(&mut out, elements.len() as u64);
+                for (name, value) in elements {
+                    write_uleb(&mut out, self.string_idx_cached(name) as u64);
+                    match value {
+                        ClassAnnotationValueE::Method(idx) => {
+                            write_encoded_index(&mut out, 0x1a, u32::from(*idx));
+                        }
+                        ClassAnnotationValueE::Type(desc) => {
+                            write_encoded_index(
+                                &mut out,
+                                0x18,
+                                u32::from(self.type_idx_cached(desc)),
+                            );
+                        }
+                    }
+                }
+                class_annotation_items[ci].push((type_idx, item_off));
+                annotation_item_count += 1;
+            }
+        }
+
+        let mut class_annotation_set_offs = vec![0u32; self.classes.len()];
+        let mut annotation_set_first = 0u32;
+        let mut annotation_set_count = 0u32;
+        for (ci, items) in class_annotation_items.iter_mut().enumerate() {
+            if items.is_empty() {
+                continue;
+            }
+            items.sort_by_key(|(type_idx, _)| *type_idx);
+            align4(&mut out);
+            let set_off = out.len() as u32;
+            if annotation_set_first == 0 {
+                annotation_set_first = set_off;
+            }
+            class_annotation_set_offs[ci] = set_off;
+            out.extend_from_slice(&(items.len() as u32).to_le_bytes());
+            for (_, item_off) in items.iter() {
+                out.extend_from_slice(&item_off.to_le_bytes());
+            }
+            annotation_set_count += 1;
+        }
+
+        let mut class_annotation_dir_offs = vec![0u32; self.classes.len()];
+        let mut annotation_dir_first = 0u32;
+        let mut annotation_dir_count = 0u32;
+        for (ci, set_off) in class_annotation_set_offs.iter().copied().enumerate() {
+            if set_off == 0 {
+                continue;
+            }
+            align4(&mut out);
+            let dir_off = out.len() as u32;
+            if annotation_dir_first == 0 {
+                annotation_dir_first = dir_off;
+            }
+            class_annotation_dir_offs[ci] = dir_off;
+            out.extend_from_slice(&set_off.to_le_bytes());
+            out.extend_from_slice(&0u32.to_le_bytes()); // fields_size
+            out.extend_from_slice(&0u32.to_le_bytes()); // methods_size
+            out.extend_from_slice(&0u32.to_le_bytes()); // parameters_size
+            annotation_dir_count += 1;
+        }
+
         // map_list (por último)
         align4(&mut out);
         let map_off = out.len() as u32;
@@ -527,6 +649,15 @@ impl DexBuilder {
                     *type_list_offs.iter().find(|o| **o != 0).unwrap(),
                 ));
             }
+            if annotation_item_count > 0 {
+                map.push((0x2004, annotation_item_count, annotation_item_first));
+            }
+            if annotation_set_count > 0 {
+                map.push((0x1003, annotation_set_count, annotation_set_first));
+            }
+            if annotation_dir_count > 0 {
+                map.push((0x2006, annotation_dir_count, annotation_dir_first));
+            }
             let n_cdata = class_data_offs.iter().filter(|o| **o != 0).count() as u32;
             if n_cdata > 0 {
                 map.push((
@@ -556,6 +687,11 @@ impl DexBuilder {
                 ));
             }
             map.push((0x1000, 1, map_off));
+        }
+        // DEX requires map_list entries to be ordered by item type. Preserve
+        // byte-for-byte output for existing annotation-free fixtures.
+        if annotation_item_count > 0 {
+            map.sort_by_key(|entry| entry.0);
         }
 
         out.extend_from_slice(&(map.len() as u32).to_le_bytes());
@@ -616,7 +752,9 @@ impl DexBuilder {
             out[base + 4..base + 8].copy_from_slice(&c.access.to_le_bytes());
             out[base + 8..base + 12]
                 .copy_from_slice(&(self.type_idx_cached(&c.sup) as u32).to_le_bytes());
-            // interfaces_off @12, source_file_idx @16, annotations_off @20 → 0
+            // interfaces_off @12 and source_file_idx @16 remain 0; annotations_off @20.
+            let at = base + 20;
+            out[at..at + 4].copy_from_slice(&class_annotation_dir_offs[ci].to_le_bytes());
             let at = base + 24;
             out[at..at + 4].copy_from_slice(&class_data_offs[ci].to_le_bytes());
             let at = base + 28;
@@ -697,6 +835,13 @@ pub fn write_uleb(out: &mut Vec<u8>, mut v: u64) {
         }
         out.push(b | 0x80);
     }
+}
+
+/// Encodes the index payload of VALUE_METHOD/VALUE_TYPE in minimal little-endian width.
+fn write_encoded_index(out: &mut Vec<u8>, value_type: u8, index: u32) {
+    let width = (32 - index.leading_zeros()).div_ceil(8).max(1) as usize;
+    out.push(value_type | (((width - 1) as u8) << 5));
+    out.extend(index.to_le_bytes().into_iter().take(width));
 }
 
 pub fn write_sleb(out: &mut Vec<u8>, mut v: i64) {

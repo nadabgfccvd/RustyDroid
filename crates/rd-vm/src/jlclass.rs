@@ -146,18 +146,39 @@ pub(crate) fn instance_intrinsic(
                 && !d.starts_with('['))),
         ("isEnum", "()Z") => b(access_flags(vm, &d).is_some_and(|f| f & ACC_ENUM != 0)
             && vm.cp.superclass_of(&d).as_deref() == Some("Ljava/lang/Enum;")),
-        // EnclosingMethod (atributo do classfile) não é modelado: null, como
-        // para classes não-locais/anônimas em qualquer VM sem o atributo.
-        ("getEnclosingMethod", "()Ljava/lang/reflect/Method;") => Value::Null,
-        ("getEnclosingConstructor", "()Ljava/lang/reflect/Constructor;") => Value::Null,
-        // Dono pelo nome (`Outer$Inner`); classes anônimas/locais têm
-        // dono via atributo, que não é modelado → null.
-        ("getEnclosingClass" | "getDeclaringClass", "()Ljava/lang/Class;") => {
-            match enclosing_by_name(&d) {
+        ("getEnclosingMethod", "()Ljava/lang/reflect/Method;") => {
+            match crate::jannotations::class_enclosing_method(vm, &d) {
+                Some((decl, name, signature)) if name != "<init>" && name != "<clinit>" => {
+                    Value::Obj(crate::reflect::new_method_object(
+                        vm, &decl, &name, &signature,
+                    )?)
+                }
+                _ => Value::Null,
+            }
+        }
+        ("getEnclosingConstructor", "()Ljava/lang/reflect/Constructor;") => {
+            match crate::jannotations::class_enclosing_method(vm, &d) {
+                Some((decl, name, signature)) if name == "<init>" => Value::Obj(
+                    crate::reflect::new_constructor_object(vm, &decl, &signature)?,
+                ),
+                _ => Value::Null,
+            }
+        }
+        // `getEnclosingClass` also handles local/anonymous classes via DEX
+        // EnclosingMethod/EnclosingClass annotations; `getDeclaringClass` is
+        // intentionally limited to member classes.
+        ("getEnclosingClass", "()Ljava/lang/Class;") => {
+            let enclosing = crate::jannotations::class_enclosing_class(vm, &d)
+                .or_else(|| enclosing_by_name(&d));
+            match enclosing {
                 Some(outer) => Value::Obj(vm.class_object_for(&outer)?),
                 None => Value::Null,
             }
         }
+        ("getDeclaringClass", "()Ljava/lang/Class;") => match enclosing_by_name(&d) {
+            Some(outer) => Value::Obj(vm.class_object_for(&outer)?),
+            None => Value::Null,
+        },
         ("isAnonymousClass", "()Z") => b(is_anonymous(&d)),
         ("isLocalClass", "()Z") => b(is_local(&d)),
         ("isMemberClass", "()Z") => {

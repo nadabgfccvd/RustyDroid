@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Class` enclosing metadata from DEX annotations:** `getEnclosingMethod()`,
+  `getEnclosingConstructor()` and `getEnclosingClass()` now read the system-visible
+  `dalvik.annotation.EnclosingMethod` / `EnclosingClass` metadata for local and anonymous
+  classes and return real `Method`/`Constructor` reflection objects. `getDeclaringClass()`
+  remains null for local classes, as on Android. A synthetic annotated-DEX regression covers
+  methods, constructors, enclosing-class-only metadata and top-level null behavior.
 - **Página de releases viva no site (M12):** `docs/releases.md` é renderizada por
   `scripts/releases_live.py` a partir de `GET /repos/:owner/:repo/releases` no build do
   `docs.yml`, com uma linha por versão (data, nº de artefatos, tamanho), a lista de
