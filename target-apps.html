@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-50c38c43.js";
+            window.path_to_searchindex_js = "searchindex-f0ad687a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -231,8 +231,8 @@ concreto é do dono. Sugestões de OSS são candidatas e precisam de confirmaç�
 <tr><td>11</td><td>Zombie Tsunami</td><td>Play Store (proprietário)</td><td>jogo com render GPU; serviços Google</td><td>⬜ não iniciado</td></tr>
 <tr><td>12</td><td>Play Store</td><td>Google (proprietário)</td><td>Google Play Services e login de conta; Play Integrity. Há shims parciais de GMS (<code>rd-vm</code>, <code>gms</code>). <strong>Suporte a Google Play Services é um dos últimos itens</strong> (ver a seção “Apps alvo” do ROADMAP)</td><td>⬜ último item (depende de M9–M10 e dos apps acima)</td></tr>
 <tr><td>13</td><td>Comprix</td><td><a href="https://github.com/nadabgfccvd/Comprix">https://github.com/nadabgfccvd/Comprix</a> (app do dono)</td><td>launch termina antes do primeiro frame com erro tipado; ver <a href="comprix-e2e.html">comprix-e2e.md</a></td><td>🟡 launch parcial</td></tr>
-<tr><td>14</td><td>Auto-clicker</td><td>a escolher (candidato OSS: Klick’r 4.0.5, <code>com.buzbuz.smartautoclicker</code>, F-Droid, GPL, a confirmar)</td><td>AccessibilityService (<code>dispatchGesture</code>) e overlay; M9 accessibility parcial</td><td>⬜ não verificado. <code>rd app run</code> (sem <code>--activity</code>) para em <code>Class.getEnclosingMethod()</code> (<code>NOT_FOUND</code>; falta modelo de <code>EnclosingMethod</code>)</td></tr>
-<tr><td>15</td><td>Auto-scroll</td><td>a escolher (candidato OSS: VolumeScroll 1.0.2, <code>com.yeapguy.volumescroll</code>, F-Droid, MIT, a confirmar; rola página a página com os botões de volume)</td><td>AccessibilityService; overlay; mesmo caso do auto-clicker</td><td>⬜ não verificado. A <code>ClassCastException</code> de <code>OnBackAnimationCallback</code> foi corrigida (rd-vm). O próximo bloqueio é <code>Context.getDrawable(I)</code></td></tr>
+<tr><td>14</td><td>Auto-clicker</td><td>a escolher (candidato OSS: Klick’r 4.0.5, <code>com.buzbuz.smartautoclicker</code>, F-Droid, GPL, a confirmar)</td><td>AccessibilityService (<code>dispatchGesture</code>) e overlay; M9 accessibility parcial</td><td>⬜ não verificado. <code>Class.getEnclosingMethod()</code>, <code>getEnclosingConstructor()</code> e <code>getEnclosingClass()</code> agora leem <code>dalvik.annotation.EnclosingMethod</code>/<code>EnclosingClass</code>; o candidato precisa de novo launch real para descobrir o próximo bloqueio. APK do app não obtido nem executado.</td></tr>
+<tr><td>15</td><td>Auto-scroll</td><td>a escolher (candidato OSS: VolumeScroll 1.0.2, <code>com.yeapguy.volumescroll</code>, F-Droid, MIT, a confirmar; rola página a página com os botões de volume)</td><td>AccessibilityService; overlay; mesmo caso do auto-clicker</td><td>⬜ não verificado. A <code>ClassCastException</code> de <code>OnBackAnimationCallback</code> foi corrigida (rd-vm). Próximo bloqueio observado: <code>Context.getDrawable(I)</code>; enclosing metadata agora é modelado, mas requer nova execução do APK para confirmar o caminho.</td></tr>
 <tr><td>16</td><td>RAR</td><td>Play Store (proprietário)</td><td>file I/O e formatos de arquivo; código nativo a verificar</td><td>⬜ não iniciado</td></tr>
 <tr><td>17</td><td>Organizador de contatos</td><td>a escolher (candidato OSS: Fossify Contacts 1.6.0, <code>org.fossify.contacts</code>, F-Droid, a confirmar)</td><td>ContactsContract e ContentProvider no dispositivo virtual</td><td>⬜ não verificado. <code>rd app run</code> (com <code>--activity</code> do splash) para em <code>Context.getDrawable(I)</code> (<code>NOT_FOUND</code>) em <code>SplashActivity</code></td></tr>
 </tbody>
