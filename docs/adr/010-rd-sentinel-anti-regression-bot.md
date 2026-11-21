@@ -259,3 +259,10 @@ Nenhum limiar muda. `STARTUP_BUDGET_EMULATED_MS` continua em 1500 e `policy.json
 - Não há mais gate `rd-sentinel/gate` no CI. As regras de merge que citavam o Sentinel em `CONTRIBUTING.md`, `GOVERNANCE.md` e no template de PR foram atualizadas para refletir isso.
 - O guia operacional foi movido para [`docs/archive/rd-sentinel.md`](../archive/rd-sentinel.md) como histórico.
 - `.github/rd-sentinel/` (política e baseline) e as entradas em `CODEOWNERS` foram mantidos pelo commit de #436. Decisão de remoção pendente do mantenedor.
+
+## Emenda (2026-11-20): remoção da configuração órfã
+
+- A decisão pendente acima foi tomada pelo mantenedor (pedido explícito, 2026-11-20) e executada no PR #658 (squash `a9ec257`): `.github/rd-sentinel/` (`policy.json`, `baseline.json`) e as entradas `rd-sentinel*` / `tools/rd-sentinel/` em `CODEOWNERS` foram removidos.
+- Cópia do conteúdo removido, para histórico: `_archive/2026-11-20_rd_sentinel/` no workspace do agente (fora do repositório).
+- Verificado antes da remoção: nenhum workflow ou script lia `policy.json` nem `baseline.json`.
+- As decisões de ADR 011, 018 e 036 que citam esses arquivos continuam como registro histórico, exceto onde há nota explícita de estado atual.
