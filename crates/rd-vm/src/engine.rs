@@ -880,6 +880,12 @@ impl Engine {
             .collect::<Result<Vec<_>, VmExit>>()?;
         let class = self.heap.class_of(recv)?.to_string();
         let Some((dex_idx, def, m)) = self.cp.resolve_method(&class, method, sig) else {
+            // `java.lang.reflect.Proxy` objects carry their interfaces and
+            // handler in heap fields; forward their method calls before the
+            // generic host fallback so guest interfaces dispatch correctly.
+            if let Some(v) = crate::reflect::dispatch_proxy(self, method, sig, recv, &args)? {
+                return Ok(v);
+            }
             // Host receiver (String, collections, java.io, android.*): the
             // same host chains the interpreter's invoke uses.
             let tok = self.enter_stack_frame(false)?;

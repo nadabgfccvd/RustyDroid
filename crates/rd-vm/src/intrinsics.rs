@@ -358,6 +358,16 @@ fn call_static_intrinsic_rooted(
             return Ok(Some(value));
         }
     }
+    if class == "Ljava/lang/reflect/Proxy;"
+        && name == "newProxyInstance"
+        && sig == "(Ljava/lang/ClassLoader;[Ljava/lang/Class;Ljava/lang/reflect/InvocationHandler;)Ljava/lang/Object;"
+    {
+        return Ok(Some(crate::reflect::new_proxy_instance(
+            vm,
+            args.get(1),
+            args.get(2),
+        )?));
+    }
     if class == crate::webkit_cookies::COOKIE_SYNC_MANAGER {
         if let Some(value) = crate::webkit_cookies::sync_manager_static(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -1805,6 +1815,7 @@ fn class_supported(name: &str, sig: &str) -> bool {
                 "getDeclaredField",
                 "(Ljava/lang/String;)Ljava/lang/reflect/Field;"
             )
+            | ("getFields", "()[Ljava/lang/reflect/Field;")
             | ("getDeclaredFields", "()[Ljava/lang/reflect/Field;")
             | ("getField", "(Ljava/lang/String;)Ljava/lang/reflect/Field;")
             | ("getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;")
@@ -2043,6 +2054,59 @@ fn class_intrinsic(
     }
     if name == "getTypeParameters" {
         let array = type_parameters_of(vm, recv)?;
+        return Ok(Some(Value::Obj(array)));
+    }
+    if name == "getFields" {
+        // Public fields of the class and its superclasses (JLS getFields).
+        let mut fields = Vec::new();
+        let mut cur = Some(desc.clone());
+        let mut depth = 0;
+        while let Some(c) = cur {
+            if depth > 32 {
+                break;
+            }
+            depth += 1;
+            for (declaring_class, field_name, field_type, modifiers, is_static) in
+                vm.cp.declared_fields_info(&c)
+            {
+                if modifiers & 0x0001 != 0 {
+                    fields.push((
+                        declaring_class,
+                        field_name,
+                        field_type,
+                        modifiers,
+                        is_static,
+                    ));
+                }
+            }
+            cur = vm.cp.superclass_of(&c);
+        }
+        let array = vm
+            .heap
+            .alloc_array(
+                crate::heap::ElemKind::Obj,
+                fields.len(),
+                "[Ljava/lang/reflect/Field;",
+            )
+            .map_err(crate::err::oom_throwable)?;
+        for (declaring_class, field_name, field_type, modifiers, is_static) in fields {
+            let field = vm
+                .heap
+                .alloc_instance(REFLECT_FIELD.to_string(), Vec::new())
+                .map_err(crate::err::oom_throwable)?;
+            vm.fw.objects.insert(
+                field,
+                crate::framework::HostObj::ReflectField {
+                    declaring_class,
+                    name: field_name,
+                    field_type,
+                    modifiers,
+                    is_static,
+                    accessible: false,
+                },
+            );
+            vm.heap.array_elems_mut(array)?.push(Value::Obj(field));
+        }
         return Ok(Some(Value::Obj(array)));
     }
     if name == "getDeclaredFields" {
@@ -5935,6 +5999,13 @@ fn instance_intrinsic_dispatch_full(
             return Ok(Some(value));
         }
     }
+    if mref_class == crate::java_util_logging::HANDLER {
+        if let Some(value) =
+            crate::java_util_logging::handler_instance_intrinsic(vm, name, sig, recv, args)?
+        {
+            return Ok(Some(value));
+        }
+    }
     if mref_class == crate::webkit_cookies::COOKIE_MANAGER {
         if let Some(value) = crate::webkit_cookies::instance_intrinsic(vm, name, sig, args)? {
             return Ok(Some(value));
@@ -6849,6 +6920,7 @@ fn instance_intrinsic_core(
                         | ("ordinal", "()I")
                         | ("toString", "()Ljava/lang/String;")
                         | ("compareTo", "(Ljava/lang/Enum;)I")
+                        | ("compareTo", "(Ljava/lang/Object;)I")
                         | ("clone", "()Ljava/lang/Object;")
                 )
                 && vm.cp.is_subtype(recv_class, ENUM)

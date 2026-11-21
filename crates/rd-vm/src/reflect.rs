@@ -252,6 +252,179 @@ fn invoke_args(vm: &Engine, sig: &str, arr: Option<&Value>) -> Result<Vec<Value>
         .collect()
 }
 
+/// Collect `desc` and its DEX superinterfaces once, in declaration order.
+fn collect_interfaces(vm: &Engine, desc: &str, out: &mut Vec<String>) {
+    if out.iter().any(|x| x == desc) {
+        return;
+    }
+    out.push(desc.to_string());
+    for sup in vm.cp.interfaces_of(desc) {
+        collect_interfaces(vm, &sup, out);
+    }
+}
+
+fn box_arg(vm: &mut Engine, desc: &str, v: &Value) -> Result<Value, VmExit> {
+    match wrapper_of(desc) {
+        Some(w) => Ok(Value::Obj(crate::boxes::box_value(vm, w, v.clone())?)),
+        None => Ok(v.clone()),
+    }
+}
+
+fn proxy_method_object(
+    vm: &mut Engine,
+    decl: &str,
+    name: &str,
+    sig: &str,
+) -> Result<ObjRef, VmExit> {
+    let m = vm.heap.alloc_instance(METHOD.to_string(), Vec::new())?;
+    put_str(vm, m, "rd_decl", decl)?;
+    put_str(vm, m, "rd_name", name)?;
+    put_str(vm, m, "rd_sig", sig)?;
+    Ok(m)
+}
+
+/// `Proxy.newProxyInstance(ClassLoader, Class[], InvocationHandler)`.
+///
+/// The generated proxy class is represented by an ordinary heap object whose
+/// runtime class is `java.lang.Object` and whose special `rd_proxy_*` fields
+/// carry the handler and interface descriptors. `Engine::invoke_instance`
+/// recognizes those fields and forwards every proxy method to the handler, so
+/// guest code sees a normal object implementing the requested interfaces.
+pub(crate) fn new_proxy_instance(
+    vm: &mut Engine,
+    interfaces: Option<&Value>,
+    handler: Option<&Value>,
+) -> Result<Value, VmExit> {
+    let Value::Obj(handler) = handler.cloned().unwrap_or(Value::Null) else {
+        return Err(exc(
+            "Ljava/lang/NullPointerException;",
+            "InvocationHandler == null",
+        ));
+    };
+    let mut ifaces = Vec::new();
+    match interfaces {
+        Some(Value::Obj(a)) => {
+            let (elems, ..) = vm.heap.as_array_elems(*a)?;
+            for v in elems.iter() {
+                let Some(desc) = (match v {
+                    Value::Obj(c) => class_desc(vm, *c),
+                    _ => None,
+                }) else {
+                    return Err(exc(
+                        "Ljava/lang/NullPointerException;",
+                        "interfaces contains null",
+                    ));
+                };
+                collect_interfaces(vm, &desc, &mut ifaces);
+            }
+        }
+        _ => {
+            return Err(exc(
+                "Ljava/lang/IllegalArgumentException;",
+                "interfaces == null",
+            ))
+        }
+    }
+    if ifaces.is_empty() {
+        return Err(exc(
+            "Ljava/lang/IllegalArgumentException;",
+            "interfaces must contain at least one interface",
+        ));
+    }
+    let iface_field = vm.heap.alloc_string(ifaces.join("\n"))?;
+    let proxy = vm.heap.alloc_instance(
+        "Ljava/lang/Object;".to_string(),
+        vec![
+            ("rd_proxy_handler".to_string(), Value::Obj(handler)),
+            ("rd_proxy_ifaces".to_string(), Value::Obj(iface_field)),
+        ],
+    )?;
+    Ok(Value::Obj(proxy))
+}
+
+/// `true` when `r` is a dynamic proxy implementing `target` (directly or via
+/// a superinterface). The proxy's runtime class is `Object`, so the normal
+/// classpath subtype check cannot see its interfaces; casts and
+/// `Class.isInstance` consult this helper.
+pub(crate) fn proxy_implements(vm: &Engine, r: ObjRef, target: &str) -> bool {
+    let Ok(Value::Obj(iface_field)) = vm.heap.get_field(r, "rd_proxy_ifaces") else {
+        return false;
+    };
+    let Ok(ifaces) = vm.heap.as_str(iface_field) else {
+        return false;
+    };
+    ifaces
+        .split('\n')
+        .any(|iface| iface == target || vm.cp.is_subtype(iface, target))
+}
+
+/// Dispatch one method call on a proxy object to its `InvocationHandler`.
+/// Returns `Ok(None)` when `recv` is not a proxy (or the method is not one of
+/// the proxy's known methods), letting normal dispatch continue.
+pub(crate) fn dispatch_proxy(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    let Some(Value::Obj(handler)) = vm.heap.get_field(recv, "rd_proxy_handler").ok() else {
+        return Ok(None);
+    };
+    let Some(ifaces) = str_field(vm, recv, "rd_proxy_ifaces") else {
+        return Ok(None);
+    };
+    let is_object_method = matches!(
+        (name, sig),
+        ("equals", "(Ljava/lang/Object;)Z")
+            | ("hashCode", "()I")
+            | ("toString", "()Ljava/lang/String;")
+    );
+    let decl = if is_object_method {
+        "Ljava/lang/Object;".to_string()
+    } else {
+        let mut found = None;
+        for iface in ifaces.split('\n') {
+            if find_sig(vm, iface, name, sig).is_some() {
+                found = Some(iface.to_string());
+                break;
+            }
+        }
+        match found {
+            Some(d) => d,
+            None => return Ok(None),
+        }
+    };
+    let method = proxy_method_object(vm, &decl, name, sig)?;
+    let boxed = args
+        .iter()
+        .zip(param_types(sig).iter())
+        .map(|(v, d)| box_arg(vm, d, v))
+        .collect::<Result<Vec<_>, _>>()?;
+    let a = vm
+        .heap
+        .alloc_array(ElemKind::Obj, boxed.len(), "Ljava/lang/Object;")?;
+    *vm.heap.array_elems_mut(a)? = boxed;
+    let res = vm.invoke_instance(
+        handler,
+        "invoke",
+        "(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)Ljava/lang/Object;",
+        &[Value::Obj(recv), Value::Obj(method), Value::Obj(a)],
+    )?;
+    let ret = sig.rsplit_once(')').map_or("V", |(_, r)| r);
+    if ret == "V" {
+        Ok(Some(Value::Null))
+    } else {
+        let v = unbox(vm, ret, &res)?;
+        // Dalvik consumers expect narrowed primitive bit patterns (notably
+        // `boolean` from a boxed `Integer` returned by a handler).
+        Ok(Some(match ret {
+            "Z" | "B" | "S" | "C" => Value::Int(crate::value::narrow_i32(v.as_int()?, ret)),
+            _ => v,
+        }))
+    }
+}
+
 pub(crate) fn instance_intrinsic(
     vm: &mut Engine,
     mref_class: &str,
