@@ -302,10 +302,19 @@ jobs:
   # budgets. The F-Droid client is below_floor, so it cannot gate here
   # (see nightly-compat.yml). Numbers are emulated estimates
   # (cpu_single_thread_factor), not a real Moto E5 measurement.
+  #
+  # continue-on-error (2026-11-23): the STARTUP_BUDGET_EMULATED_MS of 1500 ms
+  # (ADR 008 Stage 5) was calibrated on the *trivial* gate APK (p50 ~1330 ms).
+  # On shared runners the real 11 MB primftpd measures p50 ~1398 ms / max
+  # ~1504 ms — within noise of that budget, so a blocking gate would be flaky
+  # for the wrong reason. The job stays as continuous evidence; flipping it to
+  # blocking needs a maintainer budget decision for real APKs (per-APK budget,
+  # DoD's 2000 ms, or p50 semantics — see PR #666 for the numbers).
   golden-perf:
     name: Golden perf gate (M7, moto-e5)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

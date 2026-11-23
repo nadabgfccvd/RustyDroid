@@ -16,7 +16,7 @@
 | M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); bidi UAX #9 nos dois caminhos (snapshot #539 + Canvas da VM `drawText`/`drawTextRun` com espelhamento L4, 2026-11); faltam golden de ≥5 APKs reais com referência Android e qualificadores de tela/`ldrtl`/`night`; F-Droid ainda não sobe (ver abaixo) |
 | M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (provas e2e usam APK sintético, não APK real do corpus) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ✅ **implementado (2026-10)** |
-| M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial** — `rd perf` + gate de CI no app trivial; gate golden bloqueante no CI e no workflow de release (primftpd pinned, 2026-11-23, `golden-apks/perf-gate.sh`); falta medição em Moto E5 real |
+| M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial** — `rd perf` + gate de CI no app trivial; gate golden rodando no CI e no workflow de release como **evidência contínua** (primftpd pinned, 2026-11-23, `golden-apks/perf-gate.sh`); bloqueante pendente de decisão de orçamento do dono p/ APKs reais (1500 ms do ADR 008 foi calibrado no trivial; primftpd no runner: p50 1398 / máx 1504) e da medição em Moto E5 real |
 | M8 | Compat real | app OSS médio navega funcional; v0.9 | ✅ **implementado (2026-10)** |
 | M9 | Componentes avançados + NDK | 5 APKs com .so rodando; widgets/IME/notificações ok | ✅ **implementado e revisado (2026-10)** — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21 |
 | M10 | Dispositivos virtuais | câmera/GPS/biometria programáveis pelo agente | ✅ **implementado (2026-10-25)** — [docs/m10.md](m10.md), [ADR 011](adr/011-m10-virtual-devices.md), PR #201. Viewport em paisagem: `Engine::viewport_px()` é a fonte única para layout, decor da janela, screenshots e `ScreenModel` (#252, PR #456) |
@@ -380,14 +380,19 @@ certos); configs específicas (land/locale/density) selecionáveis.
    cronômetro), reporta `app_heap_peak_mb` e avalia o orçamento
    `app_heap_peak ≤ ram_app_heap_mb` (falha fechado se não medido).
 
-**Pendente para fechar o M7 (DoD):** ~~gate golden~~ — ✅ **feito (2026-11-23)**:
-`golden-apks/perf-gate.sh` roda `rd perf` no primftpd 8.2 (pinned por
-versionCode + SHA-256, cache em `golden-apks/cache/`) contra os budgets
-moto-e5; job `golden-perf` bloqueante no CI **e** step bloqueante no
-`release.yml` (mede o binário all-features da tag via `RD_BIN`; tags
-anteriores ao script pulam com notice, como os self-tests de release).
-Medição local (2026-11-23): cold máx 1294/1500 ms · RSS 90/1024 MB ·
-heap 3,5/256 MB (estimativas emuladas). Resta: medição em Moto E5 real.
+**Pendente para fechar o M7 (DoD):** ~~gate golden~~ — **evidência contínua no
+CI e na release (2026-11-23)**: `golden-apks/perf-gate.sh` roda `rd perf` no
+primftpd 8.2 (pinned por versionCode + SHA-256, cache em
+`golden-apks/cache/`) contra os budgets moto-e5, no job `golden-perf` do CI e
+no `release.yml` (`RD_BIN` mede o binário all-features da tag; tags
+anteriores ao script pulam com notice). **Bloqueante exige decisão do dono**:
+o orçamento de startup de 1500 ms (ADR 008 Stage 5) foi calibrado no app
+trivial (p50 ~1330); o primftpd real no runner compartilhado mede p50 1398 /
+máx 1504 ms — dentro do ruído daquele orçamento. Opções: orçamento por APK,
+o DoD de 2000 ms para APKs reais, ou semântica p50. Medições: sandbox local
+cold máx 1294/1500 ms · RSS 90/1024 MB · heap 3,5/256 MB; runner CI cold
+[1504, 1398, 1350] ms · warm [412, 407, 409] ms (estimativas emuladas).
+Resta também: medição em Moto E5 real.
 
 ## 🔎 M8 sondagem — compat real, primeiro app (2026-10)
 
