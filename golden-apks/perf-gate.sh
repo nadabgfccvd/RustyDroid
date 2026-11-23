@@ -9,7 +9,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CACHE=golden-apks/cache; mkdir -p "$CACHE" target
-cargo build --release -q -p rd-cli
+# RD_BIN: binário `rd` a medir (o workflow de release aponta para o binário
+# que será publicado). Padrão: constrói o release do rd-cli.
+RD="${RD_BIN:-}"
+if [ -z "$RD" ]; then
+  cargo build --release -q -p rd-cli
+  RD=target/release/rd
+fi
 
 fetch() { # file sha256 (F-Droid moves superseded versions from repo/ to archive/)
   local f="$CACHE/$1"
@@ -23,7 +29,7 @@ fetch org.primftpd_71.apk d36566e774e2d0446dcbb41438d22e62d198688aac2711ba7afaa6
 # O relatório JSON sai no stdout mesmo quando o orçamento falha (exit 1);
 # guardamos o rc, imprimimos o resumo a partir do JSON e propagamos a falha.
 set +e
-./target/release/rd perf "$CACHE/org.primftpd_71.apk" \
+"$RD" perf "$CACHE/org.primftpd_71.apk" \
   --device moto-e5 --runs 3 --json > target/m7-golden-perf.json
 rc=$?
 set -e

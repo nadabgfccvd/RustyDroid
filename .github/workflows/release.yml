@@ -104,6 +104,29 @@ jobs:
       - name: Build the CLI
         run: cargo build --release --locked --all-features -p rd-cli
 
+      # M7: APKs pinned do gate de performance (mesmo cache do job golden-perf
+      # do ci.yml — GH-05: binário nunca entra no repositório).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: golden-apks/cache
+          key: m7-golden-perf-apks-${{ hashFiles('golden-apks/perf-gate.sh') }}
+
+      # M7: o binário que vai sair prova os budgets moto-e5 antes da tag —
+      # o mesmo gate golden do CI (primftpd pinned), medindo o binário
+      # all-features recém-construído. Tags anteriores ao script (re-publicadas
+      # via workflow_dispatch) não podem depender de um arquivo que não tinham;
+      # o padrão é o mesmo dos self-tests de scripts de release abaixo.
+      - name: Perf gate vs moto-e5 budgets (M7, when the tag has it)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -f golden-apks/perf-gate.sh ]; then
+            RD_BIN=target/release/rd bash golden-apks/perf-gate.sh
+          else
+            echo "::notice::tag ${TAG} predates golden-apks/perf-gate.sh; perf gate skipped"
+          fi
+
       # SBOM CycloneDX do binário `rd` (RustyDroid.md §3.2 / M12: SBOM + provenance).
       # cargo-cyclonedx pinned: a versão do gerador não muda sem commit.
       - name: Generate SBOM (CycloneDX)
