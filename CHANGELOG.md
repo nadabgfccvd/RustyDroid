@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Qualificadores `night`/`ldltr`/`ldrtl` na seleção de recursos (M4, 2026-11-23):**
+  `rd-apk::arsc` agora parseia `screenLayout@28` (layoutdir, bits 0xC0) e
+  `uiMode@29` (night, bits 0x30) do `ResTable_config` e casa `-night`/`-notnight`
+  e `-ldrtl`/`-ldltr` na precedência do AOSP (direção entre locale e orientação;
+  night depois da orientação; sem modo/direção conhecida no dispositivo a entrada
+  qualificada é excluída). O `Engine::resource_device_config` alimenta o night pelo
+  `dark_mode` do UiModeManager — `setNightMode` agora troca recursos `values-night`
+  do app — e a direção derivada do locale (idiomas RTL habilitam `values-ldrtl`).
+  Restam os qualificadores de tela (smallestWidth/size).
 - **Gate golden de performance como evidência contínua (M7, 2026-11-23):** `golden-apks/perf-gate.sh`
   roda `rd perf` no primftpd 8.2 (pinned por versionCode 71 + SHA-256, cache em
   `golden-apks/cache/`, GH-05) contra os budgets moto-e5; jobs no CI

@@ -59,8 +59,14 @@ fn u32_at(d: &[u8], off: usize) -> RdResult<u32> {
 pub struct ResConfigInfo {
     pub language: Option<String>,
     pub country: Option<String>,
+    /// `ResTable_config.screenLayout` layoutdir (bits 0xC0): `Some(true)` =
+    /// `ldrtl`, `Some(false)` = `ldltr`; `None` = qualquer direção.
+    pub layout_dir_rtl: Option<bool>,
     /// `ResTable_config.orientation`: 1 = portrait, 2 = landscape; `None` = any.
     pub orientation: Option<u8>,
+    /// `ResTable_config.uiMode` night (bits 0x30): `Some(true)` = `night`,
+    /// `Some(false)` = `notnight`; `None` = qualquer modo.
+    pub night: Option<bool>,
     pub density: Option<u16>,
     pub api_level: Option<u16>,
 }
@@ -77,8 +83,12 @@ pub struct DeviceConfig {
     pub language: Option<String>,
     /// ISO 3166 region, e.g. `US`.
     pub country: Option<String>,
+    /// Direção do layout: `true` = RTL (casaria `values-ldrtl`), `false` = LTR.
+    pub layout_dir_rtl: Option<bool>,
     /// 1 = portrait, 2 = landscape.
     pub orientation: Option<u8>,
+    /// Modo noturno do sistema: `true` = night (casaria `values-night`).
+    pub night: Option<bool>,
     /// Densidade em dpi (`160` = mdpi). `None` é tratado como 160, como o AOSP.
     pub density: Option<u16>,
     /// `Build.VERSION.SDK_INT`.
@@ -90,8 +100,9 @@ const DENSITY_DEFAULT: u16 = 160;
 
 /// Pontuação de encaixe de uma entrada com o dispositivo. Comparada em ordem
 /// lexicográfica (maior = melhor), seguindo a precedência de qualificadores do
-/// AOSP: locale → orientação → densidade → versão.
-type DeviceRank = (u8, u8, u8, i32, u16);
+/// AOSP: locale → direção do layout (ldrtl) → orientação → night → densidade
+/// → versão.
+type DeviceRank = (u8, u8, u8, u8, u8, i32, u16);
 
 impl ResConfigInfo {
     /// `None` = a entrada exige algo que o dispositivo não tem (ex.: `values-pt`
@@ -110,7 +121,21 @@ impl ResConfigInfo {
             (Some(e), Some(d)) if e.eq_ignore_ascii_case(d) => 2,
             _ => return None,
         };
+        // ldrtl/ldltr só casam quando o dispositivo conhece a própria direção
+        // (o Engine deriva do locale, como o Android faz por padrão).
+        let layout_dir = match (self.layout_dir_rtl, dev.layout_dir_rtl) {
+            (None, _) => 0,
+            (Some(e), Some(d)) if e == d => 2,
+            _ => return None,
+        };
         let orientation = match (self.orientation, dev.orientation) {
+            (None, _) => 0,
+            (Some(e), Some(d)) if e == d => 2,
+            _ => return None,
+        };
+        // -night/-notnight exigem o modo do dispositivo; sem modo conhecido a
+        // entrada é excluída (não é "qualquer").
+        let night = match (self.night, dev.night) {
             (None, _) => 0,
             (Some(e), Some(d)) if e == d => 2,
             _ => return None,
@@ -135,7 +160,15 @@ impl ResConfigInfo {
             (Some(e), Some(d)) if e <= d => e,
             _ => return None,
         };
-        Some((language, country, orientation, density, sdk))
+        Some((
+            language,
+            country,
+            layout_dir,
+            orientation,
+            night,
+            density,
+            sdk,
+        ))
     }
 
     pub fn is_default(&self) -> bool {
@@ -1111,6 +1144,22 @@ fn parse_config(data: &[u8], cfg_base: usize, cfg_max: usize) -> RdResult<ResCon
         // sdkVersion:u16 @24 (minorVersion:u16 @26 — não lido)
         cfg.api_level = Some(u16_at(data, cfg_base + 24)?);
     }
+    if readable >= 29 {
+        // screenLayout:u8 @28 — layoutdir (bits 0xC0): 0x80 = ldrtl, 0x40 = ldltr
+        cfg.layout_dir_rtl = match data.get(cfg_base + 28).copied().unwrap_or(0) & 0xC0 {
+            0x80 => Some(true),
+            0x40 => Some(false),
+            _ => None,
+        };
+    }
+    if readable >= 30 {
+        // uiMode:u8 @29 — night (bits 0x30): 0x20 = night, 0x10 = notnight
+        cfg.night = match data.get(cfg_base + 29).copied().unwrap_or(0) & 0x30 {
+            0x20 => Some(true),
+            0x10 => Some(false),
+            _ => None,
+        };
+    }
     Ok(cfg)
 }
 
@@ -1179,6 +1228,34 @@ mod tests {
         assert_eq!(info.density, Some(256));
         assert_eq!(info.language.as_deref(), Some("en"));
         assert_eq!(info.country.as_deref(), Some("US"));
+    }
+
+    /// M4: screenLayout@28 (layoutdir, bits 0xC0) e uiMode@29 (night, bits
+    /// 0x30) alimentam os qualificadores ldrtl/ldltr e night/notnight.
+    #[test]
+    fn screen_layout_layoutdir_and_ui_mode_night_parse_from_config() {
+        let mut cfg = vec![0u8; 30];
+        cfg[0..4].copy_from_slice(&30u32.to_le_bytes()); // size
+        cfg[28] = 0x80; // layoutdir = RTL
+        cfg[29] = 0x21; // uiMode: 0x01 (type) | 0x20 (night yes)
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.layout_dir_rtl, Some(true));
+        assert_eq!(info.night, Some(true));
+
+        let mut cfg = vec![0u8; 30];
+        cfg[0..4].copy_from_slice(&30u32.to_le_bytes());
+        cfg[28] = 0x40; // layoutdir = LTR
+        cfg[29] = 0x11; // uiMode: 0x01 (type) | 0x10 (night no)
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.layout_dir_rtl, Some(false));
+        assert_eq!(info.night, Some(false));
+
+        // config menor que 29 bytes (sem screenLayout/uiMode): ambos None
+        let mut cfg = vec![0u8; 28];
+        cfg[0..4].copy_from_slice(&28u32.to_le_bytes());
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.layout_dir_rtl, None);
+        assert_eq!(info.night, None);
     }
 
     #[test]
@@ -1708,7 +1785,9 @@ mod device_select_tests {
         DeviceConfig {
             language: l.map(Into::into),
             country: c.map(Into::into),
+            layout_dir_rtl: None,
             orientation: orient,
+            night: None,
             density: dpi,
             sdk,
         }
@@ -1841,6 +1920,117 @@ mod device_select_tests {
             pick(&es, &dev(Some("pt"), None, Some(2), Some(320), None)),
             "pt-mdpi"
         );
+    }
+
+    #[test]
+    fn layout_dir_qualifier_selects_ldrtl_only_on_rtl() {
+        let ldrtl = ResConfigInfo {
+            layout_dir_rtl: Some(true),
+            ..cfg()
+        };
+        let ldltr = ResConfigInfo {
+            layout_dir_rtl: Some(false),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(ldltr, "ldltr"),
+            entry(ldrtl, "ldrtl"),
+        ];
+        let rtl = DeviceConfig {
+            layout_dir_rtl: Some(true),
+            ..dev(None, None, None, None, None)
+        };
+        let ltr = DeviceConfig {
+            layout_dir_rtl: Some(false),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &rtl), "ldrtl");
+        assert_eq!(pick(&es, &ltr), "ldltr");
+        // dispositivo sem direção conhecida: só o genérico casa
+        assert_eq!(pick(&es, &dev(None, None, None, None, None)), "default");
+    }
+
+    #[test]
+    fn night_qualifier_selects_night_only_in_dark_mode() {
+        let night = ResConfigInfo {
+            night: Some(true),
+            ..cfg()
+        };
+        let notnight = ResConfigInfo {
+            night: Some(false),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(notnight, "notnight"),
+            entry(night, "night"),
+        ];
+        let dark = DeviceConfig {
+            night: Some(true),
+            ..dev(None, None, None, None, None)
+        };
+        let light = DeviceConfig {
+            night: Some(false),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &dark), "night");
+        assert_eq!(pick(&es, &light), "notnight");
+        // sem modo conhecido: só o genérico
+        assert_eq!(pick(&es, &dev(None, None, None, None, None)), "default");
+    }
+
+    #[test]
+    fn layout_dir_ranks_between_locale_and_orientation() {
+        // AOSP: direção do layout vem antes da orientação — um ldrtl que casa
+        // vence um landscape equivalente em todo o resto.
+        let pt_rtl_port = ResConfigInfo {
+            language: Some("pt".into()),
+            layout_dir_rtl: Some(true),
+            ..cfg()
+        };
+        let pt_land = ResConfigInfo {
+            language: Some("pt".into()),
+            orientation: Some(2),
+            ..cfg()
+        };
+        let es = vec![entry(pt_land, "pt-land"), entry(pt_rtl_port, "pt-ldrtl")];
+        let d = DeviceConfig {
+            language: Some("pt".into()),
+            layout_dir_rtl: Some(true),
+            orientation: Some(2),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &d), "pt-ldrtl");
+    }
+
+    #[test]
+    fn night_ranks_after_orientation() {
+        // AOSP: uiMode (night) vem depois da orientação — em pé de igualdade
+        // no resto, o night que casa vence o genérico; dispositivo claro
+        // exclui o night.
+        let land_night = ResConfigInfo {
+            orientation: Some(2),
+            night: Some(true),
+            ..cfg()
+        };
+        let land = ResConfigInfo {
+            orientation: Some(2),
+            ..cfg()
+        };
+        let es = vec![entry(land, "land"), entry(land_night, "land-night")];
+        let dark = DeviceConfig {
+            orientation: Some(2),
+            night: Some(true),
+            ..dev(None, None, None, None, None)
+        };
+        let light = DeviceConfig {
+            orientation: Some(2),
+            night: Some(false),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &dark), "land-night");
+        assert_eq!(pick(&es, &light), "land");
     }
 
     #[test]
