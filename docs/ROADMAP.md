@@ -13,7 +13,7 @@
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⚠️ **parcial** — fuzz 24 h nunca executado; comparador não versionado |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); faltam golden de ≥5 APKs reais com referência Android, bidi e seleção por `DeviceConfig`; F-Droid ainda não sobe (ver abaixo) |
+| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); bidi UAX #9 nos dois caminhos (snapshot #539 + Canvas da VM `drawText`/`drawTextRun` com espelhamento L4, 2026-11); faltam golden de ≥5 APKs reais com referência Android e qualificadores de tela/`ldrtl`/`night`; F-Droid ainda não sobe (ver abaixo) |
 | M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (provas e2e usam APK sintético, não APK real do corpus) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ✅ **implementado (2026-10)** |
 | M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial (2026-10)** — `rd perf` + gate de CI no app trivial (estimativa); golden pendente |
@@ -193,7 +193,7 @@ certos); configs específicas (land/locale/density) selecionáveis.
 >
 > Feito nesta rodada: Round 2 (#538) e bidi (#539).
 
-> **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). Continua sem bidi/RTL e sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
+> **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). O bidi/RTL (UAX #9) chegou ao snapshot no #539 e à Canvas da VM (`drawText`/`drawTextRun`, com espelhamento L4) em 2026-11; segue sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
 
 1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
    (class/resource-id `package:id/nome`/text/bounds/visibility/enabled/
@@ -203,7 +203,7 @@ certos); configs específicas (land/locale/density) selecionáveis.
    RGB 720×1440) + painter por classe/estado (contêiner/texto/botão/borda de
    clickable; INVISIBLE não pinta a subárvore) + encoder PNG sem
    dependências (zlib STORED + crc32/adler32 próprios). Texto com atlas
-   DejaVu Sans com shaping `rustybuzz` e raster `tiny-skia` (M4 de 2026-11-02, ADR 019). O atlas de `rd-vm` continua só para a Canvas da VM. Sem bidi; o Android real usa skia.
+   DejaVu Sans com shaping `rustybuzz` e raster `tiny-skia` (M4 de 2026-11-02, ADR 019). O atlas de `rd-vm` continua só para a Canvas da VM — agora com reordenação visual UAX #9 e espelhamento L4 (2026-11); o Android real usa skia.
 
    **NewPipe (2026-11-03, atualização):** `Collections.binarySearch` (PR #506),
    o hierarquia de `InflateException` (#506), o *field hiding* do heap (#506), o
@@ -255,7 +255,11 @@ certos); configs específicas (land/locale/density) selecionáveis.
 
    Bidi — ✅ **feito (#539, 2026-11-05)**: `text_in_box` shapeia por segmento
    visual UAX #9 (`unicode-bidi`). Espelhamento de parênteses em RTL e
-   alinhamento RTL de layout ficam fora.
+   alinhamento RTL de layout ficam fora. **Atualização (2026-11):** a Canvas
+   da VM (`drawText`/`drawTextRun` sobre o atlas, `rd-vm/src/bidi.rs`) também
+   reordena por UAX #9, honra o `isRtl` explícito do `drawTextRun` e espelha
+   pares direcionais (regra L4) nesse caminho; o espelhamento no snapshot e o
+   alinhamento RTL de layout seguem abertos.
 
 ## ✅ M6 concluído — executor de testes (2026-10)
 

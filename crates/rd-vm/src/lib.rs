@@ -36,6 +36,7 @@ pub mod androidx;
 pub mod androidx_widgets;
 pub(crate) mod arrays;
 pub(crate) mod atomics;
+pub(crate) mod bidi;
 pub(crate) mod boxes;
 pub(crate) mod bundle;
 pub(crate) mod choreographer;

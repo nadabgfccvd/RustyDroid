@@ -24,9 +24,11 @@
 //! (`assets/glyphs.bin`, `scripts/gen_glyph_atlas.py`).
 //!
 //! **Text.** Measurement uses the same atlas advances, so layout and pixels
-//! agree. Line breaking is greedy on spaces with forced breaks at `\n`; there
-//! is no shaping, bidi or hyphenation (documented deviation). Unknown glyphs
-//! use the replacement glyph's advance.
+//! agree. Line breaking is greedy on spaces with forced breaks at `\n`; runs
+//! are reordered visually by UAX #9 (`bidi.rs`, mirroring the #539 snapshot
+//! path) with directional pairs mirrored (L4). There is no contextual shaping
+//! (Arabic presentation forms, ligatures) or hyphenation (documented
+//! deviation). Unknown glyphs use the replacement glyph's advance.
 //!
 //! **Deviations.** Shaders, color filters, blend modes, path effects, shadows
 //! and 3D rotation are accepted and ignored. A shader-only paint draws with
@@ -34,6 +36,7 @@
 //! `DIFFERENCE` clips are ignored. Bitmaps hold a display list, not pixels, so
 //! `getPixels` returns transparent pixels and `compress` returns false.
 
+use crate::bidi::{self, TextDir};
 use crate::engine::Engine;
 use crate::err::{Throwable, VmExit};
 use crate::framework::{HostObj, Vis};
@@ -136,7 +139,9 @@ pub(crate) enum OpK {
     Oval(f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
     Path(Vec<Vec<(f32, f32)>>, bool),
-    Text(String, f32, f32, f32),
+    /// `(texto, x, y, tamanho, direção de base)` — a direção viaja com o op
+    /// porque o `drawTextRun` decide a base fora do rasterizador.
+    Text(String, f32, f32, f32, TextDir),
     Color(u32),
     Node(ObjRef),
     Bitmap(ObjRef, [f32; 4]),
@@ -3478,8 +3483,20 @@ fn canvas_method(
                 2 => x - w,
                 _ => x,
             };
+            // `drawTextRun` carrega a direção explícita do chamador (o layout
+            // do Android já dividiu os runs); os `drawText` usam base
+            // automática (primeiro caractere forte).
+            let dir = if name == "drawTextRun" && sig.contains('Z') {
+                match args.get(7) {
+                    Some(Value::Int(v)) if *v != 0 => TextDir::Rtl,
+                    Some(Value::Int(_)) => TextDir::Ltr,
+                    _ => TextDir::Auto,
+                }
+            } else {
+                TextDir::Auto
+            };
             let ps = snap(vm, &p);
-            record(vm, recv, ps, OpK::Text(t, x, y, p.text_size));
+            record(vm, recv, ps, OpK::Text(t, x, y, p.text_size, dir));
             Value::Null
         }
         "drawBitmap" => {
@@ -3851,7 +3868,7 @@ fn layout_method(
                             tint: None,
                             ls: l.ls,
                         },
-                        OpK::Text(t, l.line_left(i), l.baseline(i), l.size),
+                        OpK::Text(t, l.line_left(i), l.baseline(i), l.size, TextDir::Auto),
                     );
                 }
             }
@@ -3899,6 +3916,7 @@ pub fn rasterize_ui_text_rgb(
         &ID,
         (origin.0 as f32, origin.1.saturating_add(17) as f32),
         (18.0, 0.0),
+        TextDir::Auto,
         argb,
         [0.0, 0.0, w as f32, h as f32],
     );
@@ -4045,6 +4063,7 @@ impl Raster<'_> {
         m: &M,
         (x, y): (f32, f32),
         (size, ls): (f32, f32),
+        dir: TextDir,
         argb: u32,
         clip: [f32; 4],
     ) {
@@ -4057,47 +4076,60 @@ impl Raster<'_> {
         }
         let (ox, oy) = ap(m, x, y);
         let mut pen = ox;
-        for c in s.chars() {
-            if c == '\n' {
-                continue;
+        // UAX #9: os runs saem na ordem visual (esquerda→direita); num run RTL
+        // os caracteres são desenhados invertidos e os pares direcionais usam
+        // o glifo espelhado (regra L4). O advance é medido no caractere
+        // original — sem shaper, par e espelho têm o mesmo advance na prática,
+        // mas a regra continua correta se a fonte diferir.
+        for (range, rtl) in bidi::visual_runs(s, dir) {
+            let mut chars: Vec<char> = s[range].chars().collect();
+            if rtl {
+                chars.reverse();
             }
-            let g = glyph(c);
-            let gx0 = pen + g.left as f32 * k;
-            let gy0 = oy - g.top as f32 * k;
-            let (gw, gh) = (g.w as f32 * k, g.h as f32 * k);
-            let (px0, py0) = (
-                gx0.max(clip[0]).floor() as i32,
-                gy0.max(clip[1]).floor() as i32,
-            );
-            let (px1, py1) = (
-                (gx0 + gw).min(clip[2]).ceil() as i32,
-                (gy0 + gh).min(clip[3]).ceil() as i32,
-            );
-            for py in py0..py1 {
-                for pxx in px0..px1 {
-                    // bilinear sample at pixel centre
-                    let u = (pxx as f32 + 0.5 - gx0) / k - 0.5;
-                    let v = (py as f32 + 0.5 - gy0) / k - 0.5;
-                    let samp = |xx: i32, yy: i32| -> f32 {
-                        if xx < 0 || yy < 0 || xx >= g.w as i32 || yy >= g.h as i32 {
-                            0.0
-                        } else {
-                            at.data[g.off + yy as usize * g.w as usize + xx as usize] as f32 / 255.0
+            for c in chars {
+                if c == '\n' {
+                    continue;
+                }
+                let draw = if rtl { bidi::mirrored(c) } else { c };
+                let g = glyph(draw);
+                let gx0 = pen + g.left as f32 * k;
+                let gy0 = oy - g.top as f32 * k;
+                let (gw, gh) = (g.w as f32 * k, g.h as f32 * k);
+                let (px0, py0) = (
+                    gx0.max(clip[0]).floor() as i32,
+                    gy0.max(clip[1]).floor() as i32,
+                );
+                let (px1, py1) = (
+                    (gx0 + gw).min(clip[2]).ceil() as i32,
+                    (gy0 + gh).min(clip[3]).ceil() as i32,
+                );
+                for py in py0..py1 {
+                    for pxx in px0..px1 {
+                        // bilinear sample at pixel centre
+                        let u = (pxx as f32 + 0.5 - gx0) / k - 0.5;
+                        let v = (py as f32 + 0.5 - gy0) / k - 0.5;
+                        let samp = |xx: i32, yy: i32| -> f32 {
+                            if xx < 0 || yy < 0 || xx >= g.w as i32 || yy >= g.h as i32 {
+                                0.0
+                            } else {
+                                at.data[g.off + yy as usize * g.w as usize + xx as usize] as f32
+                                    / 255.0
+                            }
+                        };
+                        let (ux, vy) = (u.floor(), v.floor());
+                        let (fx, fy) = (u - ux, v - vy);
+                        let (ix, iy) = (ux as i32, vy as i32);
+                        let a = samp(ix, iy) * (1.0 - fx) * (1.0 - fy)
+                            + samp(ix + 1, iy) * fx * (1.0 - fy)
+                            + samp(ix, iy + 1) * (1.0 - fx) * fy
+                            + samp(ix + 1, iy + 1) * fx * fy;
+                        if a > 0.01 {
+                            self.blend(pxx, py, argb, a);
                         }
-                    };
-                    let (ux, vy) = (u.floor(), v.floor());
-                    let (fx, fy) = (u - ux, v - vy);
-                    let (ix, iy) = (ux as i32, vy as i32);
-                    let a = samp(ix, iy) * (1.0 - fx) * (1.0 - fy)
-                        + samp(ix + 1, iy) * fx * (1.0 - fy)
-                        + samp(ix, iy + 1) * (1.0 - fx) * fy
-                        + samp(ix + 1, iy + 1) * fx * fy;
-                    if a > 0.01 {
-                        self.blend(pxx, py, argb, a);
                     }
                 }
+                pen += char_adv(c, size, ls) * ms;
             }
-            pen += char_adv(c, size, ls) * ms;
         }
     }
 }
@@ -4241,7 +4273,9 @@ impl Engine {
                         }
                     }
                 }
-                OpK::Text(s, x, y, size) => r.text(s, &m, (*x, *y), (*size, op.p.ls), col, clip),
+                OpK::Text(s, x, y, size, dir) => {
+                    r.text(s, &m, (*x, *y), (*size, op.p.ls), *dir, col, clip)
+                }
                 OpK::Color(c) => {
                     let full = [
                         clip[0].max(0.0),
@@ -4374,7 +4408,7 @@ impl Engine {
                         self.summ_ops(bops, depth + 1, out, budget);
                     }
                 }
-                OpK::Text(t, x, y, sz) => {
+                OpK::Text(t, x, y, sz, _) => {
                     let _ = writeln!(out, "{head}Text {t:?} @{x},{y} sz={sz}");
                 }
                 OpK::Path(p, _) => {
@@ -4831,6 +4865,7 @@ mod tests {
             &ID,
             (30.0, 40.0),
             (20.0, 0.0),
+            TextDir::Auto,
             0xFF000000,
             [0.0, 0.0, 100.0, 50.0],
         );
@@ -4840,6 +4875,164 @@ mod tests {
             (30..50).any(|x| (25..40).any(|y| at(x, y) < 128)),
             "text drew ink"
         );
+    }
+
+    #[test]
+    fn raster_reordena_texto_rtl_visualmente() {
+        // 'א' não tem glifo no atlas (cai no de substituição) e 'X' tem: num
+        // parágrafo RTL o run latino vai para a ESQUERDA, então "אX" e "Xא"
+        // pintam os mesmos pixels — sem a reordenação UAX #9 a ordem era
+        // puramente lógica e os dois buffers diferiam.
+        let paint = |s: &str| -> Vec<u8> {
+            let mut px = vec![255u8; 120 * 40 * 3];
+            let mut r = Raster {
+                px: &mut px,
+                w: 120,
+                h: 40,
+                tint: None,
+            };
+            r.text(
+                s,
+                &ID,
+                (10.0, 30.0),
+                (20.0, 0.0),
+                TextDir::Auto,
+                0xFF00_0000,
+                [0.0, 0.0, 120.0, 40.0],
+            );
+            px
+        };
+        let a = paint("אX");
+        let b = paint("Xא");
+        let ink = a.iter().filter(|v| **v < 128).count();
+        assert!(ink > 20, "texto deixou tinta ({ink} px escuros)");
+        assert_eq!(a, b, "run latino à esquerda nos dois parágrafos");
+    }
+
+    /// `drawTextRun` honra o `isRtl` explícito: a direção viaja no op e o
+    /// rasterizador decide a base do parágrafo (UAX #9) na hora de pintar.
+    #[test]
+    fn draw_text_run_carrega_a_direcao_explicita() {
+        let mut vm = Engine::new(Vec::new(), crate::engine::VmConfig::default());
+        let cfg_name = vm.heap.alloc_string("ARGB_8888".to_string()).expect("str");
+        let config = match static_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Bitmap$Config;",
+            "valueOf",
+            "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+            &[Value::Obj(cfg_name)],
+        )
+        .expect("Config.valueOf")
+        {
+            Some(v) => v,
+            other => panic!("valueOf: {other:?}"),
+        };
+        let bm = match static_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Bitmap;",
+            "createBitmap",
+            "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+            &[Value::Int(64), Value::Int(32), config],
+        )
+        .expect("createBitmap")
+        {
+            Some(Value::Obj(b)) => b,
+            other => panic!("createBitmap: {other:?}"),
+        };
+        let canvas = vm
+            .heap
+            .alloc_instance("Landroid/graphics/Canvas;".to_string(), Vec::new())
+            .expect("alloc Canvas");
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Canvas;",
+            "Landroid/graphics/Canvas;",
+            "<init>",
+            "(Landroid/graphics/Bitmap;)V",
+            canvas,
+            &[Value::Obj(bm)],
+        )
+        .expect("new Canvas(bitmap)")
+        .expect("host canvas");
+        let paint = vm
+            .heap
+            .alloc_instance("Landroid/graphics/Paint;".to_string(), Vec::new())
+            .expect("alloc Paint");
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Paint;",
+            "Landroid/graphics/Paint;",
+            "<init>",
+            "()V",
+            paint,
+            &[],
+        )
+        .expect("new Paint()")
+        .expect("host paint");
+        let s = vm.heap.alloc_string("abc!".to_string()).expect("str");
+        let run_sig = "(Ljava/lang/CharSequence;IIIIFFZLandroid/graphics/Paint;)V";
+        for (is_rtl, want) in [(1, TextDir::Rtl), (0, TextDir::Ltr)] {
+            instance_intrinsic(
+                &mut vm,
+                "Landroid/graphics/Canvas;",
+                "Landroid/graphics/Canvas;",
+                "drawTextRun",
+                run_sig,
+                canvas,
+                &[
+                    Value::Obj(s),
+                    Value::Int(0),
+                    Value::Int(4),
+                    Value::Int(0),
+                    Value::Int(4),
+                    Value::Float(2.0),
+                    Value::Float(20.0),
+                    Value::Int(is_rtl),
+                    Value::Obj(paint),
+                ],
+            )
+            .expect("drawTextRun")
+            .expect("host drawTextRun");
+            let dirs: Vec<TextDir> = match vm.gfx.objs.get(&bm) {
+                Some(G::Bitmap(_, _, ops)) => ops
+                    .iter()
+                    .filter_map(|op| match &op.k {
+                        OpK::Text(_, _, _, _, d) => Some(*d),
+                        _ => None,
+                    })
+                    .collect(),
+                other => panic!("bitmap ops: {other:?}"),
+            };
+            assert_eq!(dirs.last(), Some(&want), "isRtl={is_rtl}");
+        }
+        // `drawText` simples segue com base automática.
+        instance_intrinsic(
+            &mut vm,
+            "Landroid/graphics/Canvas;",
+            "Landroid/graphics/Canvas;",
+            "drawText",
+            "(Ljava/lang/String;FFLandroid/graphics/Paint;)V",
+            canvas,
+            &[
+                Value::Obj(s),
+                Value::Float(2.0),
+                Value::Float(20.0),
+                Value::Obj(paint),
+            ],
+        )
+        .expect("drawText")
+        .expect("host drawText");
+        let dirs: Vec<TextDir> = match vm.gfx.objs.get(&bm) {
+            Some(G::Bitmap(_, _, ops)) => ops
+                .iter()
+                .filter_map(|op| match &op.k {
+                    OpK::Text(_, _, _, _, d) => Some(*d),
+                    _ => None,
+                })
+                .collect(),
+            other => panic!("bitmap ops: {other:?}"),
+        };
+        assert_eq!(dirs, vec![TextDir::Rtl, TextDir::Ltr, TextDir::Auto]);
     }
 }
 

@@ -28,6 +28,9 @@ regex = { workspace = true }
 rd-ndk = { path = "../rd-ndk", optional = true }
 rd-jni = { path = "../rd-jni", optional = true }
 fancy-regex = "=0.20.2"
+# M4: reordenação visual (UAX #9) do texto desenhado pela VM — mesmo crate
+# que o rd-render usa no snapshot (#539).
+unicode-bidi.workspace = true
 
 [dev-dependencies]
 rd-jni = { path = "../rd-jni" }

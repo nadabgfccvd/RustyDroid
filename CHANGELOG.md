@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bidi (UAX #9) na Canvas da VM (M4, 2026-11-23):** `Canvas.drawText`/`drawTextRun`
+  agora reordenam os runs visualmente (esquerda→direita) via `unicode-bidi` — o mesmo
+  tratamento que o snapshot teve no #539, no caminho que APKs reais usam sobre o atlas
+  de glifos. O `isRtl` explícito do `drawTextRun` é honrado como direção de base
+  (prefixo LRM/RLM, P2/P3) e pares direcionais são espelhados em run RTL (regra L4,
+  tabela cobrindo os pares do atlas). Medição (`measure`) e largura do `get_ui_tree`
+  continuam corretas por serem ordem-independentes. Sem shaping contextual (formas
+  árabes) — desvio documentado. Testes: 9 unitários de runs/espelhamento em
+  `rd-vm/src/bidi.rs`, pixel-test de reversão visual (`"אX"` ≡ `"Xא"`) e e2e do
+  `isRtl` no op gravado.
 - **`Class` enclosing metadata from DEX annotations:** `getEnclosingMethod()`,
   `getEnclosingConstructor()` and `getEnclosingClass()` now read the system-visible
   `dalvik.annotation.EnclosingMethod` / `EnclosingClass` metadata for local and anonymous
