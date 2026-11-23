@@ -306,9 +306,12 @@ impl Engine {
     /// Configuração do dispositivo virtual que escolhe a variante de recurso
     /// (valores/strings/arrays): locale do sysconfig, orientação atual,
     /// densidade (`RD_DENSITY_DPI`, padrão 280), `Build.VERSION.SDK_INT`,
-    /// modo noturno (`dark_mode` do UiModeManager) e direção do layout —
+    /// modo noturno (`dark_mode` do UiModeManager), direção do layout —
     /// derivada do locale como o Android faz por padrão (idiomas RTL como
-    /// ar/he/fa/ur habilitam `values-ldrtl`).
+    /// ar/he/fa/ur habilitam `values-ldrtl`) — e qualificadores de tela:
+    /// sw/w/h em dp derivados do viewport ativo (`viewport_px`) e o bucket de
+    /// tamanho pelos cortes modernos do framework (<600 normal · ≥600 large ·
+    /// ≥720 xlarge; o piso atual é um celular, `small` nunca é reportado).
     pub fn resource_device_config(&self) -> rd_apk::arsc::DeviceConfig {
         let st = &self.fw.vdev.sysconfig;
         let (lang, country) = parse_locale_tag(&st.locale_tag);
@@ -316,11 +319,26 @@ impl Engine {
             lang.as_str(),
             "ar" | "he" | "fa" | "ur" | "ku" | "ps" | "sd" | "ug" | "yi"
         );
-        let dpi = (crate::view_layout::density() * 160.0).round();
+        let scale = crate::view_layout::density().max(0.05);
+        let dpi = (scale * 160.0).round();
+        let (vw, vh) = self.viewport_px();
+        let dp_of = |px: i32| ((px.max(1) as f32 / scale).round() as u16).max(1);
+        let sw_dp = dp_of(vw.min(vh));
+        let screen_size = if sw_dp >= 720 {
+            4
+        } else if sw_dp >= 600 {
+            3
+        } else {
+            2
+        };
         rd_apk::arsc::DeviceConfig {
             language: (!lang.is_empty()).then_some(lang),
             country: (!country.is_empty()).then_some(country),
             layout_dir_rtl: Some(rtl),
+            screen_size: Some(screen_size),
+            smallest_sw_dp: Some(sw_dp),
+            screen_w_dp: Some(dp_of(vw)),
+            screen_h_dp: Some(dp_of(vh)),
             orientation: u8::try_from(st.orientation)
                 .ok()
                 .filter(|o| matches!(o, 1 | 2)),

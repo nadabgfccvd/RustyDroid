@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Qualificadores de tela `sw`/`w`/`h` dp e buckets de tamanho (M4, 2026-11-23):**
+  `rd-apk::arsc` agora parseia `smallestScreenWidthDp@30`, `screenWidthDp@32` e
+  `screenHeightDp@34` e os bits de size (0x0F) do `screenLayout@28`, casando
+  `values-swNNNdp`/`values-wNNNdp`/`values-hNNNdp` e
+  `values-{small,normal,large,xlarge}` com a semântica AOSP "pelo menos": a MAIOR
+  entrada que cabe no dispositivo vence (num celular sw411 nem `values-sw600dp`
+  casa; num tablet sw800 o `values-sw720dp` vence o `values-sw600dp`). Precedência:
+  direção do layout → sw → w → h → tamanho → orientação → night. O
+  `Engine::resource_device_config` deriva sw/w/h do viewport ativo
+  (`viewport_px`/densidade) e o bucket pelos cortes modernos do framework
+  (<600 normal · ≥600 large · ≥720 xlarge — o piso atual é um celular). Restam
+  aspect (`long`/`notlong`), round e o tipo do uiMode.
 - **Qualificadores `night`/`ldltr`/`ldrtl` na seleção de recursos (M4, 2026-11-23):**
   `rd-apk::arsc` agora parseia `screenLayout@28` (layoutdir, bits 0xC0) e
   `uiMode@29` (night, bits 0x30) do `ResTable_config` e casa `-night`/`-notnight`
