@@ -297,6 +297,44 @@ jobs:
           RD_NATIVE_ABI=arm64-v8a bash golden-apks/native-gate.sh
           RD_NATIVE_ABI=armeabi-v7a bash golden-apks/native-gate.sh
 
+  # M7 (PRF-06, Apêndice A2): the golden perf gate the ROADMAP DoD asks for —
+  # a pinned, launchable real APK (org.primftpd 8.2) must meet the moto-e5
+  # budgets. The F-Droid client is below_floor, so it cannot gate here
+  # (see nightly-compat.yml). Numbers are emulated estimates
+  # (cpu_single_thread_factor), not a real Moto E5 measurement.
+  golden-perf:
+    name: Golden perf gate (M7, moto-e5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: golden-apks/cache
+          key: m7-golden-perf-apks-${{ hashFiles('golden-apks/perf-gate.sh') }}
+      - name: Real-APK perf gate vs moto-e5 budgets
+        run: bash golden-apks/perf-gate.sh
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Golden perf gate (M7, moto-e5)"
+            echo
+            echo '```'
+            if [ -f target/m7-golden-perf.json ]; then
+              python3 -c "import json; d=json.load(open('target/m7-golden-perf.json')); print('pass:', d['pass']); [print(f\"  {b['name']}: {b['actual']} / {b['limit']} {b['unit']} {'ok' if b['pass'] else 'FAIL'}\") for b in d['budgets']]"
+            else
+              echo "report missing"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   rust-msrv:
     name: Rust MSRV (1.97)
     runs-on: ubuntu-latest

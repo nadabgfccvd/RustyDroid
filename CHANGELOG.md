@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gate golden de performance no CI (M7, 2026-11-23):** `golden-apks/perf-gate.sh`
+  roda `rd perf` no primftpd 8.2 (pinned por versionCode 71 + SHA-256, cache em
+  `golden-apks/cache/`, GH-05) contra os budgets moto-e5; novo job bloqueante
+  `golden-perf` no CI com resumo no step summary. Medição local: cold máx
+  1294/1500 ms · RSS 90/1024 MB · heap 3,5/256 MB (estimativas emuladas). Restam
+  para o M7: medição em Moto E5 real e gate no workflow de release.
 - **Bidi (UAX #9) na Canvas da VM (M4, 2026-11-23):** `Canvas.drawText`/`drawTextRun`
   agora reordenam os runs visualmente (esquerda→direita) via `unicode-bidi` — o mesmo
   tratamento que o snapshot teve no #539, no caminho que APKs reais usam sobre o atlas

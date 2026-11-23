@@ -19,8 +19,8 @@ name: Nightly compat
 #
 # Not included on purpose: `rd perf` on the fetched APK. The F-Droid client is
 # classified `below_floor_or_structured_result` in the retired RD Sentinel baseline, so a
-# perf gate on it would fail for the wrong reason. The M7 golden perf gate needs
-# a pinned, launchable APK (the primftpd fixture) — tracked as follow-up.
+# perf gate on it would fail for the wrong reason. The M7 golden perf gate lives
+# in ci.yml (`golden-perf` job → golden-apks/perf-gate.sh, pinned primftpd).
 
 on:
   schedule:
