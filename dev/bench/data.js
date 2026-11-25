@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795576599540,
+  "lastUpdate": 1795576900452,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7791,6 +7791,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3040,
             "range": "± 4",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1ac5430bebddcd31d1ff4bf7f4ac61654c7d5238",
+          "message": "feat(ci): gate golden de performance no CI (M7, primftpd vs moto-e5) (#666)\n\n* feat(vm): texto bidirecional (UAX #9) no drawText/drawTextRun da Canvas — M4\n\nO #539 trouxe a reordenação visual apenas ao snapshot (rd-render); o\ncaminho que APKs reais usam — Canvas.drawText/drawTextRun sobre o atlas\nde glifos — desenhava os caracteres em ordem puramente lógica, então\nhebraico/árabe saía espelhado, e o isRtl explícito do drawTextRun era\nignorado.\n\n- `rd-vm/src/bidi.rs` (novo): runs visuais por UAX #9 (unicode-bidi,\n  o mesmo crate do snapshot), direção de base Auto/Ltr/Rtl e espelho\n  dos pares direcionais que o atlas cobre (regra L4).\n- Direção forçada via prefixo LRM/RLM (P2/P3: o primeiro forte define a\n  base; o default do unicode-bidi só cobre parágrafos sem forte) com os\n  intervalos deslocados para a marca nunca ser desenhada.\n- `OpK::Text` ganha a direção de base; o drawTextRun extrai o `isRtl`\n  (arg booleano, sig com 'Z') e o rasterizador inverte os caracteres do\n  run RTL medindo o advance no caractere original.\n- Medição (`measure`) e largura do get_ui_tree continuam corretas por\n  serem ordem-independentes; screen_model ignora a direção (bounds não\n  mudam).\n- Sem shaping contextual (formas árabes/ligaduras) — desvio documentado\n  no cabeçalho de graphics.rs segue valendo.\n\nTestes: 9 unitários em bidi.rs (runs LTR/RTL/mistos, forçados, pares),\npixel-test de reversão visual (\"אX\" ≡ \"Xא\" — falhava antes da mudança)\ne e2e do isRtl gravando Rtl/Ltr/Auto no op do bitmap.\n\nGates: cargo fmt ✅ · clippy --workspace --all-targets -D warnings ✅ ·\ncargo test --workspace ✅ (193 suites, incluindo golden do snapshot).\n\n* feat(ci): gate golden de performance no CI (M7, primftpd vs moto-e5)\n\nO DoD do M7 pede \"suíte golden passa nos budgets moto-e5\"; até agora o\ngate de performance cobria só o app trivial do fixture\n(crates/rd-cli/tests/perf_cli.rs) — o nightly-compat notava que o gate\ngolden precisava de um APK pinned e lançável (o cliente F-Droid está\nbelow_floor).\n\n- `golden-apks/perf-gate.sh` (novo): baixa o primftpd 8.2 (versionCode\n  71, SHA-256 verificado, repo/ → archive/ fallback, cache em\n  golden-apks/cache/, GH-05) e roda `rd perf --device moto-e5 --runs 3\n  --json`; o relatório fica em target/m7-golden-perf.json e o rc do rd\n  perf (0 orçamentos ok · 1 falhou) é propagado — o resumo humano é\n  impresso a partir do JSON nos dois casos.\n- ci.yml: job bloqueante `golden-perf` (checkout/toolchain/rust-cache\n  SHA-pinned, cache dos APKs por hash do perf-gate.sh, step summary com\n  os números). Nightly-compat atualizado para apontar para o gate.\n- Medição local (2026-11-23): cold máx 1294/1500 ms · RSS 90/1024 MB ·\n  heap 3,5/256 MB — estimativas emuladas (fator de CPU), não medição em\n  Moto E5 real (segue pendente no ROADMAP, junto com o gate no workflow\n  de release).\n\nValidação: perf-gate.sh executado ponta a ponta localmente (PASS,\nexit 0); check_action_pins 70/70; YAML e bash -n ok.\n\n* feat(release): gate de performance bloqueante no workflow de release (M7)\n\nÚltima pendência acionável do M7: o gate golden existia só como job do CI;\no ROADMAP pedia \"workflow de release bloqueante\" — o binário publicado\ndevia provar os budgets moto-e5 antes da tag sair.\n\n- `perf-gate.sh` ganha `RD_BIN`: quando definido, mede esse binário em vez\n  de construir o próprio (o release.yml aponta para o `target/release/rd`\n  all-features recém-construído — o gate mede exatamente o que será\n  publicado).\n- `release.yml` (job build): cache dos APKs pinned + step bloqueante\n  `Perf gate vs moto-e5 budgets (M7, when the tag has it)`. Tags\n  anteriores ao script (re-publicadas via workflow_dispatch) pulam com\n  `::notice::` — mesmo padrão dos self-tests de scripts de release, para\n  não tornar tags antigas permanentemente impublicáveis.\n- ROADMAP/CHANGELOG atualizados: resta só a medição em Moto E5 real.\n\nValidação local: `RD_BIN=target/release/rd bash golden-apks/perf-gate.sh`\n→ PASS (cold máx 1181/1500 ms); check_action_pins 71/71; YAML ok; bash -n ok.\n\n* fix(ci): golden-perf vira evidência contínua até decisão de orçamento (M7)\n\nPrimeira execução em runner real: startup_cold_emulated_max 1504/1500 ms (cold [1504, 1398, 1350]) — falha por 0,3%. O orçamento de 1500 ms (ADR 008) foi calibrado no app trivial; bloquear por variância de runner seria flaky, e relaxar/mudar semântica exige decisão do dono. Gate passa a rodar com continue-on-error (CI e release.yml) como evidência contínua; ROADMAP/CHANGELOG documentam os números e as três opções de decisão.\n\n---------\n\nCo-authored-by: Xisto <117041552+nadabgfcc@users.noreply.github.com>\nCo-authored-by: Glisto <glisto@placeholder.local>",
+          "timestamp": "2026-11-25T00:20:12-03:00",
+          "tree_id": "06903b7e74e806cb7ce50b6963444b918d1f0b0a",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/1ac5430bebddcd31d1ff4bf7f4ac61654c7d5238"
+        },
+        "date": 1795576898409,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3314,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3321,
+            "range": "± 14",
             "unit": "ns/iter"
           }
         ]
