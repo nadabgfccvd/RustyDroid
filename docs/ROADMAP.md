@@ -268,12 +268,16 @@ certos); configs específicas (land/locale/density) selecionáveis.
    Restam: aspect (`long`/`notlong`), round e o tipo do uiMode.
 
    Bidi — ✅ **feito (#539, 2026-11-05)**: `text_in_box` shapeia por segmento
-   visual UAX #9 (`unicode-bidi`). Espelhamento de parênteses em RTL e
-   alinhamento RTL de layout ficam fora. **Atualização (2026-11):** a Canvas
-   da VM (`drawText`/`drawTextRun` sobre o atlas, `rd-vm/src/bidi.rs`) também
-   reordena por UAX #9, honra o `isRtl` explícito do `drawTextRun` e espelha
-   pares direcionais (regra L4) nesse caminho; o espelhamento no snapshot e o
-   alinhamento RTL de layout seguem abertos.
+   visual UAX #9 (`unicode-bidi`). Alinhamento RTL de layout fica fora.
+   **Atualização (2026-11):** a Canvas da VM (`drawText`/`drawTextRun` sobre o
+   atlas, `rd-vm/src/bidi.rs`) também reordena por UAX #9, honra o `isRtl`
+   explícito do `drawTextRun` e espelha pares direcionais (regra L4) nesse
+   caminho. **Correção (2026-11-23):** o espelhamento de pares em RTL também
+   já funcionava no snapshot — o `rustybuzz` aplica a regra L4 durante o
+   shaping (`rotate_chars`, tabela `unicode_bidi_mirroring` Unicode 16,
+   quando a fonte tem o glifo); a nota anterior ("espelhamento … ficam
+   fora") estava errada. Os dois caminhos cobrem UAX #9 + L4. Resta aberto:
+   alinhamento RTL de layout (gravity START/END).
 
 ## ✅ M6 concluído — executor de testes (2026-10)
 

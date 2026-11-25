@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Caminhos de teste desatualizados foram corrigidos. Os documentos históricos
   foram para `docs/archive/` (índice em `docs/archive/README.md`).
 
+- **Correção de documentação (2026-11-23):** o ROADMAP dizia que o espelhamento de
+  pares em RTL "ficava fora" do snapshot desde o #539 — na verdade o `rustybuzz`
+  aplica a regra L4 durante o shaping (`rotate_chars`, tabela
+  `unicode_bidi_mirroring` Unicode 16, quando a fonte tem o glifo). Nota
+  corrigida com a fonte do comportamento; os dois caminhos de texto (snapshot e
+  Canvas da VM) cobrem UAX #9 + L4. Resta aberto o alinhamento RTL de layout.
+
 ### Added
 
 - **Qualificadores de tela `sw`/`w`/`h` dp e buckets de tamanho (M4, 2026-11-23):**
