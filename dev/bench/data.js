@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795577029123,
+  "lastUpdate": 1795577770036,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7899,6 +7899,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 2006,
             "range": "± 76",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "216de231c1ebed6bc3cc1043dafad22eaac4a0ef",
+          "message": "chore(deps)(deps): bump the cargo-minor-and-patch group across 1 directory with 2 updates (#668)\n\nBumps the cargo-minor-and-patch group with 2 updates in the / directory: [regex](https://github.com/rust-lang/regex) and [clap](https://github.com/clap-rs/clap).\n\n\nUpdates `regex` from 1.13.1 to 1.13.2\n- [Release notes](https://github.com/rust-lang/regex/releases)\n- [Changelog](https://github.com/rust-lang/regex/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/rust-lang/regex/compare/1.13.1...1.13.2)\n\nUpdates `clap` from 4.6.7 to 4.6.9\n- [Release notes](https://github.com/clap-rs/clap/releases)\n- [Changelog](https://github.com/clap-rs/clap/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.7...clap_complete-v4.6.9)\n\n---\nupdated-dependencies:\n- dependency-name: clap\n  dependency-version: 4.6.9\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-and-patch\n- dependency-name: regex\n  dependency-version: 1.13.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-25T00:35:27-03:00",
+          "tree_id": "336b9a5f0f01c9f63f6467d4b50f495b4870bbc3",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/216de231c1ebed6bc3cc1043dafad22eaac4a0ef"
+        },
+        "date": 1795577767063,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3332,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3334,
+            "range": "± 26",
             "unit": "ns/iter"
           }
         ]
