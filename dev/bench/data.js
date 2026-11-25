@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795225409898,
+  "lastUpdate": 1795576599540,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7755,6 +7755,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3754,
             "range": "± 25",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d188f417a72e8532a98f2b87aa0cc930cf0045a0",
+          "message": "feat(vm): texto bidirecional (UAX #9) no drawText/drawTextRun da Canvas — M4 (#665)\n\n* feat(vm): texto bidirecional (UAX #9) no drawText/drawTextRun da Canvas — M4\n\nO #539 trouxe a reordenação visual apenas ao snapshot (rd-render); o\ncaminho que APKs reais usam — Canvas.drawText/drawTextRun sobre o atlas\nde glifos — desenhava os caracteres em ordem puramente lógica, então\nhebraico/árabe saía espelhado, e o isRtl explícito do drawTextRun era\nignorado.\n\n- `rd-vm/src/bidi.rs` (novo): runs visuais por UAX #9 (unicode-bidi,\n  o mesmo crate do snapshot), direção de base Auto/Ltr/Rtl e espelho\n  dos pares direcionais que o atlas cobre (regra L4).\n- Direção forçada via prefixo LRM/RLM (P2/P3: o primeiro forte define a\n  base; o default do unicode-bidi só cobre parágrafos sem forte) com os\n  intervalos deslocados para a marca nunca ser desenhada.\n- `OpK::Text` ganha a direção de base; o drawTextRun extrai o `isRtl`\n  (arg booleano, sig com 'Z') e o rasterizador inverte os caracteres do\n  run RTL medindo o advance no caractere original.\n- Medição (`measure`) e largura do get_ui_tree continuam corretas por\n  serem ordem-independentes; screen_model ignora a direção (bounds não\n  mudam).\n- Sem shaping contextual (formas árabes/ligaduras) — desvio documentado\n  no cabeçalho de graphics.rs segue valendo.\n\nTestes: 9 unitários em bidi.rs (runs LTR/RTL/mistos, forçados, pares),\npixel-test de reversão visual (\"אX\" ≡ \"Xא\" — falhava antes da mudança)\ne e2e do isRtl gravando Rtl/Ltr/Auto no op do bitmap.\n\nGates: cargo fmt ✅ · clippy --workspace --all-targets -D warnings ✅ ·\ncargo test --workspace ✅ (193 suites, incluindo golden do snapshot).\n\n* docs(bidi): espelhamento L4 do snapshot já funcionava via rustybuzz\n\nO ROADMAP dizia (desde o #539 e na atualização do bidi da VM) que o\nespelhamento de pares direcionais em RTL \"ficava fora\"/\"segue aberto\"\nno snapshot. Não é o caso: o rustybuzz aplica a regra L4 durante o\nshaping — rotate_chars (src/hb/ot_shape.rs) espelha pelo\nunicode_bidi_mirroring (Unicode 16) quando a fonte tem o glifo.\n\nOs dois caminhos de texto (snapshot e Canvas da VM) cobrem UAX #9 + L4;\na nota agora cita a fonte do comportamento. Resta aberto apenas o\nalinhamento RTL de layout (gravity START/END).\n\n---------\n\nCo-authored-by: Xisto <117041552+nadabgfcc@users.noreply.github.com>",
+          "timestamp": "2026-11-25T00:15:57-03:00",
+          "tree_id": "2b272576c1437f66fd40a1e2afc78dafc6d0b7b8",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/d188f417a72e8532a98f2b87aa0cc930cf0045a0"
+        },
+        "date": 1795576597750,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3045,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3040,
+            "range": "± 4",
             "unit": "ns/iter"
           }
         ]
