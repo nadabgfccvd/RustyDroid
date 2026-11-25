@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gate golden de performance como evidência contínua (M7, 2026-11-23):** `golden-apks/perf-gate.sh`
+  roda `rd perf` no primftpd 8.2 (pinned por versionCode 71 + SHA-256, cache em
+  `golden-apks/cache/`, GH-05) contra os budgets moto-e5; jobs no CI
+  (`golden-perf`) e no `release.yml` (`RD_BIN` mede o binário all-features da
+  tag) rodando como **evidência não-bloqueante** (`continue-on-error`) até o
+  dono decidir o orçamento de startup para APKs reais — o de 1500 ms (ADR 008)
+  foi calibrado no app trivial; primftpd no runner compartilhado: p50 1398 /
+  máx 1504 ms (sandbox local: cold máx 1294 ms · RSS 90/1024 MB · heap 3,5/256
+  MB). Restam para o M7: orçamento por APK/p50/2000 ms (decisão do dono) e
+  medição em Moto E5 real.
 - **Bidi (UAX #9) na Canvas da VM (M4, 2026-11-23):** `Canvas.drawText`/`drawTextRun`
   agora reordenam os runs visualmente (esquerda→direita) via `unicode-bidi` — o mesmo
   tratamento que o snapshot teve no #539, no caminho que APKs reais usam sobre o atlas
