@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "ayu";
-            window.path_to_searchindex_js = "searchindex-6941a8c0.js";
+            window.path_to_searchindex_js = "searchindex-5197db60.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-b1665057.js"></script>
@@ -200,7 +200,7 @@
 <tr><td>M4</td><td>Render+dump</td><td>tiny-skia desenha; screenshot correto; get_ui_tree com ids certos</td><td>⚠️ <strong>parcial</strong> — <code>tiny-skia</code> + shaping <code>rustybuzz</code> ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); bidi UAX #9 nos dois caminhos (snapshot #539 + Canvas da VM <code>drawText</code>/<code>drawTextRun</code> com espelhamento L4, 2026-11); faltam golden de ≥5 APKs reais com referência Android e qualificadores de tela/<code>ldrtl</code>/<code>night</code>; F-Droid ainda não sobe (ver abaixo)</td></tr>
 <tr><td>M5</td><td>Agente MCP v1 (30 tools + controles)</td><td>LLM instala, navega e assera estado só com as tools</td><td>✅ (provas e2e usam APK sintético, não APK real do corpus)</td></tr>
 <tr><td>M6</td><td>Executor de testes</td><td>suíte JSON → JUnit XML; compat-matrix automatizada</td><td>✅ <strong>implementado (2026-10)</strong></td></tr>
-<tr><td>M7</td><td>Performance + gate piso E5</td><td>startup &lt; 2 s app trivial; suíte golden passa nos budgets moto-e5</td><td>🟡 <strong>parcial (2026-10)</strong> — <code>rd perf</code> + gate de CI no app trivial (estimativa); golden pendente</td></tr>
+<tr><td>M7</td><td>Performance + gate piso E5</td><td>startup &lt; 2 s app trivial; suíte golden passa nos budgets moto-e5</td><td>🟡 <strong>parcial</strong> — <code>rd perf</code> + gate de CI no app trivial; gate golden rodando no CI e no workflow de release como <strong>evidência contínua</strong> (primftpd pinned, 2026-11-23, <code>golden-apks/perf-gate.sh</code>); bloqueante pendente de decisão de orçamento do dono p/ APKs reais (1500 ms do ADR 008 foi calibrado no trivial; primftpd no runner: p50 1398 / máx 1504) e da medição em Moto E5 real</td></tr>
 <tr><td>M8</td><td>Compat real</td><td>app OSS médio navega funcional; v0.9</td><td>✅ <strong>implementado (2026-10)</strong></td></tr>
 <tr><td>M9</td><td>Componentes avançados + NDK</td><td>5 APKs com .so rodando; widgets/IME/notificações ok</td><td>✅ <strong>implementado e revisado (2026-10)</strong> — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21</td></tr>
 <tr><td>M10</td><td>Dispositivos virtuais</td><td>câmera/GPS/biometria programáveis pelo agente</td><td>✅ <strong>implementado (2026-10-25)</strong> — <a href="m10.html">docs/m10.md</a>, <a href="adr/011-m10-virtual-devices.html">ADR 011</a>, PR #201. Viewport em paisagem: <code>Engine::viewport_px()</code> é a fonte única para layout, decor da janela, screenshots e <code>ScreenModel</code> (#252, PR #456)</td></tr>
@@ -588,9 +588,19 @@ cronômetro), reporta <code>app_heap_peak_mb</code> e avalia o orçamento
 <code>app_heap_peak ≤ ram_app_heap_mb</code> (falha fechado se não medido).</p>
 </li>
 </ol>
-<p><strong>Pendente para fechar o M7 (DoD):</strong> gate golden (APKs golden não estão no
-repositório) · medição em Moto E5 real · workflow de release bloqueante (hoje
-o gate é um teste de CI).</p>
+<p><strong>Pendente para fechar o M7 (DoD):</strong> <del>gate golden</del> — <strong>evidência contínua no
+CI e na release (2026-11-23)</strong>: <code>golden-apks/perf-gate.sh</code> roda <code>rd perf</code> no
+primftpd 8.2 (pinned por versionCode + SHA-256, cache em
+<code>golden-apks/cache/</code>) contra os budgets moto-e5, no job <code>golden-perf</code> do CI e
+no <code>release.yml</code> (<code>RD_BIN</code> mede o binário all-features da tag; tags
+anteriores ao script pulam com notice). <strong>Bloqueante exige decisão do dono</strong>:
+o orçamento de startup de 1500 ms (ADR 008 Stage 5) foi calibrado no app
+trivial (p50 ~1330); o primftpd real no runner compartilhado mede p50 1398 /
+máx 1504 ms — dentro do ruído daquele orçamento. Opções: orçamento por APK,
+o DoD de 2000 ms para APKs reais, ou semântica p50. Medições: sandbox local
+cold máx 1294/1500 ms · RSS 90/1024 MB · heap 3,5/256 MB; runner CI cold
+[1504, 1398, 1350] ms · warm [412, 407, 409] ms (estimativas emuladas).
+Resta também: medição em Moto E5 real.</p>
 <h2 id="-m8-sondagem--compat-real-primeiro-app-2026-10"><a class="header" href="#-m8-sondagem--compat-real-primeiro-app-2026-10">🔎 M8 sondagem — compat real, primeiro app (2026-10)</a></h2>
 <p>Sondagem com APK real dentro do piso (sem commit de binário — GH-05;
 <code>golden-apks/fetch.sh org.primftpd</code>):</p>
