@@ -59,14 +59,30 @@ fn u32_at(d: &[u8], off: usize) -> RdResult<u32> {
 pub struct ResConfigInfo {
     pub language: Option<String>,
     pub country: Option<String>,
+    /// `ResTable_config.screenLayout` layoutdir (bits 0xC0): `Some(true)` =
+    /// `ldrtl`, `Some(false)` = `ldltr`; `None` = qualquer direção.
+    pub layout_dir_rtl: Option<bool>,
+    /// `ResTable_config.screenLayout` size (bits 0x0F): 1 = small, 2 = normal,
+    /// 3 = large, 4 = xlarge; `None` = qualquer tamanho.
+    pub screen_size: Option<u8>,
+    /// `ResTable_config.smallestScreenWidthDp` (@30): 0 = sem qualificador.
+    pub smallest_sw_dp: Option<u16>,
+    /// `ResTable_config.screenWidthDp` (@32): 0 = sem qualificador.
+    pub screen_w_dp: Option<u16>,
+    /// `ResTable_config.screenHeightDp` (@34): 0 = sem qualificador.
+    pub screen_h_dp: Option<u16>,
     /// `ResTable_config.orientation`: 1 = portrait, 2 = landscape; `None` = any.
     pub orientation: Option<u8>,
+    /// `ResTable_config.uiMode` night (bits 0x30): `Some(true)` = `night`,
+    /// `Some(false)` = `notnight`; `None` = qualquer modo.
+    pub night: Option<bool>,
     pub density: Option<u16>,
     pub api_level: Option<u16>,
 }
 
 /// Configuração do dispositivo que escolhe a variante de recurso (M4 Round 2:
-/// locale, orientação, densidade, SDK — issue #47).
+/// locale, orientação, densidade, SDK — issue #47; Round 3: direção, night e
+/// qualificadores de tela).
 ///
 /// `Default` = dispositivo sem locale, orientação, densidade nem SDK
 /// conhecidos: só entradas genéricas casam sem ambiguidade. Essa é a
@@ -77,8 +93,22 @@ pub struct DeviceConfig {
     pub language: Option<String>,
     /// ISO 3166 region, e.g. `US`.
     pub country: Option<String>,
+    /// Direção do layout: `true` = RTL (casaria `values-ldrtl`), `false` = LTR.
+    pub layout_dir_rtl: Option<bool>,
+    /// Tamanho de tela (screenLayout bits 0x0F): 2 = normal, 3 = large,
+    /// 4 = xlarge.
+    pub screen_size: Option<u8>,
+    /// `smallestScreenWidthDp` do dispositivo (e.g. 411 num celular 720×1440
+    /// @280dpi). Qualificador `values-swNNNdp` casa quando NNN ≤ este valor.
+    pub smallest_sw_dp: Option<u16>,
+    /// `screenWidthDp` na orientação atual.
+    pub screen_w_dp: Option<u16>,
+    /// `screenHeightDp` na orientação atual.
+    pub screen_h_dp: Option<u16>,
     /// 1 = portrait, 2 = landscape.
     pub orientation: Option<u8>,
+    /// Modo noturno do sistema: `true` = night (casaria `values-night`).
+    pub night: Option<bool>,
     /// Densidade em dpi (`160` = mdpi). `None` é tratado como 160, como o AOSP.
     pub density: Option<u16>,
     /// `Build.VERSION.SDK_INT`.
@@ -90,8 +120,21 @@ const DENSITY_DEFAULT: u16 = 160;
 
 /// Pontuação de encaixe de uma entrada com o dispositivo. Comparada em ordem
 /// lexicográfica (maior = melhor), seguindo a precedência de qualificadores do
-/// AOSP: locale → orientação → densidade → versão.
-type DeviceRank = (u8, u8, u8, i32, u16);
+/// AOSP: locale → direção do layout (ldrtl) → smallestWidth → largura → altura
+/// → tamanho de tela → orientação → night → densidade → versão.
+type DeviceRank = (u8, u8, u8, u16, u16, u16, u8, u8, u8, i32, u16);
+
+/// Qualificador "pelo menos" (sw/w/h dp e bucket de tamanho): casa quando o
+/// dispositivo conhece o valor e o da entrada é ≤ o do dispositivo; entre as
+/// que casam, a MAIOR entrada vence (AOSP: `values-sw600dp` perde para
+/// `values-sw720dp` num tablet sw800, e ambos perdem quando o device é sw411).
+fn at_most_rank(entry: Option<u16>, dev: Option<u16>) -> Option<u16> {
+    match (entry, dev) {
+        (None, _) => Some(0),
+        (Some(e), Some(d)) if e <= d => Some(e),
+        _ => None,
+    }
+}
 
 impl ResConfigInfo {
     /// `None` = a entrada exige algo que o dispositivo não tem (ex.: `values-pt`
@@ -110,7 +153,30 @@ impl ResConfigInfo {
             (Some(e), Some(d)) if e.eq_ignore_ascii_case(d) => 2,
             _ => return None,
         };
+        // ldrtl/ldltr só casam quando o dispositivo conhece a própria direção
+        // (o Engine deriva do locale, como o Android faz por padrão).
+        let layout_dir = match (self.layout_dir_rtl, dev.layout_dir_rtl) {
+            (None, _) => 0,
+            (Some(e), Some(d)) if e == d => 2,
+            _ => return None,
+        };
+        // sw/w/h dp e bucket de tamanho: qualificadores "pelo menos" — entre
+        // as entradas que cabem no dispositivo, a maior vence.
+        let sw = at_most_rank(self.smallest_sw_dp, dev.smallest_sw_dp)?;
+        let wd = at_most_rank(self.screen_w_dp, dev.screen_w_dp)?;
+        let ht = at_most_rank(self.screen_h_dp, dev.screen_h_dp)?;
+        let size = at_most_rank(
+            self.screen_size.map(u16::from),
+            dev.screen_size.map(u16::from),
+        )? as u8;
         let orientation = match (self.orientation, dev.orientation) {
+            (None, _) => 0,
+            (Some(e), Some(d)) if e == d => 2,
+            _ => return None,
+        };
+        // -night/-notnight exigem o modo do dispositivo; sem modo conhecido a
+        // entrada é excluída (não é "qualquer").
+        let night = match (self.night, dev.night) {
             (None, _) => 0,
             (Some(e), Some(d)) if e == d => 2,
             _ => return None,
@@ -135,7 +201,19 @@ impl ResConfigInfo {
             (Some(e), Some(d)) if e <= d => e,
             _ => return None,
         };
-        Some((language, country, orientation, density, sdk))
+        Some((
+            language,
+            country,
+            layout_dir,
+            sw,
+            wd,
+            ht,
+            size,
+            orientation,
+            night,
+            density,
+            sdk,
+        ))
     }
 
     pub fn is_default(&self) -> bool {
@@ -1111,6 +1189,37 @@ fn parse_config(data: &[u8], cfg_base: usize, cfg_max: usize) -> RdResult<ResCon
         // sdkVersion:u16 @24 (minorVersion:u16 @26 — não lido)
         cfg.api_level = Some(u16_at(data, cfg_base + 24)?);
     }
+    if readable >= 29 {
+        // screenLayout:u8 @28 — layoutdir (bits 0xC0): 0x80 = ldrtl, 0x40 = ldltr;
+        // size (bits 0x0F): 1 = small, 2 = normal, 3 = large, 4 = xlarge
+        let sl = data.get(cfg_base + 28).copied().unwrap_or(0);
+        cfg.layout_dir_rtl = match sl & 0xC0 {
+            0x80 => Some(true),
+            0x40 => Some(false),
+            _ => None,
+        };
+        cfg.screen_size = match sl & 0x0F {
+            v @ 1..=4 => Some(v),
+            _ => None,
+        };
+    }
+    if readable >= 30 {
+        // uiMode:u8 @29 — night (bits 0x30): 0x20 = night, 0x10 = notnight
+        cfg.night = match data.get(cfg_base + 29).copied().unwrap_or(0) & 0x30 {
+            0x20 => Some(true),
+            0x10 => Some(false),
+            _ => None,
+        };
+    }
+    if readable >= 32 {
+        // smallestScreenWidthDp:u16 @30 (0 = sem qualificador)
+        cfg.smallest_sw_dp = Some(u16_at(data, cfg_base + 30)?).filter(|&v| v != 0);
+    }
+    if readable >= 36 {
+        // screenWidthDp:u16 @32, screenHeightDp:u16 @34 (0 = sem qualificador)
+        cfg.screen_w_dp = Some(u16_at(data, cfg_base + 32)?).filter(|&v| v != 0);
+        cfg.screen_h_dp = Some(u16_at(data, cfg_base + 34)?).filter(|&v| v != 0);
+    }
     Ok(cfg)
 }
 
@@ -1179,6 +1288,66 @@ mod tests {
         assert_eq!(info.density, Some(256));
         assert_eq!(info.language.as_deref(), Some("en"));
         assert_eq!(info.country.as_deref(), Some("US"));
+    }
+
+    /// M4: screenLayout@28 (layoutdir, bits 0xC0) e uiMode@29 (night, bits
+    /// 0x30) alimentam os qualificadores ldrtl/ldltr e night/notnight.
+    #[test]
+    fn screen_layout_layoutdir_and_ui_mode_night_parse_from_config() {
+        let mut cfg = vec![0u8; 30];
+        cfg[0..4].copy_from_slice(&30u32.to_le_bytes()); // size
+        cfg[28] = 0x80; // layoutdir = RTL
+        cfg[29] = 0x21; // uiMode: 0x01 (type) | 0x20 (night yes)
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.layout_dir_rtl, Some(true));
+        assert_eq!(info.night, Some(true));
+
+        let mut cfg = vec![0u8; 30];
+        cfg[0..4].copy_from_slice(&30u32.to_le_bytes());
+        cfg[28] = 0x40; // layoutdir = LTR
+        cfg[29] = 0x11; // uiMode: 0x01 (type) | 0x10 (night no)
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.layout_dir_rtl, Some(false));
+        assert_eq!(info.night, Some(false));
+
+        // config menor que 29 bytes (sem screenLayout/uiMode): ambos None
+        let mut cfg = vec![0u8; 28];
+        cfg[0..4].copy_from_slice(&28u32.to_le_bytes());
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.layout_dir_rtl, None);
+        assert_eq!(info.night, None);
+    }
+
+    /// M4: smallestScreenWidthDp@30, screenWidthDp@32, screenHeightDp@34 e os
+    /// bits de size (0x0F) do screenLayout@28 alimentam `values-swNNNdp`,
+    /// `values-wNNNdp`/`values-hNNNdp` e `values-{small,normal,large,xlarge}`.
+    #[test]
+    fn smallest_width_screen_dp_and_size_parse_from_config() {
+        // config de 36 bytes estilo Nexus 7: large + RTL, sw600, 600×960dp
+        let mut cfg = vec![0u8; 36];
+        cfg[0..4].copy_from_slice(&36u32.to_le_bytes());
+        cfg[28] = 0x83; // layoutdir RTL (0x80) | size large (0x03)
+        cfg[30..32].copy_from_slice(&600u16.to_le_bytes()); // smallestScreenWidthDp
+        cfg[32..34].copy_from_slice(&600u16.to_le_bytes()); // screenWidthDp
+        cfg[34..36].copy_from_slice(&960u16.to_le_bytes()); // screenHeightDp
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.screen_size, Some(3));
+        assert_eq!(info.layout_dir_rtl, Some(true));
+        assert_eq!(info.smallest_sw_dp, Some(600));
+        assert_eq!(info.screen_w_dp, Some(600));
+        assert_eq!(info.screen_h_dp, Some(960));
+
+        // 0 = sem qualificador; config de 30 bytes não tem os campos dp
+        let mut cfg = vec![0u8; 32];
+        cfg[0..4].copy_from_slice(&32u32.to_le_bytes());
+        cfg[28] = 0x02; // size normal, sem layoutdir
+        cfg[30..32].copy_from_slice(&0u16.to_le_bytes()); // sw = 0
+        let info = parse_config(&cfg, 0, cfg.len()).expect("config");
+        assert_eq!(info.screen_size, Some(2));
+        assert_eq!(info.layout_dir_rtl, None);
+        assert_eq!(info.smallest_sw_dp, None);
+        assert_eq!(info.screen_w_dp, None, "w@32 exige size ≥ 36");
+        assert_eq!(info.screen_h_dp, None);
     }
 
     #[test]
@@ -1708,7 +1877,13 @@ mod device_select_tests {
         DeviceConfig {
             language: l.map(Into::into),
             country: c.map(Into::into),
+            layout_dir_rtl: None,
+            screen_size: None,
+            smallest_sw_dp: None,
+            screen_w_dp: None,
+            screen_h_dp: None,
             orientation: orient,
+            night: None,
             density: dpi,
             sdk,
         }
@@ -1841,6 +2016,263 @@ mod device_select_tests {
             pick(&es, &dev(Some("pt"), None, Some(2), Some(320), None)),
             "pt-mdpi"
         );
+    }
+
+    #[test]
+    fn layout_dir_qualifier_selects_ldrtl_only_on_rtl() {
+        let ldrtl = ResConfigInfo {
+            layout_dir_rtl: Some(true),
+            ..cfg()
+        };
+        let ldltr = ResConfigInfo {
+            layout_dir_rtl: Some(false),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(ldltr, "ldltr"),
+            entry(ldrtl, "ldrtl"),
+        ];
+        let rtl = DeviceConfig {
+            layout_dir_rtl: Some(true),
+            ..dev(None, None, None, None, None)
+        };
+        let ltr = DeviceConfig {
+            layout_dir_rtl: Some(false),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &rtl), "ldrtl");
+        assert_eq!(pick(&es, &ltr), "ldltr");
+        // dispositivo sem direção conhecida: só o genérico casa
+        assert_eq!(pick(&es, &dev(None, None, None, None, None)), "default");
+    }
+
+    #[test]
+    fn night_qualifier_selects_night_only_in_dark_mode() {
+        let night = ResConfigInfo {
+            night: Some(true),
+            ..cfg()
+        };
+        let notnight = ResConfigInfo {
+            night: Some(false),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(notnight, "notnight"),
+            entry(night, "night"),
+        ];
+        let dark = DeviceConfig {
+            night: Some(true),
+            ..dev(None, None, None, None, None)
+        };
+        let light = DeviceConfig {
+            night: Some(false),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &dark), "night");
+        assert_eq!(pick(&es, &light), "notnight");
+        // sem modo conhecido: só o genérico
+        assert_eq!(pick(&es, &dev(None, None, None, None, None)), "default");
+    }
+
+    #[test]
+    fn layout_dir_ranks_between_locale_and_orientation() {
+        // AOSP: direção do layout vem antes da orientação — um ldrtl que casa
+        // vence um landscape equivalente em todo o resto.
+        let pt_rtl_port = ResConfigInfo {
+            language: Some("pt".into()),
+            layout_dir_rtl: Some(true),
+            ..cfg()
+        };
+        let pt_land = ResConfigInfo {
+            language: Some("pt".into()),
+            orientation: Some(2),
+            ..cfg()
+        };
+        let es = vec![entry(pt_land, "pt-land"), entry(pt_rtl_port, "pt-ldrtl")];
+        let d = DeviceConfig {
+            language: Some("pt".into()),
+            layout_dir_rtl: Some(true),
+            orientation: Some(2),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &d), "pt-ldrtl");
+    }
+
+    #[test]
+    fn night_ranks_after_orientation() {
+        // AOSP: uiMode (night) vem depois da orientação — em pé de igualdade
+        // no resto, o night que casa vence o genérico; dispositivo claro
+        // exclui o night.
+        let land_night = ResConfigInfo {
+            orientation: Some(2),
+            night: Some(true),
+            ..cfg()
+        };
+        let land = ResConfigInfo {
+            orientation: Some(2),
+            ..cfg()
+        };
+        let es = vec![entry(land, "land"), entry(land_night, "land-night")];
+        let dark = DeviceConfig {
+            orientation: Some(2),
+            night: Some(true),
+            ..dev(None, None, None, None, None)
+        };
+        let light = DeviceConfig {
+            orientation: Some(2),
+            night: Some(false),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &dark), "land-night");
+        assert_eq!(pick(&es, &light), "land");
+    }
+
+    #[test]
+    fn sw_qualifier_matches_only_when_device_meets_it() {
+        let sw600 = ResConfigInfo {
+            smallest_sw_dp: Some(600),
+            ..cfg()
+        };
+        let es = vec![entry(cfg(), "default"), entry(sw600, "sw600")];
+        let phone = DeviceConfig {
+            smallest_sw_dp: Some(411),
+            ..dev(None, None, None, None, None)
+        };
+        let tablet = DeviceConfig {
+            smallest_sw_dp: Some(600),
+            ..dev(None, None, None, None, None)
+        };
+        let big_tablet = DeviceConfig {
+            smallest_sw_dp: Some(800),
+            ..dev(None, None, None, None, None)
+        };
+        // celular 411dp: o sw600 não cabe → default
+        assert_eq!(pick(&es, &phone), "default");
+        // exatamente 600 e acima: sw600 casa
+        assert_eq!(pick(&es, &tablet), "sw600");
+        assert_eq!(pick(&es, &big_tablet), "sw600");
+        // dispositivo sem sw conhecido: só o genérico
+        assert_eq!(pick(&es, &dev(None, None, None, None, None)), "default");
+    }
+
+    #[test]
+    fn largest_fitting_sw_wins() {
+        // tablet sw800: sw720 (que cabe) vence sw600 — AOSP prefere a
+        // entrada mais específica que ainda serve no dispositivo.
+        let sw600 = ResConfigInfo {
+            smallest_sw_dp: Some(600),
+            ..cfg()
+        };
+        let sw720 = ResConfigInfo {
+            smallest_sw_dp: Some(720),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(sw600, "sw600"),
+            entry(sw720, "sw720"),
+        ];
+        let dev_sw800 = DeviceConfig {
+            smallest_sw_dp: Some(800),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &dev_sw800), "sw720");
+        // sw600 que não cabe continua excluído
+        let dev_sw650 = DeviceConfig {
+            smallest_sw_dp: Some(650),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &dev_sw650), "sw600");
+    }
+
+    #[test]
+    fn w_and_h_qualifiers_follow_the_same_at_least_rule() {
+        let w600 = ResConfigInfo {
+            screen_w_dp: Some(600),
+            ..cfg()
+        };
+        let h900 = ResConfigInfo {
+            screen_h_dp: Some(900),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(w600, "w600"),
+            entry(h900, "h900"),
+        ];
+        let portrait_phone = DeviceConfig {
+            screen_w_dp: Some(411),
+            screen_h_dp: Some(822),
+            ..dev(None, None, None, None, None)
+        };
+        let tablet = DeviceConfig {
+            screen_w_dp: Some(600),
+            screen_h_dp: Some(960),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &portrait_phone), "default");
+        // tablet 600×960dp: os dois casam, mas w tem precedência sobre h no
+        // AOSP — a entrada qualificada na dimensão anterior vence.
+        assert_eq!(pick(&es, &tablet), "w600");
+    }
+
+    #[test]
+    fn size_bucket_prefers_largest_fitting() {
+        let large = ResConfigInfo {
+            screen_size: Some(3),
+            ..cfg()
+        };
+        let xlarge = ResConfigInfo {
+            screen_size: Some(4),
+            ..cfg()
+        };
+        let es = vec![
+            entry(cfg(), "default"),
+            entry(large, "large"),
+            entry(xlarge, "xlarge"),
+        ];
+        let normal = DeviceConfig {
+            screen_size: Some(2),
+            ..dev(None, None, None, None, None)
+        };
+        let tab = DeviceConfig {
+            screen_size: Some(3),
+            ..dev(None, None, None, None, None)
+        };
+        let big_tab = DeviceConfig {
+            screen_size: Some(4),
+            ..dev(None, None, None, None, None)
+        };
+        // normal não adianta large/xlarge: default
+        assert_eq!(pick(&es, &normal), "default");
+        assert_eq!(pick(&es, &tab), "large");
+        assert_eq!(pick(&es, &big_tab), "xlarge");
+    }
+
+    #[test]
+    fn layout_dir_outranks_screen_qualifiers() {
+        // AOSP: direção do layout vem antes de sw/w/h/size — um ldrtl que
+        // casa vence um sw600 equivalente em todo o resto.
+        let pt_rtl = ResConfigInfo {
+            language: Some("pt".into()),
+            layout_dir_rtl: Some(true),
+            ..cfg()
+        };
+        let pt_sw600 = ResConfigInfo {
+            language: Some("pt".into()),
+            smallest_sw_dp: Some(600),
+            ..cfg()
+        };
+        let es = vec![entry(pt_sw600, "pt-sw600"), entry(pt_rtl, "pt-ldrtl")];
+        let d = DeviceConfig {
+            language: Some("pt".into()),
+            layout_dir_rtl: Some(true),
+            smallest_sw_dp: Some(600),
+            ..dev(None, None, None, None, None)
+        };
+        assert_eq!(pick(&es, &d), "pt-ldrtl");
     }
 
     #[test]

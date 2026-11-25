@@ -13,7 +13,7 @@
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⚠️ **parcial** — fuzz 24 h nunca executado; comparador não versionado |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); bidi UAX #9 nos dois caminhos (snapshot #539 + Canvas da VM `drawText`/`drawTextRun` com espelhamento L4, 2026-11); faltam golden de ≥5 APKs reais com referência Android e qualificadores de tela/`ldrtl`/`night`; F-Droid ainda não sobe (ver abaixo) |
+| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); bidi UAX #9 nos dois caminhos (snapshot #539 + Canvas da VM `drawText`/`drawTextRun` com espelhamento L4, 2026-11); qualificadores `night`/`ldrtl` e de tela `sw`/`w`/`h` dp + buckets de tamanho casam (2026-11-23); faltam golden de ≥5 APKs reais com referência Android; F-Droid ainda não sobe (ver abaixo) |
 | M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (provas e2e usam APK sintético, não APK real do corpus) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ✅ **implementado (2026-10)** |
 | M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial** — `rd perf` + gate de CI no app trivial; gate golden rodando no CI e no workflow de release como **evidência contínua** (primftpd pinned, 2026-11-23, `golden-apks/perf-gate.sh`); bloqueante pendente de decisão de orçamento do dono p/ APKs reais (1500 ms do ADR 008 foi calibrado no trivial; primftpd no runner: p50 1398 / máx 1504) e da medição em Moto E5 real |
@@ -251,7 +251,21 @@ certos); configs específicas (land/locale/density) selecionáveis.
    recursos por device-config (locale → orientação → densidade → SDK) em
    `rd-apk::arsc` (`DeviceConfig`, `resolve_*_for`), com o dispositivo do VM
    (`Engine::resource_device_config`). Fora dele: qualificadores de tela
-   (smallestWidth), `night`, `ldrtl`.
+   (smallestWidth), `night`, `ldrtl`. **Atualização (2026-11-23):**
+   `night`/`notnight` (uiMode@29, bits 0x30) e `ldrtl`/`ldltr`
+   (screenLayout@28, bits 0xC0) agora casam, na posição de precedência do
+   AOSP (direção do layout entre locale e orientação; night depois da
+   orientação); o `Engine::resource_device_config` alimenta night pelo
+   `dark_mode` do UiModeManager (`setNightMode` agora troca os recursos
+   `values-night` do app) e a direção derivada do locale (idiomas RTL
+   habilitam `values-ldrtl`, como o Android por padrão). **Round 3
+   (2026-11-23):** qualificadores de tela — `swNNNdp`/`wNNNdp`/`hNNNdp`
+   (smallestScreenWidthDp@30, screenWidthDp@32, screenHeightDp@34) e buckets
+   `small`/`normal`/`large`/`xlarge` (screenLayout@28, bits 0x0F) com a
+   semântica "pelo menos" (a MAIOR entrada que cabe no dispositivo vence); o
+   `Engine` deriva sw/w/h do viewport ativo (`viewport_px`/densidade) e o
+   bucket pelos cortes modernos (<600 normal · ≥600 large · ≥720 xlarge).
+   Restam: aspect (`long`/`notlong`), round e o tipo do uiMode.
 
    Bidi — ✅ **feito (#539, 2026-11-05)**: `text_in_box` shapeia por segmento
    visual UAX #9 (`unicode-bidi`). Alinhamento RTL de layout fica fora.
