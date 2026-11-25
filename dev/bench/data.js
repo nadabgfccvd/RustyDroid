@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795576900452,
+  "lastUpdate": 1795576959944,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7827,6 +7827,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3321,
             "range": "± 14",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cb8e8048a3b53db4dd70a65e86b6e638b74cf47b",
+          "message": "ci(deps)(deps): bump the github-actions-minor-and-patch group with 2 updates (#670)\n\nBumps the github-actions-minor-and-patch group with 2 updates: [taiki-e/install-action](https://github.com/taiki-e/install-action) and [actions/setup-java](https://github.com/actions/setup-java).\n\n\nUpdates `taiki-e/install-action` from 2.90.3 to 2.90.5\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/cfdb7ed4ccc7c7dce37759eae89dc5674b469b39...ab49d3c64680143e184118bed66a46419fc15519)\n\nUpdates `actions/setup-java` from 6.2.0 to 6.3.0\n- [Release notes](https://github.com/actions/setup-java/releases)\n- [Commits](https://github.com/actions/setup-java/compare/77dd5b2ce225ea11469928ac317850245a74ae78...d1374f8ac74474200d16ef8ecee22c7ae7a51880)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.90.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions-minor-and-patch\n- dependency-name: actions/setup-java\n  dependency-version: 6.3.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: github-actions-minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-25T00:21:14-03:00",
+          "tree_id": "c3ec1e4c3d46ac3207fbafa69e4421a81401f399",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/cb8e8048a3b53db4dd70a65e86b6e638b74cf47b"
+        },
+        "date": 1795576957566,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 3160,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 3171,
+            "range": "± 65",
             "unit": "ns/iter"
           }
         ]
