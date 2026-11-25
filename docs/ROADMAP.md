@@ -13,10 +13,10 @@
 | M1 | rd-dex 100% + disassembler | idêntico ao baksmali em 3 APKs; fuzz 24h sem crash | ⚠️ **parcial** — fuzz 24 h nunca executado; comparador não versionado |
 | M2 | VM Dalvik mínima | métodos puros de APK real retornam valores corretos | ✅ **implementado (2026-10)** |
 | M3 | Framework essencial | app trivial (activity+botão+texto) roda headless ponta a ponta | ✅ **implementado (2026-10, rounds 1+2)** |
-| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); faltam golden de ≥5 APKs reais com referência Android, bidi e seleção por `DeviceConfig`; F-Droid ainda não sobe (ver abaixo) |
+| M4 | Render+dump | tiny-skia desenha; screenshot correto; get_ui_tree com ids certos | ⚠️ **parcial** — `tiny-skia` + shaping `rustybuzz` ativos (ADR 019 aceito, 2026-11-02); golden de regressão (trivial-app); bidi UAX #9 nos dois caminhos (snapshot #539 + Canvas da VM `drawText`/`drawTextRun` com espelhamento L4, 2026-11); qualificadores `night`/`ldrtl` e de tela `sw`/`w`/`h` dp + buckets de tamanho casam (2026-11-23); faltam golden de ≥5 APKs reais com referência Android; F-Droid ainda não sobe (ver abaixo) |
 | M5 | Agente MCP v1 (30 tools + controles) | LLM instala, navega e assera estado só com as tools | ✅ (provas e2e usam APK sintético, não APK real do corpus) |
 | M6 | Executor de testes | suíte JSON → JUnit XML; compat-matrix automatizada | ✅ **implementado (2026-10)** |
-| M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial (2026-10)** — `rd perf` + gate de CI no app trivial (estimativa); golden pendente |
+| M7 | Performance + gate piso E5 | startup < 2 s app trivial; suíte golden passa nos budgets moto-e5 | 🟡 **parcial** — `rd perf` + gate de CI no app trivial; gate golden rodando no CI e no workflow de release como **evidência contínua** (primftpd pinned, 2026-11-23, `golden-apks/perf-gate.sh`); bloqueante pendente de decisão de orçamento do dono p/ APKs reais (1500 ms do ADR 008 foi calibrado no trivial; primftpd no runner: p50 1398 / máx 1504) e da medição em Moto E5 real |
 | M8 | Compat real | app OSS médio navega funcional; v0.9 | ✅ **implementado (2026-10)** |
 | M9 | Componentes avançados + NDK | 5 APKs com .so rodando; widgets/IME/notificações ok | ✅ **implementado e revisado (2026-10)** — 5 APKs reais × 3 ABIs com chamadas JNI verificadas; aprovação humana registrada em 2026-10-21 |
 | M10 | Dispositivos virtuais | câmera/GPS/biometria programáveis pelo agente | ✅ **implementado (2026-10-25)** — [docs/m10.md](m10.md), [ADR 011](adr/011-m10-virtual-devices.md), PR #201. Viewport em paisagem: `Engine::viewport_px()` é a fonte única para layout, decor da janela, screenshots e `ScreenModel` (#252, PR #456) |
@@ -193,7 +193,7 @@ certos); configs específicas (land/locale/density) selecionáveis.
 >
 > Feito nesta rodada: Round 2 (#538) e bidi (#539).
 
-> **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). Continua sem bidi/RTL e sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
+> **Atualização (2026-11-02, ADR 019 aceito):** o snapshot agora pinta com `tiny-skia` (caminhos anti-aliased) e shapa o texto com `rustybuzz` sobre DejaVu Sans embutida (`crates/rd-render/assets/`). O bidi/RTL (UAX #9) chegou ao snapshot no #539 e à Canvas da VM (`drawText`/`drawTextRun`, com espelhamento L4) em 2026-11; segue sem fidelidade Roboto/Skia. O golden `golden/screens/trivial-app.png` é de regressão, não de referência Android.
 
 1. ✅ **`get_ui_tree` com ids certos**: `Engine::view_tree()` estruturada
    (class/resource-id `package:id/nome`/text/bounds/visibility/enabled/
@@ -203,7 +203,7 @@ certos); configs específicas (land/locale/density) selecionáveis.
    RGB 720×1440) + painter por classe/estado (contêiner/texto/botão/borda de
    clickable; INVISIBLE não pinta a subárvore) + encoder PNG sem
    dependências (zlib STORED + crc32/adler32 próprios). Texto com atlas
-   DejaVu Sans com shaping `rustybuzz` e raster `tiny-skia` (M4 de 2026-11-02, ADR 019). O atlas de `rd-vm` continua só para a Canvas da VM. Sem bidi; o Android real usa skia.
+   DejaVu Sans com shaping `rustybuzz` e raster `tiny-skia` (M4 de 2026-11-02, ADR 019). O atlas de `rd-vm` continua só para a Canvas da VM — agora com reordenação visual UAX #9 e espelhamento L4 (2026-11); o Android real usa skia.
 
    **NewPipe (2026-11-03, atualização):** `Collections.binarySearch` (PR #506),
    o hierarquia de `InflateException` (#506), o *field hiding* do heap (#506), o
@@ -251,11 +251,33 @@ certos); configs específicas (land/locale/density) selecionáveis.
    recursos por device-config (locale → orientação → densidade → SDK) em
    `rd-apk::arsc` (`DeviceConfig`, `resolve_*_for`), com o dispositivo do VM
    (`Engine::resource_device_config`). Fora dele: qualificadores de tela
-   (smallestWidth), `night`, `ldrtl`.
+   (smallestWidth), `night`, `ldrtl`. **Atualização (2026-11-23):**
+   `night`/`notnight` (uiMode@29, bits 0x30) e `ldrtl`/`ldltr`
+   (screenLayout@28, bits 0xC0) agora casam, na posição de precedência do
+   AOSP (direção do layout entre locale e orientação; night depois da
+   orientação); o `Engine::resource_device_config` alimenta night pelo
+   `dark_mode` do UiModeManager (`setNightMode` agora troca os recursos
+   `values-night` do app) e a direção derivada do locale (idiomas RTL
+   habilitam `values-ldrtl`, como o Android por padrão). **Round 3
+   (2026-11-23):** qualificadores de tela — `swNNNdp`/`wNNNdp`/`hNNNdp`
+   (smallestScreenWidthDp@30, screenWidthDp@32, screenHeightDp@34) e buckets
+   `small`/`normal`/`large`/`xlarge` (screenLayout@28, bits 0x0F) com a
+   semântica "pelo menos" (a MAIOR entrada que cabe no dispositivo vence); o
+   `Engine` deriva sw/w/h do viewport ativo (`viewport_px`/densidade) e o
+   bucket pelos cortes modernos (<600 normal · ≥600 large · ≥720 xlarge).
+   Restam: aspect (`long`/`notlong`), round e o tipo do uiMode.
 
    Bidi — ✅ **feito (#539, 2026-11-05)**: `text_in_box` shapeia por segmento
-   visual UAX #9 (`unicode-bidi`). Espelhamento de parênteses em RTL e
-   alinhamento RTL de layout ficam fora.
+   visual UAX #9 (`unicode-bidi`). Alinhamento RTL de layout fica fora.
+   **Atualização (2026-11):** a Canvas da VM (`drawText`/`drawTextRun` sobre o
+   atlas, `rd-vm/src/bidi.rs`) também reordena por UAX #9, honra o `isRtl`
+   explícito do `drawTextRun` e espelha pares direcionais (regra L4) nesse
+   caminho. **Correção (2026-11-23):** o espelhamento de pares em RTL também
+   já funcionava no snapshot — o `rustybuzz` aplica a regra L4 durante o
+   shaping (`rotate_chars`, tabela `unicode_bidi_mirroring` Unicode 16,
+   quando a fonte tem o glifo); a nota anterior ("espelhamento … ficam
+   fora") estava errada. Os dois caminhos cobrem UAX #9 + L4. Resta aberto:
+   alinhamento RTL de layout (gravity START/END).
 
 ## ✅ M6 concluído — executor de testes (2026-10)
 
@@ -376,9 +398,19 @@ certos); configs específicas (land/locale/density) selecionáveis.
    cronômetro), reporta `app_heap_peak_mb` e avalia o orçamento
    `app_heap_peak ≤ ram_app_heap_mb` (falha fechado se não medido).
 
-**Pendente para fechar o M7 (DoD):** gate golden (APKs golden não estão no
-repositório) · medição em Moto E5 real · workflow de release bloqueante (hoje
-o gate é um teste de CI).
+**Pendente para fechar o M7 (DoD):** ~~gate golden~~ — **evidência contínua no
+CI e na release (2026-11-23)**: `golden-apks/perf-gate.sh` roda `rd perf` no
+primftpd 8.2 (pinned por versionCode + SHA-256, cache em
+`golden-apks/cache/`) contra os budgets moto-e5, no job `golden-perf` do CI e
+no `release.yml` (`RD_BIN` mede o binário all-features da tag; tags
+anteriores ao script pulam com notice). **Bloqueante exige decisão do dono**:
+o orçamento de startup de 1500 ms (ADR 008 Stage 5) foi calibrado no app
+trivial (p50 ~1330); o primftpd real no runner compartilhado mede p50 1398 /
+máx 1504 ms — dentro do ruído daquele orçamento. Opções: orçamento por APK,
+o DoD de 2000 ms para APKs reais, ou semântica p50. Medições: sandbox local
+cold máx 1294/1500 ms · RSS 90/1024 MB · heap 3,5/256 MB; runner CI cold
+[1504, 1398, 1350] ms · warm [412, 407, 409] ms (estimativas emuladas).
+Resta também: medição em Moto E5 real.
 
 ## 🔎 M8 sondagem — compat real, primeiro app (2026-10)
 

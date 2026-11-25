@@ -58,6 +58,31 @@ fn put_str(vm: &mut Engine, r: ObjRef, f: &str, s: &str) -> Result<(), VmExit> {
     crate::err::put_field_result(vm.heap.put_field(r, f, v))
 }
 
+pub(crate) fn new_method_object(
+    vm: &mut Engine,
+    declaring_class: &str,
+    name: &str,
+    signature: &str,
+) -> Result<ObjRef, VmExit> {
+    let method = vm.heap.alloc_instance(METHOD.to_string(), Vec::new())?;
+    put_str(vm, method, "rd_decl", declaring_class)?;
+    put_str(vm, method, "rd_name", name)?;
+    put_str(vm, method, "rd_sig", signature)?;
+    Ok(method)
+}
+
+pub(crate) fn new_constructor_object(
+    vm: &mut Engine,
+    declaring_class: &str,
+    signature: &str,
+) -> Result<ObjRef, VmExit> {
+    let constructor = vm.heap.alloc_instance(CTOR.to_string(), Vec::new())?;
+    put_str(vm, constructor, "rd_decl", declaring_class)?;
+    put_str(vm, constructor, "rd_name", "<init>")?;
+    put_str(vm, constructor, "rd_sig", signature)?;
+    Ok(constructor)
+}
+
 /// "(Landroid/os/Looper;)" from a `Class[]` argument
 fn params_desc(vm: &Engine, arr: Option<&Value>) -> Result<String, VmExit> {
     let mut s = String::from("(");

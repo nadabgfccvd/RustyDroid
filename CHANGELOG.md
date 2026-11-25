@@ -18,8 +18,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Caminhos de teste desatualizados foram corrigidos. Os documentos históricos
   foram para `docs/archive/` (índice em `docs/archive/README.md`).
 
+- **Correção de documentação (2026-11-23):** o ROADMAP dizia que o espelhamento de
+  pares em RTL "ficava fora" do snapshot desde o #539 — na verdade o `rustybuzz`
+  aplica a regra L4 durante o shaping (`rotate_chars`, tabela
+  `unicode_bidi_mirroring` Unicode 16, quando a fonte tem o glifo). Nota
+  corrigida com a fonte do comportamento; os dois caminhos de texto (snapshot e
+  Canvas da VM) cobrem UAX #9 + L4. Resta aberto o alinhamento RTL de layout.
+
 ### Added
 
+- **Qualificadores de tela `sw`/`w`/`h` dp e buckets de tamanho (M4, 2026-11-23):**
+  `rd-apk::arsc` agora parseia `smallestScreenWidthDp@30`, `screenWidthDp@32` e
+  `screenHeightDp@34` e os bits de size (0x0F) do `screenLayout@28`, casando
+  `values-swNNNdp`/`values-wNNNdp`/`values-hNNNdp` e
+  `values-{small,normal,large,xlarge}` com a semântica AOSP "pelo menos": a MAIOR
+  entrada que cabe no dispositivo vence (num celular sw411 nem `values-sw600dp`
+  casa; num tablet sw800 o `values-sw720dp` vence o `values-sw600dp`). Precedência:
+  direção do layout → sw → w → h → tamanho → orientação → night. O
+  `Engine::resource_device_config` deriva sw/w/h do viewport ativo
+  (`viewport_px`/densidade) e o bucket pelos cortes modernos do framework
+  (<600 normal · ≥600 large · ≥720 xlarge — o piso atual é um celular). Restam
+  aspect (`long`/`notlong`), round e o tipo do uiMode.
+- **Qualificadores `night`/`ldltr`/`ldrtl` na seleção de recursos (M4, 2026-11-23):**
+  `rd-apk::arsc` agora parseia `screenLayout@28` (layoutdir, bits 0xC0) e
+  `uiMode@29` (night, bits 0x30) do `ResTable_config` e casa `-night`/`-notnight`
+  e `-ldrtl`/`-ldltr` na precedência do AOSP (direção entre locale e orientação;
+  night depois da orientação; sem modo/direção conhecida no dispositivo a entrada
+  qualificada é excluída). O `Engine::resource_device_config` alimenta o night pelo
+  `dark_mode` do UiModeManager — `setNightMode` agora troca recursos `values-night`
+  do app — e a direção derivada do locale (idiomas RTL habilitam `values-ldrtl`).
+  Restam os qualificadores de tela (smallestWidth/size).
+- **Gate golden de performance como evidência contínua (M7, 2026-11-23):** `golden-apks/perf-gate.sh`
+  roda `rd perf` no primftpd 8.2 (pinned por versionCode 71 + SHA-256, cache em
+  `golden-apks/cache/`, GH-05) contra os budgets moto-e5; jobs no CI
+  (`golden-perf`) e no `release.yml` (`RD_BIN` mede o binário all-features da
+  tag) rodando como **evidência não-bloqueante** (`continue-on-error`) até o
+  dono decidir o orçamento de startup para APKs reais — o de 1500 ms (ADR 008)
+  foi calibrado no app trivial; primftpd no runner compartilhado: p50 1398 /
+  máx 1504 ms (sandbox local: cold máx 1294 ms · RSS 90/1024 MB · heap 3,5/256
+  MB). Restam para o M7: orçamento por APK/p50/2000 ms (decisão do dono) e
+  medição em Moto E5 real.
+- **Bidi (UAX #9) na Canvas da VM (M4, 2026-11-23):** `Canvas.drawText`/`drawTextRun`
+  agora reordenam os runs visualmente (esquerda→direita) via `unicode-bidi` — o mesmo
+  tratamento que o snapshot teve no #539, no caminho que APKs reais usam sobre o atlas
+  de glifos. O `isRtl` explícito do `drawTextRun` é honrado como direção de base
+  (prefixo LRM/RLM, P2/P3) e pares direcionais são espelhados em run RTL (regra L4,
+  tabela cobrindo os pares do atlas). Medição (`measure`) e largura do `get_ui_tree`
+  continuam corretas por serem ordem-independentes. Sem shaping contextual (formas
+  árabes) — desvio documentado. Testes: 9 unitários de runs/espelhamento em
+  `rd-vm/src/bidi.rs`, pixel-test de reversão visual (`"אX"` ≡ `"Xא"`) e e2e do
+  `isRtl` no op gravado.
+- **`Class` enclosing metadata from DEX annotations:** `getEnclosingMethod()`,
+  `getEnclosingConstructor()` and `getEnclosingClass()` now read the system-visible
+  `dalvik.annotation.EnclosingMethod` / `EnclosingClass` metadata for local and anonymous
+  classes and return real `Method`/`Constructor` reflection objects. `getDeclaringClass()`
+  remains null for local classes, as on Android. A synthetic annotated-DEX regression covers
+  methods, constructors, enclosing-class-only metadata and top-level null behavior.
 - **Página de releases viva no site (M12):** `docs/releases.md` é renderizada por
   `scripts/releases_live.py` a partir de `GET /repos/:owner/:repo/releases` no build do
   `docs.yml`, com uma linha por versão (data, nº de artefatos, tamanho), a lista de
@@ -103,9 +157,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (antes: SIGABRT; agora: `Ljava/lang/StackOverflowError;`).
 - **Guard de pilha pondera reentrância host (#313):** o custo de ~4 KiB usado para
   limitar frames DEX não representava ciclos entre shims Rust (ex.: `Base64InputStream.available`).
-  `enter_stack_frame` mantém o guard real por SP e soma uma estimativa conservadora de 48 KiB
-  por frame host antes de aceitar reentrância; ciclos profundos agora falham com
-  `StackOverflowError` tipado antes de o runner abortar a thread. Coberto pelo teste
+  `enter_stack_frame` mantém o guard real por SP e soma 128 KiB por frame host, acima dos
+  12–40 KiB medidos em reentrância; a estimativa inicial de 48 KiB ainda permitiu um
+  SIGABRT no teste host→host do CI (causa exata não isolada). O orçamento ampliado interrompe o
+  ciclo antes da guard page e lança
+  `StackOverflowError` tipado. Coberto pelo teste
   `host_to_host_mutual_collection_cycle_throws_soe_and_recovers_313`.
 - **Link morto `archive/README.html` no site (M12):** o mdBook renderiza
   `docs/archive/README.md` como `archive/index.html`, então o link de `docs/index.md`
