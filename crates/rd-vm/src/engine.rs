@@ -73,11 +73,18 @@ const MIN_NATIVE_STACK_BUDGET: usize = 64 * 1024;
 const FRAME_COST_BYTES: usize = 4 * 1024;
 /// Dispatches host recursivos passam por várias funções Rust por nível e podem
 /// usar muito mais pilha que um frame DEX (issue #313 registrou 12–40 KiB por
-/// nível de reentrância). A estimativa inicial de 48 KiB ainda permitiu um
-/// SIGABRT no ciclo host→host do CI (a causa exata da diferença não foi isolada),
-/// então não era um limite superior confiável. Usamos 128 KiB (~3,2× o máximo
-/// medido) para reservar margem antes da guard page e lançar StackOverflowError.
-const HOST_FRAME_COST_BYTES: usize = 128 * 1024;
+/// nível de reentrância). Pesamos esses frames separadamente: sem isso, um ciclo
+/// host→host podia atingir `max_depth` antes do guard de bytes em runners CI e
+/// terminar em SIGABRT em vez de StackOverflowError capturável.
+///
+/// A medição local do ciclo `Base64InputStream.available()` mostra ~69 KiB por
+/// nível com debuginfo completo; builds de CI podem crescer ainda mais. O valor
+/// antigo de 48 KiB deixava a estimativa abaixo do custo real e o guard só
+/// disparava depois que a pilha nativa já havia consumido o orçamento. 256 KiB
+/// é uma margem conservadora que mantém o ciclo host→host fechado mesmo em
+/// runners com frames Rust maiores, sem afetar frames DEX (que continuam com
+/// `FRAME_COST_BYTES`).
+const HOST_FRAME_COST_BYTES: usize = 256 * 1024;
 /// Nº mínimo de frames que o teto derivado do orçamento pode impor. Evita que
 /// uma pilha minúscula produza um teto degenerado (0/1 frame) que rejeitaria
 /// até uma chamada trivial; com 16 frames × ~4 KiB = 64 KiB, ainda cabe numa
@@ -873,6 +880,12 @@ impl Engine {
             .collect::<Result<Vec<_>, VmExit>>()?;
         let class = self.heap.class_of(recv)?.to_string();
         let Some((dex_idx, def, m)) = self.cp.resolve_method(&class, method, sig) else {
+            // `java.lang.reflect.Proxy` objects carry their interfaces and
+            // handler in heap fields; forward their method calls before the
+            // generic host fallback so guest interfaces dispatch correctly.
+            if let Some(v) = crate::reflect::dispatch_proxy(self, method, sig, recv, &args)? {
+                return Ok(v);
+            }
             // Host receiver (String, collections, java.io, android.*): the
             // same host chains the interpreter's invoke uses.
             let tok = self.enter_stack_frame(false)?;

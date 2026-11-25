@@ -1891,24 +1891,40 @@ impl Engine {
                 let ar = self.heap.alloc_instance(app_cls.clone(), Vec::new())?;
                 self.attach_host_state(&app_cls, ar)?;
                 self.fw.application = Some(ar);
+                // Application's ContextWrapper starts with a null base; the
+                // override is responsible for calling super.attachBaseContext.
+                self.view_props
+                    .insert((ar, "ctx:mBase".to_string()), Value::Null);
                 // <init> da classe, se o DEX declara (super = host no-op).
                 if let Some((d, def, m)) = self.cp.resolve_method(&app_cls, "<init>", "()V") {
                     self.call(d, def, &m, vec![Value::Obj(ar)])?;
                 }
                 // Android: attachBaseContext(ContextImpl) runs between the
-                // Application constructor and onCreate (ContextWrapper
-                // attach). Apps stash the base in a static Context there;
-                // skipping it left that static null in onCreate.
+                // Application constructor and onCreate. Do not pre-attach:
+                // a guest override calling super must attach exactly once.
                 {
                     let base = crate::intrinsics::context_impl(self)?;
-                    self.view_props
-                        .insert((ar, "ctx:mBase".to_string()), Value::Obj(base));
                     if let Some((d, def, m)) = self.cp.resolve_method(
                         &app_cls,
                         "attachBaseContext",
                         "(Landroid/content/Context;)V",
                     ) {
                         self.call(d, def, &m, vec![Value::Obj(ar), Value::Obj(base)])?;
+                    } else {
+                        crate::activity_extras::instance_intrinsic(
+                            self,
+                            "Landroid/content/ContextWrapper;",
+                            "attachBaseContext",
+                            "(Landroid/content/Context;)V",
+                            ar,
+                            &[Value::Obj(base)],
+                        )?
+                        .ok_or_else(|| {
+                            crate::err::vm_error(
+                                "NOT_FOUND",
+                                "ContextWrapper.attachBaseContext host implementation missing",
+                            )
+                        })?;
                     }
                 }
                 // Android: providers do manifest são criados ANTES de

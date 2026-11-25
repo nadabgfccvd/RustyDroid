@@ -35,6 +35,10 @@ fn newpipe_app_oncreate_gets_past_preferences_and_array_resources() {
     }
 
     let out = Command::new(env!("CARGO_BIN_EXE_rd"))
+        .env(
+            "RD_TRACE_METHOD",
+            "Lorg/schabi/newpipe/App;->attachBaseContext",
+        )
         .args(["app", "run", "--trace", &apk.to_string_lossy()])
         .output()
         .expect("rd app run executa");
@@ -43,6 +47,28 @@ fn newpipe_app_oncreate_gets_past_preferences_and_array_resources() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
+
+    // NewPipe 0.29.3 (versionCode 1017) calls super.attachBaseContext via
+    // an Application method reference. A negative-only test could pass when
+    // the app failed even earlier, so require evidence that the override ran
+    // when launch itself has not yet succeeded. This does not claim that the
+    // app reaches onCreate or a first frame.
+    let version = rd_apk::Apk::open(&apk)
+        .expect("parse golden APK")
+        .manifest
+        .version_code;
+    if version == Some(1017) {
+        assert!(
+            out.status.success()
+                || combined
+                    .contains("T/RustyDroid: call Lorg/schabi/newpipe/App;->attachBaseContext"),
+            "NewPipe stopped before its Application override: {combined}"
+        );
+        assert!(
+            !combined.contains("método Landroid/app/Application;->attachBaseContext"),
+            "inherited Application.attachBaseContext stopped resolving: {combined}"
+        );
+    }
 
     // 1. binarySearch gap
     assert!(
@@ -69,8 +95,7 @@ fn newpipe_app_oncreate_gets_past_preferences_and_array_resources() {
         !combined.contains("SocketFactory;->getDefault"),
         "javax.net.SocketFactory.getDefault voltou a faltar: {combined}"
     );
-    // Current honest end state: `App.onCreate` reaches okhttp/JDK internals
-    // that the VM does not model yet (`sun.misc.Unsafe.arrayBaseOffset`).
-    // When that changes, the assertion below flips and the test documents the
-    // new endpoint — it is a marker, not a claim that the app runs.
+    // These are regression markers, not proof of a successful launch: with
+    // NewPipe 0.29.3 the current first blocker is java.lang.reflect.Proxy in
+    // ACRA during attachBaseContext, before Application.onCreate.
 }

@@ -525,7 +525,10 @@ fn exec_frame_regs(
                 let target = vm.cp.type_str(dex_idx, *i as u32);
                 if let Some(r) = regs[*a as usize].as_ref()? {
                     let cls = vm.heap.class_of(r)?.to_string();
-                    if cls != target && !vm.cp.is_subtype(&cls, &target) {
+                    if cls != target
+                        && !vm.cp.is_subtype(&cls, &target)
+                        && !crate::reflect::proxy_implements(vm, r, &target)
+                    {
                         if std::env::var_os("RD_VM_TRACE_CAST").is_some() {
                             eprintln!(
                                 "[cast] {} pc={cur_pc}: {cls} -> {target}",
@@ -548,7 +551,10 @@ fn exec_frame_regs(
                     None => 0,
                     Some(r) => {
                         let cls = vm.heap.class_of(r)?.to_string();
-                        (cls == target || vm.cp.is_subtype(&cls, &target)) as i32
+                        (cls == target
+                            || vm.cp.is_subtype(&cls, &target)
+                            || crate::reflect::proxy_implements(vm, r, &target))
+                            as i32
                     }
                 };
                 regs[*a as usize] = Value::Int(v);

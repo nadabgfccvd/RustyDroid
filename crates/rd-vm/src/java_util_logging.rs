@@ -32,6 +32,7 @@ use crate::value::Value;
 
 pub(crate) const LOGGER: &str = "Ljava/util/logging/Logger;";
 pub(crate) const LEVEL: &str = "Ljava/util/logging/Level;";
+pub(crate) const HANDLER: &str = "Ljava/util/logging/Handler;";
 
 const FIELD_NAME: &str = "rd_name";
 const LEVEL_FIELD: &str = "rd_value";
@@ -163,6 +164,77 @@ pub(crate) fn level_instance_intrinsic(
     Ok(None)
 }
 
+/// Instance methods of `java.util.logging.Handler`.
+///
+/// The base class is abstract, but its no-arg constructor and level/parent
+/// metadata are needed by real handlers such as OkHttp's `AndroidLogHandler`.
+/// Concrete `publish`/`flush`/`close` remain guest overrides in the app DEX.
+pub(crate) fn handler_instance_intrinsic(
+    vm: &mut Engine,
+    name: &str,
+    sig: &str,
+    recv: crate::heap::ObjRef,
+    args: &[Value],
+) -> Result<Option<Value>, VmExit> {
+    if name == "<init>" && sig == "()V" {
+        crate::err::put_field_result(vm.heap.put_field(
+            recv,
+            "rd_handler_level",
+            Value::Int(i32::MIN),
+        ))?;
+        crate::err::put_field_result(vm.heap.put_field(recv, "rd_parent_handlers", Value::Int(0)))?;
+        return Ok(Some(Value::Null));
+    }
+    if name == "setLevel" && sig == "(Ljava/util/logging/Level;)V" {
+        let level = args.first().cloned().unwrap_or(Value::Null);
+        if let Some(v) = level_int(vm, &level) {
+            crate::err::put_field_result(vm.heap.put_field(
+                recv,
+                "rd_handler_level",
+                Value::Int(v),
+            ))?;
+        }
+        return Ok(Some(Value::Null));
+    }
+    if name == "getLevel" && sig == "()Ljava/util/logging/Level;" {
+        let v = vm
+            .heap
+            .get_field(recv, "rd_handler_level")
+            .unwrap_or(Value::Int(i32::MIN));
+        return Ok(Some(Value::Obj(level_obj(
+            vm,
+            v.as_int().unwrap_or(i32::MIN),
+        )?)));
+    }
+    if name == "isLoggable" && sig == "(Ljava/util/logging/Level;)Z" {
+        let current = vm
+            .heap
+            .get_field(recv, "rd_handler_level")
+            .unwrap_or(Value::Int(i32::MIN))
+            .as_int()
+            .unwrap_or(i32::MIN);
+        let level = args.first().cloned().unwrap_or(Value::Null);
+        let requested = level_int(vm, &level).unwrap_or(i32::MAX);
+        return Ok(Some(Value::Int((requested >= current) as i32)));
+    }
+    if name == "useParentHandlers" && sig == "()Z" {
+        return Ok(Some(
+            vm.heap
+                .get_field(recv, "rd_parent_handlers")
+                .unwrap_or(Value::Int(0)),
+        ));
+    }
+    if name == "setUseParentHandlers" && sig == "(Z)V" {
+        crate::err::put_field_result(vm.heap.put_field(
+            recv,
+            "rd_parent_handlers",
+            args.first().cloned().unwrap_or(Value::Int(0)),
+        ))?;
+        return Ok(Some(Value::Null));
+    }
+    Ok(None)
+}
+
 /// Instance methods of `java.util.logging.Logger`.
 pub(crate) fn instance_intrinsic(
     vm: &mut Engine,
@@ -171,6 +243,24 @@ pub(crate) fn instance_intrinsic(
     recv: crate::heap::ObjRef,
     args: &[Value],
 ) -> Result<Option<Value>, VmExit> {
+    if name == "equals" && sig == "(Ljava/lang/Object;)Z" {
+        return Ok(Some(Value::Int(match args.first() {
+            Some(Value::Obj(other)) => (*other == recv) as i32,
+            _ => 0,
+        })));
+    }
+    if name == "hashCode" && sig == "()I" {
+        return Ok(Some(Value::Int(recv as i32)));
+    }
+    if name == "toString" && sig == "()Ljava/lang/String;" {
+        let text = crate::intrinsics::default_to_string(LOGGER, recv);
+        return Ok(Some(
+            vm.heap
+                .alloc_string(text)
+                .map(Value::Obj)
+                .map_err(crate::err::oom_throwable)?,
+        ));
+    }
     if name == "getName" && sig == "()Ljava/lang/String;" {
         return Ok(Some(
             vm.heap.get_field(recv, FIELD_NAME).unwrap_or(Value::Null),

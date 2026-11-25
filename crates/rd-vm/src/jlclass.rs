@@ -196,14 +196,14 @@ pub(crate) fn instance_intrinsic(
         ("isInstance", "(Ljava/lang/Object;)Z") => match args.first() {
             Some(Value::Obj(o)) => {
                 let rt = runtime_desc(vm, *o);
-                b(assignable(vm, &d, &rt))
+                b(assignable(vm, &d, &rt) || crate::reflect::proxy_implements(vm, *o, &d))
             }
             _ => b(false),
         },
         ("cast", "(Ljava/lang/Object;)Ljava/lang/Object;") => match args.first() {
             Some(Value::Obj(o)) => {
                 let rt = runtime_desc(vm, *o);
-                if !assignable(vm, &d, &rt) {
+                if !assignable(vm, &d, &rt) && !crate::reflect::proxy_implements(vm, *o, &d) {
                     return Err(cce(&rt, &d));
                 }
                 Value::Obj(*o)
