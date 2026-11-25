@@ -258,7 +258,7 @@ impl Engine {
                     }
                 }
                 OpK::Line(..) => {}
-                OpK::Text(s, x, y, size) => {
+                OpK::Text(s, x, y, size, _) => {
                     if !visible || s.trim().is_empty() {
                         continue;
                     }

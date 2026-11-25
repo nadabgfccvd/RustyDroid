@@ -18,8 +18,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Caminhos de teste desatualizados foram corrigidos. Os documentos históricos
   foram para `docs/archive/` (índice em `docs/archive/README.md`).
 
+- **Correção de documentação (2026-11-23):** o ROADMAP dizia que o espelhamento de
+  pares em RTL "ficava fora" do snapshot desde o #539 — na verdade o `rustybuzz`
+  aplica a regra L4 durante o shaping (`rotate_chars`, tabela
+  `unicode_bidi_mirroring` Unicode 16, quando a fonte tem o glifo). Nota
+  corrigida com a fonte do comportamento; os dois caminhos de texto (snapshot e
+  Canvas da VM) cobrem UAX #9 + L4. Resta aberto o alinhamento RTL de layout.
+
 ### Added
 
+- **Bidi (UAX #9) na Canvas da VM (M4, 2026-11-23):** `Canvas.drawText`/`drawTextRun`
+  agora reordenam os runs visualmente (esquerda→direita) via `unicode-bidi` — o mesmo
+  tratamento que o snapshot teve no #539, no caminho que APKs reais usam sobre o atlas
+  de glifos. O `isRtl` explícito do `drawTextRun` é honrado como direção de base
+  (prefixo LRM/RLM, P2/P3) e pares direcionais são espelhados em run RTL (regra L4,
+  tabela cobrindo os pares do atlas). Medição (`measure`) e largura do `get_ui_tree`
+  continuam corretas por serem ordem-independentes. Sem shaping contextual (formas
+  árabes) — desvio documentado. Testes: 9 unitários de runs/espelhamento em
+  `rd-vm/src/bidi.rs`, pixel-test de reversão visual (`"אX"` ≡ `"Xא"`) e e2e do
+  `isRtl` no op gravado.
 - **`Class` enclosing metadata from DEX annotations:** `getEnclosingMethod()`,
   `getEnclosingConstructor()` and `getEnclosingClass()` now read the system-visible
   `dalvik.annotation.EnclosingMethod` / `EnclosingClass` metadata for local and anonymous

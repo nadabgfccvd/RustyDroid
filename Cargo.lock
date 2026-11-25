@@ -855,6 +855,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "unicode-bidi",
 ]
 
 [[package]]
