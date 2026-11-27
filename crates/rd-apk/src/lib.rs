@@ -35,6 +35,15 @@ pub struct SplitDexSource {
     pub dex_files: Vec<String>,
 }
 
+/// Fonte de bibliotecas nativas extra: um split de XAPK (ex.: `config.arm64_v8a.apk`)
+/// com seu ZIP próprio.
+#[derive(Debug, Clone)]
+pub struct SplitNativeSource {
+    pub split_id: String,
+    pub zip: Zip,
+    pub native_libs: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Apk {
     /// Nome da entrada do manifest dentro do ZIP (constante na plataforma).
@@ -53,6 +62,9 @@ pub struct Apk {
     /// para APK comum. Cada fonte guarda o ZIP do split e os nomes dos DEX.
     #[serde(skip)]
     pub split_dex: Vec<SplitDexSource>,
+    /// Bibliotecas nativas (`lib/<abi>/*.so`) de splits de XAPK. Vazio para APK comum.
+    #[serde(skip)]
+    pub split_native: Vec<SplitNativeSource>,
     /// lib/<abi>/<name>.so
     pub native_libs: Vec<String>,
     /// ABIs distintas detectadas.
@@ -122,15 +134,24 @@ impl Apk {
         if xapk::is_bundle(&zip) {
             return Ok(xapk::Xapk::from_zip(&zip)?.into_base());
         }
+        Self::from_zip_single(zip, file_size_bytes)
+    }
+
+    /// Parseia um único APK a partir de um ZIP já aberto (sem recursão XAPK).
+    pub(crate) fn from_zip_single(zip: Zip, file_size_bytes: u64) -> RdResult<Apk> {
         // 1. AndroidManifest.xml (binário)
         let manifest_entry = "AndroidManifest.xml";
         let manifest_bytes = zip.read(manifest_entry)?;
         let doc = axml::parse(&manifest_bytes)?;
 
-        // 2. resources.arsc (opcional em APKs de teste, obrigatório em produção)
-        let arsc = match zip.read("resources.arsc") {
-            Ok(bytes) => Some(arsc::Arsc::parse_owned(bytes)?),
-            Err(_) => None,
+        // 2. resources.arsc (opcional em APKs de teste; se presente no ZIP,
+        // erros de leitura/descompressão/CRC ou de parse propagam ao invés
+        // de desaparecer silenciosamente).
+        let arsc = if zip.contains("resources.arsc") {
+            let bytes = zip.read("resources.arsc")?;
+            Some(arsc::Arsc::parse_owned(bytes)?)
+        } else {
+            None
         };
 
         let manifest = manifest::build(&doc, arsc.as_ref())?;
@@ -185,6 +206,7 @@ impl Apk {
             signing,
             dex_files,
             split_dex: Vec::new(),
+            split_native: Vec::new(),
             native_libs,
             abis,
             assets,
@@ -204,6 +226,20 @@ impl Apk {
     /// Container ZIP (entradas, leitura, CRC).
     pub fn container(&self) -> &Zip {
         &self.zip
+    }
+
+    /// All native library entries (`lib/<abi>/*.so`) across the base APK and any
+    /// merged XAPK splits, paired with the ZIP container that holds each entry.
+    pub fn all_native_libs(&self) -> Vec<(&Zip, &str)> {
+        let mut out: Vec<(&Zip, &str)> = self
+            .native_libs
+            .iter()
+            .map(|n| (&self.zip, n.as_str()))
+            .collect();
+        for split in &self.split_native {
+            out.extend(split.native_libs.iter().map(|n| (&split.zip, n.as_str())));
+        }
+        out
     }
 
     /// Verificação do piso de API (spec Apêndice A).

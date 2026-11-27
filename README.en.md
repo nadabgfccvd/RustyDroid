@@ -104,6 +104,7 @@ cargo build --release -p rd-cli
 | `crates/rd-ndk` | ELF32/64 loader + isolated Unicorn subprocess bridge (`native` feature) |
 | `crates/rd-render` | Headless software renderer (own rasterizer; `tiny-skia` is the spec target, see [ADR 019](docs/adr/019-renderer-tiny-skia-pendente.md)) & deterministic PNG encoder |
 | `crates/rd-engine-registry` | Appendix G 28-engine catalog, signature detector, and feature-gated contracts |
+| `crates/rd-engine-wasm` | Pure-Rust WebAssembly MVP decoder & sandboxed executor (`wasm-engine` feature) |
 | `crates/rd-agent` | 52-tool JSON-RPC 2.0 MCP server, `observe`, screen resources, `--live` viewer |
 | `crates/rd-cli` | `rd` command-line binary (`inspect`, `dex`, `vm`, `app`, `mcp`, `test`, `perf`, `device`, `engine`, `jetpack`, `gms`) |
 | `crates/rd-testsupport` | Deterministic synthetic APK, DEX, AXML, ARSC, and ELF builders for tests |

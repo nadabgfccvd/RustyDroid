@@ -47,6 +47,11 @@ struct OpenDesc {
 struct Vfs {
     dirs: BTreeSet<String>,
     files: BTreeMap<String, Vec<u8>>,
+    /// SHA-256 digests of SQLite database snapshots written by the host
+    /// (`jsqlite::persist_db`). Guest writes to the same VFS path change the
+    /// file contents without updating this map, so `jsqlite::ensure_loaded`
+    /// never feeds guest-crafted bytes into host `sqlite3_deserialize`.
+    host_db_digests: BTreeMap<String, [u8; 32]>,
     meta: BTreeMap<String, VfsMeta>,
     next_ino: i64,
     open_descs: BTreeMap<i64, OpenDesc>,
@@ -1205,10 +1210,36 @@ pub(crate) fn write_bytes(h: &VfsHandle, p: &str, bytes: Vec<u8>) {
     });
 }
 
+/// Writes a host-produced SQLite snapshot to the VFS and records its digest
+/// so `jsqlite::ensure_loaded` can distinguish trusted host snapshots from
+/// guest-written files at the same path.
+pub(crate) fn write_host_db(h: &VfsHandle, p: &str, bytes: Vec<u8>) {
+    let digest = crate::jcrypto::sha256(&bytes);
+    let p = absolute(p);
+    if let Some(parent) = parent_of(&p) {
+        mkdirs(h, &parent);
+    }
+    h.with(|v| {
+        v.host_db_digests.insert(p.clone(), digest);
+        v.files.insert(p, bytes);
+    });
+}
+
+/// Returns `true` only when `bytes` matches the exact host-produced SQLite
+/// snapshot last recorded for `p` in this session.
+pub(crate) fn is_host_db_snapshot(h: &VfsHandle, p: &str, bytes: &[u8]) -> bool {
+    let digest = crate::jcrypto::sha256(bytes);
+    let p = absolute(p);
+    h.with(|v| v.host_db_digests.get(&p) == Some(&digest))
+}
+
 /// Deletes a virtual file. Returns whether a file existed.
 pub(crate) fn delete_file(h: &VfsHandle, p: &str) -> bool {
     let p = absolute(p);
-    h.with(|v| v.files.remove(&p).is_some())
+    h.with(|v| {
+        v.host_db_digests.remove(&p);
+        v.files.remove(&p).is_some()
+    })
 }
 
 /// Issue #230: Android "clear data" / uninstall — apaga todo o
@@ -1244,6 +1275,7 @@ pub fn clear_package_data(h: &VfsHandle, package: &str) {
         }
         v.fds.retain(|_, desc| !dead_descs.contains(desc));
         v.files.retain(|p, _| !in_pkg(p));
+        v.host_db_digests.retain(|p, _| !in_pkg(p));
         v.meta.retain(|p, _| !in_pkg(p));
         v.dirs.retain(|p| !in_pkg(p));
     });

@@ -145,11 +145,9 @@ impl Policy {
     /// confiança — env vem do operador, nunca do cliente MCP).
     pub fn from_env() -> Self {
         let mut p = Policy::default();
-        if let Ok(s) = std::env::var("RD_MCP_SANDBOX") {
-            let roots: Vec<PathBuf> = s
-                .split(':')
-                .filter(|t| !t.trim().is_empty())
-                .map(PathBuf::from)
+        if let Ok(s) = std::env::var_os("RD_MCP_SANDBOX") {
+            let roots: Vec<PathBuf> = std::env::split_paths(&s)
+                .filter(|p| !p.to_string_lossy().trim().is_empty())
                 .collect();
             if !roots.is_empty() {
                 p.roots = roots;
@@ -477,13 +475,17 @@ impl AgentSession {
         let vfs = rd_vm::VfsHandle::new();
         let policy = Policy::from_env();
         let roots = policy.canonical_roots();
+        static NEXT_SESSION_SEQ: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(1);
+        let seq = NEXT_SESSION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let session_id = format!(
-            "sess-{}-{}",
+            "sess-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
-                .unwrap_or(0)
+                .unwrap_or(0),
+            seq,
         );
         AgentSession {
             session_id,
@@ -1149,6 +1151,8 @@ impl AgentSession {
             return self.tool_error_result(name, &e);
         }
         let res: Result<ToolResult, RdError> = match name {
+            #[cfg(test)]
+            "__test_panic" => panic!("injected test panic"),
             "install" => self.tool_install(
                 args.get("apk").and_then(|v| v.as_str()).unwrap_or(""),
                 args.get("instant")
@@ -1593,25 +1597,25 @@ impl AgentSession {
             "runtime_pending": self.find_installed(&package).map(|a| a.perms.pending_runtime().len()).unwrap_or(0),
             "runtime_special": self.find_installed(&package).map(|a| a.perms.pending_special().len()).unwrap_or(0),
             "bundle": bundle_splits.as_ref().map(|splits| {
-                // ADR 022: o DEX dos splits é mesclado à execução; as libs nativas
-                // dos splits ainda não são carregadas. `base_only_execution` fica
-                // true enquanto houver lib nativa de split pendente.
-                let native_pending: usize = splits
-                    .iter()
-                    .filter(|sp| !sp.base)
-                    .map(|sp| sp.native_libs)
-                    .sum();
+                // Both DEX and native libraries from XAPK splits are now merged
+                // into the base APK (`Apk::split_dex` / `Apk::split_native`).
                 let dex_merged: Vec<&str> = splits
                     .iter()
                     .filter(|sp| !sp.base && sp.dex_files > 0)
+                    .map(|sp| sp.id.as_str())
+                    .collect();
+                let native_merged: Vec<&str> = splits
+                    .iter()
+                    .filter(|sp| !sp.base && sp.native_libs > 0)
                     .map(|sp| sp.id.as_str())
                     .collect();
                 serde_json::json!({
                     "format": "xapk",
                     "splits": splits,
                     "split_dex_merged": dex_merged,
-                    "native_libs_pending": native_pending,
-                    "base_only_execution": native_pending > 0,
+                    "split_native_merged": native_merged,
+                    "native_libs_pending": 0usize,
+                    "base_only_execution": false,
                 })
             }),
         })))
@@ -2246,7 +2250,13 @@ impl AgentSession {
     }
 
     fn tool_logs(&mut self, clear: bool) -> Result<ToolResult, RdError> {
-        let mut buf = self.logs.lock().expect("logs");
+        let mut buf = self.logs.lock().map_err(|_| {
+            agent_error(
+                "LOG_BUFFER_UNAVAILABLE",
+                "buffer de logs indisponível (mutex envenenado por panic anterior)",
+                None,
+            )
+        })?;
         let text = String::from_utf8_lossy(&buf).to_string();
         if clear {
             buf.clear();
@@ -3631,6 +3641,9 @@ pub fn serve_stdio<R: std::io::Read, W: std::io::Write>(
     serve_stdio_with(input, output, std::env::var("RD_MCP_LIVE").ok().as_deref())
 }
 
+/// Maximum byte length of a single JSON-RPC line on MCP stdio (32 MiB).
+const MAX_MCP_STDIO_LINE_BYTES: usize = 32 * 1024 * 1024;
+
 /// [`serve_stdio`] with an optional live viewer address (`rd mcp --live`):
 /// a std-only HTTP server showing the current frame, visible texts and tap
 /// targets, updated after every tool call (long-poll, no polling storm).
@@ -3639,18 +3652,45 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
     mut output: W,
     live: Option<&str>,
 ) -> Result<(), RdError> {
-    let reader = std::io::BufReader::new(input);
+    use std::io::Read;
+    let mut reader = std::io::BufReader::new(input);
     let mut hub = SessionHub::new();
     if let Some(addr) = live.filter(|a| !a.is_empty()) {
         let local = hub.default_session().enable_live(addr)?;
         eprintln!("[rd mcp] live viewer: http://{local}/");
     }
-    for line in reader.lines() {
-        let line = line.map_err(|e| RdError::new("IO_ERROR", format!("stdin: {e}"), MODULE_ID))?;
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        let mut limited = (&mut reader).take((MAX_MCP_STDIO_LINE_BYTES as u64) + 2);
+        let n = limited
+            .read_until(b'\n', &mut raw)
+            .map_err(|e| RdError::new("IO_ERROR", format!("stdin: {e}"), MODULE_ID))?;
+        if n == 0 {
+            break;
+        }
+        if raw.ends_with(b"\n") {
+            raw.pop();
+            if raw.ends_with(b"\r") {
+                raw.pop();
+            }
+        }
+        if raw.len() > MAX_MCP_STDIO_LINE_BYTES {
+            return Err(RdError::new(
+                "MCP_MESSAGE_TOO_LARGE",
+                format!(
+                    "stdin message exceeded maximum frame size ({MAX_MCP_STDIO_LINE_BYTES} bytes)"
+                ),
+                MODULE_ID,
+            ));
+        }
+        let line = std::str::from_utf8(&raw).map_err(|e| {
+            RdError::new("IO_ERROR", format!("stdin: invalid UTF-8: {e}"), MODULE_ID)
+        })?;
         if line.trim().is_empty() {
             continue;
         }
-        match handle_message_hub(&mut hub, &line) {
+        match handle_message_hub(&mut hub, line) {
             None => continue, // notification
             Some(Ok(resp)) | Some(Err(resp)) => {
                 writeln!(output, "{resp}")
@@ -3665,6 +3705,9 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
             writeln!(output, "{n}")
                 .and_then(|()| output.flush())
                 .map_err(|e| RdError::new("IO_ERROR", format!("stdout: {e}"), MODULE_ID))?;
+        }
+        if raw.capacity() > 64 * 1024 {
+            raw = Vec::new();
         }
     }
     Ok(())

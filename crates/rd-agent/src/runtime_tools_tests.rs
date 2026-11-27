@@ -191,7 +191,13 @@ fn isolated_panic_retains_context_and_diagnostics_survive_a_poisoned_log_buffer(
         panic!("injected log poison");
     })
     .join();
-    let result = s.call_tool_isolated("logs", &serde_json::json!({}));
+    // `logs` itself degrades with a typed error rather than panicking on a poisoned mutex.
+    let (v, e) = call(&mut s, "logs", serde_json::json!({}));
+    assert!(e);
+    assert_eq!(v["code"], "LOG_BUFFER_UNAVAILABLE");
+    assert!(s.running.engine.is_some());
+    // An actual tool panic is isolated, tears down the running engine, and preserves diagnostics.
+    let result = s.call_tool_isolated("__test_panic", &serde_json::json!({}));
     assert!(result.is_error);
     assert!(s.running.engine.is_none());
     assert!(s.running.native_engine.is_none());
@@ -218,19 +224,11 @@ fn batch_isolates_a_panicking_step_and_continues() {
     // do batch, ESTE teste entra em panic em vez de falhar limpo.)
     let _guard = SESSION_LOCK.lock().unwrap();
     let mut s = AgentSession::new();
-    // Mesmo gatilho do teste de isolamento acima: buffer de logs
-    // envenenado faz a tool `logs` entrar em panic.
-    let logs = s.logs.clone();
-    let _ = std::thread::spawn(move || {
-        let _guard = logs.lock().unwrap();
-        panic!("injected log poison");
-    })
-    .join();
     let (v, err) = call(
         &mut s,
         "batch",
         serde_json::json!({"stop_on_error": false, "calls": [
-            {"name": "logs", "arguments": {}},
+            {"name": "__test_panic", "arguments": {}},
             {"name": "session_info", "arguments": {}}
         ]}),
     );

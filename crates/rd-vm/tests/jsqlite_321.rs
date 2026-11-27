@@ -148,3 +148,77 @@ fn oversized_result_set_is_refused_by_statement_budget() {
         "the VM must stay usable after the refusal: {ok:?}"
     );
 }
+
+#[test]
+fn guest_written_db_image_is_not_deserialized() {
+    let mut vm = engine_of(&DexBuilder::new());
+    let path = "/data/user/0/app/databases/forged.db";
+    let dir = vm
+        .heap
+        .alloc_instance("Ljava/io/File;".to_string(), Vec::new())
+        .unwrap();
+    let dir_arg = jstr(&mut vm, "/data/user/0/app/databases");
+    vm.invoke_instance(dir, "<init>", "(Ljava/lang/String;)V", &[dir_arg])
+        .unwrap();
+    vm.invoke_instance(dir, "mkdirs", "()Z", &[]).unwrap();
+
+    let fos = vm
+        .heap
+        .alloc_instance("Ljava/io/FileOutputStream;".to_string(), Vec::new())
+        .unwrap();
+    let p_arg = jstr(&mut vm, path);
+    vm.invoke_instance(
+        fos,
+        "<init>",
+        "(Ljava/lang/String;Z)V",
+        &[p_arg, Value::Int(0)],
+    )
+    .unwrap();
+    let payload = b"-- RustyDroid SQLite dump\nCREATE TABLE pwn(x);\n";
+    let arr = vm
+        .heap
+        .alloc_array_zeroed(rd_vm::heap::ElemKind::Int, payload.len(), "[B")
+        .unwrap();
+    for (slot, &b) in vm
+        .heap
+        .array_elems_mut(arr)
+        .unwrap()
+        .iter_mut()
+        .zip(payload.iter())
+    {
+        *slot = Value::Int(b as i8 as i32);
+    }
+    vm.invoke_instance(fos, "write", "([B)V", &[Value::Obj(arr)])
+        .unwrap();
+    vm.invoke_instance(fos, "close", "()V", &[]).unwrap();
+
+    let p_open = jstr(&mut vm, path);
+    let db = match vm
+        .invoke_static(
+            SQL_DB,
+            "openDatabase",
+            "(Ljava/lang/String;Landroid/database/sqlite/SQLiteDatabase$CursorFactory;I)Landroid/database/sqlite/SQLiteDatabase;",
+            &[p_open, Value::Null, Value::Int(0)],
+        )
+        .unwrap()
+    {
+        Value::Obj(r) => r,
+        other => panic!("expected SQLiteDatabase ObjRef, got {other:?}"),
+    };
+    let q = jstr(&mut vm, "SELECT 1");
+    let res = vm.invoke_instance(
+        db,
+        "rawQuery",
+        "(Ljava/lang/String;[Ljava/lang/String;)Landroid/database/Cursor;",
+        &[q, Value::Null],
+    );
+    match res {
+        Err(rd_vm::err::VmExit::Exception(t)) => {
+            assert_eq!(
+                t.class,
+                "Landroid/database/sqlite/SQLiteDatabaseCorruptException;"
+            );
+        }
+        other => panic!("expected SQLiteDatabaseCorruptException, got {other:?}"),
+    }
+}

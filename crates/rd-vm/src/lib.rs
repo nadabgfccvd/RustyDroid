@@ -137,7 +137,9 @@ use rd_dex::Dex;
 pub use engine::{ClassCoverage, CoverageSnapshot, Engine, VmConfig};
 pub use err::{Throwable, VmExit};
 pub use heap::ObjRef;
-pub use intrinsics::{route_default_app_stdout_to_stderr, set_default_app_stdout, HostOut};
+pub use intrinsics::{
+    route_default_app_stdout_to_stderr, set_default_app_stdout, HostOut, HOST_OUT_BUFFER_CAP,
+};
 pub use value::Value;
 
 /// Módulo do contrato de erro.

@@ -131,7 +131,7 @@ pub(super) fn run(sub: &EngineSub, dd: &DataDir) -> RdResult<()> {
                 {
                     let mut report = process.report()?;
                     report["logs"] = serde_json::json!(String::from_utf8_lossy(
-                        &logs.lock().expect("CLI app log buffer")
+                        &logs.lock().unwrap_or_else(|e| e.into_inner())
                     )
                     .to_string());
                     crate::to_json(&report)

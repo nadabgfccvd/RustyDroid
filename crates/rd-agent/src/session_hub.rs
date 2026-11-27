@@ -150,8 +150,6 @@ impl SessionHub {
         }
         let mut s = AgentSession::new();
         s.set_heap_budget(self.heap_budget);
-        // o id sai do relógio; o sufixo garante unicidade dentro do processo
-        s.session_id = format!("{}-{}", s.session_id, self.sessions.len());
         let id = s.session_id.clone();
         self.sessions.push(s);
         Ok(id)

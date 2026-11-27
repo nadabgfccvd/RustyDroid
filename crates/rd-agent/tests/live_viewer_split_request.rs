@@ -48,3 +48,30 @@ fn live_viewer_parses_headers_split_across_writes() {
     assert!(out.starts_with("HTTP/1.1 200"), "{out}");
     assert!(out.contains("RustyDroid"), "página não servida");
 }
+
+#[test]
+fn live_viewer_html_matches_published_state_schema() {
+    let mut s = AgentSession::new();
+    let addr = s.enable_live("127.0.0.1:0").expect("bind");
+
+    let mut c = TcpStream::connect(addr).expect("connect");
+    c.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+        .expect("request");
+    let html = read_response(&mut c);
+    assert!(html.starts_with("HTTP/1.1 200"), "{html}");
+    assert!(
+        !html.contains("s.running.activity"),
+        "LIVE_HTML não pode ler s.running.activity (o JSON publicado expõe s.activity no topo)"
+    );
+    assert!(html.contains("s.activity"), "LIVE_HTML deve ler s.activity");
+    assert!(html.contains("s.size"), "LIVE_HTML deve adaptar o canvas a s.size");
+
+    let mut c2 = TcpStream::connect(addr).expect("connect state");
+    c2.write_all(b"GET /state.json HTTP/1.1\r\nHost: x\r\n\r\n")
+        .expect("request state");
+    let state_resp = read_response(&mut c2);
+    assert!(state_resp.starts_with("HTTP/1.1 200"), "{state_resp}");
+    let body = state_resp.split_once("\r\n\r\n").expect("http body").1;
+    let parsed: serde_json::Value = serde_json::from_str(body).expect("valid state JSON");
+    assert_eq!(parsed["version"], 0);
+}

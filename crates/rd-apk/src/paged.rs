@@ -157,12 +157,17 @@ impl PagedZip {
         // Tail-only EOCD search: last 64 KiB + EOCD record.
         let tail_len = (len as usize).min(22 + 65_536);
         let tail = cache.read_vec(len - tail_len as u64, tail_len)?;
+        let rd16 = |b: &[u8], o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
+        let rd32 = |b: &[u8], o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
         let mut eocd_rel = None;
         let mut i = tail_len - 22;
         loop {
-            if u32::from_le_bytes([tail[i], tail[i + 1], tail[i + 2], tail[i + 3]]) == EOCD_SIG {
-                eocd_rel = Some(i);
-                break;
+            if rd32(&tail, i) == EOCD_SIG {
+                let comment_len = rd16(&tail, i + 20) as usize;
+                if i + 22 + comment_len == tail_len {
+                    eocd_rel = Some(i);
+                    break;
+                }
             }
             if i == 0 {
                 break;
@@ -172,8 +177,6 @@ impl PagedZip {
         let eocd_rel =
             eocd_rel.ok_or_else(|| RdError::parse("paged-zip: EOCD not found in tail"))?;
         let eocd = (len - tail_len as u64) + eocd_rel as u64;
-        let rd16 = |b: &[u8], o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
-        let rd32 = |b: &[u8], o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
         let mut entry_count = rd16(&tail, eocd_rel + 10) as u64;
         let mut cd_size = rd32(&tail, eocd_rel + 12) as u64;
         let mut cd_offset = rd32(&tail, eocd_rel + 16) as u64;
@@ -192,14 +195,24 @@ impl PagedZip {
             cd_size = cache.u64_at(ck(z64, 40)?)?;
             cd_offset = cache.u64_at(ck(z64, 48)?)?;
         }
-        let _ = cd_size;
+        let cd_end = ck(cd_offset, cd_size)?;
+        if cd_end > len {
+            return Err(RdError::parse(format!(
+                "paged-zip: central directory [{cd_offset}..{cd_end}) exceeds file (len {len})"
+            )));
+        }
         // Stream the central directory entry-by-entry through the cache.
         // Issue #245: a pré-alocação é limitada pelo que cabe fisicamente
         // no CD (cada entrada ocupa ≥46 B), não só pela contagem declarada.
-        let cd_room = (len.saturating_sub(cd_offset) / 46) as usize;
+        let cd_room = (cd_size / 46) as usize;
         let mut entries = Vec::with_capacity((entry_count as usize).min(cd_room.min(1_000_000)));
         let mut p = cd_offset;
         for n in 0..entry_count {
+            if ck(p, 46)? > cd_end {
+                return Err(RdError::parse(format!(
+                    "paged-zip: CD entry #{n} at {p} exceeds central directory end {cd_end}"
+                )));
+            }
             let entry = Self::parse_cd_entry(&mut cache, p).map_err(|e: RdError| {
                 e.with_suggestion(format!("paged-zip: parsing CD entry #{n}"))
             })?;
@@ -209,6 +222,11 @@ impl PagedZip {
                 + cache.u16_at(ck(p, 32)?)? as u64;
             entries.push(entry);
             p = ck(p, stride)?;
+            if p > cd_end {
+                return Err(RdError::parse(format!(
+                    "paged-zip: CD entry #{n} stride walks past central directory end {cd_end}"
+                )));
+            }
         }
         Ok(PagedZip {
             cache: Mutex::new(cache),

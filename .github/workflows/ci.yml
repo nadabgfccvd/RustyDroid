@@ -123,11 +123,11 @@ jobs:
       - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2
         with:
           tool: cargo-deny@0.20.2
-      # `advisories` ainda não bloqueia: RUSTSEC-2026-0206 (rustybuzz, não
-      # mantido, sem upgrade seguro) exige decisão de substituição (harfrust)
-      # ou de aceite com prazo. Não é ignorado silenciosamente.
-      - name: cargo deny (bans, licenses, sources)
-        run: cargo deny --locked check bans licenses sources
+      # RUSTSEC-2026-0206 (rustybuzz unmaintained) is explicitly scoped with a
+      # review deadline in deny.toml so all other advisories, CVEs, unsoundness,
+      # and yanked crates remain blocking.
+      - name: cargo deny (advisories, bans, licenses, sources)
+        run: cargo deny --locked check advisories bans licenses sources
 
   rust:
     name: Rust (stable)
@@ -193,10 +193,15 @@ jobs:
           done
       - name: All features still report missing execution honestly
         run: cargo test -p rd-engine-registry --all-features --locked
-      - name: CLI minimum and feature forwarding compile
+      - name: CLI and agent feature combinations compile
         run: |
           cargo check -p rd-cli --no-default-features --locked
           cargo check -p rd-cli --all-features --locked
+          cargo check -p rd-agent --no-default-features --locked
+          cargo check -p rd-agent --features virtual-devices --locked
+          cargo check -p rd-agent --features wasm-engine --locked
+          cargo check -p rd-agent --features jit --locked
+          cargo check -p rd-agent --all-features --locked
       - name: Optional contracts are clippy clean
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Catalog, spec and generated documentation agree
@@ -396,7 +401,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test -p rd-jni --features jit
-      - run: cargo test -p rd-vm --features jit --test jit
+      - run: cargo test -p rd-vm --features jit --test jit --test jit_fuzz
       - run: cargo clippy --workspace --all-targets --features rd-cli/jit -- -D warnings
 
   native-languages:

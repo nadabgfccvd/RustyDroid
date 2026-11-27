@@ -234,6 +234,59 @@ impl Runtime {
         self.request(json!({"op":"map","address":address,"size":size}))?;
         Ok(())
     }
+    fn protect(&mut self, address: u64, size: u64, perms: u32) -> Result<()> {
+        self.request(json!({"op":"protect","address":address,"size":size,"perms":perms}))?;
+        Ok(())
+    }
+    fn unmap(&mut self, address: u64, size: u64) -> Result<()> {
+        self.request(json!({"op":"unmap","address":address,"size":size}))?;
+        Ok(())
+    }
+    fn apply_segment_protections(&mut self, base: u64, size: u64, elf: &Elf) -> Result<()> {
+        const PAGE: u64 = 4096;
+        const UC_PROT_READ: u32 = 1;
+        const UC_PROT_WRITE: u32 = 2;
+        const UC_PROT_EXEC: u32 = 4;
+        let total_pages = (size / PAGE) as usize;
+        if total_pages == 0 {
+            return Ok(());
+        }
+        let mut page_perms = vec![0u32; total_pages];
+        for seg in &elf.segments {
+            if seg.memory_size == 0 {
+                continue;
+            }
+            let start_page = (seg.address / PAGE) as usize;
+            let end_byte = seg.address.saturating_add(seg.memory_size);
+            let end_page = (end_byte.div_ceil(PAGE) as usize).min(total_pages);
+            let mut uc_prot = 0u32;
+            if seg.flags & 4 != 0 {
+                uc_prot |= UC_PROT_READ; // ELF PF_R
+            }
+            if seg.flags & 2 != 0 {
+                uc_prot |= UC_PROT_WRITE; // ELF PF_W
+            }
+            if seg.flags & 1 != 0 {
+                uc_prot |= UC_PROT_EXEC; // ELF PF_X
+            }
+            for slot in page_perms.iter_mut().take(end_page).skip(start_page) {
+                *slot |= uc_prot;
+            }
+        }
+        let mut i = 0;
+        while i < total_pages {
+            let perm = page_perms[i];
+            let mut j = i + 1;
+            while j < total_pages && page_perms[j] == perm {
+                j += 1;
+            }
+            let run_addr = base + (i as u64) * PAGE;
+            let run_size = ((j - i) as u64) * PAGE;
+            self.protect(run_addr, run_size, perm)?;
+            i = j;
+        }
+        Ok(())
+    }
     pub fn read(&mut self, address: u64, size: usize) -> Result<Vec<u8>> {
         if size > 16 * 1024 * 1024 {
             return Err(RdError::new("NATIVE_MEMORY", "read exceeds 16 MiB limit"));
@@ -336,9 +389,12 @@ impl Runtime {
         self.libraries.contains_key(name)
     }
     pub fn load(&mut self, name: &str, available: &BTreeMap<String, Vec<u8>>) -> Result<Vec<u64>> {
+        // Phase 1: parse and validate the entire dependency graph before
+        // mutating `self` or mapping pages in the worker.
         let mut pending = vec![name.to_string()];
-        let mut added = Vec::new();
+        let mut planned: Vec<(String, u64, u64, Elf)> = Vec::new();
         let mut seen = BTreeSet::new();
+        let mut cursor_base = self.next_base;
         while let Some(n) = pending.pop() {
             if self.is_loaded(&n) || !seen.insert(n.clone()) {
                 continue;
@@ -353,7 +409,7 @@ impl Runtime {
             if elf.abi != self.abi {
                 return Err(RdError::new("UNSUPPORTED_ABI", n));
             }
-            let base = self.next_base;
+            let base = cursor_base;
             let size = elf.memory_size.max(4096);
             let step = size
                 .checked_add(65536)
@@ -367,131 +423,181 @@ impl Runtime {
                     "total ELF mapping budget exceeded",
                 ));
             }
-            self.map(base, size)?;
-            self.next_base = next;
-            for s in &elf.segments {
-                let seg_base = base
-                    .checked_add(s.address)
-                    .ok_or_else(|| RdError::new("INVALID_ELF", "segment address overflow"))?;
-                for (i, chunk) in s.bytes.chunks(8 * 1024 * 1024).enumerate() {
-                    let dst = seg_base
-                        .checked_add((i * 8 * 1024 * 1024) as u64)
-                        .ok_or_else(|| RdError::new("INVALID_ELF", "segment write overflow"))?;
-                    self.write(dst, chunk)?;
-                }
-            }
             for dep in &elf.needed {
                 if !platform_library(dep) {
                     pending.push(dep.clone());
                 }
             }
-            self.libraries.insert(n.clone(), Library { base, elf });
-            added.push(n);
+            cursor_base = next;
+            planned.push((n, base, size, elf));
         }
-        // All exports exist before relocation, allowing cyclic dependency graphs.
-        for n in &added {
-            let l = self.libraries[n].clone();
-            for r in &l.elf.relocations {
-                if r.kind == 0 {
-                    continue;
+
+        // Phase 2: map, write segments, relocate, validate init_array, and
+        // enforce W^X per-page segment protections. On any failure, roll back
+        // all state and unmap pages so `Runtime` never retains half-loaded libs.
+        let saved_next_base = self.next_base;
+        let saved_imports = self.imports.clone();
+        let saved_import_names = self.import_names.clone();
+        let saved_data_imports = self.data_imports.clone();
+        let saved_missing_imports = self.missing_imports.clone();
+        let saved_arena_used = self.arena_used;
+        let saved_allocations = self.allocations;
+        let saved_sizes = self.sizes.clone();
+        let mut mapped_regions: Vec<(u64, u64)> = Vec::new();
+        let mut added: Vec<String> = Vec::new();
+
+        let res = (|| -> Result<Vec<u64>> {
+            for (n, base, size, elf) in planned {
+                self.map(base, size)?;
+                mapped_regions.push((base, size));
+                for s in &elf.segments {
+                    let seg_base = base
+                        .checked_add(s.address)
+                        .ok_or_else(|| RdError::new("INVALID_ELF", "segment address overflow"))?;
+                    for (i, chunk) in s.bytes.chunks(8 * 1024 * 1024).enumerate() {
+                        let dst = seg_base
+                            .checked_add((i * 8 * 1024 * 1024) as u64)
+                            .ok_or_else(|| {
+                                RdError::new("INVALID_ELF", "segment write overflow")
+                            })?;
+                        self.write(dst, chunk)?;
+                    }
                 }
-                let target = l
-                    .base
-                    .checked_add(r.offset)
-                    .ok_or_else(|| RdError::new("INVALID_ELF", "relocation offset overflow"))?;
-                let add = match r.addend {
-                    Some(a) => a as u64,
-                    None => self.read_word(target)?,
-                };
-                let value = if r.kind == relative_kind(self.abi) {
-                    l.base.wrapping_add(add)
-                } else {
-                    let supported = match self.abi {
-                        Abi::X86_64 => matches!(r.kind, 1 | 6 | 7),
-                        Abi::Arm64 => matches!(r.kind, 257 | 1025 | 1026),
-                        Abi::Arm => matches!(r.kind, 2 | 21 | 22),
-                    };
-                    if !supported {
-                        return Err(RdError::new(
-                            "UNSUPPORTED_RELOCATION",
-                            format!("{} relocation {}", self.abi.android_name(), r.kind),
-                        ));
-                    }
-                    let s =
-                        l.elf.symbols.get(r.symbol).ok_or_else(|| {
-                            RdError::new("INVALID_ELF", "relocation missing symbol")
-                        })?;
-                    let resolved = if s.defined {
-                        l.base
-                            .checked_add(s.value)
-                            .ok_or_else(|| RdError::new("INVALID_ELF", "symbol value overflow"))?
-                    } else if let Some(v) = self.symbol(&s.name) {
-                        v
-                    } else if builtin_import(&s.name) {
-                        self.import(&s.name)?
-                    } else if s.weak {
-                        0
-                    } else if s.kind == 1 {
-                        self.data_import(&s.name, s.size)?
-                    } else {
-                        // Lazy binding like bionic: an unimplemented import
-                        // fails when called at its trap slot.
-                        self.import(&s.name)?
-                    };
-                    // GLOB_DAT/JUMP_SLOT do not add the implicit GOT contents on ARM/x86.
-                    if matches!(
-                        (self.abi, r.kind),
-                        (Abi::Arm, 21 | 22) | (Abi::X86_64, 6 | 7)
-                    ) {
-                        resolved
-                    } else {
-                        resolved.wrapping_add(add)
-                    }
-                };
-                self.write_word(target, value)?;
+                self.libraries.insert(n.clone(), Library { base, elf });
+                added.push(n);
             }
-        }
-        let mut init = Vec::new();
-        for n in added.iter().rev() {
-            let l = self.libraries[n].clone();
-            if let Some(a) = l.elf.init {
-                let fn_ptr = l
-                    .base
-                    .checked_add(a)
-                    .ok_or_else(|| RdError::new("INVALID_ELF", "DT_INIT address overflow"))?;
-                init.push(fn_ptr);
-            }
-            if let Some((a, count)) = l.elf.init_array {
-                let arr_base = l
-                    .base
-                    .checked_add(a)
-                    .ok_or_else(|| RdError::new("INVALID_ELF", "init_array address overflow"))?;
-                for i in 0..count {
-                    let elem_off = (i as u64)
-                        .checked_mul(self.abi.pointer_size() as u64)
-                        .and_then(|v| arr_base.checked_add(v))
-                        .ok_or_else(|| RdError::new("INVALID_ELF", "init_array entry overflow"))?;
-                    let p = self.read_word(elem_off)?;
-                    if p != 0 && p != u64::MAX && p != u32::MAX as u64 {
-                        let p_addr = if self.abi == Abi::Arm { p & !1 } else { p };
-                        let valid_target = self.libraries.values().any(|lib| {
-                            lib.base
-                                .checked_add(lib.elf.memory_size.max(4096))
-                                .map(|end| p_addr >= lib.base && p_addr < end)
-                                .unwrap_or(false)
-                        });
-                        if !valid_target {
+            self.next_base = cursor_base;
+
+            // All exports exist before relocation, allowing cyclic dependency graphs.
+            for n in &added {
+                let l = self.libraries[n].clone();
+                for r in &l.elf.relocations {
+                    if r.kind == 0 {
+                        continue;
+                    }
+                    let target = l.base.checked_add(r.offset).ok_or_else(|| {
+                        RdError::new("INVALID_ELF", "relocation offset overflow")
+                    })?;
+                    let add = match r.addend {
+                        Some(a) => a as u64,
+                        None => self.read_word(target)?,
+                    };
+                    let value = if r.kind == relative_kind(self.abi) {
+                        l.base.wrapping_add(add)
+                    } else {
+                        let supported = match self.abi {
+                            Abi::X86_64 => matches!(r.kind, 1 | 6 | 7),
+                            Abi::Arm64 => matches!(r.kind, 257 | 1025 | 1026),
+                            Abi::Arm => matches!(r.kind, 2 | 21 | 22),
+                        };
+                        if !supported {
                             return Err(RdError::new(
-                                "INVALID_ELF",
-                                "init_array entry points outside loaded ELF segments",
+                                "UNSUPPORTED_RELOCATION",
+                                format!("{} relocation {}", self.abi.android_name(), r.kind),
                             ));
                         }
-                        init.push(p);
+                        let s = l.elf.symbols.get(r.symbol).ok_or_else(|| {
+                            RdError::new("INVALID_ELF", "relocation missing symbol")
+                        })?;
+                        let resolved = if s.defined {
+                            l.base.checked_add(s.value).ok_or_else(|| {
+                                RdError::new("INVALID_ELF", "symbol value overflow")
+                            })?
+                        } else if let Some(v) = self.symbol(&s.name) {
+                            v
+                        } else if builtin_import(&s.name) {
+                            self.import(&s.name)?
+                        } else if s.weak {
+                            0
+                        } else if s.kind == 1 {
+                            self.data_import(&s.name, s.size)?
+                        } else {
+                            // Lazy binding like bionic: an unimplemented import
+                            // fails when called at its trap slot.
+                            self.import(&s.name)?
+                        };
+                        // GLOB_DAT/JUMP_SLOT do not add the implicit GOT contents on ARM/x86.
+                        if matches!(
+                            (self.abi, r.kind),
+                            (Abi::Arm, 21 | 22) | (Abi::X86_64, 6 | 7)
+                        ) {
+                            resolved
+                        } else {
+                            resolved.wrapping_add(add)
+                        }
+                    };
+                    self.write_word(target, value)?;
+                }
+            }
+            let mut init = Vec::new();
+            for n in added.iter().rev() {
+                let l = self.libraries[n].clone();
+                if let Some(a) = l.elf.init {
+                    let fn_ptr = l
+                        .base
+                        .checked_add(a)
+                        .ok_or_else(|| RdError::new("INVALID_ELF", "DT_INIT address overflow"))?;
+                    init.push(fn_ptr);
+                }
+                if let Some((a, count)) = l.elf.init_array {
+                    let arr_base = l.base.checked_add(a).ok_or_else(|| {
+                        RdError::new("INVALID_ELF", "init_array address overflow")
+                    })?;
+                    for i in 0..count {
+                        let elem_off = (i as u64)
+                            .checked_mul(self.abi.pointer_size() as u64)
+                            .and_then(|v| arr_base.checked_add(v))
+                            .ok_or_else(|| {
+                                RdError::new("INVALID_ELF", "init_array entry overflow")
+                            })?;
+                        let p = self.read_word(elem_off)?;
+                        if p != 0 && p != u64::MAX && p != u32::MAX as u64 {
+                            let p_addr = if self.abi == Abi::Arm { p & !1 } else { p };
+                            let valid_target = self.libraries.values().any(|lib| {
+                                lib.base
+                                    .checked_add(lib.elf.memory_size.max(4096))
+                                    .map(|end| p_addr >= lib.base && p_addr < end)
+                                    .unwrap_or(false)
+                            });
+                            if !valid_target {
+                                return Err(RdError::new(
+                                    "INVALID_ELF",
+                                    "init_array entry points outside loaded ELF segments",
+                                ));
+                            }
+                            init.push(p);
+                        }
                     }
                 }
             }
+            // Enforce per-page W^X permissions from ELF PT_LOAD flags after
+            // relocations have written GOT/data entries.
+            for n in &added {
+                let l = self.libraries[n].clone();
+                let size = l.elf.memory_size.max(4096);
+                self.apply_segment_protections(l.base, size, &l.elf)?;
+            }
+            Ok(init)
+        })();
+
+        if let Err(err) = res {
+            for n in &added {
+                self.libraries.remove(n);
+            }
+            self.next_base = saved_next_base;
+            self.imports = saved_imports;
+            self.import_names = saved_import_names;
+            self.data_imports = saved_data_imports;
+            self.missing_imports = saved_missing_imports;
+            self.arena_used = saved_arena_used;
+            self.allocations = saved_allocations;
+            self.sizes = saved_sizes;
+            for (base, size) in mapped_regions.into_iter().rev() {
+                let _ = self.unmap(base, size);
+            }
+            return Err(err);
         }
-        Ok(init)
+        res
     }
     fn data_import(&mut self, name: &str, size: u64) -> Result<u64> {
         if let Some(p) = self.data_imports.get(name) {
@@ -2035,6 +2141,15 @@ for raw in sys.stdin:
     elif op == "map":
         mapped.append((int(q["address"]), int(q["size"])))
         send({"event": "ok"})
+    elif op == "protect":
+        send({"event": "ok"})
+    elif op == "unmap":
+        addr = int(q["address"])
+        sz = int(q["size"])
+        mapped[:] = [(a, s) for (a, s) in mapped if not (a == addr and s == sz)]
+        for k in [k for k in mem if addr <= k < addr + sz]:
+            del mem[k]
+        send({"event": "ok"})
     elif op == "write":
         addr = int(q["address"])
         data = bytes.fromhex(q["hex"])
@@ -2406,13 +2521,18 @@ for raw in sys.stdin:
             Err(ref e) if e.code == "NATIVE_MEMORY"
         ));
 
-        // #242: init_array entry pointing into ARENA (outside ELF segments) is rejected during load()
+        // #242: init_array entry pointing into ARENA (outside ELF segments) is rejected during load(),
+        // and the failed load rolls back cleanly so `is_loaded` remains false.
         let bad_init_elf = build_weak_import_elf(&[], Some(ARENA));
         avail.insert("libbadinit.so".to_string(), bad_init_elf);
         assert!(matches!(
             rt.load("libbadinit.so", &avail),
             Err(ref e) if e.code == "INVALID_ELF"
         ));
+        assert!(
+            !rt.is_loaded("libbadinit.so"),
+            "failed Runtime::load must roll back library registration"
+        );
         Ok(())
     }
 }

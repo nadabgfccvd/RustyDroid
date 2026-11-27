@@ -183,6 +183,11 @@ impl Engine {
         // Subsystem tables (`m8`, `m9`, `androidx`, `gms`) and `native` are
         // traced precisely as strong roots + ephemerons rather than through
         // `Debug` tokenization so scalar ints/IDs never false-pin heap slots.
+        // Module side tables moved into `HostState` by ADR 024 (`annotations`,
+        // `uri`, `spannable`, `random`, `regex`, `xml`, `io_chars`, `org_json`)
+        // are keyed by weak `ObjRef` owners (traced via `gc_keys`/`gc_entry`
+        // where values contain heap refs and purged in `gc_purge`); formatting
+        // them here would pin every entry forever as a strong root.
         let objects = std::mem::take(&mut self.fw.objects);
         let resources = self.fw.resources.take();
         let m8 = std::mem::take(&mut self.fw.m8);
@@ -190,6 +195,14 @@ impl Engine {
         let m9 = std::mem::take(&mut self.fw.m9);
         let androidx = std::mem::take(&mut self.fw.androidx);
         let gms = std::mem::take(&mut self.fw.gms);
+        let annotations = std::mem::take(&mut self.fw.annotations);
+        let uri = std::mem::take(&mut self.fw.uri);
+        let spannable = std::mem::take(&mut self.fw.spannable);
+        let random = std::mem::take(&mut self.fw.random);
+        let regex = std::mem::take(&mut self.fw.regex);
+        let xml = std::mem::take(&mut self.fw.xml);
+        let io_chars = std::mem::take(&mut self.fw.io_chars);
+        let org_json = std::mem::take(&mut self.fw.org_json);
         let _ = write!(s, "{:?}", self.fw);
         self.fw.objects = objects;
         self.fw.resources = resources;
@@ -200,6 +213,14 @@ impl Engine {
         }
         self.fw.androidx = androidx;
         self.fw.gms = gms;
+        self.fw.annotations = annotations;
+        self.fw.uri = uri;
+        self.fw.spannable = spannable;
+        self.fw.random = random;
+        self.fw.regex = regex;
+        self.fw.xml = xml;
+        self.fw.io_chars = io_chars;
+        self.fw.org_json = org_json;
         // #304: `self.sparse` is deliberately NOT rendered here. Conservative
         // Debug tokenization would turn every SparseArray key/value ObjRef into
         // a strong root, so an unreachable SparseArray (and any scalar that
@@ -544,6 +565,7 @@ impl Engine {
         self.gfx.objs.retain(|r, _| alive(r));
         self.bignums.retain(|r, _| alive(r));
         self.break_iters.retain(|r, _| alive(r));
+        self.system_ui_visibility.retain(|r, _| alive(r));
         host_ephemerons::purge_dead(&mut self.fw, &alive);
         // #304: same for the engine-level SparseArray owners.
         self.sparse.retain(|r, _| alive(r));
@@ -1181,5 +1203,90 @@ mod tests {
         let mut v = Vec::new();
         scan_refs("Obj(3) [7, 12] Int(0) x99 1000", 50, &mut v);
         assert_eq!(v, vec![3, 7, 12]);
+    }
+
+    #[test]
+    fn host_module_tables_do_not_pin_unreachable_objects() {
+        let mut vm = Engine::new(vec![], Default::default());
+        for _ in 0..64 {
+            vm.heap.alloc_instance("LPad;".into(), vec![]).unwrap();
+        }
+        let r_json = vm
+            .heap
+            .alloc_instance("Lorg/json/JSONObject;".into(), vec![])
+            .unwrap();
+        let r_rand = vm
+            .heap
+            .alloc_instance("Ljava/util/Random;".into(), vec![])
+            .unwrap();
+        let r_uri = vm
+            .heap
+            .alloc_instance("Landroid/net/Uri$Builder;".into(), vec![])
+            .unwrap();
+        let r_ann = vm
+            .heap
+            .alloc_instance("Ljava/lang/annotation/Annotation;".into(), vec![])
+            .unwrap();
+        let r_regex = vm
+            .heap
+            .alloc_instance("Ljava/util/regex/Matcher;".into(), vec![])
+            .unwrap();
+        let r_span = vm
+            .heap
+            .alloc_instance("Landroid/text/SpannableStringBuilder;".into(), vec![])
+            .unwrap();
+        let r_xml = vm
+            .heap
+            .alloc_instance("Landroid/content/res/TypedArray;".into(), vec![])
+            .unwrap();
+
+        vm.fw
+            .org_json
+            .docs
+            .insert(r_json, serde_json::json!({"n": r_rand}));
+        vm.fw.random.seeds.insert(r_rand, 12345);
+        vm.fw.uri.builders.insert(r_uri, Default::default());
+        vm.fw.annotations.instances.insert(r_ann);
+        vm.fw.regex.matchers.insert(r_regex, Default::default());
+        vm.fw.spannable.states.insert(r_span, Default::default());
+        vm.fw.xml.arrays.insert(r_xml, Vec::new());
+
+        vm.gc();
+
+        for r in [r_json, r_rand, r_uri, r_ann, r_regex, r_span, r_xml] {
+            assert_eq!(
+                vm.heap.class_of(r).unwrap(),
+                FREED_CLASS,
+                "module side table must not pin ObjRef {r}"
+            );
+        }
+        assert!(!vm.fw.org_json.docs.contains_key(&r_json));
+        assert!(!vm.fw.random.seeds.contains_key(&r_rand));
+        assert!(!vm.fw.uri.builders.contains_key(&r_uri));
+        assert!(!vm.fw.annotations.instances.contains(&r_ann));
+        assert!(!vm.fw.regex.matchers.contains_key(&r_regex));
+        assert!(!vm.fw.spannable.states.contains_key(&r_span));
+        assert!(!vm.fw.xml.arrays.contains_key(&r_xml));
+    }
+
+    #[test]
+    fn system_ui_visibility_is_purged_when_view_is_collected() {
+        let mut vm = Engine::new(vec![], Default::default());
+        for _ in 0..64 {
+            vm.heap.alloc_instance("LPad;".into(), vec![]).unwrap();
+        }
+        let r_view = vm
+            .heap
+            .alloc_instance("Landroid/view/View;".into(), vec![])
+            .unwrap();
+        vm.system_ui_visibility.insert(r_view, 0x0000_1234);
+
+        vm.gc();
+
+        assert_eq!(vm.heap.class_of(r_view).unwrap(), FREED_CLASS);
+        assert!(
+            !vm.system_ui_visibility.contains_key(&r_view),
+            "recycled ObjRef must not inherit stale system_ui_visibility"
+        );
     }
 }
