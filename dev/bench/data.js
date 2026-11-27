@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795577770036,
+  "lastUpdate": 1795771033538,
   "repoUrl": "https://github.com/nadabgfccvd/RustyDroid",
   "entries": {
     "rd-dex parse tables": [
@@ -7935,6 +7935,42 @@ window.BENCHMARK_DATA = {
             "name": "parse_field_ids_20k",
             "value": 3334,
             "range": "± 26",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "117041552+nadabgfccvd@users.noreply.github.com",
+            "name": "nadabgfccvd",
+            "username": "nadabgfccvd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9bff043283bd833f68ba7bceac0a33fa421f50a9",
+          "message": "fix: harden GC, SQLite/NDK boundaries, APK/XAPK parsing, MCP viewer/stdio, AES perf, CI, and docs (#673)\n\n* fix: harden GC, SQLite/NDK boundaries, APK/XAPK parsing, MCP viewer/stdio, AES perf, CI, and docs\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix: use Some(s) for env::var_os and align rustfmt formatting\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix(ci): satisfy clippy -D warnings and rustfmt across patched crates\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix(ci): resolve remaining rustfmt wraps and clippy lints\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* chore(ci): temporary fmt/clippy annotation diagnostics\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix(ci): replace deprecated AtomicUsize::fetch_update and fix xapk test rustfmt\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* chore(ci): temporary rustfmt diff diagnostic\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix(ci): apply final rustfmt fixes in jcrypto.rs and native.rs\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* temp(ci): surface failing test output via annotation (will revert)\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix(ndk): handle protect and unmap ops in ndk_p0_242_255 mock worker\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* fix(vm): reserve next host frame against measured SP and snapshot /proc/thread-self/maps once\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* temp(ci): capture Native ABI + JNI bridge test failure (will revert)\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* temp(ci): single-line python diagnostic for native test (will revert)\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n* chore(ci): remove temporary native test annotation diagnostic\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>\n\n---------\n\nCo-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>",
+          "timestamp": "2026-11-27T06:16:33-03:00",
+          "tree_id": "834cb6bf0accb260bf3e87bcb8b5bd0c3150f36c",
+          "url": "https://github.com/nadabgfccvd/RustyDroid/commit/9bff043283bd833f68ba7bceac0a33fa421f50a9"
+        },
+        "date": 1795771031859,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse_method_ids_20k",
+            "value": 1881,
+            "range": "± 52",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse_field_ids_20k",
+            "value": 1849,
+            "range": "± 76",
             "unit": "ns/iter"
           }
         ]
