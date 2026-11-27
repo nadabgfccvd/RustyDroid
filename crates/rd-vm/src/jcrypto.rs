@@ -120,12 +120,8 @@ const fn make_sbox() -> [u8; 256] {
         if q & 0x80 != 0 {
             q ^= 0x09;
         }
-        s[p as usize] = q
-            ^ q.rotate_left(1)
-            ^ q.rotate_left(2)
-            ^ q.rotate_left(3)
-            ^ q.rotate_left(4)
-            ^ 0x63;
+        s[p as usize] =
+            q ^ q.rotate_left(1) ^ q.rotate_left(2) ^ q.rotate_left(3) ^ q.rotate_left(4) ^ 0x63;
         step += 1;
     }
     s
