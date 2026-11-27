@@ -159,12 +159,12 @@ rustydroid/
 │   ├── rd-apk/        # ZIP (+ZIP64, CRC), AXML, resources.arsc, signatures, manifest model
 │   ├── rd-dex/        # DEX 100% + disassembler + fuzz targets        (M1)
 │   ├── rd-vm/         # Dalvik VM in Rust (interpreter → Cranelift JIT) (M2)
-│   ├── rd-jni/        # JNI mangling, descriptors, MUTF-8, ref frames   (M9)
+│   ├── rd-jni/        # JNI mangling, descriptors, MUTF-8, ref frames + opt-in Cranelift JIT (M9)
 │   ├── rd-ndk/        # ELF loader x86_64/AArch64/ARM + isolated worker (M9)
-│   ├── rd-engine-registry/ # Appendix G: 28 records + static detection (not execution)
-│   ├── rd-engine-*/   # language bridges (flutter/rn/mono/wasm…) feature-gated (M11)
+│   ├── rd-engine-registry/ # Appendix G: 28 records + static detection + feature-gated adapters
+│   ├── rd-engine-wasm/ # pure-Rust WASM MVP decoder & executor (`wasm-engine` feature, M11)
 │   ├── rd-framework/  # versioned framework data/engines: fd-permissions ✅, fd-devices ✅, fd-behavior ✅, fd-api-coverage ✅, fd-jetpack ✅, fd-gms ✅
-│   ├── rd-render/     # headless / window / web renderers + UI dump     (M4)
+│   ├── rd-render/     # headless software renderer + deterministic PNG encoder + UI dump (M4)
 │   ├── rd-testsupport/ # fixtures determinísticos (DexBuilder/apkfix) para os testes dos crates
 │   ├── rd-agent/      # MCP (JSON-RPC próprio, ADR 001) + suite executor `rd test` (M6) + coverage · 52 tools · screen model, resources, live viewer
 │   └── rd-cli/        # the `rd` binary: inspect / perm / device / behavior / api-coverage / jetpack / gms / engine / dex / vm / app / mcp / test / perf

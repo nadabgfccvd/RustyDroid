@@ -45,7 +45,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::time::Duration;
 
 use serde_json::{json, Value as J};
 
@@ -150,9 +152,17 @@ def dump_db(db):
     if hasattr(db, "serialize"):
         return db.serialize()
     return DUMP_PREFIX + ("\n".join(db.iterdump())).encode()
-for line in sys.stdin:
-    r = json.loads(line)
+MAX_IPC_LINE = 64 * 1024 * 1024
+while True:
+    raw = sys.stdin.buffer.readline(MAX_IPC_LINE + 1)
+    if not raw:
+        break
+    if len(raw) > MAX_IPC_LINE:
+        sys.stdout.write(json.dumps({"err": "IPC request exceeds 64 MiB limit", "kind": "DataError"}) + "\n")
+        sys.stdout.flush()
+        break
     try:
+        r = json.loads(raw)
         name = r["db"]
         db = dbs.get(name)
         if db is None:
@@ -180,6 +190,9 @@ for line in sys.stdin:
     sys.stdout.write(json.dumps(out, allow_nan=False) + "\n"); sys.stdout.flush()
 "#;
 
+const MAX_IPC_LINE_BYTES: usize = 64 * 1024 * 1024;
+const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// A SQL value as SQLite stores it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Sv {
@@ -193,7 +206,7 @@ pub enum Sv {
 struct Proc {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    output: Receiver<Result<String, String>>,
 }
 
 impl Drop for Proc {
@@ -294,10 +307,47 @@ fn backend_ready(vm: &mut Engine) -> bool {
                 st.unavailable = true;
                 return false;
             };
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let mut r = BufReader::new(stdout);
+                loop {
+                    let mut buf = Vec::new();
+                    let mut stop = false;
+                    let res = loop {
+                        let chunk = match r.fill_buf() {
+                            Ok(c) => c,
+                            Err(e) => {
+                                stop = true;
+                                break Err(e.to_string());
+                            }
+                        };
+                        if chunk.is_empty() {
+                            stop = true;
+                            break Err("SQLite backend exited unexpectedly".into());
+                        }
+                        let take = chunk
+                            .iter()
+                            .position(|&b| b == b'\n')
+                            .map_or(chunk.len(), |i| i + 1);
+                        if buf.len().saturating_add(take) > MAX_IPC_LINE_BYTES {
+                            stop = true;
+                            break Err("SQLite backend reply exceeds 64 MiB limit".into());
+                        }
+                        buf.extend_from_slice(&chunk[..take]);
+                        r.consume(take);
+                        if buf.last() == Some(&b'\n') {
+                            break String::from_utf8(buf).map_err(|e| e.to_string());
+                        }
+                    };
+                    if tx.send(res).is_err() || stop {
+                        break;
+                    }
+                }
+            });
             st.proc = Some(Proc {
                 child,
                 stdin,
-                stdout: BufReader::new(stdout),
+                output: rx,
             });
             true
         }
@@ -430,22 +480,35 @@ fn sql_trace() -> bool {
 }
 
 fn send(vm: &mut Engine, req: &J) -> Result<J, VmExit> {
-    let line = {
-        let p =
-            vm.fw.m8.sqlx.proc.as_mut().ok_or_else(|| {
-                crate::err::vm_error("INVALID_STATE", "SQLite backend not running")
-            })?;
-        let io = |e: std::io::Error| {
-            VmExit::from(crate::err::vm_error(
-                "VM_ERROR",
-                format!("SQLite backend I/O: {e}"),
-            ))
-        };
-        writeln!(p.stdin, "{req}").map_err(io)?;
-        p.stdin.flush().map_err(io)?;
-        let mut line = String::new();
-        p.stdout.read_line(&mut line).map_err(io)?;
-        line
+    let vm_err = |msg: String| VmExit::from(crate::err::vm_error("VM_ERROR", msg));
+    let not_running = || crate::err::vm_error("INVALID_STATE", "SQLite backend not running");
+    let payload = req.to_string();
+    if payload.len() > MAX_IPC_LINE_BYTES {
+        return Err(vm_err("SQLite backend request exceeds 64 MiB limit".into()));
+    }
+    let write_res = {
+        let p = vm.fw.m8.sqlx.proc.as_mut().ok_or_else(not_running)?;
+        writeln!(p.stdin, "{payload}").and_then(|()| p.stdin.flush())
+    };
+    if let Err(e) = write_res {
+        vm.fw.m8.sqlx.proc = None;
+        return Err(vm_err(format!("SQLite backend I/O: {e}")));
+    }
+    let reply = {
+        let p = vm.fw.m8.sqlx.proc.as_mut().ok_or_else(not_running)?;
+        p.output.recv_timeout(WATCHDOG_TIMEOUT)
+    };
+    let line = match reply {
+        Ok(Ok(line)) => line,
+        Ok(Err(e)) => {
+            vm.fw.m8.sqlx.proc = None;
+            return Err(vm_err(format!("SQLite backend I/O: {e}")));
+        }
+        Err(e) => {
+            // Drop kills and reaps the hung worker process.
+            vm.fw.m8.sqlx.proc = None;
+            return Err(vm_err(format!("SQLite backend watchdog: {e}")));
+        }
     };
     serde_json::from_str(&line)
         .map_err(|e| crate::err::vm_error("VM_ERROR", format!("SQLite backend reply: {e}")).into())
@@ -484,6 +547,13 @@ fn ensure_loaded(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
     else {
         return Ok(());
     };
+    if !crate::jfile::is_host_db_snapshot(&vm.fw.vfs, db, &bytes) {
+        return Err(Throwable::new(
+            "Landroid/database/sqlite/SQLiteDatabaseCorruptException;",
+            format!("refusing to deserialize untrusted guest-written database image at {db}"),
+        )
+        .into());
+    }
     let r = send(vm, &json!({"op": "load", "db": db, "data": b64(&bytes)}))?;
     if let Some(e) = r.get("err").and_then(J::as_str) {
         return Err(Throwable::new(
@@ -525,7 +595,7 @@ fn persist_db(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
         .map(unb64)
         .unwrap_or_default();
     if !data.is_empty() {
-        crate::jfile::write_bytes(&vm.fw.vfs.clone(), db, data);
+        crate::jfile::write_host_db(&vm.fw.vfs, db, data);
     }
     Ok(())
 }

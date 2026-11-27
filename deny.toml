@@ -8,7 +8,9 @@
 # Keep every ignore crate-scoped, reasoned, and time-bounded.
 
 [advisories]
-ignore = []
+ignore = [
+  { id = "RUSTSEC-2026-0206", reason = "direct workspace dependency rustybuzz 0.20.1 (rd-render) is unmaintained; migration to harfrust tracked separately, review by 2027-03-01" },
+]
 yanked = "deny"
 # Direct workspace dependencies are choices we can replace deliberately.
 unmaintained = "workspace"

@@ -4,7 +4,7 @@
 
 ## Supported versions
 
-RustyDroid is pre-1.0 (spec phase → M0+). Security fixes target the **latest commit on `main`**.
+RustyDroid is pre-1.0 (`v0.9.0`, M0–M12). Security fixes target the **latest commit on `main`**.
 
 ## Reporting a vulnerability
 
@@ -21,13 +21,14 @@ Use GitHub's private vulnerability reporting:
 ## Security-relevant design notes
 
 - RustyDroid **executes untrusted bytecode** (APKs) — the runtime is the security
-  boundary. Parser bugs (DEX/AXML/ARSC/ZIP/ELF) are treated as security-critical:
+  boundary. Parser bugs (DEX/AXML/ARSC/ZIP/ELF/WASM) are treated as security-critical:
   they are fuzz targets in CI (nightly `cargo-fuzz`)
 - The **agent control plane (MCP/JSON-RPC)** can drive apps: snapshots, input
   injection, file access. If you embed RustyDroid as a service, put your own
   authentication/authorization in front — the MVP ships no auth layer by design
-- Native code loading (planned `rd-ndk`/`rd-jni`) is the highest-risk area and is
-  strictly feature-gated + audited (`unsafe` is forbidden everywhere else)
+- Native code execution (`rd-ndk`, Unicorn subprocess worker under `--features native`)
+  and the opt-in Cranelift JIT (`rd-jni`, under `--features jit`) are the highest-risk
+  areas and are strictly feature-gated + audited (`unsafe_code = "forbid"` everywhere else)
 
 ## 🇧🇷 Política de segurança (PT-BR)
 

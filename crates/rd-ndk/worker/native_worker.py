@@ -35,22 +35,38 @@ except ValueError:
 _X86_LEGACY_PREFIXES = frozenset((0x66, 0x67, 0xf0, 0xf2, 0xf3, 0x2e, 0x36, 0x3e, 0x26, 0x64, 0x65))
 
 
+def x86_strip_prefixes(b):
+    """Strip x86-64 legacy and REX prefixes (bounded to the 15-byte ISA limit).
+
+    In 64-bit mode every byte in _X86_LEGACY_PREFIXES and 0x40..=0x4f is strictly
+    a prefix byte, never a standalone opcode. Stripping them in a single pass
+    defeats both standard and interleaved legacy+REX prefix smuggling.
+    """
+    i = 0
+    limit = min(len(b), 15)
+    while i < limit and (b[i] in _X86_LEGACY_PREFIXES or 0x40 <= b[i] <= 0x4f):
+        i += 1
+    return b[i:]
+
+
+def x86_is_syscall_or_int(b):
+    """True when an x86-64 instruction (with any legacy/REX prefixes) is SYSCALL, SYSENTER, or INT."""
+    tail = x86_strip_prefixes(b)
+    return tail[:2] in (b'\x0f\x05', b'\x0f\x34') or tail[:1] == b'\xcd'
+
+
 def x86_vex_or_evex(b):
     """True when the instruction bytes start with a VEX (AVX) or EVEX encoding.
 
     In 64-bit mode C4/C5 are always VEX and 62 is always EVEX (BOUND is invalid),
     so no baseline (SSE2) instruction starts with these bytes after its prefixes.
     """
-    i = 0
-    while i < len(b) and b[i] in _X86_LEGACY_PREFIXES:
-        i += 1
-    while i < len(b) and 0x40 <= b[i] <= 0x4f:
-        i += 1
-    return i < len(b) and b[i] in (0xc4, 0xc5, 0x62)
+    tail = x86_strip_prefixes(b)
+    return bool(tail) and tail[0] in (0xc4, 0xc5, 0x62)
 
 
 def main():
-    from unicorn import Uc, UcError, UC_ARCH_X86, UC_ARCH_ARM64, UC_ARCH_ARM, UC_MODE_64, UC_MODE_ARM, UC_PROT_ALL, UC_HOOK_CODE, UC_HOOK_MEM_UNMAPPED
+    from unicorn import Uc, UcError, UC_ARCH_X86, UC_ARCH_ARM64, UC_ARCH_ARM, UC_MODE_64, UC_MODE_ARM, UC_PROT_NONE, UC_PROT_READ, UC_PROT_WRITE, UC_PROT_EXEC, UC_PROT_ALL, UC_HOOK_CODE, UC_HOOK_MEM_UNMAPPED, UC_HOOK_MEM_PROT
     from unicorn.x86_const import UC_X86_REG_FS_BASE, UC_X86_REG_RIP, UC_X86_REG_RSP, UC_X86_REG_RAX, UC_X86_REG_RDI, UC_X86_REG_RSI, UC_X86_REG_RDX, UC_X86_REG_RCX, UC_X86_REG_R8, UC_X86_REG_R9, UC_X86_REG_XMM0
     from unicorn.arm64_const import UC_ARM64_REG_TPIDR_EL0, UC_ARM64_REG_PC, UC_ARM64_REG_SP, UC_ARM64_REG_X0, UC_ARM64_REG_X30, UC_ARM64_REG_Q0
     from unicorn.arm_const import UC_ARM_REG_C13_C0_3, UC_ARM_REG_PC, UC_ARM_REG_SP, UC_ARM_REG_R0, UC_ARM_REG_LR, UC_ARM_REG_C1_C0_2, UC_ARM_REG_FPEXC, UC_ARM_REG_CPSR
@@ -87,9 +103,10 @@ def main():
             event = {'event': 'error', 'code': 'NATIVE_FUEL', 'cause': 'native instruction/time budget exhausted'}
             emu.emu_stop()
         else:
-            # Fail closed on x86 SYSCALL/SYSENTER/int, ARM SVC and AArch64 SVC.
+            # Fail closed on x86 SYSCALL/SYSENTER/int (with or without legacy/REX
+            # prefixes), ARM SVC and AArch64 SVC.
             b = bytes(emu.mem_read(address, size))
-            if (abi == 'x86_64' and (b[:2] in (b'\x0f\x05', b'\x0f\x34') or b[:1] == b'\xcd')) or (abi == 'arm64-v8a' and len(b) == 4 and (int.from_bytes(b, 'little') & 0xffe0001f) == 0xd4000001) or (abi == 'armeabi-v7a' and arm_svc(emu, b)):
+            if (abi == 'x86_64' and x86_is_syscall_or_int(b)) or (abi == 'arm64-v8a' and len(b) == 4 and (int.from_bytes(b, 'little') & 0xffe0001f) == 0xd4000001) or (abi == 'armeabi-v7a' and arm_svc(emu, b)):
                 event = {'event': 'error', 'code': 'NOT_IMPLEMENTED', 'cause': 'guest syscall/SVC is not permitted'}
                 emu.emu_stop()
             elif abi == 'x86_64' and x86_vex_or_evex(b):
@@ -161,9 +178,9 @@ def main():
                     fpregs = []
                 else:
                     raise ValueError('unsupported ABI')
-                uc.mem_map(STACK, STACK_SIZE)
-                uc.mem_map(TRAPS, 0x11000)
-                uc.mem_map(TLS, TLS_SIZE)
+                uc.mem_map(STACK, STACK_SIZE, UC_PROT_READ | UC_PROT_WRITE)
+                uc.mem_map(TRAPS, 0x11000, UC_PROT_READ | UC_PROT_EXEC)
+                uc.mem_map(TLS, TLS_SIZE, UC_PROT_READ | UC_PROT_WRITE)
                 tp = TLS + TLS_SIZE // 2
                 # bionic stack-protector canary lives in TLS slot 5 (fs:0x28 / tp+0x28).
                 uc.mem_write(tp, tp.to_bytes(8, 'little'))
@@ -175,15 +192,32 @@ def main():
                 else:
                     uc.reg_write(UC_ARM_REG_C13_C0_3, tp)
                 mapped = STACK_SIZE + 0x11000 + TLS_SIZE
-                uc.hook_add(UC_HOOK_MEM_UNMAPPED, on_unmapped)
+                uc.hook_add(UC_HOOK_MEM_UNMAPPED | UC_HOOK_MEM_PROT, on_unmapped)
                 uc.hook_add(UC_HOOK_CODE, on_code)
                 send({'event': 'ok', 'version': 1})
             elif op == 'map':
                 n = q['size']
                 if n < 0 or mapped + n > MAX_MEMORY:
                     raise ValueError('native mapped-memory budget exceeded')
-                uc.mem_map(q['address'], n, UC_PROT_ALL)
+                perms = q.get('perms', UC_PROT_READ | UC_PROT_WRITE)
+                if not isinstance(perms, int) or perms < UC_PROT_NONE or perms > UC_PROT_ALL:
+                    raise ValueError('invalid memory permissions')
+                uc.mem_map(q['address'], n, perms)
                 mapped += n
+                send({'event': 'ok'})
+            elif op == 'protect':
+                n = q['size']
+                perms = q['perms']
+                if n < 0 or not isinstance(perms, int) or perms < UC_PROT_NONE or perms > UC_PROT_ALL:
+                    raise ValueError('invalid protect parameters')
+                uc.mem_protect(q['address'], n, perms)
+                send({'event': 'ok'})
+            elif op == 'unmap':
+                n = q['size']
+                if n < 0:
+                    raise ValueError('invalid unmap size')
+                uc.mem_unmap(q['address'], n)
+                mapped = max(0, mapped - n)
                 send({'event': 'ok'})
             elif op == 'write':
                 uc.mem_write(q['address'], bytes.fromhex(q['hex']))

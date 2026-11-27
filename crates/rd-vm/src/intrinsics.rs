@@ -264,6 +264,11 @@ pub(crate) fn object_to_string(vm: &mut Engine, r: crate::heap::ObjRef) -> Resul
     })
 }
 
+/// Maximum bytes retained in an in-memory [`HostOut::Buffer`].
+/// Bounds guest `System.out` loops similarly to Android's circular logcat buffer,
+/// keeping the most recent bytes when exceeded.
+pub const HOST_OUT_BUFFER_CAP: usize = 8 * 1024 * 1024;
+
 /// Escreve no stdout/stderr do host. PrintStream Java NUNCA lança IOException
 /// (spec de java.io.PrintStream) — engolir falha de E/S é a semântica correta.
 pub(crate) fn host_print(vm: &Engine, fd: i32, s: &str) {
@@ -286,9 +291,19 @@ pub(crate) fn host_print(vm: &Engine, fd: i32, s: &str) {
             let _ = std::io::stderr().flush();
         }
         HostOut::Buffer(buf) => {
-            buf.lock()
-                .expect("host out buffer")
-                .extend_from_slice(s.as_bytes());
+            let mut locked = buf.lock().unwrap_or_else(|e| e.into_inner());
+            let bytes = s.as_bytes();
+            if bytes.len() >= HOST_OUT_BUFFER_CAP {
+                locked.clear();
+                locked.extend_from_slice(&bytes[bytes.len() - HOST_OUT_BUFFER_CAP..]);
+            } else {
+                let total = locked.len().saturating_add(bytes.len());
+                if total > HOST_OUT_BUFFER_CAP {
+                    let drop_len = total - HOST_OUT_BUFFER_CAP;
+                    locked.drain(..drop_len);
+                }
+                locked.extend_from_slice(bytes);
+            }
         }
     }
 }
@@ -318,14 +333,15 @@ static DEFAULT_APP_STDOUT: std::sync::Mutex<HostOut> = std::sync::Mutex::new(Hos
 pub(crate) fn default_app_stdout() -> HostOut {
     DEFAULT_APP_STDOUT
         .lock()
-        .expect("default app stdout")
+        .unwrap_or_else(|e| e.into_inner())
         .clone()
 }
 
 /// Configura o padrão de System.out para engines criados depois (issue #55).
 /// Não afeta engines já criados.
 pub fn set_default_app_stdout(mode: HostOut) {
-    *DEFAULT_APP_STDOUT.lock().expect("default app stdout") = mode;
+    let lock = &DEFAULT_APP_STDOUT;
+    *lock.lock().unwrap_or_else(|e| e.into_inner()) = mode;
 }
 
 /// Roteia System.out do app para o STDERR do host (contrato de máquina:

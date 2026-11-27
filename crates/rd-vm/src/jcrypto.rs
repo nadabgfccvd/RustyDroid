@@ -102,138 +102,157 @@ fn gf_mul(mut a: u8, mut b: u8) -> u8 {
     p
 }
 
-fn sbox() -> [u8; 256] {
+const fn make_sbox() -> [u8; 256] {
     let mut s = [0u8; 256];
-    for (i, slot) in s.iter_mut().enumerate() {
-        let x = i as u8;
-        // multiplicative inverse in GF(2^8)
-        let inv = if x == 0 {
-            0
+    s[0] = 0x63;
+    let mut p: u8 = 1;
+    let mut q: u8 = 1;
+    let mut step = 0usize;
+    while step < 255 {
+        if p & 0x80 != 0 {
+            p ^= (p << 1) ^ 0x1b;
         } else {
-            (1..256u16).find(|&k| gf_mul(x, k as u8) == 1).unwrap_or(0) as u8
-        };
-        *slot = inv
-            ^ inv.rotate_left(1)
-            ^ inv.rotate_left(2)
-            ^ inv.rotate_left(3)
-            ^ inv.rotate_left(4)
-            ^ 0x63;
+            p ^= p << 1;
+        }
+        q ^= q << 1;
+        q ^= q << 2;
+        q ^= q << 4;
+        if q & 0x80 != 0 {
+            q ^= 0x09;
+        }
+        s[p as usize] =
+            q ^ q.rotate_left(1) ^ q.rotate_left(2) ^ q.rotate_left(3) ^ q.rotate_left(4) ^ 0x63;
+        step += 1;
     }
     s
 }
 
-fn inv_sbox(s: &[u8; 256]) -> [u8; 256] {
+const fn make_inv_sbox(s: &[u8; 256]) -> [u8; 256] {
     let mut inv = [0u8; 256];
-    for (i, v) in s.iter().enumerate() {
-        inv[*v as usize] = i as u8;
+    let mut i = 0usize;
+    while i < 256 {
+        inv[s[i] as usize] = i as u8;
+        i += 1;
     }
     inv
 }
 
+static SBOX: [u8; 256] = make_sbox();
+static INV_SBOX: [u8; 256] = make_inv_sbox(&SBOX);
+
 const RCON: [u8; 10] = [1, 2, 4, 8, 16, 32, 64, 128, 27, 54];
 
-fn expand_key(key: &[u8], s: &[u8; 256]) -> Vec<u8> {
-    let nk = key.len() / 4;
-    let nr = nk + 6;
-    let mut w = key.to_vec();
-    let mut i = nk;
-    while w.len() < 16 * (nr + 1) {
-        let mut t = [
-            w[w.len() - 4],
-            w[w.len() - 3],
-            w[w.len() - 2],
-            w[w.len() - 1],
-        ];
-        if i.is_multiple_of(nk) {
-            t = [
-                s[t[1] as usize] ^ RCON[i / nk - 1],
-                s[t[2] as usize],
-                s[t[3] as usize],
-                s[t[0] as usize],
-            ];
-        } else if nk > 6 && i % nk == 4 {
-            t = [
-                s[t[0] as usize],
-                s[t[1] as usize],
-                s[t[2] as usize],
-                s[t[3] as usize],
-            ];
-        }
-        for b in t {
-            let prev = w[w.len() - 4 * nk];
-            w.push(prev ^ b);
-        }
-        i += 1;
-    }
-    w
+struct AesKey {
+    w: [u8; 240],
+    nr: usize,
 }
 
-fn aes_block(key: &[u8], input: &[u8; 16], encrypt: bool) -> [u8; 16] {
-    let s = sbox();
-    let si = inv_sbox(&s);
-    let w = expand_key(key, &s);
-    let nr = key.len() / 4 + 6;
-    let mut st = *input;
-    let add_rk = |st: &mut [u8; 16], w: &[u8], round: usize| {
-        for i in 0..16 {
-            st[i] ^= w[round * 16 + i];
-        }
-    };
-    let sub = |st: &mut [u8; 16], table: &[u8; 256]| {
-        for b in st.iter_mut() {
-            *b = table[*b as usize];
-        }
-    };
-    let shift = |st: &mut [u8; 16], enc: bool| {
-        let old = *st;
-        for r in 0..4 {
-            for c in 0..4 {
-                let src = if enc { (c + r) % 4 } else { (c + 4 - r) % 4 };
-                st[c * 4 + r] = old[src * 4 + r];
+impl AesKey {
+    fn new(key: &[u8]) -> Self {
+        let nk = key.len() / 4;
+        let nr = nk + 6;
+        let total = 16 * (nr + 1);
+        let mut w = [0u8; 240];
+        w[..key.len()].copy_from_slice(key);
+        let mut pos = key.len();
+        let mut i = nk;
+        while pos < total {
+            let mut t = [w[pos - 4], w[pos - 3], w[pos - 2], w[pos - 1]];
+            if i.is_multiple_of(nk) {
+                t = [
+                    SBOX[t[1] as usize] ^ RCON[i / nk - 1],
+                    SBOX[t[2] as usize],
+                    SBOX[t[3] as usize],
+                    SBOX[t[0] as usize],
+                ];
+            } else if nk > 6 && i % nk == 4 {
+                t = [
+                    SBOX[t[0] as usize],
+                    SBOX[t[1] as usize],
+                    SBOX[t[2] as usize],
+                    SBOX[t[3] as usize],
+                ];
             }
-        }
-    };
-    let mix = |st: &mut [u8; 16], enc: bool| {
-        for c in 0..4 {
-            let i = c * 4;
-            let (a0, a1, a2, a3) = (st[i], st[i + 1], st[i + 2], st[i + 3]);
-            if enc {
-                st[i] = gf_mul(a0, 2) ^ gf_mul(a1, 3) ^ a2 ^ a3;
-                st[i + 1] = a0 ^ gf_mul(a1, 2) ^ gf_mul(a2, 3) ^ a3;
-                st[i + 2] = a0 ^ a1 ^ gf_mul(a2, 2) ^ gf_mul(a3, 3);
-                st[i + 3] = gf_mul(a0, 3) ^ a1 ^ a2 ^ gf_mul(a3, 2);
-            } else {
-                st[i] = gf_mul(a0, 14) ^ gf_mul(a1, 11) ^ gf_mul(a2, 13) ^ gf_mul(a3, 9);
-                st[i + 1] = gf_mul(a0, 9) ^ gf_mul(a1, 14) ^ gf_mul(a2, 11) ^ gf_mul(a3, 13);
-                st[i + 2] = gf_mul(a0, 13) ^ gf_mul(a1, 9) ^ gf_mul(a2, 14) ^ gf_mul(a3, 11);
-                st[i + 3] = gf_mul(a0, 11) ^ gf_mul(a1, 13) ^ gf_mul(a2, 9) ^ gf_mul(a3, 14);
+            for b in t {
+                w[pos] = w[pos - 4 * nk] ^ b;
+                pos += 1;
             }
+            i += 1;
         }
-    };
-    if encrypt {
-        add_rk(&mut st, &w, 0);
-        for round in 1..nr {
-            sub(&mut st, &s);
-            shift(&mut st, true);
-            mix(&mut st, true);
-            add_rk(&mut st, &w, round);
-        }
-        sub(&mut st, &s);
-        shift(&mut st, true);
-        add_rk(&mut st, &w, nr);
-    } else {
-        add_rk(&mut st, &w, nr);
-        for round in (1..nr).rev() {
-            sub(&mut st, &si);
-            shift(&mut st, false);
-            add_rk(&mut st, &w, round);
-            mix(&mut st, false);
-        }
-        sub(&mut st, &si);
-        shift(&mut st, false);
-        add_rk(&mut st, &w, 0);
+        Self { w, nr }
     }
-    st
+
+    fn cipher_block(&self, input: &[u8; 16], encrypt: bool) -> [u8; 16] {
+        let nr = self.nr;
+        let w = &self.w;
+        let mut st = *input;
+        let add_rk = |st: &mut [u8; 16], round: usize| {
+            let rk = &w[round * 16..round * 16 + 16];
+            for (b, &k) in st.iter_mut().zip(rk) {
+                *b ^= k;
+            }
+        };
+        let sub = |st: &mut [u8; 16], table: &[u8; 256]| {
+            for b in st {
+                *b = table[*b as usize];
+            }
+        };
+        let shift = |st: &mut [u8; 16], enc: bool| {
+            let old = *st;
+            for r in 0..4 {
+                for c in 0..4 {
+                    let src = if enc { (c + r) % 4 } else { (c + 4 - r) % 4 };
+                    st[c * 4 + r] = old[src * 4 + r];
+                }
+            }
+        };
+        let mix = |st: &mut [u8; 16], enc: bool| {
+            for c in 0..4 {
+                let i = c * 4;
+                let (a0, a1, a2, a3) = (st[i], st[i + 1], st[i + 2], st[i + 3]);
+                if enc {
+                    st[i] = gf_mul(a0, 2) ^ gf_mul(a1, 3) ^ a2 ^ a3;
+                    st[i + 1] = a0 ^ gf_mul(a1, 2) ^ gf_mul(a2, 3) ^ a3;
+                    st[i + 2] = a0 ^ a1 ^ gf_mul(a2, 2) ^ gf_mul(a3, 3);
+                    st[i + 3] = gf_mul(a0, 3) ^ a1 ^ a2 ^ gf_mul(a3, 2);
+                } else {
+                    st[i] = gf_mul(a0, 14) ^ gf_mul(a1, 11) ^ gf_mul(a2, 13) ^ gf_mul(a3, 9);
+                    st[i + 1] = gf_mul(a0, 9) ^ gf_mul(a1, 14) ^ gf_mul(a2, 11) ^ gf_mul(a3, 13);
+                    st[i + 2] = gf_mul(a0, 13) ^ gf_mul(a1, 9) ^ gf_mul(a2, 14) ^ gf_mul(a3, 11);
+                    st[i + 3] = gf_mul(a0, 11) ^ gf_mul(a1, 13) ^ gf_mul(a2, 9) ^ gf_mul(a3, 14);
+                }
+            }
+        };
+        if encrypt {
+            add_rk(&mut st, 0);
+            for round in 1..nr {
+                sub(&mut st, &SBOX);
+                shift(&mut st, true);
+                mix(&mut st, true);
+                add_rk(&mut st, round);
+            }
+            sub(&mut st, &SBOX);
+            shift(&mut st, true);
+            add_rk(&mut st, nr);
+        } else {
+            add_rk(&mut st, nr);
+            for round in (1..nr).rev() {
+                sub(&mut st, &INV_SBOX);
+                shift(&mut st, false);
+                add_rk(&mut st, round);
+                mix(&mut st, false);
+            }
+            sub(&mut st, &INV_SBOX);
+            shift(&mut st, false);
+            add_rk(&mut st, 0);
+        }
+        st
+    }
+}
+
+#[cfg(test)]
+fn aes_block(key: &[u8], input: &[u8; 16], encrypt: bool) -> [u8; 16] {
+    AesKey::new(key).cipher_block(input, encrypt)
 }
 
 fn xor16(a: &mut [u8], b: &[u8]) {
@@ -325,14 +344,15 @@ fn gcm_j0(iv: &[u8], h: &[u8; 16]) -> [u8; 16] {
 }
 
 fn gcm_crypt(key: &[u8], iv: &[u8], data: &[u8]) -> Vec<u8> {
+    let rk = AesKey::new(key);
     let zero = [0u8; 16];
-    let h = aes_block(key, &zero, true);
+    let h = rk.cipher_block(&zero, true);
     let j0 = gcm_j0(iv, &h);
     let mut ctr = j0;
     let mut out = Vec::with_capacity(data.len());
     for chunk in data.chunks(16) {
         ctr = inc32(ctr);
-        let ks = aes_block(key, &ctr, true);
+        let ks = rk.cipher_block(&ctr, true);
         let mut block = [0u8; 16];
         block[..chunk.len()].copy_from_slice(chunk);
         xor16(&mut block, &ks);
@@ -342,16 +362,17 @@ fn gcm_crypt(key: &[u8], iv: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 fn gcm_tag(key: &[u8], iv: &[u8], aad: &[u8], cipher_text: &[u8]) -> [u8; 16] {
+    let rk = AesKey::new(key);
     let zero = [0u8; 16];
-    let h = aes_block(key, &zero, true);
+    let h = rk.cipher_block(&zero, true);
     let j0 = gcm_j0(iv, &h);
     let mut gh = Vec::new();
     gh.extend_from_slice(aad);
-    while gh.len() % 16 != 0 {
+    while !gh.len().is_multiple_of(16) {
         gh.push(0);
     }
     gh.extend_from_slice(cipher_text);
-    while gh.len() % 16 != 0 {
+    while !gh.len().is_multiple_of(16) {
         gh.push(0);
     }
     let mut lens = [0u8; 16];
@@ -359,7 +380,7 @@ fn gcm_tag(key: &[u8], iv: &[u8], aad: &[u8], cipher_text: &[u8]) -> [u8; 16] {
     lens[8..16].copy_from_slice(&(cipher_text.len() as u64 * 8).to_be_bytes());
     gh.extend_from_slice(&lens);
     let mut s = ghash(&h, &gh);
-    let mask = aes_block(key, &j0, true);
+    let mask = rk.cipher_block(&j0, true);
     xor16(&mut s, &mask);
     s
 }
@@ -826,6 +847,7 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
                 }
                 input.to_vec()
             };
+            let rk = AesKey::new(&key);
             let mut out = Vec::with_capacity(data.len());
             let mut prev = iv.clone();
             if encrypt {
@@ -834,7 +856,7 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
                     if tr.mode == "CBC" {
                         xor16(&mut block, &prev);
                     }
-                    let enc = aes_block(&key, &block, true);
+                    let enc = rk.cipher_block(&block, true);
                     if tr.mode == "CBC" {
                         prev = enc.to_vec();
                     }
@@ -844,7 +866,7 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
             } else {
                 for chunk in data.as_chunks::<16>().0 {
                     let block: [u8; 16] = *chunk;
-                    let plain0 = aes_block(&key, &block, false);
+                    let plain0 = rk.cipher_block(&block, false);
                     let mut plain = plain0;
                     if tr.mode == "CBC" {
                         xor16(&mut plain, &prev);
@@ -860,13 +882,14 @@ fn cipher_crypt(vm: &Engine, recv: ObjRef, input: &[u8]) -> Result<Vec<u8>, VmEx
             }
         }
         "CTR" => {
+            let rk = AesKey::new(&key);
             let mut out = Vec::with_capacity(input.len());
             let mut ctr: [u8; 16] = iv
                 .as_slice()
                 .try_into()
                 .map_err(|_| exc("Ljava/security/InvalidKeyException;", "IV CTR inválido"))?;
             for chunk in input.chunks(16) {
-                let ks = aes_block(&key, &ctr, true);
+                let ks = rk.cipher_block(&ctr, true);
                 let mut block = [0u8; 16];
                 block[..chunk.len()].copy_from_slice(chunk);
                 xor16(&mut block, &ks);

@@ -6,8 +6,9 @@
 //! devolve; os demais ficam em [`Xapk::splits`] e participam do inventário
 //! de `rd inspect --json` via [`Xapk::split_summaries`].
 //!
-//! Limitação atual: `rd dex disasm` cobre os DEX de todos os splits (ver
-//! `rd-cli`), mas `rd test` e a instalação ainda operam só sobre o APK base.
+//! Os DEX e bibliotecas nativas (`lib/<abi>/*.so`) dos splits são mesclados no
+//! APK retornado (`Apk::split_dex` / `Apk::split_native` / `Apk::abis`) para
+//! montagem em execução (`rd test`, `rd app`, `rd mcp`).
 
 use crate::zip::Zip;
 use crate::{Apk, RdError, RdResult};
@@ -120,7 +121,15 @@ impl Xapk {
                 return Err(RdError::missing_entry(entry.file.clone()));
             }
             let bytes = zip.read(&entry.file)?;
-            let apk = Apk::from_bytes(bytes)?;
+            let sz = bytes.len() as u64;
+            let split_zip = Zip::parse(bytes)?;
+            if is_bundle(&split_zip) {
+                return Err(RdError::invalid_format(format!(
+                    "nested XAPK split {:?} is not supported",
+                    entry.file
+                )));
+            }
+            let apk = Apk::from_zip_single(split_zip, sz)?;
             splits.push(LoadedSplit {
                 id: entry.id.clone(),
                 file: entry.file.clone(),
@@ -155,26 +164,60 @@ impl Xapk {
         &self.splits[self.base_index].apk
     }
 
-    /// Consome o bundle e devolve o APK base. Os DEX dos demais splits viram
-    /// `Apk::split_dex` (mesclados na execução, ADR 022). As libs nativas dos
-    /// splits ainda não são carregadas: ver `SplitSummary::native_libs`.
+    /// Consome o bundle e devolve o APK base. Os DEX e bibliotecas nativas
+    /// dos demais splits viram `Apk::split_dex` / `Apk::split_native` (e suas
+    /// ABIs são agregadas em `Apk::abis`) para montagem na execução.
     pub fn into_base(self) -> Apk {
         let base_index = self.base_index;
         let mut base = None;
-        let mut extra = Vec::new();
+        let mut extra_dex = Vec::new();
+        let mut extra_native = Vec::new();
+        let mut extra_abis = Vec::new();
         for (i, split) in self.splits.into_iter().enumerate() {
             if i == base_index {
                 base = Some(split.apk);
-            } else if !split.apk.dex_files.is_empty() {
-                extra.push(crate::SplitDexSource {
-                    split_id: split.id,
-                    dex_files: split.apk.dex_files,
-                    zip: split.apk.zip,
-                });
+            } else {
+                for abi in split.apk.abis {
+                    if !extra_abis.contains(&abi) {
+                        extra_abis.push(abi);
+                    }
+                }
+                let has_dex = !split.apk.dex_files.is_empty();
+                let has_native = !split.apk.native_libs.is_empty();
+                if has_dex && has_native {
+                    extra_native.push(crate::SplitNativeSource {
+                        split_id: split.id.clone(),
+                        native_libs: split.apk.native_libs,
+                        zip: split.apk.zip.clone(),
+                    });
+                    extra_dex.push(crate::SplitDexSource {
+                        split_id: split.id,
+                        dex_files: split.apk.dex_files,
+                        zip: split.apk.zip,
+                    });
+                } else if has_dex {
+                    extra_dex.push(crate::SplitDexSource {
+                        split_id: split.id,
+                        dex_files: split.apk.dex_files,
+                        zip: split.apk.zip,
+                    });
+                } else if has_native {
+                    extra_native.push(crate::SplitNativeSource {
+                        split_id: split.id,
+                        native_libs: split.apk.native_libs,
+                        zip: split.apk.zip,
+                    });
+                }
             }
         }
         let mut base = base.expect("base_index dentro de splits (validado em from_zip)");
-        base.split_dex = extra;
+        for abi in extra_abis {
+            if !base.abis.contains(&abi) {
+                base.abis.push(abi);
+            }
+        }
+        base.split_dex = extra_dex;
+        base.split_native = extra_native;
         base
     }
 
@@ -417,5 +460,51 @@ mod tests {
         let bytes = bundle(&[("manifest.json", b"{not json".to_vec())]);
         let err = Xapk::from_zip(&Zip::parse(bytes).unwrap()).unwrap_err();
         assert!(err.cause.contains("manifest.json"), "{}", err.cause);
+    }
+
+    #[test]
+    fn into_base_merges_split_native_libs_and_abis() {
+        let pkg = "com.example.game";
+        let base = apk_for(pkg);
+        let abi_split = stored_zip(&[
+            ("AndroidManifest.xml", &minimal_manifest_axml(pkg)),
+            ("lib/arm64-v8a/libgame.so", b"\x7fELFnative"),
+        ]);
+        let mf = manifest_json(
+            &[
+                ("base.apk", "base"),
+                ("config.arm64_v8a.apk", "config.arm64_v8a"),
+            ],
+            &[],
+        );
+        let bytes = bundle(&[
+            ("manifest.json", mf),
+            ("base.apk", base),
+            ("config.arm64_v8a.apk", abi_split),
+        ]);
+        let (apk, _summaries) = Apk::from_bytes_with_splits(bytes).unwrap();
+        assert_eq!(apk.abis, vec!["arm64-v8a".to_string()]);
+        assert_eq!(apk.split_native.len(), 1);
+        let all = apk.all_native_libs();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].1, "lib/arm64-v8a/libgame.so");
+        assert_eq!(all[0].0.read(all[0].1).unwrap(), b"\x7fELFnative");
+    }
+
+    #[test]
+    fn nested_xapk_split_is_rejected() {
+        let inner = bundle(&[
+            ("manifest.json", manifest_json(&[("b.apk", "base")], &[])),
+            ("b.apk", apk_for("com.example.nested")),
+        ]);
+        let outer = bundle(&[
+            (
+                "manifest.json",
+                manifest_json(&[("inner.xapk", "base")], &[]),
+            ),
+            ("inner.xapk", inner),
+        ]);
+        let err = Xapk::from_zip(&Zip::parse(outer).unwrap()).unwrap_err();
+        assert!(err.cause.contains("nested XAPK"), "{}", err.cause);
     }
 }

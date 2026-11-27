@@ -296,8 +296,11 @@ impl Zip {
         let mut i = data.len() - 22;
         loop {
             if u32_at(data, i)? == EOCD_SIG {
-                eocd_pos = Some(i);
-                break;
+                let comment_len = u16_at(data, i + 20)? as usize;
+                if i + 22 + comment_len == data.len() {
+                    eocd_pos = Some(i);
+                    break;
+                }
             }
             if i == start {
                 break;
@@ -1090,5 +1093,19 @@ mod tests {
             err.contains("central directory end") || err.contains("signature"),
             "deve rejeitar dentro dos bounds do CD: {err}"
         );
+    }
+
+    #[test]
+    fn eocd_signature_inside_comment_is_skipped() {
+        let mut v = handcrafted_zip(b"hello", "a.txt");
+        let eocd = v.len() - 22;
+        // Put a fake EOCD signature inside the ZIP comment and update comment_len.
+        let mut comment = Vec::new();
+        comment.extend_from_slice(&EOCD_SIG.to_le_bytes());
+        comment.extend_from_slice(&[0u8; 20]);
+        v[eocd + 20..eocd + 22].copy_from_slice(&(comment.len() as u16).to_le_bytes());
+        v.extend_from_slice(&comment);
+        let z = Zip::parse(v).expect("EOCD_SIG in comment skipped");
+        assert_eq!(z.read("a.txt").unwrap(), b"hello");
     }
 }

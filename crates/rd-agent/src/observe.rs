@@ -193,11 +193,27 @@ impl ScreenSnap {
     }
 }
 
+/// Maximum concurrent HTTP connections accepted by the `--live` viewer.
+const MAX_LIVE_CONNS: usize = 32;
+
+const LIVE_503: &[u8] =
+    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+struct LiveConnGuard(Arc<LiveShared>);
+
+impl Drop for LiveConnGuard {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.0.active_conns.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// Shared state between the MCP thread and the live-viewer HTTP thread.
 #[derive(Default)]
 pub struct LiveShared {
     inner: Mutex<LiveInner>,
     changed: std::sync::Condvar,
+    active_conns: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Default)]
@@ -865,9 +881,34 @@ impl AgentSession {
         }
         self.running.screen.live = Some(shared.clone());
         std::thread::spawn(move || {
-            for stream in listener.incoming().flatten() {
+            use std::sync::atomic::Ordering;
+            let conns = &shared.active_conns;
+            for mut stream in listener.incoming().flatten() {
+                let mut cur = conns.load(Ordering::Acquire);
+                let admitted = loop {
+                    if cur >= MAX_LIVE_CONNS {
+                        break false;
+                    }
+                    match conns.compare_exchange_weak(
+                        cur,
+                        cur + 1,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => break true,
+                        Err(actual) => cur = actual,
+                    }
+                };
+                if !admitted {
+                    let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
+                    let _ = std::io::Write::write_all(&mut stream, LIVE_503);
+                    continue;
+                }
                 let sh = shared.clone();
-                std::thread::spawn(move || live_serve_conn(stream, &sh));
+                std::thread::spawn(move || {
+                    let _guard = LiveConnGuard(sh.clone());
+                    live_serve_conn(stream, &sh);
+                });
             }
         });
         Ok(local)
@@ -877,6 +918,7 @@ impl AgentSession {
 fn live_serve_conn(mut stream: std::net::TcpStream, sh: &LiveShared) {
     use std::io::{Read, Write};
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
     // Lê o cabeçalho HTTP inteiro (até CRLFCRLF). Uma única `read` pode devolver
     // só parte da requisição; fechar o socket com bytes não lidos no buffer de
     // recepção envia RST e o cliente vê ConnectionReset.
@@ -956,14 +998,17 @@ label{font-size:12px;color:#9aa4ae}.err{color:#ff6b6b}
 <main><div id="phone"><img id="img" alt=""><canvas id="cv" width="720" height="1440"></canvas></div>
 <div id="side"><div id="err" class="err"></div><pre id="txt">connecting…</pre></div></main>
 <script>
-let v=-1,st=null;const img=document.getElementById('img'),cv=document.getElementById('cv'),cx=cv.getContext('2d');
-function draw(){cx.clearRect(0,0,720,1440);if(!st||!document.getElementById('ov').checked)return;
+let v=-1,st=null;const ph=document.getElementById('phone'),img=document.getElementById('img'),cv=document.getElementById('cv'),cx=cv.getContext('2d');
+function syncSize(sz){const w=(sz&&sz.length===2&&sz[0]>0)?sz[0]:720,h=(sz&&sz.length===2&&sz[1]>0)?sz[1]:1440;
+if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;const dw=Math.round(w/2)+'px',dh=Math.round(h/2)+'px';
+ph.style.width=img.style.width=cv.style.width=dw;ph.style.height=img.style.height=cv.style.height=dh;}}
+function draw(){cx.clearRect(0,0,cv.width,cv.height);if(!st||!document.getElementById('ov').checked)return;
 cx.lineWidth=3;cx.font='22px sans-serif';for(const t of (st.targets||[])){const b=t.bounds;cx.strokeStyle=t.source==='view'?'#3fb950':'#f74c00';
 cx.strokeRect(b[0],b[1],b[2]-b[0],b[3]-b[1]);}}
 document.getElementById('ov').onchange=draw;
 async function loop(){for(;;){try{const r=await fetch('state.json?since='+v,{cache:'no-store'});const s=await r.json();
-if(s.version!==v){v=s.version;st=s;img.src='frame.png?v='+v;
-document.getElementById('ver').textContent='frame v'+v;document.getElementById('pkg').textContent=(s.package||'-')+(s.running.activity?' · '+s.running.activity:'');
+if(s.version!==v){v=s.version;st=s;syncSize(s.size);img.src='frame.png?v='+v;
+document.getElementById('ver').textContent='frame v'+v;document.getElementById('pkg').textContent=(s.package||'-')+(s.activity?' · '+s.activity:'');
 document.getElementById('tool').textContent=s.last_tool?('last: '+s.last_tool+' '+s.last_tool_ms+' ms'):'-';
 document.getElementById('txt').textContent=s.text||'';document.getElementById('err').textContent=s.draw_error?('draw pass failed: '+s.draw_error):'';draw();}}
 catch(e){await new Promise(r=>setTimeout(r,1000));}}}

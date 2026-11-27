@@ -22,5 +22,7 @@ xtask = "run --package xtask --"
 # `rust-lld`, que é o linker padrão de `x86_64-unknown-linux-gnu` desde o Rust
 # 1.90 — por isso o escopo é o alvo, e não `[build]`: em alvos cujo linker não
 # entende a flag o build continuaria funcionando.
+# Se você estiver usando GNU `ld` explicitamente (sem `rust-lld`), sobrescreva
+# com `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=""`.
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-Wl,--icf=all"]

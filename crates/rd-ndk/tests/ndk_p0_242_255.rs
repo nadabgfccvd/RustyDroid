@@ -264,6 +264,15 @@ for raw in sys.stdin:
     elif op == "map":
         mapped.append((int(q["address"]), int(q["size"])))
         send({"event": "ok"})
+    elif op == "protect":
+        send({"event": "ok"})
+    elif op == "unmap":
+        addr = int(q["address"])
+        sz = int(q["size"])
+        mapped[:] = [(a, s) for (a, s) in mapped if not (a == addr and s == sz)]
+        for k in [k for k in mem if addr <= k < addr + sz]:
+            del mem[k]
+        send({"event": "ok"})
     elif op == "write":
         addr = int(q["address"])
         data = bytes.fromhex(q["hex"])

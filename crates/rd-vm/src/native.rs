@@ -456,12 +456,9 @@ pub fn load(vm: &mut Engine, name: &str) -> std::result::Result<(), VmExit> {
     {
         let apk = vm.resources()?;
         let prefix = format!("lib/{abi_name}/");
-        for n in &apk.native_libs {
+        for (zip, n) in apk.all_native_libs() {
             if let Some(short) = n.strip_prefix(&prefix) {
-                available.insert(
-                    short.to_string(),
-                    apk.zip.read(n).map_err(|e| vmerr(ndk(e)))?,
-                );
+                available.insert(short.to_string(), zip.read(n).map_err(|e| vmerr(ndk(e)))?);
             }
         }
     }
