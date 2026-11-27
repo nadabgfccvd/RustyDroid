@@ -286,7 +286,20 @@ jobs:
       - name: Native ABI + JNI bridge tests
         env:
           RD_NATIVE_PYTHON: python
-        run: cargo test -p rd-ndk -p rd-vm --features native
+        run: |
+          if ! cargo test -p rd-ndk -p rd-vm --features native --no-fail-fast > /tmp/native-test.out 2>&1; then
+            python3 -c "
+lines = open('/tmp/native-test.out').read().splitlines()
+out = []
+for i, l in enumerate(lines):
+    if any(k in l for k in ('FAILED', 'panicked at', '---- ', 'test result: FAILED')):
+        out.append(l)
+        if 'panicked at' in l:
+            out.extend(lines[i+1:i+5])
+print('::error::' + '%0A'.join(out[:120]))
+"
+            exit 1
+          fi
       # M9 DoD: five real F-Droid APKs (pinned by SHA-256, never committed —
       # GH-05) make JNI calls from their real DEX with checked results, on
       # every ABI they ship.
