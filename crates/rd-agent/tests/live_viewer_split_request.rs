@@ -63,8 +63,8 @@ fn live_viewer_html_matches_published_state_schema() {
         !html.contains("s.running.activity"),
         "LIVE_HTML não pode ler s.running.activity (o JSON publicado expõe s.activity no topo)"
     );
-    assert!(html.contains("s.activity"), "LIVE_HTML deve ler s.activity");
-    assert!(html.contains("s.size"), "LIVE_HTML deve adaptar o canvas a s.size");
+    assert!(html.contains("s.activity"), "LIVE_HTML deve ler activity");
+    assert!(html.contains("s.size"), "LIVE_HTML deve ler s.size");
 
     let mut c2 = TcpStream::connect(addr).expect("connect state");
     c2.write_all(b"GET /state.json HTTP/1.1\r\nHost: x\r\n\r\n")

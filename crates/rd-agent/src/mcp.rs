@@ -475,9 +475,9 @@ impl AgentSession {
         let vfs = rd_vm::VfsHandle::new();
         let policy = Policy::from_env();
         let roots = policy.canonical_roots();
-        static NEXT_SESSION_SEQ: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1);
-        let seq = NEXT_SESSION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_SESSION_SEQ: AtomicU64 = AtomicU64::new(1);
+        let seq = NEXT_SESSION_SEQ.fetch_add(1, Ordering::Relaxed);
         let session_id = format!(
             "sess-{}-{}-{}",
             std::process::id(),
@@ -3670,9 +3670,9 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
         if n == 0 {
             break;
         }
-        if raw.ends_with(b"\n") {
+        if raw.last() == Some(&b'\n') {
             raw.pop();
-            if raw.ends_with(b"\r") {
+            if raw.last() == Some(&b'\r') {
                 raw.pop();
             }
         }

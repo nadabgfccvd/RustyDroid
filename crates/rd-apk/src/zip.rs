@@ -1105,7 +1105,7 @@ mod tests {
         comment.extend_from_slice(&[0u8; 20]);
         v[eocd + 20..eocd + 22].copy_from_slice(&(comment.len() as u16).to_le_bytes());
         v.extend_from_slice(&comment);
-        let z = Zip::parse(v).expect("real EOCD must be found despite EOCD_SIG in comment");
+        let z = Zip::parse(v).expect("EOCD_SIG in comment skipped");
         assert_eq!(z.read("a.txt").unwrap(), b"hello");
     }
 }

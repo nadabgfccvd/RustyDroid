@@ -196,6 +196,18 @@ impl ScreenSnap {
 /// Maximum concurrent HTTP connections accepted by the `--live` viewer.
 const MAX_LIVE_CONNS: usize = 32;
 
+const LIVE_503: &[u8] =
+    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+struct LiveConnGuard(Arc<LiveShared>);
+
+impl Drop for LiveConnGuard {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.0.active_conns.fetch_sub(1, Ordering::Release);
+    }
+}
+
 /// Shared state between the MCP thread and the live-viewer HTTP thread.
 #[derive(Default)]
 pub struct LiveShared {
@@ -880,22 +892,12 @@ impl AgentSession {
                     .is_ok();
                 if !admitted {
                     let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
-                    let _ = std::io::Write::write_all(
-                        &mut stream,
-                        b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                    );
+                    let _ = std::io::Write::write_all(&mut stream, LIVE_503);
                     continue;
                 }
                 let sh = shared.clone();
                 std::thread::spawn(move || {
-                    struct ConnGuard(Arc<LiveShared>);
-                    impl Drop for ConnGuard {
-                        fn drop(&mut self) {
-                            use std::sync::atomic::Ordering;
-                            self.0.active_conns.fetch_sub(1, Ordering::Release);
-                        }
-                    }
-                    let _guard = ConnGuard(sh.clone());
+                    let _guard = LiveConnGuard(sh.clone());
                     live_serve_conn(stream, &sh);
                 });
             }

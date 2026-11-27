@@ -446,156 +446,161 @@ impl Runtime {
         let mut mapped_regions: Vec<(u64, u64)> = Vec::new();
         let mut added: Vec<String> = Vec::new();
 
-        let res = (|| -> Result<Vec<u64>> {
-            let invalid_elf = |msg: &str| RdError::new("INVALID_ELF", msg);
-            for (n, base, size, elf) in planned {
-                self.map(base, size)?;
-                mapped_regions.push((base, size));
-                for s in &elf.segments {
-                    let seg_base = base
-                        .checked_add(s.address)
-                        .ok_or_else(|| invalid_elf("segment address overflow"))?;
-                    for (i, chunk) in s.bytes.chunks(8 * 1024 * 1024).enumerate() {
-                        let dst = seg_base
-                            .checked_add((i * 8 * 1024 * 1024) as u64)
-                            .ok_or_else(|| invalid_elf("segment write overflow"))?;
-                        self.write(dst, chunk)?;
-                    }
+        match self.load_planned(planned, cursor_base, &mut mapped_regions, &mut added) {
+            Ok(init) => Ok(init),
+            Err(err) => {
+                for n in &added {
+                    self.libraries.remove(n);
                 }
-                self.libraries.insert(n.clone(), Library { base, elf });
-                added.push(n);
+                self.next_base = saved_next_base;
+                self.imports = saved_imports;
+                self.import_names = saved_import_names;
+                self.data_imports = saved_data_imports;
+                self.missing_imports = saved_missing_imports;
+                self.arena_used = saved_arena_used;
+                self.allocations = saved_allocations;
+                self.sizes = saved_sizes;
+                for (base, size) in mapped_regions.into_iter().rev() {
+                    let _ = self.unmap(base, size);
+                }
+                Err(err)
             }
-            self.next_base = cursor_base;
+        }
+    }
+    fn load_planned(
+        &mut self,
+        planned: Vec<(String, u64, u64, Elf)>,
+        cursor_base: u64,
+        mapped_regions: &mut Vec<(u64, u64)>,
+        added: &mut Vec<String>,
+    ) -> Result<Vec<u64>> {
+        let invalid_elf = |msg: &str| RdError::new("INVALID_ELF", msg);
+        for (n, base, size, elf) in planned {
+            self.map(base, size)?;
+            mapped_regions.push((base, size));
+            for s in &elf.segments {
+                let seg_base = base
+                    .checked_add(s.address)
+                    .ok_or_else(|| invalid_elf("segment address overflow"))?;
+                for (i, chunk) in s.bytes.chunks(8 * 1024 * 1024).enumerate() {
+                    let dst = seg_base
+                        .checked_add((i * 8 * 1024 * 1024) as u64)
+                        .ok_or_else(|| invalid_elf("segment write overflow"))?;
+                    self.write(dst, chunk)?;
+                }
+            }
+            self.libraries.insert(n.clone(), Library { base, elf });
+            added.push(n);
+        }
+        self.next_base = cursor_base;
 
-            // All exports exist before relocation, allowing cyclic dependency graphs.
-            for n in &added {
-                let l = self.libraries[n].clone();
-                let base = l.base;
-                for r in &l.elf.relocations {
-                    if r.kind == 0 {
-                        continue;
-                    }
-                    let target = base
-                        .checked_add(r.offset)
-                        .ok_or_else(|| invalid_elf("relocation offset overflow"))?;
-                    let add = match r.addend {
-                        Some(a) => a as u64,
-                        None => self.read_word(target)?,
+        // All exports exist before relocation, allowing cyclic dependency graphs.
+        for n in added.iter() {
+            let l = self.libraries[n].clone();
+            let base = l.base;
+            for r in &l.elf.relocations {
+                if r.kind == 0 {
+                    continue;
+                }
+                let target = base
+                    .checked_add(r.offset)
+                    .ok_or_else(|| invalid_elf("relocation offset overflow"))?;
+                let add = match r.addend {
+                    Some(a) => a as u64,
+                    None => self.read_word(target)?,
+                };
+                let value = if r.kind == relative_kind(self.abi) {
+                    base.wrapping_add(add)
+                } else {
+                    let supported = match self.abi {
+                        Abi::X86_64 => matches!(r.kind, 1 | 6 | 7),
+                        Abi::Arm64 => matches!(r.kind, 257 | 1025 | 1026),
+                        Abi::Arm => matches!(r.kind, 2 | 21 | 22),
                     };
-                    let value = if r.kind == relative_kind(self.abi) {
-                        base.wrapping_add(add)
+                    if !supported {
+                        return Err(RdError::new(
+                            "UNSUPPORTED_RELOCATION",
+                            format!("{} relocation {}", self.abi.android_name(), r.kind),
+                        ));
+                    }
+                    let syms = &l.elf.symbols;
+                    let s = syms
+                        .get(r.symbol)
+                        .ok_or_else(|| invalid_elf("relocation missing symbol"))?;
+                    let resolved = if s.defined {
+                        base.checked_add(s.value)
+                            .ok_or_else(|| invalid_elf("symbol value overflow"))?
+                    } else if let Some(v) = self.symbol(&s.name) {
+                        v
+                    } else if builtin_import(&s.name) {
+                        self.import(&s.name)?
+                    } else if s.weak {
+                        0
+                    } else if s.kind == 1 {
+                        self.data_import(&s.name, s.size)?
                     } else {
-                        let supported = match self.abi {
-                            Abi::X86_64 => matches!(r.kind, 1 | 6 | 7),
-                            Abi::Arm64 => matches!(r.kind, 257 | 1025 | 1026),
-                            Abi::Arm => matches!(r.kind, 2 | 21 | 22),
-                        };
-                        if !supported {
-                            return Err(RdError::new(
-                                "UNSUPPORTED_RELOCATION",
-                                format!("{} relocation {}", self.abi.android_name(), r.kind),
+                        // Lazy binding like bionic: an unimplemented import
+                        // fails when called at its trap slot.
+                        self.import(&s.name)?
+                    };
+                    // GLOB_DAT/JUMP_SLOT do not add the implicit GOT contents on ARM/x86.
+                    if matches!(
+                        (self.abi, r.kind),
+                        (Abi::Arm, 21 | 22) | (Abi::X86_64, 6 | 7)
+                    ) {
+                        resolved
+                    } else {
+                        resolved.wrapping_add(add)
+                    }
+                };
+                self.write_word(target, value)?;
+            }
+        }
+        let mut init = Vec::new();
+        for n in added.iter().rev() {
+            let l = self.libraries[n].clone();
+            let base = l.base;
+            if let Some(a) = l.elf.init {
+                let fn_ptr = base
+                    .checked_add(a)
+                    .ok_or_else(|| invalid_elf("DT_INIT address overflow"))?;
+                init.push(fn_ptr);
+            }
+            if let Some((a, count)) = l.elf.init_array {
+                let arr_base = base
+                    .checked_add(a)
+                    .ok_or_else(|| invalid_elf("init_array address overflow"))?;
+                for i in 0..count {
+                    let elem_off = (i as u64)
+                        .checked_mul(self.abi.pointer_size() as u64)
+                        .and_then(|v| arr_base.checked_add(v))
+                        .ok_or_else(|| invalid_elf("init_array entry overflow"))?;
+                    let p = self.read_word(elem_off)?;
+                    if p != 0 && p != u64::MAX && p != u32::MAX as u64 {
+                        let p_addr = if self.abi == Abi::Arm { p & !1 } else { p };
+                        let valid_target = self.libraries.values().any(|lib| {
+                            lib.base
+                                .checked_add(lib.elf.memory_size.max(4096))
+                                .is_some_and(|end| p_addr >= lib.base && p_addr < end)
+                        });
+                        if !valid_target {
+                            return Err(invalid_elf(
+                                "init_array entry points outside loaded ELF segments",
                             ));
                         }
-                        let s = l
-                            .elf
-                            .symbols
-                            .get(r.symbol)
-                            .ok_or_else(|| invalid_elf("relocation missing symbol"))?;
-                        let resolved = if s.defined {
-                            base.checked_add(s.value)
-                                .ok_or_else(|| invalid_elf("symbol value overflow"))?
-                        } else if let Some(v) = self.symbol(&s.name) {
-                            v
-                        } else if builtin_import(&s.name) {
-                            self.import(&s.name)?
-                        } else if s.weak {
-                            0
-                        } else if s.kind == 1 {
-                            self.data_import(&s.name, s.size)?
-                        } else {
-                            // Lazy binding like bionic: an unimplemented import
-                            // fails when called at its trap slot.
-                            self.import(&s.name)?
-                        };
-                        // GLOB_DAT/JUMP_SLOT do not add the implicit GOT contents on ARM/x86.
-                        if matches!(
-                            (self.abi, r.kind),
-                            (Abi::Arm, 21 | 22) | (Abi::X86_64, 6 | 7)
-                        ) {
-                            resolved
-                        } else {
-                            resolved.wrapping_add(add)
-                        }
-                    };
-                    self.write_word(target, value)?;
-                }
-            }
-            let mut init = Vec::new();
-            for n in added.iter().rev() {
-                let l = self.libraries[n].clone();
-                let base = l.base;
-                if let Some(a) = l.elf.init {
-                    let fn_ptr = base
-                        .checked_add(a)
-                        .ok_or_else(|| invalid_elf("DT_INIT address overflow"))?;
-                    init.push(fn_ptr);
-                }
-                if let Some((a, count)) = l.elf.init_array {
-                    let arr_base = base
-                        .checked_add(a)
-                        .ok_or_else(|| invalid_elf("init_array address overflow"))?;
-                    for i in 0..count {
-                        let elem_off = (i as u64)
-                            .checked_mul(self.abi.pointer_size() as u64)
-                            .and_then(|v| arr_base.checked_add(v))
-                            .ok_or_else(|| invalid_elf("init_array entry overflow"))?;
-                        let p = self.read_word(elem_off)?;
-                        if p != 0 && p != u64::MAX && p != u32::MAX as u64 {
-                            let p_addr = if self.abi == Abi::Arm { p & !1 } else { p };
-                            let valid_target = self.libraries.values().any(|lib| {
-                                lib.base
-                                    .checked_add(lib.elf.memory_size.max(4096))
-                                    .map(|end| p_addr >= lib.base && p_addr < end)
-                                    .unwrap_or(false)
-                            });
-                            if !valid_target {
-                                return Err(invalid_elf(
-                                    "init_array entry points outside loaded ELF segments",
-                                ));
-                            }
-                            init.push(p);
-                        }
+                        init.push(p);
                     }
                 }
             }
-            // Enforce per-page W^X permissions from ELF PT_LOAD flags after
-            // relocations have written GOT/data entries.
-            for n in &added {
-                let l = self.libraries[n].clone();
-                let size = l.elf.memory_size.max(4096);
-                self.apply_segment_protections(l.base, size, &l.elf)?;
-            }
-            Ok(init)
-        })();
-
-        if let Err(err) = res {
-            for n in &added {
-                self.libraries.remove(n);
-            }
-            self.next_base = saved_next_base;
-            self.imports = saved_imports;
-            self.import_names = saved_import_names;
-            self.data_imports = saved_data_imports;
-            self.missing_imports = saved_missing_imports;
-            self.arena_used = saved_arena_used;
-            self.allocations = saved_allocations;
-            self.sizes = saved_sizes;
-            for (base, size) in mapped_regions.into_iter().rev() {
-                let _ = self.unmap(base, size);
-            }
-            return Err(err);
         }
-        res
+        // Enforce per-page W^X permissions from ELF PT_LOAD flags after
+        // relocations have written GOT/data entries.
+        for n in added.iter() {
+            let l = self.libraries[n].clone();
+            let size = l.elf.memory_size.max(4096);
+            self.apply_segment_protections(l.base, size, &l.elf)?;
+        }
+        Ok(init)
     }
     fn data_import(&mut self, name: &str, size: u64) -> Result<u64> {
         if let Some(p) = self.data_imports.get(name) {

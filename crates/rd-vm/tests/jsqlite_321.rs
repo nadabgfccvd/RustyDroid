@@ -210,7 +210,8 @@ fn guest_written_db_image_is_not_deserialized() {
     );
     match res {
         Err(rd_vm::err::VmExit::Exception(t)) => {
-            assert_eq!(t.class, "Landroid/database/sqlite/SQLiteDatabaseCorruptException;");
+            let expected = "Landroid/database/sqlite/SQLiteDatabaseCorruptException;";
+            assert_eq!(t.class, expected);
         }
         other => panic!("expected SQLiteDatabaseCorruptException, got {other:?}"),
     }

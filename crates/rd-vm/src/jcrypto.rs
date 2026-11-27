@@ -86,10 +86,9 @@ fn buf_set(vm: &mut Engine, r: ObjRef, data: &[u8]) -> Result<(), VmExit> {
 
 // ---------------------------------------------------------------- AES
 
-const fn gf_mul(mut a: u8, mut b: u8) -> u8 {
+fn gf_mul(mut a: u8, mut b: u8) -> u8 {
     let mut p = 0u8;
-    let mut i = 0;
-    while i < 8 {
+    for _ in 0..8 {
         if b & 1 != 0 {
             p ^= a;
         }
@@ -99,7 +98,6 @@ const fn gf_mul(mut a: u8, mut b: u8) -> u8 {
             a ^= 0x1b;
         }
         b >>= 1;
-        i += 1;
     }
     p
 }
@@ -111,7 +109,11 @@ const fn make_sbox() -> [u8; 256] {
     let mut q: u8 = 1;
     let mut step = 0usize;
     while step < 255 {
-        p ^= (p << 1) ^ if p & 0x80 != 0 { 0x1b } else { 0 };
+        if p & 0x80 != 0 {
+            p ^= (p << 1) ^ 0x1b;
+        } else {
+            p ^= p << 1;
+        }
         q ^= q << 1;
         q ^= q << 2;
         q ^= q << 4;
@@ -189,12 +191,13 @@ impl AesKey {
         let w = &self.w;
         let mut st = *input;
         let add_rk = |st: &mut [u8; 16], round: usize| {
-            for i in 0..16 {
-                st[i] ^= w[round * 16 + i];
+            let rk = &w[round * 16..round * 16 + 16];
+            for (b, &k) in st.iter_mut().zip(rk) {
+                *b ^= k;
             }
         };
         let sub = |st: &mut [u8; 16], table: &[u8; 256]| {
-            for b in st.iter_mut() {
+            for b in st {
                 *b = table[*b as usize];
             }
         };
