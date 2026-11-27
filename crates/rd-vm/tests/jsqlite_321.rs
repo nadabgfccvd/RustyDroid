@@ -167,13 +167,9 @@ fn guest_written_db_image_is_not_deserialized() {
         .alloc_instance("Ljava/io/FileOutputStream;".to_string(), Vec::new())
         .unwrap();
     let p_arg = jstr(&mut vm, path);
-    vm.invoke_instance(
-        fos,
-        "<init>",
-        "(Ljava/lang/String;Z)V",
-        &[p_arg, Value::Int(0)],
-    )
-    .unwrap();
+    let init_args = [p_arg, Value::Int(0)];
+    vm.invoke_instance(fos, "<init>", "(Ljava/lang/String;Z)V", &init_args)
+        .unwrap();
     let payload = b"-- RustyDroid SQLite dump\nCREATE TABLE pwn(x);\n";
     let arr = vm
         .heap
@@ -186,7 +182,7 @@ fn guest_written_db_image_is_not_deserialized() {
         .iter_mut()
         .zip(payload.iter())
     {
-        *slot = Value::Int(b as i8 as i32);
+        *slot = Value::Int(i32::from(b as i8));
     }
     vm.invoke_instance(fos, "write", "([B)V", &[Value::Obj(arr)])
         .unwrap();
@@ -214,10 +210,7 @@ fn guest_written_db_image_is_not_deserialized() {
     );
     match res {
         Err(rd_vm::err::VmExit::Exception(t)) => {
-            assert_eq!(
-                t.class,
-                "Landroid/database/sqlite/SQLiteDatabaseCorruptException;"
-            );
+            assert_eq!(t.class, "Landroid/database/sqlite/SQLiteDatabaseCorruptException;");
         }
         other => panic!("expected SQLiteDatabaseCorruptException, got {other:?}"),
     }

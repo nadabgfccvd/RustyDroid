@@ -130,10 +130,9 @@ pub(super) fn run(sub: &EngineSub, dd: &DataDir) -> RdResult<()> {
                 #[cfg(feature = "native-engines")]
                 {
                     let mut report = process.report()?;
-                    report["logs"] = serde_json::json!(String::from_utf8_lossy(
-                        &logs.lock().unwrap_or_else(|e| e.into_inner())
-                    )
-                    .to_string());
+                    let buf = logs.lock().unwrap_or_else(|e| e.into_inner());
+                    let text = String::from_utf8_lossy(&buf).into_owned();
+                    report["logs"] = serde_json::json!(text);
                     crate::to_json(&report)
                 }
                 #[cfg(not(feature = "native-engines"))]

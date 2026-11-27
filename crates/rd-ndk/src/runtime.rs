@@ -269,7 +269,7 @@ impl Runtime {
             if seg.flags & 1 != 0 {
                 uc_prot |= UC_PROT_EXEC; // ELF PF_X
             }
-            for slot in page_perms.iter_mut().take(end_page).skip(start_page) {
+            for slot in &mut page_perms[start_page.min(end_page)..end_page] {
                 *slot |= uc_prot;
             }
         }

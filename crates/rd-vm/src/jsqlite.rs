@@ -328,8 +328,7 @@ fn backend_ready(vm: &mut Engine) -> bool {
                         let take = chunk
                             .iter()
                             .position(|&b| b == b'\n')
-                            .map(|i| i + 1)
-                            .unwrap_or(chunk.len());
+                            .map_or(chunk.len(), |i| i + 1);
                         if buf.len().saturating_add(take) > MAX_IPC_LINE_BYTES {
                             stop = true;
                             break Err("SQLite backend reply exceeds 64 MiB limit".into());
@@ -481,42 +480,34 @@ fn sql_trace() -> bool {
 }
 
 fn send(vm: &mut Engine, req: &J) -> Result<J, VmExit> {
+    let vm_err = |msg: String| VmExit::from(crate::err::vm_error("VM_ERROR", msg));
+    let not_running = || crate::err::vm_error("INVALID_STATE", "SQLite backend not running");
     let payload = req.to_string();
     if payload.len() > MAX_IPC_LINE_BYTES {
-        return Err(crate::err::vm_error(
-            "VM_ERROR",
-            "SQLite backend request exceeds 64 MiB limit",
-        )
-        .into());
+        return Err(vm_err("SQLite backend request exceeds 64 MiB limit".into()));
     }
     let write_res = {
-        let p = vm.fw.m8.sqlx.proc.as_mut().ok_or_else(|| {
-            crate::err::vm_error("INVALID_STATE", "SQLite backend not running")
-        })?;
+        let p = vm.fw.m8.sqlx.proc.as_mut().ok_or_else(not_running)?;
         writeln!(p.stdin, "{payload}").and_then(|()| p.stdin.flush())
     };
     if let Err(e) = write_res {
         vm.fw.m8.sqlx.proc = None;
-        return Err(crate::err::vm_error("VM_ERROR", format!("SQLite backend I/O: {e}")).into());
+        return Err(vm_err(format!("SQLite backend I/O: {e}")));
     }
     let reply = {
-        let p = vm.fw.m8.sqlx.proc.as_mut().ok_or_else(|| {
-            crate::err::vm_error("INVALID_STATE", "SQLite backend not running")
-        })?;
+        let p = vm.fw.m8.sqlx.proc.as_mut().ok_or_else(not_running)?;
         p.output.recv_timeout(WATCHDOG_TIMEOUT)
     };
     let line = match reply {
         Ok(Ok(line)) => line,
         Ok(Err(e)) => {
             vm.fw.m8.sqlx.proc = None;
-            return Err(crate::err::vm_error("VM_ERROR", format!("SQLite backend I/O: {e}")).into());
+            return Err(vm_err(format!("SQLite backend I/O: {e}")));
         }
         Err(e) => {
             // Drop kills and reaps the hung worker process.
             vm.fw.m8.sqlx.proc = None;
-            return Err(
-                crate::err::vm_error("VM_ERROR", format!("SQLite backend watchdog: {e}")).into(),
-            );
+            return Err(vm_err(format!("SQLite backend watchdog: {e}")));
         }
     };
     serde_json::from_str(&line)
@@ -604,7 +595,7 @@ fn persist_db(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
         .map(unb64)
         .unwrap_or_default();
     if !data.is_empty() {
-        crate::jfile::write_host_db(&vm.fw.vfs.clone(), db, data);
+        crate::jfile::write_host_db(&vm.fw.vfs, db, data);
     }
     Ok(())
 }

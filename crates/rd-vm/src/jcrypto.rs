@@ -111,7 +111,7 @@ const fn make_sbox() -> [u8; 256] {
     let mut q: u8 = 1;
     let mut step = 0usize;
     while step < 255 {
-        p = p ^ (p << 1) ^ if p & 0x80 != 0 { 0x1b } else { 0 };
+        p ^= (p << 1) ^ if p & 0x80 != 0 { 0x1b } else { 0 };
         q ^= q << 1;
         q ^= q << 2;
         q ^= q << 4;

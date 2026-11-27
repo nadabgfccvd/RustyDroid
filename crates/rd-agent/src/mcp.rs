@@ -485,7 +485,7 @@ impl AgentSession {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or(0),
-            seq,
+            seq
         );
         AgentSession {
             session_id,
@@ -3662,7 +3662,8 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
     let mut raw = Vec::new();
     loop {
         raw.clear();
-        let mut limited = (&mut reader).take((MAX_MCP_STDIO_LINE_BYTES as u64) + 2);
+        let limit = (MAX_MCP_STDIO_LINE_BYTES as u64) + 2;
+        let mut limited = reader.by_ref().take(limit);
         let n = limited
             .read_until(b'\n', &mut raw)
             .map_err(|e| RdError::new("IO_ERROR", format!("stdin: {e}"), MODULE_ID))?;
@@ -3676,13 +3677,9 @@ pub fn serve_stdio_with<R: std::io::Read, W: std::io::Write>(
             }
         }
         if raw.len() > MAX_MCP_STDIO_LINE_BYTES {
-            return Err(RdError::new(
-                "MCP_MESSAGE_TOO_LARGE",
-                format!(
-                    "stdin message exceeded maximum frame size ({MAX_MCP_STDIO_LINE_BYTES} bytes)"
-                ),
-                MODULE_ID,
-            ));
+            let max = MAX_MCP_STDIO_LINE_BYTES;
+            let msg = format!("stdin message exceeded maximum frame size ({max} bytes)");
+            return Err(RdError::new("MCP_MESSAGE_TOO_LARGE", msg, MODULE_ID));
         }
         let line = std::str::from_utf8(&raw).map_err(|e| {
             RdError::new("IO_ERROR", format!("stdin: invalid UTF-8: {e}"), MODULE_ID)
