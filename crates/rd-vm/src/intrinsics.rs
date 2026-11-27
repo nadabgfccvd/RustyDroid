@@ -340,9 +340,7 @@ pub(crate) fn default_app_stdout() -> HostOut {
 /// Configura o padrão de System.out para engines criados depois (issue #55).
 /// Não afeta engines já criados.
 pub fn set_default_app_stdout(mode: HostOut) {
-    *DEFAULT_APP_STDOUT
-        .lock()
-        .unwrap_or_else(|e| e.into_inner()) = mode;
+    *DEFAULT_APP_STDOUT.lock().unwrap_or_else(|e| e.into_inner()) = mode;
 }
 
 /// Roteia System.out do app para o STDERR do host (contrato de máquina:

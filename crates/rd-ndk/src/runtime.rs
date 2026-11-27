@@ -447,19 +447,18 @@ impl Runtime {
         let mut added: Vec<String> = Vec::new();
 
         let res = (|| -> Result<Vec<u64>> {
+            let invalid_elf = |msg: &str| RdError::new("INVALID_ELF", msg);
             for (n, base, size, elf) in planned {
                 self.map(base, size)?;
                 mapped_regions.push((base, size));
                 for s in &elf.segments {
                     let seg_base = base
                         .checked_add(s.address)
-                        .ok_or_else(|| RdError::new("INVALID_ELF", "segment address overflow"))?;
+                        .ok_or_else(|| invalid_elf("segment address overflow"))?;
                     for (i, chunk) in s.bytes.chunks(8 * 1024 * 1024).enumerate() {
                         let dst = seg_base
                             .checked_add((i * 8 * 1024 * 1024) as u64)
-                            .ok_or_else(|| {
-                                RdError::new("INVALID_ELF", "segment write overflow")
-                            })?;
+                            .ok_or_else(|| invalid_elf("segment write overflow"))?;
                         self.write(dst, chunk)?;
                     }
                 }
@@ -471,19 +470,20 @@ impl Runtime {
             // All exports exist before relocation, allowing cyclic dependency graphs.
             for n in &added {
                 let l = self.libraries[n].clone();
+                let base = l.base;
                 for r in &l.elf.relocations {
                     if r.kind == 0 {
                         continue;
                     }
-                    let target = l.base.checked_add(r.offset).ok_or_else(|| {
-                        RdError::new("INVALID_ELF", "relocation offset overflow")
-                    })?;
+                    let target = base
+                        .checked_add(r.offset)
+                        .ok_or_else(|| invalid_elf("relocation offset overflow"))?;
                     let add = match r.addend {
                         Some(a) => a as u64,
                         None => self.read_word(target)?,
                     };
                     let value = if r.kind == relative_kind(self.abi) {
-                        l.base.wrapping_add(add)
+                        base.wrapping_add(add)
                     } else {
                         let supported = match self.abi {
                             Abi::X86_64 => matches!(r.kind, 1 | 6 | 7),
@@ -496,13 +496,14 @@ impl Runtime {
                                 format!("{} relocation {}", self.abi.android_name(), r.kind),
                             ));
                         }
-                        let s = l.elf.symbols.get(r.symbol).ok_or_else(|| {
-                            RdError::new("INVALID_ELF", "relocation missing symbol")
-                        })?;
+                        let s = l
+                            .elf
+                            .symbols
+                            .get(r.symbol)
+                            .ok_or_else(|| invalid_elf("relocation missing symbol"))?;
                         let resolved = if s.defined {
-                            l.base.checked_add(s.value).ok_or_else(|| {
-                                RdError::new("INVALID_ELF", "symbol value overflow")
-                            })?
+                            base.checked_add(s.value)
+                                .ok_or_else(|| invalid_elf("symbol value overflow"))?
                         } else if let Some(v) = self.symbol(&s.name) {
                             v
                         } else if builtin_import(&s.name) {
@@ -532,24 +533,22 @@ impl Runtime {
             let mut init = Vec::new();
             for n in added.iter().rev() {
                 let l = self.libraries[n].clone();
+                let base = l.base;
                 if let Some(a) = l.elf.init {
-                    let fn_ptr = l
-                        .base
+                    let fn_ptr = base
                         .checked_add(a)
-                        .ok_or_else(|| RdError::new("INVALID_ELF", "DT_INIT address overflow"))?;
+                        .ok_or_else(|| invalid_elf("DT_INIT address overflow"))?;
                     init.push(fn_ptr);
                 }
                 if let Some((a, count)) = l.elf.init_array {
-                    let arr_base = l.base.checked_add(a).ok_or_else(|| {
-                        RdError::new("INVALID_ELF", "init_array address overflow")
-                    })?;
+                    let arr_base = base
+                        .checked_add(a)
+                        .ok_or_else(|| invalid_elf("init_array address overflow"))?;
                     for i in 0..count {
                         let elem_off = (i as u64)
                             .checked_mul(self.abi.pointer_size() as u64)
                             .and_then(|v| arr_base.checked_add(v))
-                            .ok_or_else(|| {
-                                RdError::new("INVALID_ELF", "init_array entry overflow")
-                            })?;
+                            .ok_or_else(|| invalid_elf("init_array entry overflow"))?;
                         let p = self.read_word(elem_off)?;
                         if p != 0 && p != u64::MAX && p != u32::MAX as u64 {
                             let p_addr = if self.abi == Abi::Arm { p & !1 } else { p };
@@ -560,8 +559,7 @@ impl Runtime {
                                     .unwrap_or(false)
                             });
                             if !valid_target {
-                                return Err(RdError::new(
-                                    "INVALID_ELF",
+                                return Err(invalid_elf(
                                     "init_array entry points outside loaded ELF segments",
                                 ));
                             }

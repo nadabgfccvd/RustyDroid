@@ -559,9 +559,7 @@ fn ensure_loaded(vm: &mut Engine, db: &str) -> Result<(), VmExit> {
     if !crate::jfile::is_host_db_snapshot(&vm.fw.vfs, db, &bytes) {
         return Err(Throwable::new(
             "Landroid/database/sqlite/SQLiteDatabaseCorruptException;",
-            format!(
-                "refusing to deserialize untrusted guest-written database image at {db}"
-            ),
+            format!("refusing to deserialize untrusted guest-written database image at {db}"),
         )
         .into());
     }

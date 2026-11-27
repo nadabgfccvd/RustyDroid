@@ -145,7 +145,7 @@ impl Policy {
     /// confiança — env vem do operador, nunca do cliente MCP).
     pub fn from_env() -> Self {
         let mut p = Policy::default();
-        if let Ok(s) = std::env::var_os("RD_MCP_SANDBOX") {
+        if let Some(s) = std::env::var_os("RD_MCP_SANDBOX") {
             let roots: Vec<PathBuf> = std::env::split_paths(&s)
                 .filter(|p| !p.to_string_lossy().trim().is_empty())
                 .collect();

@@ -891,9 +891,8 @@ impl AgentSession {
                     struct ConnGuard(Arc<LiveShared>);
                     impl Drop for ConnGuard {
                         fn drop(&mut self) {
-                            self.0
-                                .active_conns
-                                .fetch_sub(1, std::sync::atomic::Ordering::Release);
+                            use std::sync::atomic::Ordering;
+                            self.0.active_conns.fetch_sub(1, Ordering::Release);
                         }
                     }
                     let _guard = ConnGuard(sh.clone());

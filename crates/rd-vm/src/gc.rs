@@ -1240,10 +1240,7 @@ mod tests {
             .alloc_instance("Landroid/content/res/TypedArray;".into(), vec![])
             .unwrap();
 
-        vm.fw
-            .org_json
-            .docs
-            .insert(r_json, serde_json::json!({"n": r_rand}));
+        vm.fw.org_json.docs.insert(r_json, serde_json::json!({"n": r_rand}));
         vm.fw.random.seeds.insert(r_rand, 12345);
         vm.fw.uri.builders.insert(r_uri, Default::default());
         vm.fw.annotations.instances.insert(r_ann);
