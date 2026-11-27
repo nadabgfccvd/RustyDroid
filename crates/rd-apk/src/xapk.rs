@@ -498,7 +498,10 @@ mod tests {
             ("b.apk", apk_for("com.example.nested")),
         ]);
         let outer = bundle(&[
-            ("manifest.json", manifest_json(&[("inner.xapk", "base")], &[])),
+            (
+                "manifest.json",
+                manifest_json(&[("inner.xapk", "base")], &[]),
+            ),
             ("inner.xapk", inner),
         ]);
         let err = Xapk::from_zip(&Zip::parse(outer).unwrap()).unwrap_err();

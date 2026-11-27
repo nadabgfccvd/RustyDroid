@@ -881,15 +881,24 @@ impl AgentSession {
         }
         self.running.screen.live = Some(shared.clone());
         std::thread::spawn(move || {
+            use std::sync::atomic::Ordering;
+            let conns = &shared.active_conns;
             for mut stream in listener.incoming().flatten() {
-                let admitted = shared
-                    .active_conns
-                    .fetch_update(
-                        std::sync::atomic::Ordering::AcqRel,
-                        std::sync::atomic::Ordering::Acquire,
-                        |n| (n < MAX_LIVE_CONNS).then_some(n + 1),
-                    )
-                    .is_ok();
+                let mut cur = conns.load(Ordering::Acquire);
+                let admitted = loop {
+                    if cur >= MAX_LIVE_CONNS {
+                        break false;
+                    }
+                    match conns.compare_exchange_weak(
+                        cur,
+                        cur + 1,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => break true,
+                        Err(actual) => cur = actual,
+                    }
+                };
                 if !admitted {
                     let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
                     let _ = std::io::Write::write_all(&mut stream, LIVE_503);

@@ -139,17 +139,8 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: |
-          if ! out=$(cargo fmt --all -- --check 2>&1); then
-            echo "$out" | head -n 40 | while IFS= read -r line; do echo "::error::FMT: $line"; done
-            exit 1
-          fi
-      - if: always()
-        run: |
-          if ! out=$(cargo clippy --workspace --all-targets --all-features --message-format=short -- -D warnings 2>&1); then
-            echo "$out" | grep -E 'error|warning' | head -n 30 | while IFS= read -r line; do echo "::error::CLIPPY: $line"; done
-            exit 1
-          fi
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       # M6 (TST-01): a suíte de contrato roda sem APK e gera JUnit XML.
       # Exit 0 = todos os cenários passaram; qualquer falha derruba o job.
