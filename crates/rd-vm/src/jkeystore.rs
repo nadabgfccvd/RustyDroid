@@ -784,26 +784,25 @@ mod tests {
     #[test]
     fn keystore_persists_across_engines_and_is_hidden_from_guest_files() {
         let vfs = crate::jfile::VfsHandle::new();
-        let mut vm1 = Engine::new();
+        let mut vm1 = Engine::new(vec![], crate::VmConfig::default());
         vm1.set_vfs(vfs.clone());
         vm1.fw.package_name = "com.example.ks".into();
 
         let alias = js(&mut vm1, "master");
-        let spec = vm1.heap.alloc_obj(KEY_GEN_SPEC).unwrap();
-        instance_intrinsic(
-            &mut vm1,
-            KEY_GEN_SPEC,
-            "<init>",
-            "(Ljava/lang/String;I)V",
-            spec,
-            &[alias, Value::Int(3)],
-        )
-        .unwrap();
+        let spec = vm1
+            .heap
+            .alloc_instance(
+                KEY_GEN_SPEC.to_string(),
+                vec![
+                    ("mKeystoreAlias".into(), alias),
+                    ("mKeySize".into(), Value::Int(256)),
+                ],
+            )
+            .unwrap();
         let aes = js(&mut vm1, "AES");
         let prov = js(&mut vm1, PROVIDER);
-        let kg = obj(
-            static_intrinsic(&mut vm1, KEY_GENERATOR, "getInstance", &[aes, prov]).unwrap(),
-        );
+        let kg =
+            obj(static_intrinsic(&mut vm1, KEY_GENERATOR, "getInstance", &[aes, prov]).unwrap());
         instance_intrinsic(
             &mut vm1,
             KEY_GENERATOR,
@@ -833,7 +832,7 @@ mod tests {
         assert!(crate::jfile::read_bytes(&vfs, &legacy_path).is_none());
 
         // Reloadable from a fresh Engine sharing the same VfsHandle.
-        let mut vm2 = Engine::new();
+        let mut vm2 = Engine::new(vec![], crate::VmConfig::default());
         vm2.set_vfs(vfs.clone());
         vm2.fw.package_name = "com.example.ks".into();
         ensure_key_loaded(&mut vm2, "master");
@@ -841,7 +840,7 @@ mod tests {
 
         // Cleared when package data is wiped.
         crate::jfile::clear_package_data(&vfs, "com.example.ks");
-        let mut vm3 = Engine::new();
+        let mut vm3 = Engine::new(vec![], crate::VmConfig::default());
         vm3.set_vfs(vfs);
         vm3.fw.package_name = "com.example.ks".into();
         ensure_key_loaded(&mut vm3, "master");
