@@ -42,6 +42,11 @@ pub struct Canvas {
 impl Canvas {
     /// `None` se a dimensão for inválida para um `Pixmap` (zero ou gigante).
     pub fn new(bg: Rgb, w: usize, h: usize) -> Option<Self> {
+        const MAX_CANVAS_BYTES: usize = 64 * 1024 * 1024;
+        let bytes = w.checked_mul(h)?.checked_mul(4)?;
+        if bytes == 0 || bytes > MAX_CANVAS_BYTES {
+            return None;
+        }
         let (w, h) = (u32::try_from(w).ok()?, u32::try_from(h).ok()?);
         let mut pix = Pixmap::new(w, h)?;
         pix.fill(tiny_skia::Color::from_rgba8(bg.0, bg.1, bg.2, 255));
