@@ -453,13 +453,8 @@ pub(crate) fn parse_module(bytes: &[u8]) -> Res<ModuleDef> {
                 for i in 0..n {
                     let body_size = s.u32()? as usize;
                     let body = s.take(body_size)?;
-                    let f = decode_func(
-                        &def,
-                        &func_types,
-                        func_types[i],
-                        body,
-                        &mut module_locals,
-                    )?;
+                    let f =
+                        decode_func(&def, &func_types, func_types[i], body, &mut module_locals)?;
                     def.funcs.push(f);
                 }
             }

@@ -13,9 +13,9 @@ use crate::heap::{ElemKind, ObjRef};
 use crate::value::Value;
 pub(crate) use rd_stub_tables::{in_class_set, lookup_class_id};
 use rd_stub_tables::{
-    ALL_CLASS_METHODS, ALL_COPIES, ALL_FMT_SEGS, ALL_METHODS, ALL_NAME_METHODS, ALL_STEPS,
+    StrId, ALL_CLASS_METHODS, ALL_COPIES, ALL_FMT_SEGS, ALL_METHODS, ALL_NAME_METHODS, ALL_STEPS,
     ALL_STR_IDS, BUILD_SPECS, EQ_SPECS, EX_CLASS_POOL, INT_CONST_POOL, LONG_POOL,
-    STATIC_CONST_CLASSES, STATIC_CONST_FIELDS, StrId,
+    STATIC_CONST_CLASSES, STATIC_CONST_FIELDS,
 };
 use std::fmt::Write as _;
 
@@ -397,4 +397,3 @@ pub(crate) fn eval_class_method_range(
     let m = slice[idx];
     exec_op(vm, m.op_kind, m.op_aux, m.op_arg, recv, args).map(Some)
 }
-

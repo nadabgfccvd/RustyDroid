@@ -1467,7 +1467,9 @@ mod tests {
             super::super::p0_242_255_tests::mock_runtime(Abi::Arm).expect("arm mock runtime");
 
         // time(time_t *): writes 4 bytes and leaves trailing canary intact.
-        let tbuf = rt.alloc_bytes(&[0u8, 0, 0, 0, 0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+        let tbuf = rt
+            .alloc_bytes(&[0u8, 0, 0, 0, 0xDE, 0xAD, 0xBE, 0xEF])
+            .unwrap();
         let ret = call(&mut rt, "time", &[tbuf]).bits as i32;
         assert!(ret > 1_700_000_000);
         assert_eq!(rt.read(tbuf, 4).unwrap(), ret.to_le_bytes());
@@ -1500,7 +1502,10 @@ mod tests {
         let tm = rt.allocate(64).unwrap();
         assert_eq!(call(&mut rt, "gmtime_r", &[t_ptr, tm]).bits, tm);
         let fields = rt.read_tm(tm).unwrap();
-        assert_eq!((fields.year + 1900, fields.mon + 1, fields.mday), (2000, 3, 1));
+        assert_eq!(
+            (fields.year + 1900, fields.mon + 1, fields.mday),
+            (2000, 3, 1)
+        );
     }
 
     #[test]
@@ -1561,7 +1566,7 @@ mod tests {
     fn strncasecmp_and_strncat_stop_at_n_before_unmapped_page() {
         let mut rt = rt();
         // Map a single page at 0x3000_0000; 0x3000_1000 is unmapped.
-        rt.map(0x3000_0000, 0x1000, 3).unwrap();
+        rt.map(0x3000_0000, 0x1000).unwrap();
         let edge = 0x3000_0ffd;
         rt.write(edge, b"AbC").unwrap(); // no NUL before unmapped page
         let other = cstr(&mut rt, b"abcXYZ");
