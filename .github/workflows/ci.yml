@@ -142,7 +142,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: |
-          if ! OUT=$(cargo test --workspace 2>&1); then python3 -c "import sys; lines=[l for l in sys.stdin.read().splitlines() if any(k in l for k in ('FAILED','panicked at','assertion','left:','right:','failures:'))]; s='\n'.join(lines[:40])[:3500].replace('%','%25').replace('\n','%0A'); print('::error::TEST_WS:'+s)" <<< "$OUT"; exit 1; fi
+          if ! OUT=$(cargo test --workspace 2>&1); then python3 -c "import sys; s=sys.stdin.read()[-3500:].replace('%','%25').replace('\n','%0A'); print('::error::TEST_WS:'+s)" <<< "$OUT"; exit 1; fi
       # M6 (TST-01): a suíte de contrato roda sem APK e gera JUnit XML.
       # Exit 0 = todos os cenários passaram; qualquer falha derruba o job.
       - name: Suíte de contrato (rd test → JUnit XML)
@@ -288,7 +288,7 @@ jobs:
         env:
           RD_NATIVE_PYTHON: python
         run: |
-          if ! OUT=$(cargo test -p rd-ndk -p rd-vm --features native 2>&1); then python3 -c "import sys; lines=[l for l in sys.stdin.read().splitlines() if any(k in l for k in ('FAILED','panicked at','assertion','left:','right:','failures:'))]; s='\n'.join(lines[:40])[:3500].replace('%','%25').replace('\n','%0A'); print('::error::TEST_NAT:'+s)" <<< "$OUT"; exit 1; fi
+          if ! OUT=$(cargo test -p rd-ndk -p rd-vm --features native 2>&1); then python3 -c "import sys; s=sys.stdin.read()[-3500:].replace('%','%25').replace('\n','%0A'); print('::error::TEST_NAT:'+s)" <<< "$OUT"; exit 1; fi
       # M9 DoD: five real F-Droid APKs (pinned by SHA-256, never committed —
       # GH-05) make JNI calls from their real DEX with checked results, on
       # every ABI they ship.
