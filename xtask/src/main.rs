@@ -105,12 +105,16 @@ fn run() -> Result<()> {
                 .unwrap_or_else(|| root.join("RustyDroid.md"));
             gms_spec(&root, &out)
         }
+        Some("sync-docs") => sync_docs(&root),
+        Some("check") => run_local_checks(&root),
         Some("--help") | Some("help") | None => {
             println!("xtask — RustyDroid build tasks");
             println!();
             println!("USAGE: cargo xtask <COMMAND>");
             println!();
             println!("COMMANDS:");
+            println!("  sync-docs               regenera todos os placares/tabelas (compat/engine/api/jetpack/gms)");
+            println!("  check                   roda os gates locais de CI (fmt, clippy, links, pins, drift de docs)");
             println!("  compat-report [out.md]  gera docs/compat-matrix.md (placar oficial)");
             println!("  engine-report [out.md]  gera docs/engine-registry.md (Apêndice G)");
             println!("  engine-spec [out.md]    regenera apenas a tabela marcada em RustyDroid.md");
@@ -126,6 +130,145 @@ fn run() -> Result<()> {
         }
         Some(other) => bail!("unknown task {other:?} — try `cargo xtask --help`"),
     }
+}
+
+fn sync_docs(root: &Path) -> Result<()> {
+    compat_report(root, &root.join("docs").join("compat-matrix.md"))?;
+    let registry = rd_engine_registry::Registry::load(&root.join("data/engines.toml"))?;
+    let eng_out = root.join("docs/engine-registry.md");
+    std::fs::write(&eng_out, registry.markdown())
+        .with_context(|| format!("writing {}", eng_out.display()))?;
+    println!("engine registry report: {}", eng_out.display());
+    engine_spec(root, &root.join("RustyDroid.md"))?;
+    let api_out = root.join("docs").join("api-coverage.md");
+    std::fs::write(&api_out, api_coverage_table(root)?.markdown_report())
+        .with_context(|| format!("writing {}", api_out.display()))?;
+    println!("api coverage report: {}", api_out.display());
+    api_coverage_spec(root, &root.join("RustyDroid.md"))?;
+    let jp_out = root.join("docs").join("jetpack.md");
+    std::fs::write(&jp_out, jetpack_table(root)?.markdown_report())
+        .with_context(|| format!("writing {}", jp_out.display()))?;
+    println!("jetpack report: {}", jp_out.display());
+    jetpack_spec(root, &root.join("RustyDroid.md"))?;
+    let gms_out = root.join("docs").join("gms.md");
+    std::fs::write(&gms_out, gms_table(root)?.markdown_report())
+        .with_context(|| format!("writing {}", gms_out.display()))?;
+    println!("gms report: {}", gms_out.display());
+    gms_spec(root, &root.join("RustyDroid.md"))?;
+    println!("sync-docs: all generated scoreboards and spec tables are up to date");
+    Ok(())
+}
+
+fn run_step(root: &Path, label: &str, prog: &str, args: &[&str]) -> Result<()> {
+    println!("==> {label}");
+    let status = std::process::Command::new(prog)
+        .args(args)
+        .current_dir(root)
+        .status()
+        .with_context(|| format!("spawning `{prog}` for {label}"))?;
+    if !status.success() {
+        bail!("{label} failed with status {status}");
+    }
+    Ok(())
+}
+
+fn verify_doc_sync(root: &Path) -> Result<()> {
+    println!("==> verify generated docs are in sync (read-only)");
+    let tmp = std::env::temp_dir().join(format!("rd-xtask-check-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).context("creating temp dir for doc drift check")?;
+
+    let check_pair = |generated: &Path, committed: &Path| -> Result<()> {
+        let want = std::fs::read_to_string(generated)
+            .with_context(|| format!("reading generated {}", generated.display()))?;
+        let have = std::fs::read_to_string(committed)
+            .with_context(|| format!("reading committed {}", committed.display()))?;
+        if want != have {
+            bail!(
+                "{} is out of sync with data/sources — run `cargo xtask sync-docs`",
+                committed.display()
+            );
+        }
+        Ok(())
+    };
+
+    let res = (|| -> Result<()> {
+        let compat_tmp = tmp.join("compat-matrix.md");
+        compat_report(root, &compat_tmp)?;
+        check_pair(&compat_tmp, &root.join("docs/compat-matrix.md"))?;
+
+        let eng_tmp = tmp.join("engine-registry.md");
+        let registry = rd_engine_registry::Registry::load(&root.join("data/engines.toml"))?;
+        std::fs::write(&eng_tmp, registry.markdown())?;
+        check_pair(&eng_tmp, &root.join("docs/engine-registry.md"))?;
+
+        let api_tmp = tmp.join("api-coverage.md");
+        std::fs::write(&api_tmp, api_coverage_table(root)?.markdown_report())?;
+        check_pair(&api_tmp, &root.join("docs/api-coverage.md"))?;
+
+        let jp_tmp = tmp.join("jetpack.md");
+        std::fs::write(&jp_tmp, jetpack_table(root)?.markdown_report())?;
+        check_pair(&jp_tmp, &root.join("docs/jetpack.md"))?;
+
+        let gms_tmp = tmp.join("gms.md");
+        std::fs::write(&gms_tmp, gms_table(root)?.markdown_report())?;
+        check_pair(&gms_tmp, &root.join("docs/gms.md"))?;
+
+        let spec_tmp = tmp.join("RustyDroid.md");
+        std::fs::copy(root.join("RustyDroid.md"), &spec_tmp)?;
+        engine_spec(root, &spec_tmp)?;
+        api_coverage_spec(root, &spec_tmp)?;
+        jetpack_spec(root, &spec_tmp)?;
+        gms_spec(root, &spec_tmp)?;
+        check_pair(&spec_tmp, &root.join("RustyDroid.md"))?;
+        Ok(())
+    })();
+
+    let _ = std::fs::remove_dir_all(&tmp);
+    res
+}
+
+fn run_local_checks(root: &Path) -> Result<()> {
+    run_step(
+        root,
+        "cargo fmt --check",
+        "cargo",
+        &["fmt", "--all", "--", "--check"],
+    )?;
+    run_step(
+        root,
+        "cargo clippy",
+        "cargo",
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+    verify_doc_sync(root)?;
+    run_step(
+        root,
+        "markdown links",
+        "python3",
+        &["scripts/check_md_links.py"],
+    )?;
+    run_step(
+        root,
+        "ADR index sync",
+        "python3",
+        &["scripts/gen_adr_index.py"],
+    )?;
+    run_step(
+        root,
+        "GitHub Action pins",
+        "python3",
+        &["scripts/check_action_pins.py"],
+    )?;
+    println!("check: all local CI checks passed");
+    Ok(())
 }
 
 /// Estado real das crates (fonte da verdade: este arquivo, junto do roadmap).
@@ -150,6 +293,11 @@ const CRATE_STATUS: &[(&str, &str, &str)] = &[
         "rd-dex",
         "M1",
         "parser DEX completo + disassembler smali validado vs baksmali + fuzz targets",
+    ),
+    (
+        "rd-stub-tables",
+        "M2–M9",
+        "tabelas estáticas compactas sem relocações PIE usadas pelos stubs de superfície Android em rd-vm (extraídas para compilações incrementais rápidas)",
     ),
     (
         "rd-vm",

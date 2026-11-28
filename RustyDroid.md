@@ -321,7 +321,7 @@ rustydroid/
 - GC: arena por thread + mark-sweep global simples (pausas < 2 ms)
 - Thread/Looper/Handler → threads nativas + filas (sem async verde na UI)
 - tiny-skia software (zero GPU); rustybuzz p/ text shaping; rmcp p/ MCP; tokio só no rd-agent
-- Erros: thiserror nas libs, anyhow no binário; tracing JSON
+- Erros: `RdError` estruturado próprio nas libs (sem `thiserror`), `anyhow` no binário; tracing JSON
 - MIT OR Apache-2.0; MSRV estável documentado; sem unsafe fora de rd-ndk/rd-jni (auditado)
 
 ## COMO TRABALHAR

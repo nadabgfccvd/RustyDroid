@@ -31,20 +31,36 @@ pub fn snapshot_enabled() -> bool {
 }
 
 /// Snapshot cache root: `RD_SNAPSHOT_DIR`, else `$XDG_CACHE_HOME` or
-/// `$HOME/.cache`, always under `rustydroid/snapshots`.
+/// `$HOME/.cache`, else a user/process-scoped subdirectory under `temp_dir()`.
 pub fn snapshot_root() -> PathBuf {
     if let Ok(d) = std::env::var("RD_SNAPSHOT_DIR") {
         if !d.is_empty() {
             return PathBuf::from(d);
         }
     }
-    let base = std::env::var("XDG_CACHE_HOME")
+    if let Some(base) = std::env::var("XDG_CACHE_HOME")
         .ok()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".cache")))
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("rustydroid").join("snapshots")
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
+    {
+        return base.join("rustydroid").join("snapshots");
+    }
+    let scope = std::env::var("USER")
+        .ok()
+        .filter(|u| {
+            !u.is_empty()
+                && u.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        })
+        .map(|u| format!("rustydroid-{u}-{}", std::process::id()))
+        .unwrap_or_else(|| format!("rustydroid-{}", std::process::id()));
+    std::env::temp_dir().join(scope).join("snapshots")
 }
 
 /// Two-lane 128-bit FNV fingerprint (FNV-1a + FNV-1, distinct seeds).
@@ -151,7 +167,8 @@ fn load_snapshot(key: &str) -> Option<LoadedSnapshot> {
     })
 }
 
-/// Store atomically: write a temp sibling dir, then rename into place.
+/// Store race-safely: stage into a thread-unique temp sibling dir, then swap
+/// into place without creating an empty window for concurrent readers/writers.
 fn store_snapshot(
     key: &str,
     meta: &serde_json::Value,
@@ -159,20 +176,52 @@ fn store_snapshot(
     observe_text: &str,
     observe_json: &str,
 ) -> Result<(), RdError> {
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let io = |e: std::io::Error| RdError::new("IO_ERROR", format!("snapshot store: {e}"), MODULE_ID);
     let root = snapshot_root();
     std::fs::create_dir_all(&root).map_err(io)?;
-    let tmp = root.join(format!(".{key}.tmp-{}", std::process::id()));
+    let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = root.join(format!(".{key}.tmp-{pid}-{seq}"));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).map_err(io)?;
-    std::fs::write(tmp.join("meta.json"), meta.to_string()).map_err(io)?;
-    std::fs::write(tmp.join("frame.png"), png).map_err(io)?;
-    std::fs::write(tmp.join("observe.txt"), observe_text).map_err(io)?;
-    std::fs::write(tmp.join("observe.json"), observe_json).map_err(io)?;
+    let write_res = (|| -> std::io::Result<()> {
+        std::fs::write(tmp.join("meta.json"), meta.to_string())?;
+        std::fs::write(tmp.join("frame.png"), png)?;
+        std::fs::write(tmp.join("observe.txt"), observe_text)?;
+        std::fs::write(tmp.join("observe.json"), observe_json)?;
+        Ok(())
+    })();
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(io(e));
+    }
     let dir = snapshot_dir(key);
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::rename(&tmp, &dir).map_err(io)?;
-    Ok(())
+    if std::fs::rename(&tmp, &dir).is_ok() {
+        return Ok(());
+    }
+    // Target already exists (non-empty dir rename fails on POSIX/Windows):
+    // move the previous directory aside, swap the new one in, then clean up.
+    let old = root.join(format!(".{key}.old-{pid}-{seq}"));
+    let _ = std::fs::remove_dir_all(&old);
+    if std::fs::rename(&dir, &old).is_ok() {
+        let swapped = std::fs::rename(&tmp, &dir);
+        let _ = std::fs::remove_dir_all(&old);
+        if swapped.is_ok() {
+            return Ok(());
+        }
+    }
+    // If another writer concurrently populated `dir` with the same content key,
+    // clean up our staged copy instead of failing.
+    let _ = std::fs::remove_dir_all(&tmp);
+    if dir.join("meta.json").is_file() {
+        return Ok(());
+    }
+    Err(RdError::new(
+        "IO_ERROR",
+        format!("snapshot store: failed to commit {}", dir.display()),
+        MODULE_ID,
+    ))
 }
 
 impl AgentSession {

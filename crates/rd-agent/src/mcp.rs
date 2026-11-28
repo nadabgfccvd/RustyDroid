@@ -6977,6 +6977,72 @@ mod tests {
         );
         assert!(err, "{v}");
     }
+
+    #[test]
+    fn live_viewer_shuts_down_on_drop_and_reenable() {
+        let addr = {
+            let mut s = AgentSession::new();
+            let a = s.enable_live("127.0.0.1:0").expect("bind 1");
+            // Re-enabling on the exact same address succeeds because the old
+            // listener is cleanly shut down first.
+            let b = s.enable_live(&a.to_string()).expect("re-bind same addr");
+            assert_eq!(a, b);
+            b
+        };
+        // After AgentSession is dropped, the port is released immediately.
+        let rebound = std::net::TcpListener::bind(addr);
+        assert!(
+            rebound.is_ok(),
+            "live viewer port {addr} should be free after drop"
+        );
+    }
+
+    #[test]
+    fn store_snapshot_handles_concurrent_writers_for_same_key() {
+        let _guard = SESSION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!(
+            "rd-snap-race-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let prev = std::env::var_os("RD_SNAPSHOT_DIR");
+        std::env::set_var("RD_SNAPSHOT_DIR", &dir);
+
+        let key = "0123456789abcdef0123456789abcdef";
+        let meta = serde_json::json!({
+            "format": 1,
+            "runtime": env!("CARGO_PKG_VERSION"),
+            "package": "com.example.race",
+            "activity": ".Main",
+        });
+        let png = b"\x89PNG\r\n\x1a\nfake".to_vec();
+        std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for _ in 0..8 {
+                let meta = meta.clone();
+                let png = png.clone();
+                handles.push(scope.spawn(move || {
+                    store_snapshot(key, &meta, &png, "screen", "{}").expect("store ok");
+                }));
+            }
+            for h in handles {
+                h.join().unwrap();
+            }
+        });
+        let loaded = load_snapshot(key).expect("snapshot loadable after concurrent writes");
+        assert_eq!(loaded.package, "com.example.race");
+
+        match prev {
+            Some(v) => std::env::set_var("RD_SNAPSHOT_DIR", v),
+            None => std::env::remove_var("RD_SNAPSHOT_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     include!("ui_tools_tests.rs");
     include!("runtime_tools_tests.rs");
     include!("apk_share_tests.rs");

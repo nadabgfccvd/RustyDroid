@@ -52,6 +52,10 @@ struct Vfs {
     /// file contents without updating this map, so `jsqlite::ensure_loaded`
     /// never feeds guest-crafted bytes into host `sqlite3_deserialize`.
     host_db_digests: BTreeMap<String, [u8; 32]>,
+    /// Host-only AndroidKeyStore key material, keyed by `(package, alias)`.
+    /// Kept outside `files` so guest `java.io.File` / `Context.fileList()`
+    /// cannot enumerate, read, or tamper with hardware-backed key bytes.
+    keystore_keys: BTreeMap<(String, String), Vec<u8>>,
     meta: BTreeMap<String, VfsMeta>,
     next_ino: i64,
     open_descs: BTreeMap<i64, OpenDesc>,
@@ -1242,6 +1246,33 @@ pub(crate) fn delete_file(h: &VfsHandle, p: &str) -> bool {
     })
 }
 
+/// Persists AndroidKeyStore key material in host-only session storage,
+/// invisible to guest `java.io.File` / `Context.fileList()` APIs.
+pub(crate) fn write_keystore_key(h: &VfsHandle, package: &str, alias: &str, bytes: Vec<u8>) {
+    h.with(|v| {
+        v.keystore_keys
+            .insert((package.to_string(), alias.to_string()), bytes);
+    });
+}
+
+/// Reads persisted AndroidKeyStore key material from host-only session storage.
+pub(crate) fn read_keystore_key(h: &VfsHandle, package: &str, alias: &str) -> Option<Vec<u8>> {
+    h.with(|v| {
+        v.keystore_keys
+            .get(&(package.to_string(), alias.to_string()))
+            .cloned()
+    })
+}
+
+/// Removes persisted AndroidKeyStore key material from host-only session storage.
+pub(crate) fn delete_keystore_key(h: &VfsHandle, package: &str, alias: &str) -> bool {
+    h.with(|v| {
+        v.keystore_keys
+            .remove(&(package.to_string(), alias.to_string()))
+            .is_some()
+    })
+}
+
 /// Issue #230: Android "clear data" / uninstall — apaga todo o
 /// armazenamento do pacote e fecha os descritores abertos nesses
 /// caminhos. Raízes (como no AOSP): o diretório privado
@@ -1276,6 +1307,7 @@ pub fn clear_package_data(h: &VfsHandle, package: &str) {
         v.fds.retain(|_, desc| !dead_descs.contains(desc));
         v.files.retain(|p, _| !in_pkg(p));
         v.host_db_digests.retain(|p, _| !in_pkg(p));
+        v.keystore_keys.retain(|(pkg, _), _| pkg != package);
         v.meta.retain(|p, _| !in_pkg(p));
         v.dirs.retain(|p| !in_pkg(p));
     });

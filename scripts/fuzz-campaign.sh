@@ -2,12 +2,12 @@
 #
 # scripts/fuzz-campaign.sh — Campanha de fuzz 24h (DoD do M1) — ver docs/FUZZING.md
 #
-# Política (docs/FUZZING.md): os 5 targets (zip, axml, arsc, apk_full, dex)
-# rodam em PARALELO por N segundos (padrão 86400 = 24 h), em modo -fork com
-# -ignore_crashes=1 — o fuzzer CONTINUA após crash/oom/timeout e arquiva cada
-# achado em crates/*/fuzz/artifacts/.
+# Política (docs/FUZZING.md): os 7 targets (zip, axml, arsc, apk_full, dex,
+# elf, wasm_module) rodam em PARALELO por N segundos (padrão 86400 = 24 h), em
+# modo -fork com -ignore_crashes=1 — o fuzzer CONTINUA após crash/oom/timeout e
+# arquiva cada achado em crates/*/fuzz/artifacts/.
 #
-#   DoD atingido  = ao final, NENHUM arquivo `crash-*` nos artifacts E os 5
+#   DoD atingido  = ao final, NENHUM arquivo `crash-*` nos artifacts E os 7
 #                   targets rodaram os SECS íntegros (veredito honesto: um
 #                   target que morreu no build NÃO conta como "sem crash").
 #   DoD violado   = qualquer `crash-*` é bug P0 (Lei nº 1) → minimizar + issue.
@@ -94,7 +94,9 @@ fi
 
 # --------------------------------------------------------------- guardas ---
 # O script PRECISA rodar de dentro do clone (usa caminhos de crates/ e do APK).
-for d in "${REPO}/crates/rd-apk/fuzz" "${REPO}/crates/rd-dex/fuzz" "${REPO}/golden-apks"; do
+for d in "${REPO}/crates/rd-apk/fuzz" "${REPO}/crates/rd-dex/fuzz" \
+         "${REPO}/crates/rd-ndk/fuzz" "${REPO}/crates/rd-engine-wasm/fuzz" \
+         "${REPO}/golden-apks"; do
     if [ ! -d "${d}" ]; then
         echo "ERRO: diretório ausente: ${d}" >&2
         echo "      Rode o script DE DENTRO do clone (não copie para fora):" >&2
@@ -185,13 +187,30 @@ fi
 
 APK_CORPUS="${REPO}/crates/rd-apk/fuzz/corpus"
 DEX_CORPUS="${REPO}/crates/rd-dex/fuzz/corpus"
+NDK_CORPUS="${REPO}/crates/rd-ndk/fuzz/corpus"
+WASM_CORPUS="${REPO}/crates/rd-engine-wasm/fuzz/corpus"
 mkdir -p "${APK_CORPUS}/apk_full" "${APK_CORPUS}/zip" "${APK_CORPUS}/axml" \
-         "${APK_CORPUS}/arsc" "${DEX_CORPUS}/dex"
+         "${APK_CORPUS}/arsc" "${DEX_CORPUS}/dex" \
+         "${NDK_CORPUS}/elf" "${WASM_CORPUS}/wasm_module"
 cp "${APK}" "${APK_CORPUS}/apk_full/"                 # APK inteiro (ZIP+AXML+ARSC+DEX)
 cp "${APK}" "${APK_CORPUS}/zip/"                      # container ZIP real
 cp "${TMP}/AndroidManifest.xml" "${APK_CORPUS}/axml/manifest.xml"
 cp "${TMP}/resources.arsc" "${APK_CORPUS}/arsc/"
 cp "${TMP}"/classes*.dex "${DEX_CORPUS}/dex/"
+# Seeds ELF (se o APK trouxer .so) e WASM (módulo mínimo + golden se houver).
+( cd "${TMP}" && unzip -o -j -q "${APK}" 'lib/*/*.so' 2>/dev/null ) || true
+for so in "${TMP}"/*.so; do
+    [ -f "${so}" ] && cp "${so}" "${NDK_CORPUS}/elf/" || true
+done
+if [ ! -f "${NDK_CORPUS}/elf/min.elf" ]; then
+    printf '\177ELF\002\001\001\000\000\000\000\000\000\000\000\000' > "${NDK_CORPUS}/elf/min.elf"
+fi
+if [ ! -f "${WASM_CORPUS}/wasm_module/empty.wasm" ]; then
+    printf '\000asm\001\000\000\000' > "${WASM_CORPUS}/wasm_module/empty.wasm"
+fi
+for wm in "${REPO}"/golden/engines/wasm/*.wasm; do
+    [ -f "${wm}" ] && cp "${wm}" "${WASM_CORPUS}/wasm_module/" || true
+done
 
 # NÃO usar `find | head | while` direto: com pipefail, o SIGPIPE do find
 # (exit 141) mataria o script no APK real (703 res). Escrever em arquivo e
@@ -207,12 +226,12 @@ if [ -d "${TMP}/res" ]; then
     done < "${TMP}/axml-seeds.txt"
 fi
 
-echo "    seeds ok: apk_full=$(ls "${APK_CORPUS}/apk_full" | wc -l) zip=$(ls "${APK_CORPUS}/zip" | wc -l) axml=$(ls "${APK_CORPUS}/axml" | wc -l) arsc=$(ls "${APK_CORPUS}/arsc" | wc -l) dex=$(ls "${DEX_CORPUS}/dex" | wc -l)"
+echo "    seeds ok: apk_full=$(ls "${APK_CORPUS}/apk_full" | wc -l) zip=$(ls "${APK_CORPUS}/zip" | wc -l) axml=$(ls "${APK_CORPUS}/axml" | wc -l) arsc=$(ls "${APK_CORPUS}/arsc" | wc -l) dex=$(ls "${DEX_CORPUS}/dex" | wc -l) elf=$(ls "${NDK_CORPUS}/elf" | wc -l) wasm_module=$(ls "${WASM_CORPUS}/wasm_module" | wc -l)"
 
 if [ "${SEEDS_ONLY}" -eq 1 ]; then
     echo
     echo "==> seeds-only: corpus pronto (nenhum fuzzer executado)"
-    du -sh "${APK_CORPUS}"/* "${DEX_CORPUS}"/* 2>/dev/null | sed 's/^/    /' || true
+    du -sh "${APK_CORPUS}"/* "${DEX_CORPUS}"/* "${NDK_CORPUS}"/* "${WASM_CORPUS}"/* 2>/dev/null | sed 's/^/    /' || true
     echo
     echo "    Próximo passo — smoke de 10 min ANTES das 24 h:"
     echo "      ./scripts/fuzz-campaign.sh 600"
@@ -282,7 +301,7 @@ fi
 # Arquivar artifacts de rodadas ANTERIORES: sem isso, um crash-*/oom-* antigo
 # (ex.: do smoke de 10 min) seria contado de novo e contaminaria o veredito.
 # Nada se perde: vai para <LOGDIR>/artifacts-anteriores/.
-for c in rd-apk rd-dex; do
+for c in rd-apk rd-dex rd-ndk rd-engine-wasm; do
     A="${REPO}/crates/${c}/fuzz/artifacts"
     if [ -d "${A}" ] && [ -n "$(ls -A "${A}" 2>/dev/null)" ]; then
         DEST="${LOGDIR}/artifacts-anteriores/${c}"
@@ -294,7 +313,7 @@ done
 
 # ------------------------------------------------------------ execução ----
 # max_len ≥ maior seed (senão o libFuzzer TRUNCA a seed — mata o EOCD do ZIP):
-#   apk_full/zip: 16 MB · dex: 10 MB · arsc: 4 MB · axml: 2 MB
+#   apk_full/zip: 16 MB · dex: 10 MB · arsc: 4 MB · axml/elf/wasm_module: 2 MB
 # (assert APK ≤ max_len no pré-voo, issue #65)
 pids=()
 names=()
@@ -314,7 +333,8 @@ run_target() { # crate target max_len
     echo "[$(date +%H:%M:%S)] concluído: ${crate}/${target}" >> "${LOGDIR}/done.txt"
 }
 for spec in "rd-apk apk_full 16777216" "rd-apk zip 16777216" "rd-apk axml 2097152" \
-            "rd-apk arsc 4194304" "rd-dex dex 10485760"; do
+            "rd-apk arsc 4194304" "rd-dex dex 10485760" \
+            "rd-ndk elf 2097152" "rd-engine-wasm wasm_module 2097152"; do
     # shellcheck disable=SC2086
     set -- ${spec}
     run_target "$1" "$2" "$3" &
@@ -380,7 +400,9 @@ TMO="$(count_artifacts 'timeout-*')"
 echo "crashes: ${CRASH} · leaks: ${LEAK} · oom: ${OOM} · timeouts: ${TMO} · targets com exit≠0: ${#FAILED[@]}"
 echo
 echo "Uso de disco do corpus (cresceu durante a campanha):"
-du -sh "${REPO}/crates/rd-apk/fuzz/corpus"/* "${REPO}/crates/rd-dex/fuzz/corpus"/* 2>/dev/null | sed 's/^/  /' || true
+du -sh "${REPO}/crates/rd-apk/fuzz/corpus"/* "${REPO}/crates/rd-dex/fuzz/corpus"/* \
+       "${REPO}/crates/rd-ndk/fuzz/corpus"/* "${REPO}/crates/rd-engine-wasm/fuzz/corpus"/* \
+       2>/dev/null | sed 's/^/  /' || true
 
 # ── veredito (issue #58: crash/leak PRIMEIRO — P0 nunca subnotificado) ─────
 if [ "${CRASH}" -gt 0 ] || [ "${LEAK}" -gt 0 ]; then

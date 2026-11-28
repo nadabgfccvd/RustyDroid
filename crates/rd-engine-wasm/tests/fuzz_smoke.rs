@@ -184,3 +184,129 @@ fn random_inputs_never_panic() {
         exercise(&bytes);
     }
 }
+
+fn push_uleb(out: &mut Vec<u8>, mut v: u32) {
+    loop {
+        let mut b = (v & 0x7f) as u8;
+        v >>= 7;
+        if v != 0 {
+            b |= 0x80;
+        }
+        out.push(b);
+        if v == 0 {
+            break;
+        }
+    }
+}
+
+fn push_section(out: &mut Vec<u8>, id: u8, payload: &[u8]) {
+    out.push(id);
+    push_uleb(out, payload.len() as u32);
+    out.extend_from_slice(payload);
+}
+
+#[test]
+fn module_wide_declared_locals_amplification_is_rejected() {
+    // 10 functions each run-length-declaring 40_000 i32 locals (400_000 > MAX_MODULE_LOCALS).
+    let mut wasm = b"\0asm\x01\0\0\0".to_vec();
+    push_section(&mut wasm, 1, &[1, 0x60, 0, 0]);
+    let nfuncs = 10u32;
+    let mut funcs = Vec::new();
+    push_uleb(&mut funcs, nfuncs);
+    funcs.extend(std::iter::repeat_n(0u8, nfuncs as usize));
+    push_section(&mut wasm, 3, &funcs);
+
+    let mut body = Vec::new();
+    push_uleb(&mut body, 1); // 1 local group
+    push_uleb(&mut body, 40_000);
+    body.push(0x7f); // i32
+    body.push(0x0b); // end
+
+    let mut code = Vec::new();
+    push_uleb(&mut code, nfuncs);
+    for _ in 0..nfuncs {
+        push_uleb(&mut code, body.len() as u32);
+        code.extend_from_slice(&body);
+    }
+    push_section(&mut wasm, 10, &code);
+
+    let err = Module::parse(&wasm).expect_err("must reject module-wide locals amplification");
+    assert_eq!(err.code, "LIMIT_EXCEEDED");
+}
+
+#[test]
+fn module_wide_param_cloning_amplification_is_rejected() {
+    // One type with 10_000 params referenced by 30 empty functions (300_000 > MAX_MODULE_LOCALS).
+    let mut wasm = b"\0asm\x01\0\0\0".to_vec();
+    let mut types = vec![1, 0x60];
+    push_uleb(&mut types, 10_000);
+    types.extend(std::iter::repeat_n(0x7f, 10_000));
+    types.push(0);
+    push_section(&mut wasm, 1, &types);
+
+    let nfuncs = 30u32;
+    let mut funcs = Vec::new();
+    push_uleb(&mut funcs, nfuncs);
+    funcs.extend(std::iter::repeat_n(0u8, nfuncs as usize));
+    push_section(&mut wasm, 3, &funcs);
+
+    let mut code = Vec::new();
+    push_uleb(&mut code, nfuncs);
+    for _ in 0..nfuncs {
+        code.extend_from_slice(&[2, 0, 0x0b]); // empty body: 0 local groups + end
+    }
+    push_section(&mut wasm, 10, &code);
+
+    let err = Module::parse(&wasm).expect_err("must reject param-cloning amplification");
+    assert_eq!(err.code, "LIMIT_EXCEEDED");
+}
+
+#[test]
+fn func_params_plus_declared_locals_enforces_max_locals() {
+    let mut wasm = b"\0asm\x01\0\0\0".to_vec();
+    let mut types = vec![1, 0x60];
+    push_uleb(&mut types, 1_000);
+    types.extend(std::iter::repeat_n(0x7f, 1_000));
+    types.push(0);
+    push_section(&mut wasm, 1, &types);
+    push_section(&mut wasm, 3, &[1, 0]);
+
+    let mut body = Vec::new();
+    push_uleb(&mut body, 1);
+    push_uleb(&mut body, 49_500); // 1_000 + 49_500 > 50_000
+    body.push(0x7f);
+    body.push(0x0b);
+    let mut code = vec![1];
+    push_uleb(&mut code, body.len() as u32);
+    code.extend_from_slice(&body);
+    push_section(&mut wasm, 10, &code);
+
+    let err = Module::parse(&wasm).expect_err("params + declared > MAX_LOCALS must fail");
+    assert_eq!(err.code, "LIMIT_EXCEEDED");
+}
+
+#[test]
+fn large_export_section_deduplicates_linearly() {
+    // 10_000 distinct exports pointing to func 0 + 1 duplicate at the end.
+    let mut wasm = b"\0asm\x01\0\0\0".to_vec();
+    push_section(&mut wasm, 1, &[1, 0x60, 0, 0]);
+    push_section(&mut wasm, 3, &[1, 0]);
+
+    let count = 10_000u32;
+    let mut exports = Vec::new();
+    push_uleb(&mut exports, count + 1);
+    for i in 0..count {
+        let name = format!("f{i}");
+        push_uleb(&mut exports, name.len() as u32);
+        exports.extend_from_slice(name.as_bytes());
+        exports.push(0); // Func
+        exports.push(0); // idx 0
+    }
+    // Duplicate of "f0"
+    exports.extend_from_slice(&[2, b'f', b'0', 0, 0]);
+    push_section(&mut wasm, 7, &exports);
+    push_section(&mut wasm, 10, &[1, 2, 0, 0x0b]);
+
+    let err = Module::parse(&wasm).expect_err("duplicate export must fail");
+    assert_eq!(err.code, "INVALID_FORMAT");
+}

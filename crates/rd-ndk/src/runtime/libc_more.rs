@@ -29,6 +29,7 @@ const EAFNOSUPPORT: u32 = 97;
 const ETIMEDOUT: u32 = 110;
 const SEM_VALUE_MAX: u32 = 0x3fff_ffff;
 const MAX_USLEEP_US: u64 = 2_000_000;
+const MAX_NATIVE_COPY: usize = 16 * 1024 * 1024;
 
 /// Estado host do módulo (string de fuso UTC e semáforos por endereço).
 #[derive(Debug, Default)]
@@ -341,6 +342,47 @@ impl Runtime {
         (off_gmtoff, off_zone)
     }
 
+    /// Reads `time_t` using the ABI width (4-byte `i32` on LP32 ARM, 8-byte `i64` on LP64).
+    fn read_time_t(&mut self, addr: u64) -> Result<i64> {
+        if self.abi == Abi::Arm {
+            let b: [u8; 4] = self
+                .read(addr, 4)?
+                .try_into()
+                .map_err(|_| ioerr("time_t"))?;
+            Ok(i64::from(i32::from_le_bytes(b)))
+        } else {
+            let b: [u8; 8] = self
+                .read(addr, 8)?
+                .try_into()
+                .map_err(|_| ioerr("time_t"))?;
+            Ok(i64::from_le_bytes(b))
+        }
+    }
+
+    /// Writes `time_t` using the ABI width (4-byte `i32` on LP32 ARM, 8-byte `i64` on LP64).
+    fn write_time_t(&mut self, addr: u64, secs: i64) -> Result<()> {
+        if self.abi == Abi::Arm {
+            self.write(addr, &(secs as i32).to_le_bytes())
+        } else {
+            self.write(addr, &secs.to_le_bytes())
+        }
+    }
+
+    /// Writes `struct timespec` (`tv_sec`, `tv_nsec`) using the ABI width.
+    fn write_timespec(&mut self, addr: u64, secs: i64, nsec: u32) -> Result<()> {
+        if self.abi == Abi::Arm {
+            let mut out = [0u8; 8];
+            out[0..4].copy_from_slice(&(secs as i32).to_le_bytes());
+            out[4..8].copy_from_slice(&(nsec as i32).to_le_bytes());
+            self.write(addr, &out)
+        } else {
+            let mut out = [0u8; 16];
+            out[0..8].copy_from_slice(&secs.to_le_bytes());
+            out[8..16].copy_from_slice(&i64::from(nsec).to_le_bytes());
+            self.write(addr, &out)
+        }
+    }
+
     fn read_tm(&mut self, addr: u64) -> Result<Tm> {
         let b = self.read(addr, 36)?;
         let f = |i: usize| i32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]]);
@@ -528,17 +570,17 @@ impl Runtime {
                     .map_err(|_| ioerr("relógio anterior a 1970"))?
                     .as_secs() as i64;
                 if a[0] != 0 {
-                    self.write(a[0], &secs.to_le_bytes())?;
+                    self.write_time_t(a[0], secs)?;
                 }
-                int_ret(secs)
+                int_ret(if self.abi == Abi::Arm {
+                    i64::from(secs as i32)
+                } else {
+                    secs
+                })
             }
             "gmtime_r" | "localtime_r" => {
                 // (const time_t *t, struct tm *result): ambos em UTC.
-                let t = i64::from_le_bytes(
-                    self.read(a[0], 8)?
-                        .try_into()
-                        .map_err(|_| ioerr("time_t"))?,
-                );
+                let t = self.read_time_t(a[0])?;
                 match tm_from_epoch(t) {
                     Some(tm) => {
                         let z = self.utc_zone_ptr()?;
@@ -855,8 +897,7 @@ impl Runtime {
                 let d = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .map_err(|_| ioerr("relógio anterior a 1970"))?;
-                self.write(a[1], &(d.as_secs() as i64).to_le_bytes())?;
-                self.write(a[1] + 8, &i64::from(d.subsec_nanos()).to_le_bytes())?;
+                self.write_timespec(a[1], d.as_secs() as i64, d.subsec_nanos())?;
                 int_ret(0)
             }
             "getentropy" => {
@@ -866,11 +907,7 @@ impl Runtime {
                     return Ok(int_ret(-1));
                 }
                 let mut buf = vec![0u8; a[1] as usize];
-                std::io::Read::read_exact(
-                    &mut std::fs::File::open("/dev/urandom").map_err(ioerr)?,
-                    &mut buf,
-                )
-                .map_err(ioerr)?;
+                getrandom::fill(&mut buf).map_err(ioerr)?;
                 self.write(a[0], &buf)?;
                 int_ret(0)
             }
@@ -926,13 +963,19 @@ impl Runtime {
                 })
             }
             "strcasecmp" | "strncasecmp" => {
-                let limit = if name == "strncasecmp" {
-                    a[2] as usize
+                let (x, y, limit) = if name == "strncasecmp" {
+                    let limit = a[2] as usize;
+                    if limit == 0 {
+                        return Ok(int_ret(0));
+                    }
+                    (
+                        self.c_string_bounded(a[0], limit)?,
+                        self.c_string_bounded(a[1], limit)?,
+                        limit,
+                    )
                 } else {
-                    usize::MAX
+                    (self.c_string(a[0])?, self.c_string(a[1])?, usize::MAX)
                 };
-                let x = self.c_string(a[0])?;
-                let y = self.c_string(a[1])?;
                 let mut diff = 0i64;
                 for i in 0..limit {
                     let cx = x.get(i).copied().unwrap_or(0).to_ascii_lowercase();
@@ -989,11 +1032,22 @@ impl Runtime {
                 int_ret(src.len() as i64)
             }
             "strcat" | "__strcat_chk" => {
-                // (char *dst, const char *src[, size_t dstlen]); a verificação de tamanho do _chk não é feita.
+                // (char *dst, const char *src[, size_t dstlen])
                 let dst_len = self.c_string(a[0])?.len() as u64;
                 let mut src = self.c_string(a[1])?;
+                if name == "__strcat_chk" {
+                    let needed = dst_len
+                        .checked_add(src.len() as u64)
+                        .and_then(|v| v.checked_add(1));
+                    if needed.is_none_or(|v| v > a[2]) {
+                        return Err(RdError::new("NATIVE_ABORT", "__strcat_chk: dstlen"));
+                    }
+                }
                 src.push(0);
-                self.write(a[0] + dst_len, &src)?;
+                let target = a[0].checked_add(dst_len).ok_or_else(|| {
+                    RdError::new("NATIVE_MEMORY", format!("{name}: address overflow"))
+                })?;
+                self.write(target, &src)?;
                 Some(Return {
                     bits: a[0],
                     fp_bits: None,
@@ -1002,25 +1056,48 @@ impl Runtime {
             "strncat" => {
                 // (char *dst, const char *src, size_t n)
                 let dst_len = self.c_string(a[0])?.len() as u64;
-                let src = self.c_string(a[1])?;
-                let n = src.len().min(a[2] as usize);
-                let mut out = src[..n].to_vec();
+                let mut out = self.c_string_bounded(a[1], a[2] as usize)?;
                 out.push(0);
-                self.write(a[0] + dst_len, &out)?;
+                let target = a[0]
+                    .checked_add(dst_len)
+                    .ok_or_else(|| RdError::new("NATIVE_MEMORY", "strncat: address overflow"))?;
+                self.write(target, &out)?;
                 Some(Return {
                     bits: a[0],
                     fp_bits: None,
                 })
             }
             "__strncpy_chk" | "__strncpy_chk2" => {
-                // (dst, src, n, dstlen[, srclen]): strncpy com checagem de tamanho do destino.
+                // (dst, src, n, dstlen[, srclen]): strncpy com checagem de tamanho do destino (e origem em _chk2).
                 let n = a[2];
                 if n > a[3] {
                     return Err(RdError::new("NATIVE_ABORT", format!("{name}: n > dstlen")));
                 }
-                let src = self.c_string_bounded(a[1], n as usize)?;
-                if n > 0 {
-                    let mut out = vec![0u8; n as usize];
+                let n_usize = usize::try_from(n).map_err(|_| {
+                    RdError::new("NATIVE_MEMORY", format!("{name} exceeds 16 MiB limit"))
+                })?;
+                if n_usize > MAX_NATIVE_COPY {
+                    return Err(RdError::new(
+                        "NATIVE_MEMORY",
+                        format!("{name} exceeds 16 MiB limit"),
+                    ));
+                }
+                let src = self.c_string_bounded(a[1], n_usize)?;
+                if name == "__strncpy_chk2" {
+                    let read_len = if src.len() < n_usize {
+                        src.len() as u64 + 1
+                    } else {
+                        n
+                    };
+                    if read_len > a[4] {
+                        return Err(RdError::new(
+                            "NATIVE_ABORT",
+                            "__strncpy_chk2: read exceeds srclen",
+                        ));
+                    }
+                }
+                if n_usize > 0 {
+                    let mut out = vec![0u8; n_usize];
                     out[..src.len()].copy_from_slice(&src);
                     self.write(a[0], &out)?;
                 }
@@ -1092,13 +1169,16 @@ impl Runtime {
             "__FD_SET_chk" | "__FD_CLR_chk" | "__FD_ISSET_chk" => {
                 // (fd, set, setsize): fd_set é um bitmap; setsize é o tamanho em bytes.
                 let fd = a[0];
-                if fd >= a[2] * 8 {
+                let byte_idx = fd / 8;
+                if byte_idx >= a[2] {
                     return Err(RdError::new(
                         "NATIVE_ABORT",
                         format!("{name}: fd fora do fd_set"),
                     ));
                 }
-                let addr = a[1] + fd / 8;
+                let addr = a[1].checked_add(byte_idx).ok_or_else(|| {
+                    RdError::new("NATIVE_MEMORY", format!("{name}: address overflow"))
+                })?;
                 let bit = 1u8 << (fd % 8);
                 let cur = self.read(addr, 1)?[0];
                 match name {
@@ -1379,5 +1459,122 @@ mod tests {
         let dst = rt.allocate(4).unwrap();
         assert_eq!(call(&mut rt, "strlcpy", &[dst, x, 4]).bits, 5);
         assert_eq!(rt.c_string(dst).unwrap(), b"HeL".to_vec());
+    }
+
+    #[test]
+    fn arm32_time_shims_respect_32bit_time_t_and_timespec() {
+        let mut rt =
+            super::super::p0_242_255_tests::mock_runtime(Abi::Arm).expect("arm mock runtime");
+
+        // time(time_t *): writes 4 bytes and leaves trailing canary intact.
+        let tbuf = rt
+            .alloc_bytes(&[0u8, 0, 0, 0, 0xDE, 0xAD, 0xBE, 0xEF])
+            .unwrap();
+        let ret = call(&mut rt, "time", &[tbuf]).bits as i32;
+        assert!(ret > 1_700_000_000);
+        assert_eq!(rt.read(tbuf, 4).unwrap(), ret.to_le_bytes());
+        assert_eq!(
+            rt.read(tbuf + 4, 4).unwrap(),
+            vec![0xDE, 0xAD, 0xBE, 0xEF],
+            "LP32 time() must not overwrite past 4 bytes"
+        );
+
+        // clock_gettime: writes 8-byte timespec and leaves trailing canary intact.
+        let mut ts_init = [0u8; 16];
+        ts_init[8..16].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44]);
+        let ts = rt.alloc_bytes(&ts_init).unwrap();
+        assert_eq!(call(&mut rt, "clock_gettime", &[0, ts]).bits, 0);
+        let tv_sec = i32::from_le_bytes(rt.read(ts, 4).unwrap().try_into().unwrap());
+        let tv_nsec = i32::from_le_bytes(rt.read(ts + 4, 4).unwrap().try_into().unwrap());
+        assert!(tv_sec > 1_700_000_000);
+        assert!((0..1_000_000_000).contains(&tv_nsec));
+        assert_eq!(
+            rt.read(ts + 8, 8).unwrap(),
+            vec![0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44],
+            "LP32 clock_gettime() must not overflow 8-byte timespec"
+        );
+
+        // gmtime_r: reads only 4 bytes, ignoring garbage in bytes 4..8.
+        let mut t_in = [0u8; 8];
+        t_in[0..4].copy_from_slice(&951_868_800i32.to_le_bytes());
+        t_in[4..8].copy_from_slice(&[0x7F, 0x7F, 0x7F, 0x7F]);
+        let t_ptr = rt.alloc_bytes(&t_in).unwrap();
+        let tm = rt.allocate(64).unwrap();
+        assert_eq!(call(&mut rt, "gmtime_r", &[t_ptr, tm]).bits, tm);
+        let fields = rt.read_tm(tm).unwrap();
+        assert_eq!(
+            (fields.year + 1900, fields.mon + 1, fields.mday),
+            (2000, 3, 1)
+        );
+    }
+
+    #[test]
+    fn fortified_chk_and_bounded_string_guards() {
+        let mut rt = rt();
+        let dst = rt.allocate(32).unwrap();
+        let empty = cstr(&mut rt, b"");
+
+        // __strncpy_chk with giant n == dstlen must reject cleanly (no host OOM).
+        let huge = 64u64 * 1024 * 1024 * 1024;
+        let err = rt
+            .libc_more("__strncpy_chk", &[dst, empty, huge, huge])
+            .expect_err("oversized __strncpy_chk must fail");
+        assert_eq!(err.code, "NATIVE_MEMORY");
+
+        // __strncpy_chk2 enforces srclen.
+        let src = cstr(&mut rt, b"hello");
+        let err = rt
+            .libc_more("__strncpy_chk2", &[dst, src, 5, 32, 3])
+            .expect_err("__strncpy_chk2 must reject read > srclen");
+        assert_eq!(err.code, "NATIVE_ABORT");
+        assert_eq!(
+            call(&mut rt, "__strncpy_chk2", &[dst, src, 3, 32, 3]).bits,
+            dst
+        );
+        assert_eq!(rt.read(dst, 3).unwrap(), b"hel");
+
+        // __strcat_chk enforces dstlen.
+        rt.write(dst, b"abc\0").unwrap();
+        let err = rt
+            .libc_more("__strcat_chk", &[dst, src, 8])
+            .expect_err("__strcat_chk must reject overflow past dstlen");
+        assert_eq!(err.code, "NATIVE_ABORT");
+        assert_eq!(call(&mut rt, "__strcat_chk", &[dst, src, 9]).bits, dst);
+        assert_eq!(rt.c_string(dst).unwrap(), b"abchello");
+
+        // __FD_SET_chk handles huge setsize without multiplication overflow.
+        let set = rt.allocate(8).unwrap();
+        rt.write(set, &[0u8; 8]).unwrap();
+        assert_eq!(
+            call(&mut rt, "__FD_SET_chk", &[3, set, u64::MAX / 4]).bits,
+            0
+        );
+        assert_eq!(call(&mut rt, "__FD_ISSET_chk", &[3, set, 8]).bits, 1);
+        let err = rt
+            .libc_more("__FD_SET_chk", &[64, set, 8])
+            .expect_err("fd == setsize*8 must abort");
+        assert_eq!(err.code, "NATIVE_ABORT");
+
+        // getentropy fills requested bytes via OS CSPRNG.
+        let ent = rt.allocate(32).unwrap();
+        assert_eq!(call(&mut rt, "getentropy", &[ent, 32]).bits, 0);
+        let err_ret = call(&mut rt, "getentropy", &[ent, 257]);
+        assert_eq!(err_ret.bits as i64, -1);
+    }
+
+    #[test]
+    fn strncasecmp_and_strncat_stop_at_n_before_unmapped_page() {
+        let mut rt = rt();
+        // Map a single page at 0x3000_0000; 0x3000_1000 is unmapped.
+        rt.map(0x3000_0000, 0x1000).unwrap();
+        let edge = 0x3000_0ffd;
+        rt.write(edge, b"AbC").unwrap(); // no NUL before unmapped page
+        let other = cstr(&mut rt, b"abcXYZ");
+        assert_eq!(call(&mut rt, "strncasecmp", &[edge, other, 3]).bits, 0);
+
+        let dst = rt.allocate(16).unwrap();
+        rt.write(dst, b"hi:\0").unwrap();
+        assert_eq!(call(&mut rt, "strncat", &[dst, edge, 3]).bits, dst);
+        assert_eq!(rt.c_string(dst).unwrap(), b"hi:AbC");
     }
 }

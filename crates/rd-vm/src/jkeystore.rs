@@ -7,13 +7,12 @@
 //!   AndroidKeyStore: o app não lê o material da chave.
 //! - AES-128/256 em GCM com tag de 128 bits e IV de 96 bits, via `aes-gcm`
 //!   (criptografia real, não simulada).
-//! - Aleatoriedade (chave e IV) do host, `/dev/urandom`. Não é reprodutível de
-//!   propósito: chave e IV não aparecem em log nem em saída de ferramenta.
+//! - Aleatoriedade (chave e IV) do CSPRNG do SO via `getrandom`. Não é
+//!   reprodutível de propósito: chave e IV não aparecem em log nem em saída de
+//!   ferramenta.
 //! - Fora deste subconjunto há falha tipada (`NoSuchAlgorithmException`,
 //!   `InvalidKeyException`…), nunca sucesso fingido: `KeyGenerator` de AES sem
 //!   AndroidKeyStore e outros transformations não são modelados.
-
-use std::io::Read;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes128Gcm, Aes256Gcm, Nonce};
@@ -51,23 +50,22 @@ fn throw(class: &str, msg: impl Into<String>) -> VmExit {
 
 pub(crate) fn random_bytes(n: usize) -> Result<Vec<u8>, VmExit> {
     let mut buf = vec![0u8; n];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
-        .map_err(|e| {
-            throw(
-                "Ljava/lang/IllegalStateException;",
-                format!("sem aleatoriedade do host: {e}"),
-            )
-        })?;
+    getrandom::fill(&mut buf).map_err(|e| {
+        throw(
+            "Ljava/lang/IllegalStateException;",
+            format!("sem aleatoriedade do host: {e}"),
+        )
+    })?;
     Ok(buf)
 }
 
-// ── persistência entre sessões (VFS app-private) ─────────────────────────
+// ── persistência entre sessões (armazenamento host-only no VfsHandle) ─────
 //
-// O AndroidKeyStore real sobrevive ao processo. Aqui cada chave vai para o VFS
-// da sessão (`Engine::set_vfs`), em `files/rd_keystore/<alias em hex>.key`, e
-// é recarregada sob demanda por outra Engine com o mesmo VFS. Desvio
-// declarado: o material fica em claro no VFS, sem TEE/StrongBox.
+// O AndroidKeyStore real sobrevive ao processo. Aqui cada chave vai para o
+// armazenamento host-only da sessão (`VfsHandle`), fora da árvore de arquivos
+// visível ao guest (`java.io.File` / `Context.fileList()`), e é recarregada
+// sob demanda por outra Engine com o mesmo VFS. Desvio declarado: o material
+// fica na memória do host sem TEE/StrongBox.
 
 /// Hex minúsculo, usado para nomes de arquivo e campos de texto do VFS.
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
@@ -101,34 +99,34 @@ pub(crate) fn app_files_dir(package: &str) -> String {
     format!("/data/user/0/{package}/files")
 }
 
-fn key_path(vm: &Engine, alias: &str) -> String {
-    format!(
-        "{}/rd_keystore/{}.key",
-        app_files_dir(&vm.fw.package_name),
-        hex_encode(alias.as_bytes())
-    )
-}
-
-/// Grava a chave recém-gerada no VFS.
-fn persist_key(vm: &Engine, alias: &str) {
-    if let Some(material) = vm.fw.keystore.keys.get(alias) {
-        crate::jfile::write_bytes(&vm.fw.vfs, &key_path(vm, alias), material.clone());
+fn key_package(vm: &Engine) -> &str {
+    if vm.fw.package_name.is_empty() {
+        "app"
+    } else {
+        &vm.fw.package_name
     }
 }
 
-/// `deleteEntry`: a chave sai da memória e do VFS.
-fn forget_key(vm: &Engine, alias: &str) {
-    crate::jfile::delete_file(&vm.fw.vfs, &key_path(vm, alias));
+/// Grava a chave recém-gerada no armazenamento host-only da sessão.
+fn persist_key(vm: &Engine, alias: &str) {
+    if let Some(material) = vm.fw.keystore.keys.get(alias) {
+        crate::jfile::write_keystore_key(&vm.fw.vfs, key_package(vm), alias, material.clone());
+    }
 }
 
-/// Recarrega a chave do VFS se esta Engine ainda não a tem em memória. Um
-/// material de tamanho fora de AES-128/256 é tratado como ausente.
+/// `deleteEntry`: a chave sai da memória e do armazenamento host-only da sessão.
+fn forget_key(vm: &Engine, alias: &str) {
+    crate::jfile::delete_keystore_key(&vm.fw.vfs, key_package(vm), alias);
+}
+
+/// Recarrega a chave do armazenamento host-only da sessão se esta Engine ainda
+/// não a tem em memória. Um material de tamanho fora de AES-128/256 é tratado
+/// como ausente.
 pub(crate) fn ensure_key_loaded(vm: &mut Engine, alias: &str) {
     if vm.fw.keystore.keys.contains_key(alias) {
         return;
     }
-    let path = key_path(vm, alias);
-    if let Some(bytes) = crate::jfile::read_bytes(&vm.fw.vfs, &path) {
+    if let Some(bytes) = crate::jfile::read_keystore_key(&vm.fw.vfs, key_package(vm), alias) {
         if matches!(bytes.len(), 16 | 32) {
             vm.fw.keystore.keys.insert(alias.to_string(), bytes);
         }
@@ -781,5 +779,71 @@ mod tests {
         )
         .unwrap();
         assert!(!vm.fw.keystore.keys.contains_key("chave.teste"));
+    }
+
+    #[test]
+    fn keystore_persists_across_engines_and_is_hidden_from_guest_files() {
+        let vfs = crate::jfile::VfsHandle::new();
+        let mut vm1 = Engine::new(vec![], crate::VmConfig::default());
+        vm1.set_vfs(vfs.clone());
+        vm1.fw.package_name = "com.example.ks".into();
+
+        let alias = js(&mut vm1, "master");
+        let spec = vm1
+            .heap
+            .alloc_instance(
+                KEY_GEN_SPEC.to_string(),
+                vec![
+                    ("mKeystoreAlias".into(), alias),
+                    ("mKeySize".into(), Value::Int(256)),
+                ],
+            )
+            .unwrap();
+        let aes = js(&mut vm1, "AES");
+        let prov = js(&mut vm1, PROVIDER);
+        let kg =
+            obj(static_intrinsic(&mut vm1, KEY_GENERATOR, "getInstance", &[aes, prov]).unwrap());
+        instance_intrinsic(
+            &mut vm1,
+            KEY_GENERATOR,
+            "init",
+            "(Ljava/security/spec/AlgorithmParameterSpec;)V",
+            kg,
+            &[Value::Obj(spec)],
+        )
+        .unwrap();
+        instance_intrinsic(
+            &mut vm1,
+            KEY_GENERATOR,
+            "generateKey",
+            "()Ljavax/crypto/SecretKey;",
+            kg,
+            &[],
+        )
+        .unwrap();
+        let orig = vm1.fw.keystore.keys.get("master").cloned().unwrap();
+
+        // Not exposed in app-private files/ tree.
+        let legacy_path = format!(
+            "{}/rd_keystore/{}.key",
+            app_files_dir("com.example.ks"),
+            hex_encode(b"master")
+        );
+        assert!(crate::jfile::read_bytes(&vfs, &legacy_path).is_none());
+
+        // Reloadable from a fresh Engine sharing the same VfsHandle.
+        let mut vm2 = Engine::new(vec![], crate::VmConfig::default());
+        vm2.set_vfs(vfs.clone());
+        vm2.fw.package_name = "com.example.ks".into();
+        ensure_key_loaded(&mut vm2, "master");
+        assert_eq!(vm2.fw.keystore.keys.get("master"), Some(&orig));
+
+        // Cleared when package data is wiped.
+        crate::jfile::clear_package_data(&vfs, "com.example.ks");
+        let mut vm3 = Engine::new(vec![], crate::VmConfig::default());
+        vm3.set_vfs(vfs);
+        vm3.fw.package_name = "com.example.ks".into();
+        ensure_key_loaded(&mut vm3, "master");
+        assert!(!vm3.fw.keystore.keys.contains_key("master"));
     }
 }

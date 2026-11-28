@@ -300,6 +300,12 @@ pub(crate) fn invoke(
         .funcs
         .get(func as usize)
         .ok_or_else(|| trap("entry function out of range"))?;
+    if entry.locals.len() > MAX_TOTAL_LOCALS {
+        return Err(WasmError::new(
+            "STACK_EXHAUSTED",
+            "locals budget of the call stack reached",
+        ));
+    }
     for (i, t) in entry.locals.iter().enumerate() {
         locals.push(match args.get(i) {
             Some(v) if i < entry.nparams => *v,

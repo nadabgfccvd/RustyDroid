@@ -91,6 +91,8 @@ cargo build --release -p rd-cli
   libraries ([`docs/m9.md`](./docs/m9.md)).
 - `--features native-engines` — Enables bounded C/C++/Rust demonstration engine
   adapters ([`docs/native-languages.md`](./docs/native-languages.md)).
+- `--features wasm-engine` — Enables the pure-Rust WebAssembly MVP bridge
+  ([`docs/m11-wasm.md`](./docs/m11-wasm.md)).
 
 ## 4. Workspace Architecture
 
@@ -99,16 +101,17 @@ cargo build --release -p rd-cli
 | `crates/rd-apk` | ZIP/ZIP64, `PagedZip`, binary AXML, ARSC, v1/v2/v3 signing, manifest & permissions |
 | `crates/rd-dex` | Complete DEX 035–041 parser + `baksmali`-faithful `smali` disassembler |
 | `crates/rd-framework` | Versioned Android tables: permissions, devices (`moto-e5`), behavior switches, API/Jetpack/GMS catalogs |
+| `crates/rd-stub-tables` | Relocation-free static Android stub descriptor tables extracted from `rd-vm` for faster incremental builds |
 | `crates/rd-vm` | Dalvik VM, generational GC, Android/`androidx`/M8/M9/M10 host surfaces |
 | `crates/rd-jni` | Narrow JNI descriptors and optional Cranelift JIT compilation (`jit` feature) |
 | `crates/rd-ndk` | ELF32/64 loader + isolated Unicorn subprocess bridge (`native` feature) |
-| `crates/rd-render` | Headless software renderer (own rasterizer; `tiny-skia` is the spec target, see [ADR 019](docs/adr/019-renderer-tiny-skia-pendente.md)) & deterministic PNG encoder |
+| `crates/rd-render` | Headless software renderer (`tiny-skia` + `rustybuzz` shaping) & deterministic PNG encoder |
 | `crates/rd-engine-registry` | Appendix G 28-engine catalog, signature detector, and feature-gated contracts |
 | `crates/rd-engine-wasm` | Pure-Rust WebAssembly MVP decoder & sandboxed executor (`wasm-engine` feature) |
-| `crates/rd-agent` | 52-tool JSON-RPC 2.0 MCP server, `observe`, screen resources, `--live` viewer |
+| `crates/rd-agent` | 52-tool JSON-RPC 2.0 MCP server (with ADR 023 multi-session support), `observe`, screen resources, `--live` viewer |
 | `crates/rd-cli` | `rd` command-line binary (`inspect`, `dex`, `vm`, `app`, `mcp`, `test`, `perf`, `device`, `engine`, `jetpack`, `gms`) |
 | `crates/rd-testsupport` | Deterministic synthetic APK, DEX, AXML, ARSC, and ELF builders for tests |
-| `xtask` | Official generator for `compat-matrix.md`, `api-coverage.md`, `engine-registry.md`, `jetpack.md`, and `gms.md` |
+| `xtask` | Scoreboard & spec generator (`cargo xtask sync-docs`) and local CI runner (`cargo xtask check`) |
 
 ## 5. Generated Scoreboards & Documentation
 

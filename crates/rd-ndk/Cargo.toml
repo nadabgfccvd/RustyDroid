@@ -15,6 +15,7 @@ authors.workspace = true
 unsafe_code = "deny"
 
 [dependencies]
+getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

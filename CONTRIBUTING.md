@@ -49,13 +49,12 @@ Big changes (new engine, IPC model, GC strategy…) require an **ADR**
 
 - Maintainers aim to review PRs within **48–72h**
 - CI must be green (docs integrity, lint, tests, feature/native/golden gates)
-- **RD Sentinel retirado** (ADR 010, emenda de 2026-11-11). Não há gate de
-  anti-regressão no CI. O guia antigo está em
-  [`docs/archive/rd-sentinel.md`](./docs/archive/rd-sentinel.md), só como
-  histórico.
-- Não enfraqueça uma baseline de performance ou de teste no mesmo PR que
-  introduz a regressão. Mudança de baseline precisa de artefatos de antes e
-  depois e de aprovação do mantenedor.
+- **RD Sentinel retired** (ADR 010, amendment 2026-11-11). There is no
+  separate anti-regression sentinel gate in CI; the historical guide lives at
+  [`docs/archive/rd-sentinel.md`](./docs/archive/rd-sentinel.md).
+- Do not weaken a performance or test baseline in the same PR that introduces a
+  regression. Baseline changes require before/after artifacts and maintainer
+  approval.
 - `compat-gap`-fixing PRs get priority — they grow the compatibility scoreboard
   (`docs/compat-matrix.md`, regenerated and verified in CI by `cargo xtask compat-report`)
 
