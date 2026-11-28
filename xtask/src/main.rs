@@ -239,12 +239,7 @@ fn run_local_checks(root: &Path) -> Result<()> {
     verify_doc_sync(root)?;
     run_step(root, "markdown links", "python3", &["scripts/check_md_links.py"])?;
     run_step(root, "ADR index sync", "python3", &["scripts/gen_adr_index.py"])?;
-    run_step(
-        root,
-        "GitHub Action pins",
-        "python3",
-        &["scripts/check_action_pins.py"],
-    )?;
+    run_step(root, "GitHub Action pins", "python3", &["scripts/check_action_pins.py"])?;
     println!("check: all local CI checks passed");
     Ok(())
 }

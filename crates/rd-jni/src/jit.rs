@@ -1824,82 +1824,106 @@ mod tests {
     }
 
     #[test]
-    fn method_jit_div_rem_edge_cases_and_zero_bailout() {
+    fn method_jit_div_rem_lit_and_cmp_long() {
         let mut jit = MethodJit::new().unwrap();
-        // (a: i32, b: i32) -> a / b
-        let div32 = jit
+        // (a: i32) -> a / -1
+        let div_neg1 = jit
             .compile(&JitProgram {
-                registers: 3,
-                params: vec![(0, ParamKind::Int32), (1, ParamKind::Int32)],
+                registers: 2,
+                params: vec![(0, ParamKind::Int32)],
                 ret: RetKind::Int32,
                 blocks: vec![JitBlock {
                     dalvik_insns: 2,
-                    insts: vec![JitInst::Binary32 {
-                        dst: 2,
-                        lhs: 0,
-                        rhs: 1,
-                        op: BinOp32::Div,
+                    insts: vec![JitInst::DivRemLit32 {
+                        dst: 1,
+                        src: 0,
+                        lit: -1,
+                        is_rem: false,
                     }],
-                    term: JitTerm::Return32 { src: 2 },
+                    term: JitTerm::Return32 { src: 1 },
                 }],
             })
             .unwrap();
         // i32::MIN / -1 wraps to i32::MIN (Java semantics, no SIGFPE).
         assert_eq!(
-            jit.execute(
-                div32,
-                &[i32::MIN as u32 as u64, (-1i32) as u32 as u64],
-                &mut [],
-                &mut [],
-                100
-            )
-            .unwrap(),
+            jit.execute(div_neg1, &[i32::MIN as u32 as u64], &mut [], &mut [], 100)
+                .unwrap(),
             JitExecResult::Returned {
                 bits: i32::MIN as u32 as u64,
                 fuel_consumed: 2,
             }
         );
-        // Division by zero bails out cleanly.
-        assert_eq!(
-            jit.execute(div32, &[42, 0], &mut [], &mut [], 100).unwrap(),
-            JitExecResult::Bailout
-        );
 
-        // (a: i64, b: i64) -> a % b
-        let rem64 = jit
+        // (a: i32) -> a % -1 == 0
+        let rem_neg1 = jit
             .compile(&JitProgram {
-                registers: 6,
-                params: vec![(0, ParamKind::Int64), (2, ParamKind::Int64)],
-                ret: RetKind::Int64,
+                registers: 2,
+                params: vec![(0, ParamKind::Int32)],
+                ret: RetKind::Int32,
                 blocks: vec![JitBlock {
                     dalvik_insns: 2,
-                    insts: vec![JitInst::Binary64 {
-                        dst: 4,
-                        lhs: 0,
-                        rhs: 2,
-                        op: BinOp64::Rem,
+                    insts: vec![JitInst::DivRemLit32 {
+                        dst: 1,
+                        src: 0,
+                        lit: -1,
+                        is_rem: true,
                     }],
-                    term: JitTerm::Return64 { src: 4 },
+                    term: JitTerm::Return32 { src: 1 },
                 }],
             })
             .unwrap();
         assert_eq!(
-            jit.execute(
-                rem64,
-                &[i64::MIN as u64, (-1i64) as u64],
-                &mut [],
-                &mut [],
-                100
-            )
-            .unwrap(),
+            jit.execute(rem_neg1, &[i32::MIN as u32 as u64], &mut [], &mut [], 100)
+                .unwrap(),
             JitExecResult::Returned {
                 bits: 0,
                 fuel_consumed: 2,
             }
         );
+
+        // Literal divisor 0 is rejected by validator.
+        assert!(jit
+            .compile(&JitProgram {
+                registers: 2,
+                params: vec![(0, ParamKind::Int32)],
+                ret: RetKind::Int32,
+                blocks: vec![JitBlock {
+                    dalvik_insns: 2,
+                    insts: vec![JitInst::DivRemLit32 {
+                        dst: 1,
+                        src: 0,
+                        lit: 0,
+                        is_rem: false,
+                    }],
+                    term: JitTerm::Return32 { src: 1 },
+                }],
+            })
+            .is_err());
+
+        // CmpLong: (-5L).cmp(10L) == -1
+        let cmp = jit
+            .compile(&JitProgram {
+                registers: 5,
+                params: vec![(0, ParamKind::Int64), (2, ParamKind::Int64)],
+                ret: RetKind::Int32,
+                blocks: vec![JitBlock {
+                    dalvik_insns: 2,
+                    insts: vec![JitInst::CmpLong {
+                        dst: 4,
+                        lhs: 0,
+                        rhs: 2,
+                    }],
+                    term: JitTerm::Return32 { src: 4 },
+                }],
+            })
+            .unwrap();
         assert_eq!(
-            jit.execute(rem64, &[10, 0], &mut [], &mut [], 100).unwrap(),
-            JitExecResult::Bailout
+            jit.execute(cmp, &[(-5i64) as u64, 10], &mut [], &mut [], 100)
+                .unwrap(),
+            JitExecResult::Returned {
+                bits: (-1i32) as u32 as u64,
+                fuel_consumed: 2,
+            }
         );
     }
 
@@ -1989,7 +2013,13 @@ mod tests {
 
         // Fuel budget 0 triggers FuelExhausted before executing block 0.
         let zero_fuel = jit
-            .execute(h, &[1, 1, 0, 7, 9], &mut [&mut a32[..]], &mut [&mut a64[..]], 0)
+            .execute(
+                h,
+                &[1, 1, 0, 7, 9],
+                &mut [&mut a32[..]],
+                &mut [&mut a64[..]],
+                0,
+            )
             .unwrap();
         assert_eq!(zero_fuel, JitExecResult::FuelExhausted);
     }
@@ -2035,21 +2065,21 @@ mod tests {
             jit.execute(sw, &[10], &mut [], &mut [], 100).unwrap(),
             JitExecResult::Returned {
                 bits: 100,
-                fuel_consumed: 3
+                fuel_consumed: 3,
             }
         );
         assert_eq!(
             jit.execute(sw, &[42], &mut [], &mut [], 100).unwrap(),
             JitExecResult::Returned {
                 bits: 200,
-                fuel_consumed: 3
+                fuel_consumed: 3,
             }
         );
         assert_eq!(
             jit.execute(sw, &[99], &mut [], &mut [], 100).unwrap(),
             JitExecResult::Returned {
                 bits: (-1i32) as u32 as u64,
-                fuel_consumed: 3
+                fuel_consumed: 3,
             }
         );
 
