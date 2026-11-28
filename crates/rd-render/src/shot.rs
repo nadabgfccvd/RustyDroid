@@ -28,9 +28,32 @@ impl Framebuffer {
     }
 
     /// Framebuffer of an arbitrary viewport, e.g. landscape `1440x720`.
+    /// Returns an empty framebuffer on zero, overflowing, or oversized (>64 MiB) dimensions.
     pub fn new_sized(bg: Rgb, w: usize, h: usize) -> Self {
-        let mut px = Vec::with_capacity(w * h * 3);
-        for _ in 0..w * h {
+        const MAX_FB_BYTES: usize = 64 * 1024 * 1024;
+        let Some(pixels) = w.checked_mul(h) else {
+            return Framebuffer {
+                w: 0,
+                h: 0,
+                px: Vec::new(),
+            };
+        };
+        let Some(bytes) = pixels.checked_mul(3) else {
+            return Framebuffer {
+                w: 0,
+                h: 0,
+                px: Vec::new(),
+            };
+        };
+        if bytes == 0 || bytes > MAX_FB_BYTES {
+            return Framebuffer {
+                w: 0,
+                h: 0,
+                px: Vec::new(),
+            };
+        }
+        let mut px = Vec::with_capacity(bytes);
+        for _ in 0..pixels {
             px.extend_from_slice(&[bg.0, bg.1, bg.2]);
         }
         Framebuffer { w, h, px }
@@ -189,7 +212,11 @@ pub fn render_snapshot_sized(root: &UiNode, w: usize, h: usize) -> Framebuffer {
     // M4: canvas tiny-skia (caminhos anti-aliased) + texto shaped (rustybuzz).
     // Dimensão inválida para um Pixmap (0 ou gigante) → framebuffer vazio.
     let Some(mut cv) = Canvas::new((0xF6, 0xF6, 0xF6), w, h) else {
-        return Framebuffer::new_sized((0xF6, 0xF6, 0xF6), w, h);
+        return Framebuffer {
+            w: 0,
+            h: 0,
+            px: Vec::new(),
+        };
     };
     paint(root, &mut cv, 0);
     cv.into_framebuffer()
@@ -407,5 +434,22 @@ mod tests {
         fb.rect_border(10, 20, -5, 100, (0xFF, 0, 0));
         fb.rect_border(10, 20, 100, -5, (0xFF, 0, 0));
         assert!(fb.px == before, "collapsed border must paint nothing");
+    }
+
+    #[test]
+    fn oversized_or_zero_viewport_returns_empty_framebuffer() {
+        let root = node("Root", "hi", (0, 0, 100, 100));
+        for (w, h) in [
+            (0, 100),
+            (100, 0),
+            (usize::MAX, 2),
+            (100_000, 100_000),
+            (u32::MAX as usize, 4),
+        ] {
+            let fb = render_snapshot_sized(&root, w, h);
+            assert_eq!((fb.w, fb.h, fb.px.len()), (0, 0, 0), "viewport {w}x{h}");
+            let fb2 = Framebuffer::new_sized((0, 0, 0), w, h);
+            assert_eq!((fb2.w, fb2.h, fb2.px.len()), (0, 0, 0), "direct {w}x{h}");
+        }
     }
 }

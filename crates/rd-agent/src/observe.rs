@@ -214,6 +214,30 @@ pub struct LiveShared {
     inner: Mutex<LiveInner>,
     changed: std::sync::Condvar,
     active_conns: std::sync::atomic::AtomicUsize,
+    stop: std::sync::atomic::AtomicBool,
+}
+
+/// Owns the live-viewer accept thread and shuts it down cleanly on drop.
+struct LiveServer {
+    shared: Arc<LiveShared>,
+    wake_addr: std::net::SocketAddr,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for LiveServer {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.shared.stop.store(true, Ordering::Release);
+        self.shared.changed.notify_all();
+        // Wake the blocking `accept()` loop so the listener closes promptly.
+        let _ = std::net::TcpStream::connect_timeout(
+            &self.wake_addr,
+            std::time::Duration::from_millis(200),
+        );
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -234,6 +258,7 @@ pub(crate) struct ScreenState {
     subs: std::collections::BTreeSet<String>,
     pending: Vec<serde_json::Value>,
     live: Option<Arc<LiveShared>>,
+    live_server: Option<LiveServer>,
     draw_error: Option<String>,
     last_tool: String,
     last_tool_ms: f64,
@@ -869,21 +894,38 @@ impl AgentSession {
     }
 
     /// Starts the live viewer HTTP server on `addr` (e.g. `0.0.0.0:7878`).
+    /// Calling this again cleanly shuts down any previous listener first.
     pub fn enable_live(&mut self, addr: &str) -> Result<std::net::SocketAddr, RdError> {
+        self.running.screen.live_server = None;
+        self.running.screen.live = None;
+
         let listener = std::net::TcpListener::bind(addr)
             .map_err(|e| RdError::new("IO_ERROR", format!("live viewer: bind {addr}: {e}"), MODULE_ID))?;
         let local = listener
             .local_addr()
             .map_err(|e| RdError::new("IO_ERROR", format!("live viewer: {e}"), MODULE_ID))?;
+        let wake_addr = match local {
+            std::net::SocketAddr::V4(v4) if v4.ip().is_unspecified() => {
+                std::net::SocketAddr::from(([127, 0, 0, 1], v4.port()))
+            }
+            std::net::SocketAddr::V6(v6) if v6.ip().is_unspecified() => {
+                std::net::SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 1], v6.port()))
+            }
+            other => other,
+        };
         let shared = Arc::new(LiveShared::default());
         if let Ok(mut g) = shared.inner.lock() {
             g.state = serde_json::json!({"version": 0, "text": "aguardando o primeiro frame (install + launch)…"}).to_string();
         }
         self.running.screen.live = Some(shared.clone());
-        std::thread::spawn(move || {
+        let worker_shared = shared.clone();
+        let thread = std::thread::spawn(move || {
             use std::sync::atomic::Ordering;
-            let conns = &shared.active_conns;
+            let conns = &worker_shared.active_conns;
             for mut stream in listener.incoming().flatten() {
+                if worker_shared.stop.load(Ordering::Acquire) {
+                    break;
+                }
                 let mut cur = conns.load(Ordering::Acquire);
                 let admitted = loop {
                     if cur >= MAX_LIVE_CONNS {
@@ -904,12 +946,17 @@ impl AgentSession {
                     let _ = std::io::Write::write_all(&mut stream, LIVE_503);
                     continue;
                 }
-                let sh = shared.clone();
+                let sh = worker_shared.clone();
                 std::thread::spawn(move || {
                     let _guard = LiveConnGuard(sh.clone());
                     live_serve_conn(stream, &sh);
                 });
             }
+        });
+        self.running.screen.live_server = Some(LiveServer {
+            shared,
+            wake_addr,
+            thread: Some(thread),
         });
         Ok(local)
     }
@@ -947,7 +994,10 @@ fn live_serve_conn(mut stream: std::net::TcpStream, sh: &LiveShared) {
                 Err(_) => return,
             };
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-            while since != u64::MAX && g.version <= since {
+            while since != u64::MAX
+                && g.version <= since
+                && !sh.stop.load(std::sync::atomic::Ordering::Acquire)
+            {
                 let left = deadline.saturating_duration_since(std::time::Instant::now());
                 if left.is_zero() {
                     break;

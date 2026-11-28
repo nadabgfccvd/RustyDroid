@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rd-apk",
     "crates/rd-dex",
+    "crates/rd-stub-tables",
     "crates/rd-vm",
     "crates/rd-jni",
     "crates/rd-ndk",
@@ -53,6 +54,8 @@ unicode-bidi = "0.3"
 
 # java.util.regex / String.split|replaceAll|replaceFirst (rd-vm jlstring.rs)
 regex = { version = "1.10", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
+# OS CSPRNG (already in dependency graph via aes-gcm; shared by rd-vm jkeystore & rd-ndk getentropy)
+getrandom = "0.4"
 
 # CLI
 # MSRV 1.97: the ceiling that pinned clap below 4.6 (clap_lex 1.x uses
@@ -62,6 +65,7 @@ clap = { version = ">=4.5", features = ["derive"] }
 # crates internas (dependências só apontam para baixo)
 rd-apk = { path = "crates/rd-apk", version = "0.9.0" }
 rd-dex = { path = "crates/rd-dex", version = "0.9.0" }
+rd-stub-tables = { path = "crates/rd-stub-tables", version = "0.9.0" }
 rd-vm = { path = "crates/rd-vm", version = "0.9.0" }
 rd-render = { path = "crates/rd-render", version = "0.9.0" }
 rd-framework = { path = "crates/rd-framework", version = "0.9.0" }

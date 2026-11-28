@@ -345,6 +345,12 @@ pub(crate) fn parse_module(bytes: &[u8]) -> Res<ModuleDef> {
                         return Err(perr("type entry must start with 0x60"));
                     }
                     let np = s.count()?;
+                    if np as u64 > limits::MAX_LOCALS {
+                        return Err(over_limit(format!(
+                            "function type declares {np} parameters, exceeding {}",
+                            limits::MAX_LOCALS
+                        )));
+                    }
                     let mut params = Vec::with_capacity(np);
                     for _ in 0..np {
                         params.push(s.valtype()?);
@@ -407,7 +413,9 @@ pub(crate) fn parse_module(bytes: &[u8]) -> Res<ModuleDef> {
                 }
             }
             SEC_EXPORT => {
-                for _ in 0..s.count()? {
+                let n = s.count()?;
+                let mut seen_names = std::collections::HashSet::with_capacity(n.min(4096));
+                for _ in 0..n {
                     let name = s.name()?;
                     let kind = s.byte()?;
                     let idx = s.u32()?;
@@ -418,7 +426,7 @@ pub(crate) fn parse_module(bytes: &[u8]) -> Res<ModuleDef> {
                         1 => return Err(unsupported("table exports are outside the S1 subset")),
                         _ => return Err(perr("invalid export kind")),
                     };
-                    if def.exports.iter().any(|e| e.name == name) {
+                    if !seen_names.insert(name.clone()) {
                         return Err(invalid(format!("duplicate export name `{name}`")));
                     }
                     def.exports.push(Export { name, kind });
@@ -441,10 +449,17 @@ pub(crate) fn parse_module(bytes: &[u8]) -> Res<ModuleDef> {
                         func_types.len()
                     )));
                 }
+                let mut module_locals: usize = 0;
                 for i in 0..n {
                     let body_size = s.u32()? as usize;
                     let body = s.take(body_size)?;
-                    let f = decode_func(&def, &func_types, func_types[i], body)?;
+                    let f = decode_func(
+                        &def,
+                        &func_types,
+                        func_types[i],
+                        body,
+                        &mut module_locals,
+                    )?;
                     def.funcs.push(f);
                 }
             }
@@ -638,27 +653,75 @@ struct Body<'m> {
     out: Vec<Instr>,
 }
 
-fn decode_func(def: &ModuleDef, func_types: &[u32], type_idx: u32, body: &[u8]) -> Res<Func> {
+fn decode_func(
+    def: &ModuleDef,
+    func_types: &[u32],
+    type_idx: u32,
+    body: &[u8],
+    module_locals: &mut usize,
+) -> Res<Func> {
     let ft = &def.types[type_idx as usize];
     let mut r = Reader::new(body);
     let ngroups = r.count()?;
+    let nparams = ft.params.len();
+    let mut total_func_locals: u64 = nparams as u64;
+    if total_func_locals > limits::MAX_LOCALS {
+        return Err(over_limit(format!(
+            "function declares more than {} locals",
+            limits::MAX_LOCALS
+        )));
+    }
+    *module_locals = module_locals.checked_add(nparams).ok_or_else(|| {
+        over_limit(format!(
+            "module declares more than {} total locals",
+            limits::MAX_MODULE_LOCALS
+        ))
+    })?;
+    if *module_locals > limits::MAX_MODULE_LOCALS {
+        return Err(over_limit(format!(
+            "module declares more than {} total locals",
+            limits::MAX_MODULE_LOCALS
+        )));
+    }
     let mut locals: Vec<ValType> = ft.params.clone();
-    let mut declared: u64 = 0;
     for _ in 0..ngroups {
         let n = r.u32()? as u64;
-        declared += n;
-        if declared > limits::MAX_LOCALS {
+        total_func_locals = total_func_locals.checked_add(n).ok_or_else(|| {
+            over_limit(format!(
+                "function declares more than {} locals",
+                limits::MAX_LOCALS
+            ))
+        })?;
+        if total_func_locals > limits::MAX_LOCALS {
             return Err(over_limit(format!(
                 "function declares more than {} locals",
                 limits::MAX_LOCALS
             )));
         }
+        let n_usize = usize::try_from(n).map_err(|_| {
+            over_limit(format!(
+                "module declares more than {} total locals",
+                limits::MAX_MODULE_LOCALS
+            ))
+        })?;
+        *module_locals = module_locals.checked_add(n_usize).ok_or_else(|| {
+            over_limit(format!(
+                "module declares more than {} total locals",
+                limits::MAX_MODULE_LOCALS
+            ))
+        })?;
+        if *module_locals > limits::MAX_MODULE_LOCALS {
+            return Err(over_limit(format!(
+                "module declares more than {} total locals",
+                limits::MAX_MODULE_LOCALS
+            )));
+        }
         let t = r.valtype()?;
-        for _ in 0..n {
+        locals.reserve(n_usize);
+        for _ in 0..n_usize {
             locals.push(t);
         }
     }
-    let nparams = ft.params.len();
     let mut b = Body {
         def,
         func_types,

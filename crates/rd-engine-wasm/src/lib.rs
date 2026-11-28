@@ -46,8 +46,13 @@ pub mod limits {
     pub const MAX_CALL_DEPTH: usize = 256;
     /// Maximum operand-stack depth, in values.
     pub const MAX_VALUE_STACK: usize = 64 * 1024;
-    /// Maximum declared locals per function (MVP limit).
+    /// Maximum declared locals per function (MVP limit, including parameters).
     pub const MAX_LOCALS: u64 = 50_000;
+    /// Maximum total locals (parameters + declared locals) across all functions
+    /// in a single module. Prevents pre-execution OOM amplification from
+    /// run-length-encoded locals or repeated parameter-list cloning inside the
+    /// 2 MiB module cap.
+    pub const MAX_MODULE_LOCALS: usize = 256 * 1024;
     /// Maximum locals alive across the whole call stack, in slots (1 MiB at
     /// 16 bytes per slot). Keeps recursion over large frames inside the budget.
     pub const MAX_TOTAL_LOCALS: usize = 64 * 1024;

@@ -29,6 +29,7 @@
 | `rd-framework` | M0 | fd-permissions (motor completo + gating maxSdk/since_api) · fd-devices · fd-behavior · fd-api-coverage (registro executável do Apêndice C) · fd-jetpack (Apêndice D) · fd-gms (Apêndice E, modo sem GMS honesto) |
 | `rd-cli` | M0–M6 | inspect · perm · device · behavior · api-coverage · jetpack · gms · dex disasm · vm exec · app run · mcp · test (suítes JUnit, M6) |
 | `rd-dex` | M1 | parser DEX completo + disassembler smali validado vs baksmali + fuzz targets |
+| `rd-stub-tables` | M2–M9 | tabelas estáticas compactas sem relocações PIE usadas pelos stubs de superfície Android em rd-vm (extraídas para compilações incrementais rápidas) |
 | `rd-vm` | M2–M9 | interpretador Dalvik + golden harness vs JVM + framework host headless (Activity/View/Handler/Looper) + LayoutInflater AXML/ARSC + componentes M9 (notificações/IME/widgets/a11y/atalhos) + ponte JNI (feature `native`) |
 | `rd-testsupport` | M0–M6 | fixtures de teste (APK/DEX/AXML/ARSC sintéticos; dev-only, fora do binário) |
 | `rd-render` | M4 | UI dump uiautomator + screenshot headless (software renderer determinístico + PNG sem deps); winit/web são stub → M11 |

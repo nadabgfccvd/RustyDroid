@@ -190,12 +190,16 @@ def public_top_level(classes: dict[str, ClassInfo]) -> dict[str, ClassInfo]:
 
 
 def descriptor_literals(src_root: Path) -> set[str]:
-    """Descriptors like Landroid/util/ArrayMap; found anywhere in rd-vm sources."""
+    """Descriptors like Landroid/util/ArrayMap; found in rd-vm / rd-stub-tables sources."""
     found: set[str] = set()
     pattern = re.compile(r"L(android/[A-Za-z0-9_/$]+);")
-    for path in (src_root / "crates" / "rd-vm" / "src").rglob("*.rs"):
-        for m in pattern.finditer(path.read_text(encoding="utf-8", errors="replace")):
-            found.add(m.group(1).replace("/", "."))
+    for crate in ("rd-vm", "rd-stub-tables"):
+        src_dir = src_root / "crates" / crate / "src"
+        if not src_dir.is_dir():
+            continue
+        for path in src_dir.rglob("*.rs"):
+            for m in pattern.finditer(path.read_text(encoding="utf-8", errors="replace")):
+                found.add(m.group(1).replace("/", "."))
     return found
 
 

@@ -1190,9 +1190,12 @@ impl MethodJit {
                 b.switch_to_block(cl_blocks[bb_idx]);
                 let cur_fuel = b.use_var(fuel_var);
                 let next_fuel = b.ins().iadd_imm_s(cur_fuel, i64::from(blk.dalvik_insns));
-                let over = b
+                // Guard against unsigned wraparound when `fuel_budget` is near `u64::MAX`.
+                let wrapped = b.ins().icmp(IntCC::UnsignedLessThan, next_fuel, cur_fuel);
+                let over_budget = b
                     .ins()
                     .icmp(IntCC::UnsignedGreaterThan, next_fuel, fuel_budget);
+                let over = b.ins().bor(wrapped, over_budget);
                 let body_bb = b.create_block();
                 b.ins().brif(over, fuel_exit_bb, &[], body_bb, &[]);
                 b.seal_block(body_bb);
@@ -1604,6 +1607,13 @@ impl MethodJit {
         if arrays_i32.len() > MAX_ARRAY_HANDLES || arrays_i64.len() > MAX_ARRAY_HANDLES {
             return Err("JIT array handle count exceeds limit".into());
         }
+        // Dalvik array lengths are signed 32-bit ints, and JIT IR narrows lengths
+        // to I32 (`ArrayLen` / bounds checks). Reject larger slices up front.
+        if arrays_i32.iter().any(|s| s.len() > i32::MAX as usize)
+            || arrays_i64.iter().any(|s| s.len() > i32::MAX as usize)
+        {
+            return Err("JIT array slice length exceeds i32::MAX".into());
+        }
         let mut out_io = [0u64; 2];
         let mut ctx_words = [0i32; METHOD_CTX_I32_WORDS];
         pack_ctx_u64(&mut ctx_words, 0, args.as_ptr() as usize as u64);
@@ -1811,5 +1821,252 @@ mod tests {
             .execute(h, &[1, 4], &mut [&mut data[..]], &mut [], 10)
             .unwrap();
         assert_eq!(fuel_res, JitExecResult::FuelExhausted);
+    }
+
+    #[test]
+    fn method_jit_div_rem_edge_cases_and_zero_bailout() {
+        let mut jit = MethodJit::new().unwrap();
+        // (a: i32, b: i32) -> a / b
+        let div32 = jit
+            .compile(&JitProgram {
+                registers: 3,
+                params: vec![(0, ParamKind::Int32), (1, ParamKind::Int32)],
+                ret: RetKind::Int32,
+                blocks: vec![JitBlock {
+                    dalvik_insns: 2,
+                    insts: vec![JitInst::Binary32 {
+                        dst: 2,
+                        lhs: 0,
+                        rhs: 1,
+                        op: BinOp32::Div,
+                    }],
+                    term: JitTerm::Return32 { src: 2 },
+                }],
+            })
+            .unwrap();
+        // i32::MIN / -1 wraps to i32::MIN (Java semantics, no SIGFPE).
+        assert_eq!(
+            jit.execute(
+                div32,
+                &[i32::MIN as u32 as u64, (-1i32) as u32 as u64],
+                &mut [],
+                &mut [],
+                100
+            )
+            .unwrap(),
+            JitExecResult::Returned {
+                bits: i32::MIN as u32 as u64,
+                fuel_consumed: 2,
+            }
+        );
+        // Division by zero bails out cleanly.
+        assert_eq!(
+            jit.execute(div32, &[42, 0], &mut [], &mut [], 100).unwrap(),
+            JitExecResult::Bailout
+        );
+
+        // (a: i64, b: i64) -> a % b
+        let rem64 = jit
+            .compile(&JitProgram {
+                registers: 6,
+                params: vec![(0, ParamKind::Int64), (2, ParamKind::Int64)],
+                ret: RetKind::Int64,
+                blocks: vec![JitBlock {
+                    dalvik_insns: 2,
+                    insts: vec![JitInst::Binary64 {
+                        dst: 4,
+                        lhs: 0,
+                        rhs: 2,
+                        op: BinOp64::Rem,
+                    }],
+                    term: JitTerm::Return64 { src: 4 },
+                }],
+            })
+            .unwrap();
+        assert_eq!(
+            jit.execute(
+                rem64,
+                &[i64::MIN as u64, (-1i64) as u64],
+                &mut [],
+                &mut [],
+                100
+            )
+            .unwrap(),
+            JitExecResult::Returned {
+                bits: 0,
+                fuel_consumed: 2,
+            }
+        );
+        assert_eq!(
+            jit.execute(rem64, &[10, 0], &mut [], &mut [], 100).unwrap(),
+            JitExecResult::Bailout
+        );
+    }
+
+    #[test]
+    fn method_jit_array_put_narrowing_len_and_negative_index() {
+        let mut jit = MethodJit::new().unwrap();
+        // (arr32, arr64, idx, val32, val64) -> arr32.len() + arr64.len()
+        // writes val32 as Byte into arr32[idx] and val64 into arr64[idx]
+        let prog = JitProgram {
+            registers: 8,
+            params: vec![
+                (0, ParamKind::ArrI32),
+                (1, ParamKind::ArrI64),
+                (2, ParamKind::Int32),
+                (3, ParamKind::Int32),
+                (4, ParamKind::Int64),
+            ],
+            ret: RetKind::Int32,
+            blocks: vec![JitBlock {
+                dalvik_insns: 5,
+                insts: vec![
+                    JitInst::ArrayPut32 {
+                        src: 3,
+                        arr: 0,
+                        idx: 2,
+                        elem: ArrElem32::Byte,
+                    },
+                    JitInst::ArrayPut64 {
+                        src: 4,
+                        arr: 1,
+                        idx: 2,
+                    },
+                    JitInst::ArrayLen {
+                        dst: 6,
+                        arr: 0,
+                        is_i64: false,
+                    },
+                    JitInst::ArrayLen {
+                        dst: 7,
+                        arr: 1,
+                        is_i64: true,
+                    },
+                    JitInst::Binary32 {
+                        dst: 6,
+                        lhs: 6,
+                        rhs: 7,
+                        op: BinOp32::Add,
+                    },
+                ],
+                term: JitTerm::Return32 { src: 6 },
+            }],
+        };
+        let h = jit.compile(&prog).unwrap();
+        let mut a32 = [0i32; 3];
+        let mut a64 = [0i64; 2];
+        // 0x1FF narrowed to signed byte = -1
+        let res = jit
+            .execute(
+                h,
+                &[1, 1, 1, 0x1FF, 0x0102_0304_0506_0708],
+                &mut [&mut a32[..]],
+                &mut [&mut a64[..]],
+                u64::MAX,
+            )
+            .unwrap();
+        assert_eq!(
+            res,
+            JitExecResult::Returned {
+                bits: 5,
+                fuel_consumed: 5,
+            }
+        );
+        assert_eq!(a32[1], -1);
+        assert_eq!(a64[1], 0x0102_0304_0506_0708);
+
+        // Negative index bails out without mutating arrays.
+        let neg = jit
+            .execute(
+                h,
+                &[1, 1, (-1i32) as u32 as u64, 7, 9],
+                &mut [&mut a32[..]],
+                &mut [&mut a64[..]],
+                100,
+            )
+            .unwrap();
+        assert_eq!(neg, JitExecResult::Bailout);
+
+        // Fuel budget 0 triggers FuelExhausted before executing block 0.
+        let zero_fuel = jit
+            .execute(h, &[1, 1, 0, 7, 9], &mut [&mut a32[..]], &mut [&mut a64[..]], 0)
+            .unwrap();
+        assert_eq!(zero_fuel, JitExecResult::FuelExhausted);
+    }
+
+    #[test]
+    fn method_jit_switches_cmp_long_and_validation_errors() {
+        let mut jit = MethodJit::new().unwrap();
+        // Sparse switch: 10 -> 100, 42 -> 200, default -> -1
+        let sw = jit
+            .compile(&JitProgram {
+                registers: 2,
+                params: vec![(0, ParamKind::Int32)],
+                ret: RetKind::Int32,
+                blocks: vec![
+                    JitBlock {
+                        dalvik_insns: 1,
+                        insts: vec![],
+                        term: JitTerm::SparseSwitch {
+                            src: 0,
+                            cases: vec![(10, 1), (42, 2)],
+                            default_bb: 3,
+                        },
+                    },
+                    JitBlock {
+                        dalvik_insns: 2,
+                        insts: vec![JitInst::Const32 { dst: 1, value: 100 }],
+                        term: JitTerm::Return32 { src: 1 },
+                    },
+                    JitBlock {
+                        dalvik_insns: 2,
+                        insts: vec![JitInst::Const32 { dst: 1, value: 200 }],
+                        term: JitTerm::Return32 { src: 1 },
+                    },
+                    JitBlock {
+                        dalvik_insns: 2,
+                        insts: vec![JitInst::Const32 { dst: 1, value: -1 }],
+                        term: JitTerm::Return32 { src: 1 },
+                    },
+                ],
+            })
+            .unwrap();
+        assert_eq!(
+            jit.execute(sw, &[10], &mut [], &mut [], 100).unwrap(),
+            JitExecResult::Returned {
+                bits: 100,
+                fuel_consumed: 3
+            }
+        );
+        assert_eq!(
+            jit.execute(sw, &[42], &mut [], &mut [], 100).unwrap(),
+            JitExecResult::Returned {
+                bits: 200,
+                fuel_consumed: 3
+            }
+        );
+        assert_eq!(
+            jit.execute(sw, &[99], &mut [], &mut [], 100).unwrap(),
+            JitExecResult::Returned {
+                bits: (-1i32) as u32 as u64,
+                fuel_consumed: 3
+            }
+        );
+
+        // Validator rejects zero-instruction block and invalid handles/arity.
+        assert!(jit
+            .compile(&JitProgram {
+                registers: 1,
+                params: vec![],
+                ret: RetKind::Void,
+                blocks: vec![JitBlock {
+                    dalvik_insns: 0,
+                    insts: vec![],
+                    term: JitTerm::ReturnVoid,
+                }],
+            })
+            .is_err());
+        assert!(jit.execute(999, &[], &mut [], &mut [], 100).is_err());
+        assert!(jit.execute(sw, &[], &mut [], &mut [], 100).is_err());
     }
 }
